@@ -12,6 +12,7 @@ namespace SMT
         public EveManager EM { get; set; }
 
         private ObservableCollection<InfrastructureUpgrade> currentUpgrades;
+        private ObservableCollection<InfrastructureUpgradeSummary> allUpgrades;
         private string selectedSystemName;
         private string upgradesFilePath;
 
@@ -20,6 +21,8 @@ namespace SMT
             InitializeComponent();
             currentUpgrades = new ObservableCollection<InfrastructureUpgrade>();
             UpgradesDataGrid.ItemsSource = currentUpgrades;
+            allUpgrades = new ObservableCollection<InfrastructureUpgradeSummary>();
+            AllUpgradesDataGrid.ItemsSource = allUpgrades;
         }
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
@@ -37,6 +40,8 @@ namespace SMT
                     .ToList();
 
                 SystemComboBox.ItemsSource = nullSecSystems;
+
+                RefreshAllUpgrades();
             }
         }
 
@@ -87,6 +92,36 @@ namespace SMT
             }
         }
 
+        private void RefreshAllUpgrades()
+        {
+            allUpgrades.Clear();
+
+            if (EM == null)
+            {
+                return;
+            }
+
+            foreach (var sys in EM.Systems)
+            {
+                if (sys.InfrastructureUpgrades == null || sys.InfrastructureUpgrades.Count == 0)
+                {
+                    continue;
+                }
+
+                foreach (var upgrade in sys.InfrastructureUpgrades.OrderBy(u => u.SlotNumber))
+                {
+                    allUpgrades.Add(new InfrastructureUpgradeSummary
+                    {
+                        SystemName = sys.Name,
+                        SlotNumber = upgrade.SlotNumber,
+                        UpgradeName = upgrade.UpgradeName,
+                        Level = upgrade.Level,
+                        IsOnline = upgrade.IsOnline
+                    });
+                }
+            }
+        }
+
         private void AddUpdateButton_Click(object sender, RoutedEventArgs e)
         {
             if (string.IsNullOrEmpty(selectedSystemName))
@@ -125,6 +160,7 @@ namespace SMT
             {
                 EM.SetInfrastructureUpgrade(selectedSystemName, slotNumber, upgradeName, level, isOnline);
                 LoadUpgradesForSystem(selectedSystemName);
+                RefreshAllUpgrades();
 
                 // Auto-save after adding
                 AutoSave();
@@ -145,6 +181,7 @@ namespace SMT
                 {
                     EM.RemoveInfrastructureUpgrade(selectedSystemName, selectedUpgrade.SlotNumber);
                     LoadUpgradesForSystem(selectedSystemName);
+                    RefreshAllUpgrades();
 
                     // Auto-save after deleting
                     AutoSave();
@@ -161,6 +198,43 @@ namespace SMT
             // Final save before closing
             AutoSave();
             this.Close();
+        }
+
+        private void ClearAllUpgradesButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (EM == null)
+            {
+                return;
+            }
+
+            MessageBoxResult result = MessageBox.Show(
+                "Clear all infrastructure upgrades for all systems?",
+                "Confirm Clear All",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+
+            if (result != MessageBoxResult.Yes)
+            {
+                return;
+            }
+
+            foreach (var sys in EM.Systems)
+            {
+                sys.InfrastructureUpgrades?.Clear();
+            }
+
+            currentUpgrades.Clear();
+            RefreshAllUpgrades();
+            AutoSave();
+        }
+
+        public class InfrastructureUpgradeSummary
+        {
+            public string SystemName { get; set; }
+            public int SlotNumber { get; set; }
+            public string UpgradeName { get; set; }
+            public int Level { get; set; }
+            public bool IsOnline { get; set; }
         }
     }
 }

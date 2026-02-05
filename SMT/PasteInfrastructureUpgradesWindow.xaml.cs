@@ -43,6 +43,8 @@ namespace SMT
             }
 
             EM.LoadInfrastructureUpgradesFromText(text);
+            string upgradesFilePath = System.IO.Path.Combine(EveAppConfig.StorageRoot, "InfrastructureUpgrades.txt");
+            EM.SaveInfrastructureUpgrades(upgradesFilePath);
             DialogResult = true;
         }
     }
