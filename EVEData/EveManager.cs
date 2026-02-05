@@ -4485,95 +4485,173 @@ namespace SMT.EVEData
             try
             {
                 string[] lines = File.ReadAllLines(filePath);
-                string currentSystem = null;
-
-                foreach (string line in lines)
-                {
-                    if (string.IsNullOrWhiteSpace(line))
-                    {
-                        continue;
-                    }
-
-                    string trimmedLine = line.Trim();
-
-                    // Check if this line starts with a digit (upgrade line)
-                    bool isUpgradeLine = char.IsDigit(trimmedLine.FirstOrDefault());
-
-                    if (!isUpgradeLine)
-                    {
-                        // This is a system header line
-                        // Support both "Sovereignty Hub SYSTEMNAME" and just "SYSTEMNAME"
-                        if (trimmedLine.StartsWith("Sovereignty Hub "))
-                        {
-                            currentSystem = trimmedLine.Replace("Sovereignty Hub ", "").Trim();
-                        }
-                        else
-                        {
-                            currentSystem = trimmedLine;
-                        }
-
-                        // Clear existing upgrades for this system
-                        System sys = GetEveSystem(currentSystem);
-                        if (sys != null)
-                        {
-                            sys.InfrastructureUpgrades.Clear();
-                        }
-                    }
-                    else if (currentSystem != null)
-                    {
-                        // Parse upgrade line
-                        string[] parts = line.Split(new[] { '\t', ' ' }, StringSplitOptions.RemoveEmptyEntries);
-
-                        if (parts.Length >= 3)
-                        {
-                            System sys = GetEveSystem(currentSystem);
-                            if (sys != null)
-                            {
-                                InfrastructureUpgrade upgrade = new InfrastructureUpgrade();
-
-                                // Parse slot number
-                                if (int.TryParse(parts[0], out int slotNum))
-                                {
-                                    upgrade.SlotNumber = slotNum;
-                                }
-
-                                // Parse upgrade name and level
-                                // The upgrade name could be multiple words, and the level might be at the end
-                                // Status is always the last word (Online/Offline)
-                                string status = parts[parts.Length - 1];
-                                upgrade.IsOnline = status.Equals("Online", StringComparison.OrdinalIgnoreCase);
-
-                                // Check if second-to-last part is a number (level)
-                                int levelIndex = -1;
-                                int level = 0;
-                                if (parts.Length >= 4 && int.TryParse(parts[parts.Length - 2], out level))
-                                {
-                                    upgrade.Level = level;
-                                    levelIndex = parts.Length - 2;
-                                }
-                                else
-                                {
-                                    upgrade.Level = 0;
-                                    levelIndex = parts.Length - 1;
-                                }
-
-                                // Build upgrade name from remaining parts
-                                List<string> nameParts = new List<string>();
-                                for (int i = 1; i < levelIndex; i++)
-                                {
-                                    nameParts.Add(parts[i]);
-                                }
-                                upgrade.UpgradeName = string.Join(" ", nameParts);
-
-                                sys.InfrastructureUpgrades.Add(upgrade);
-                            }
-                        }
-                    }
-                }
+                LoadInfrastructureUpgradesLines(lines);
             }
             catch (Exception ex)
             {
                 // Log error if needed
+            }
+        }
+
+        /// <summary>
+        /// Load Infrastructure Hub Upgrades from pasted text
+        /// </summary>
+        public void LoadInfrastructureUpgradesFromText(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return;
+            }
+
+            try
+            {
+                string[] lines = text.Split(new[] { "\r\n", "\n", "\r" }, StringSplitOptions.None);
+                LoadInfrastructureUpgradesLines(lines);
+            }
+            catch (Exception ex)
+            {
+                // Log error if needed
+            }
+        }
+
+        private void LoadInfrastructureUpgradesLines(IEnumerable<string> lines)
+        {
+            string currentSystem = null;
+
+            foreach (string line in lines)
+            {
+                if (string.IsNullOrWhiteSpace(line))
+                {
+                    continue;
+                }
+
+                string trimmedLine = line.Trim();
+
+                // Support single-line format (Rift):
+                // SYSTEMNAME <- Upgrade Name 3, Another Upgrade 2
+                if (trimmedLine.Contains("<-"))
+                {
+                    string[] arrowParts = trimmedLine.Split(new[] { "<-" }, StringSplitOptions.None);
+                    if (arrowParts.Length >= 2)
+                    {
+                        string systemName = arrowParts[0].Trim();
+                        string upgradesPart = arrowParts[1].Trim();
+
+                        System sys = GetEveSystem(systemName);
+                        if (sys != null)
+                        {
+                            sys.InfrastructureUpgrades.Clear();
+
+                            string[] upgradeEntries = upgradesPart.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+                            int slotNumber = 1;
+
+                            foreach (string entry in upgradeEntries)
+                            {
+                                string upgradeEntry = entry.Trim();
+                                if (string.IsNullOrWhiteSpace(upgradeEntry))
+                                {
+                                    continue;
+                                }
+
+                                int level = 0;
+                                string upgradeName = upgradeEntry;
+
+                                string[] upgradeParts = upgradeEntry.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                                if (upgradeParts.Length > 1 && int.TryParse(upgradeParts[upgradeParts.Length - 1], out int parsedLevel))
+                                {
+                                    level = parsedLevel;
+                                    upgradeName = string.Join(" ", upgradeParts.Take(upgradeParts.Length - 1));
+                                }
+
+                                sys.InfrastructureUpgrades.Add(new InfrastructureUpgrade
+                                {
+                                    SlotNumber = slotNumber,
+                                    UpgradeName = upgradeName,
+                                    Level = level,
+                                    IsOnline = true
+                                });
+
+                                slotNumber++;
+                            }
+                        }
+                    }
+
+                    continue;
+                }
+
+                // Check if this line starts with a digit (upgrade line)
+                bool isUpgradeLine = char.IsDigit(trimmedLine.FirstOrDefault());
+
+                if (!isUpgradeLine)
+                {
+                    // This is a system header line
+                    // Support both "Sovereignty Hub SYSTEMNAME" and just "SYSTEMNAME"
+                    if (trimmedLine.StartsWith("Sovereignty Hub "))
+                    {
+                        currentSystem = trimmedLine.Replace("Sovereignty Hub ", "").Trim();
+                    }
+                    else
+                    {
+                        currentSystem = trimmedLine;
+                    }
+
+                    // Clear existing upgrades for this system
+                    System sys = GetEveSystem(currentSystem);
+                    if (sys != null)
+                    {
+                        sys.InfrastructureUpgrades.Clear();
+                    }
+                }
+                else if (currentSystem != null)
+                {
+                    // Parse upgrade line
+                    string[] parts = line.Split(new[] { '\t', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+
+                    if (parts.Length >= 3)
+                    {
+                        System sys = GetEveSystem(currentSystem);
+                        if (sys != null)
+                        {
+                            InfrastructureUpgrade upgrade = new InfrastructureUpgrade();
+
+                            // Parse slot number
+                            if (int.TryParse(parts[0], out int slotNum))
+                            {
+                                upgrade.SlotNumber = slotNum;
+                            }
+
+                            // Parse upgrade name and level
+                            // The upgrade name could be multiple words, and the level might be at the end
+                            // Status is always the last word (Online/Offline)
+                            string status = parts[parts.Length - 1];
+                            upgrade.IsOnline = status.Equals("Online", StringComparison.OrdinalIgnoreCase);
+
+                            // Check if second-to-last part is a number (level)
+                            int levelIndex = -1;
+                            int level = 0;
+                            if (parts.Length >= 4 && int.TryParse(parts[parts.Length - 2], out level))
+                            {
+                                upgrade.Level = level;
+                                levelIndex = parts.Length - 2;
+                            }
+                            else
+                            {
+                                upgrade.Level = 0;
+                                levelIndex = parts.Length - 1;
+                            }
+
+                            // Build upgrade name from remaining parts
+                            List<string> nameParts = new List<string>();
+                            for (int i = 1; i < levelIndex; i++)
+                            {
+                                nameParts.Add(parts[i]);
+                            }
+                            upgrade.UpgradeName = string.Join(" ", nameParts);
+
+                            sys.InfrastructureUpgrades.Add(upgrade);
+                        }
+                    }
+                }
             }
         }
 

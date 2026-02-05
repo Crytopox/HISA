@@ -1069,6 +1069,19 @@ namespace SMT
             }
         }
 
+        private void PasteInfrastructureUpgrades_Click(object sender, RoutedEventArgs e)
+        {
+            PasteInfrastructureUpgradesWindow pasteWindow = new PasteInfrastructureUpgradesWindow();
+            pasteWindow.EM = EVEManager;
+            pasteWindow.Owner = this;
+            bool? result = pasteWindow.ShowDialog();
+
+            if (result == true && RegionUC != null)
+            {
+                RegionUC.ReDrawMap(false);
+            }
+        }
+
         private void FullScreenToggle_MenuItem_Click(object sender, RoutedEventArgs e)
         {
             if(miFullScreenToggle.IsChecked)
