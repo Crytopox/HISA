@@ -2755,7 +2755,7 @@ namespace SMT
 
                 sp.Children.Add(sysText);
 
-                double iconSize = mapSystem.OutOfRegion ? 9 : 12;
+                double iconSize = mapSystem.OutOfRegion ? 12 : 16;
                 FrameworkElement upgradeIcons = BuildUpgradeIconsPanel(mapSystem, iconSize, out double iconPanelHeight);
                 if(upgradeIcons != null)
                 {
