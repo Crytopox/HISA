@@ -360,3 +360,5 @@ MigrationBackup/
 FodyWeavers.xsd
 
 *.p7s
+/EVEData/data/SourceMaps/raw
+/EVEData/data/SourceMaps/exported
