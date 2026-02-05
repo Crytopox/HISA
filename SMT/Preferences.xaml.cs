@@ -415,6 +415,45 @@ namespace SMT
                 }
             }
 
+            // Support simple arrow format: "A -> B"
+            Regex arrowRx = new Regex(
+                @"^\s*([A-Z0-9\-]+)\s*->\s*([A-Z0-9\-]+)\s*$",
+                RegexOptions.Multiline | RegexOptions.IgnoreCase | RegexOptions.Compiled
+            );
+
+            // Support wiki table copy-paste:
+            // Region  C-6YHJ @ 1-1  P7-45V @ 1-1  Online ...
+            Regex wikiRx = new Regex(
+                @"^\s*.+?\s+([A-Z0-9\-]+)\s+@\s+.*?\s+([A-Z0-9\-]+)\s+@\s+",
+                RegexOptions.Multiline | RegexOptions.IgnoreCase | RegexOptions.Compiled
+            );
+
+            string[] lines = jbText.Split(new[] { "\r\n", "\n", "\r" }, StringSplitOptions.None);
+            foreach(string rawLine in lines)
+            {
+                if(string.IsNullOrWhiteSpace(rawLine))
+                {
+                    continue;
+                }
+
+                Match arrowMatch = arrowRx.Match(rawLine);
+                if(arrowMatch.Success)
+                {
+                    string from = arrowMatch.Groups[1].Value.Trim();
+                    string to = arrowMatch.Groups[2].Value.Trim();
+                    EveManager.Instance.AddUpdateJumpBridge(from, to, 0);
+                    continue;
+                }
+
+                Match wikiMatch = wikiRx.Match(rawLine);
+                if(wikiMatch.Success)
+                {
+                    string from = wikiMatch.Groups[1].Value.Trim();
+                    string to = wikiMatch.Groups[2].Value.Trim();
+                    EveManager.Instance.AddUpdateJumpBridge(from, to, 0);
+                }
+            }
+
             EVEData.Navigation.ClearJumpBridges();
             EVEData.Navigation.UpdateJumpBridges(EveManager.Instance.JumpBridges);
             UpdateJumpBridgeSummary();
