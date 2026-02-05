@@ -2038,6 +2038,11 @@ namespace SMT.EVEData
             }
 
             string overrideFile = GetLayoutOverrideFileName(regionName);
+            string overrideFolder = Path.GetDirectoryName(overrideFile);
+            if(!string.IsNullOrEmpty(overrideFolder))
+            {
+                Directory.CreateDirectory(overrideFolder);
+            }
             Serialization.SerializeToDisk<RegionLayoutOverrides>(overrides, overrideFile);
         }
 
@@ -2089,6 +2094,11 @@ namespace SMT.EVEData
         private string GetLayoutOverrideFileName(string regionName)
         {
             string safeName = SanitizeFileName(regionName);
+            string projectRoot = TryGetProjectRoot();
+            if(!string.IsNullOrEmpty(projectRoot))
+            {
+                return Path.Combine(projectRoot, "EVEData", "data", "LayoutOverrides", $"MapLayoutOverrides_{safeName}.dat");
+            }
             return Path.Combine(SaveDataRootFolder, $"MapLayoutOverrides_{safeName}.dat");
         }
 
@@ -2109,6 +2119,28 @@ namespace SMT.EVEData
                 }
             }
             return new string(buffer);
+        }
+
+        private static string TryGetProjectRoot()
+        {
+            try
+            {
+                DirectoryInfo dir = new DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory);
+                for(int i = 0; i < 8 && dir != null; i++)
+                {
+                    if(Directory.Exists(Path.Combine(dir.FullName, "EVEData")))
+                    {
+                        return dir.FullName;
+                    }
+                    dir = dir.Parent;
+                }
+            }
+            catch
+            {
+                // ignore and fall back to app data
+            }
+
+            return string.Empty;
         }
 
         private static void OptimizeRegionLayout(MapRegion mr, int iterations, float minSpacing, float strength)

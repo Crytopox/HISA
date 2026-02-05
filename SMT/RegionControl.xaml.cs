@@ -3408,6 +3408,10 @@ namespace SMT
         /// <param name="e"></param>
         private void ShapeMouseDownHandler(object sender, MouseButtonEventArgs e)
         {
+            if(m_IsLayoutEditMode)
+            {
+                return;
+            }
             Shape obj = sender as Shape;
 
             EVEData.MapSystem selectedSys = obj.DataContext as EVEData.MapSystem;
@@ -3418,33 +3422,7 @@ namespace SMT
 
             if(m_IsLayoutEditMode)
             {
-                if(e.ChangedButton == MouseButton.Left && e.ClickCount == 1)
-                {
-                    bool ctrl = Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl);
-                    if(ctrl)
-                    {
-                        ToggleLayoutSelection(selectedSys);
-                        ReDrawMap(true);
-                        e.Handled = true;
-                        return;
-                    }
-
-                    if(!m_SelectedSystems.Contains(selectedSys))
-                    {
-                        m_SelectedSystems.Clear();
-                        m_SelectedSystems.Add(selectedSys);
-                        ReDrawMap(true);
-                    }
-
-                    BeginLayoutDrag(selectedSys, e);
-                    e.Handled = true;
-                    return;
-                }
-
-                if(e.ChangedButton == MouseButton.Right)
-                {
-                    return;
-                }
+                return;
             }
 
             if(e.ChangedButton == MouseButton.Left)
@@ -3589,21 +3567,32 @@ namespace SMT
                 return;
             }
 
-            if(Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl))
+            bool ctrl = Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl);
+            if(!ctrl)
             {
-                // allow additive selection on empty space
+                return;
             }
 
-            if(GetMapSystemFromEventSource(e.OriginalSource) == null)
+            Point canvasPoint = GetCanvasPoint(e);
+            EVEData.MapSystem hit = TryGetMapSystemAtPoint(canvasPoint);
+            if(hit != null)
             {
-                if(!(Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl)))
+                if(!m_SelectedSystems.Contains(hit))
                 {
-                    m_SelectedSystems.Clear();
+                    ToggleLayoutSelection(hit);
+                    ReDrawMap(true);
+                    e.Handled = true;
+                    return;
                 }
 
-                BeginBoxSelection(e);
+                BeginLayoutDrag(hit, e);
                 e.Handled = true;
+                return;
             }
+
+            m_SelectedSystems.Clear();
+            BeginBoxSelection(e);
+            e.Handled = true;
         }
 
         private void ToggleLayoutSelection(EVEData.MapSystem sys)
@@ -3622,7 +3611,7 @@ namespace SMT
         {
             m_IsSelecting = true;
             m_SelectAdditive = Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl);
-            m_SelectStartPoint = e.GetPosition(MainCanvas);
+            m_SelectStartPoint = GetCanvasPoint(e);
             m_SelectHasDrag = false;
             if(m_SelectRect == null)
             {
@@ -3714,11 +3703,44 @@ namespace SMT
             return null;
         }
 
+        private EVEData.MapSystem TryGetMapSystemAtPoint(Point p)
+        {
+            if(p.X < 0 || p.Y < 0 || p.X > MainCanvas.ActualWidth || p.Y > MainCanvas.ActualHeight)
+            {
+                return null;
+            }
+
+            HitTestResult result = VisualTreeHelper.HitTest(MainCanvas, p);
+            if(result == null)
+            {
+                return null;
+            }
+
+            DependencyObject current = result.VisualHit;
+            while(current != null)
+            {
+                if(current is Shape s && s.DataContext is EVEData.MapSystem ms)
+                {
+                    return ms;
+                }
+                current = VisualTreeHelper.GetParent(current);
+            }
+
+            return null;
+        }
+
+        private Point GetCanvasPoint(MouseEventArgs e)
+        {
+            Point p = e.GetPosition(MainZoomControl);
+            GeneralTransform transform = MainZoomControl.TransformToVisual(MainCanvas);
+            return transform.Transform(p);
+        }
+
         private void BeginLayoutDrag(EVEData.MapSystem sys, MouseButtonEventArgs e)
         {
             m_DragSystem = sys;
             m_DragAnchor = sys;
-            m_DragStartPoint = e.GetPosition(MainCanvas);
+            m_DragStartPoint = GetCanvasPoint(e);
             m_DragStartLayout = sys.Layout;
             m_DragStartLayouts.Clear();
             IEnumerable<MapSystem> targets = m_SelectedSystems.Count > 0 ? m_SelectedSystems : new[] { sys };
@@ -3736,11 +3758,12 @@ namespace SMT
             {
                 return;
             }
+
             if(!m_IsLayoutEditMode || m_DragSystem == null)
             {
                 if(m_IsLayoutEditMode && m_IsSelecting)
                 {
-                    Point point = e.GetPosition(MainCanvas);
+                    Point point = GetCanvasPoint(e);
                     if(!m_SelectHasDrag)
                     {
                         if(Math.Abs(point.X - m_SelectStartPoint.X) >= SELECT_DRAG_THRESHOLD ||
@@ -3758,7 +3781,7 @@ namespace SMT
                 return;
             }
 
-            Point p = e.GetPosition(MainCanvas);
+            Point p = GetCanvasPoint(e);
             Vector2 delta = new Vector2((float)(p.X - m_DragStartPoint.X), (float)(p.Y - m_DragStartPoint.Y));
             float newX = m_DragStartLayout.X + delta.X;
             float newY = m_DragStartLayout.Y + delta.Y;
@@ -3788,7 +3811,7 @@ namespace SMT
         {
             if(m_IsSelecting)
             {
-                Point p = e.GetPosition(MainCanvas);
+                Point p = GetCanvasPoint(e);
                 EndBoxSelection(p);
                 return;
             }
@@ -3803,6 +3826,26 @@ namespace SMT
             m_DragStartLayouts.Clear();
             MainCanvas.ReleaseMouseCapture();
             ReDrawMap(true);
+        }
+
+        private static bool IsDescendantOf(DependencyObject source, DependencyObject ancestor)
+        {
+            if(source == null || ancestor == null)
+            {
+                return false;
+            }
+
+            DependencyObject current = source;
+            while(current != null)
+            {
+                if(current == ancestor)
+                {
+                    return true;
+                }
+                current = VisualTreeHelper.GetParent(current);
+            }
+
+            return false;
         }
 
         private void LayoutEditToggle_Checked(object sender, RoutedEventArgs e)
