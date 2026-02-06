@@ -3,6 +3,7 @@
 //-----------------------------------------------------------------------
 
 using System.Numerics;
+using System.Xml.Serialization;
 using EVEDataUtils;
 
 namespace SMT.EVEData
@@ -70,6 +71,17 @@ namespace SMT.EVEData
         public string ID { get; set; }
 
         public bool MetaRegion { get; set; }
+
+        [XmlIgnore]
+        public bool IsCustom { get; set; }
+
+        [XmlIgnore]
+        public string GroupName { get; set; }
+
+        [XmlIgnore]
+        public string GroupSortKey => IsCustom ? "0" : "1";
+
+        public bool AllowEdit { get; set; }
 
         /// <summary>
         /// Gets or sets the dictionary of systems on this map

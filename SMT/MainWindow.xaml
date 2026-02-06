@@ -68,6 +68,14 @@
                     <MenuItem Header="Clear Old Eve logs" Click="ClearOldEVELogs_Click" />
                 </MenuItem>
 
+                <MenuItem Header="Custom Regions" Height="Auto">
+                    <MenuItem Header="Import Custom Regions..." Click="ImportCustomRegions_MenuItem_Click" />
+                    <MenuItem Header="Manage Custom Regions..." Click="ManageCustomRegions_MenuItem_Click" />
+                    <Separator />
+                    <MenuItem Header="Create From Current Region..." Click="CreateCustomRegion_MenuItem_Click" />
+                    <MenuItem Header="Export Current Region..." Click="ExportCustomRegion_MenuItem_Click" />
+                </MenuItem>
+
                 <MenuItem Header="View" Height="Auto">
                     <MenuItem x:Name="miFullScreenToggle" Header="FullScreen" IsCheckable="True" IsChecked="False" Click="FullScreenToggle_MenuItem_Click" />
                     <MenuItem x:Name="miResetLayout" Header="Reset Layout" Click="miResetLayout_Click" />

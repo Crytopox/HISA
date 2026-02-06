@@ -8,6 +8,8 @@ using System.Linq;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Numerics;
+using System.IO;
+using System.IO.Compression;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -708,7 +710,6 @@ namespace SMT.EVEData
             Regions.Add(new MapRegion("Venal", "10000015", "Guristas", 1140, 210));
             Regions.Add(new MapRegion("Verge Vendor", "10000068", "Gallente", 490, 660));
             Regions.Add(new MapRegion("Wicked Creek", "10000006", string.Empty, 1580, 1230));
-            Regions.Add(new MapRegion("Wicked Creek Area", "", string.Empty, 1710, 1220));
             Regions.Add(new MapRegion("Pochven", "10000008", "Triglavian", 50, 50));
 
             Regions.Add(new MapRegion("Warzone - Amarr vs Minmatar", "", "Faction War", 50, 120, true));
@@ -2046,6 +2047,359 @@ namespace SMT.EVEData
             Serialization.SerializeToDisk<RegionLayoutOverrides>(overrides, overrideFile);
         }
 
+        public int ImportCustomRegions(IEnumerable<string> paths, out string error)
+        {
+            error = string.Empty;
+            if(paths == null)
+            {
+                return 0;
+            }
+
+            int imported = 0;
+            foreach(string path in paths)
+            {
+                if(string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+                {
+                    continue;
+                }
+
+                string ext = Path.GetExtension(path).ToLowerInvariant();
+                if(ext == ".zip" || ext == ".smtregion")
+                {
+                    try
+                    {
+                        string tempDir = Path.Combine(Path.GetTempPath(), "SMT_CustomRegions_" + Guid.NewGuid().ToString("N"));
+                        Directory.CreateDirectory(tempDir);
+                        global::System.IO.Compression.ZipFile.ExtractToDirectory(path, tempDir);
+                        foreach(string xml in Directory.GetFiles(tempDir, "*.xml", SearchOption.AllDirectories))
+                        {
+                            if(ImportCustomRegionXml(xml))
+                            {
+                                imported++;
+                            }
+                        }
+                        Directory.Delete(tempDir, true);
+                    }
+                    catch(Exception ex)
+                    {
+                        error = ex.Message;
+                    }
+                }
+                else if(ext == ".xml")
+                {
+                    if(ImportCustomRegionXml(path))
+                    {
+                        imported++;
+                    }
+                }
+            }
+
+            if(imported > 0)
+            {
+                LoadCustomRegions();
+            }
+
+            return imported;
+        }
+
+        private bool ImportCustomRegionXml(string xmlPath)
+        {
+            MapRegion region = Serialization.DeserializeFromDisk<MapRegion>(xmlPath);
+            if(region == null || string.IsNullOrWhiteSpace(region.Name))
+            {
+                return false;
+            }
+
+            region.IsCustom = true;
+            region.GroupName = "Custom Regions";
+            region.AllowEdit = false;
+
+            string folder = GetCustomRegionsFolder();
+            Directory.CreateDirectory(folder);
+
+            string fileName = SanitizeFileName(region.Name) + ".region.xml";
+            string outPath = Path.Combine(folder, fileName);
+            Serialization.SerializeToDisk<MapRegion>(region, outPath);
+            return true;
+        }
+
+        public MapRegion CreateCustomRegionFrom(MapRegion source, string newName, out string error)
+        {
+            error = string.Empty;
+            if(source == null)
+            {
+                error = "No source region.";
+                return null;
+            }
+            if(string.IsNullOrWhiteSpace(newName))
+            {
+                error = "Region name is required.";
+                return null;
+            }
+
+            MapRegion clone = CloneRegion(source);
+            if(clone == null)
+            {
+                error = "Failed to clone region.";
+                return null;
+            }
+
+            clone.Name = newName.Trim();
+            clone.DotLanRef = clone.Name.Replace(" ", "_");
+            clone.ID = string.Empty;
+            clone.IsCustom = true;
+            clone.GroupName = "Custom Regions";
+            clone.AllowEdit = true;
+
+            foreach(MapSystem ms in clone.MapSystems.Values)
+            {
+                ms.ActualSystem = GetEveSystem(ms.Name);
+            }
+
+            SaveCustomRegion(clone);
+
+            MapRegion existing = GetRegion(clone.Name);
+            if(existing != null)
+            {
+                Regions.Remove(existing);
+            }
+            Regions.Add(clone);
+
+            return clone;
+        }
+
+        public MapRegion CreateCustomRegionFromRegions(IEnumerable<MapRegion> sources, string newName, out string error)
+        {
+            error = string.Empty;
+            if(sources == null)
+            {
+                error = "No source regions.";
+                return null;
+            }
+
+            List<MapRegion> sourceList = sources.Where(r => r != null).ToList();
+            if(sourceList.Count == 0)
+            {
+                error = "No source regions.";
+                return null;
+            }
+
+            if(string.IsNullOrWhiteSpace(newName))
+            {
+                error = "Region name is required.";
+                return null;
+            }
+
+            MapRegion result = new MapRegion(newName.Trim(), string.Empty, string.Empty, 0, 0);
+            result.IsCustom = true;
+            result.GroupName = "Custom Regions";
+            result.AllowEdit = true;
+
+            double avgX = 0;
+            double avgY = 0;
+            int count = 0;
+
+            foreach(MapRegion src in sourceList)
+            {
+                avgX += src.UniverseViewX;
+                avgY += src.UniverseViewY;
+                count++;
+
+                foreach(MapSystem ms in src.MapSystems.Values)
+                {
+                    if(result.MapSystems.ContainsKey(ms.Name))
+                    {
+                        continue;
+                    }
+
+                    MapSystem cloneMs = CloneMapSystem(ms);
+                    result.MapSystems.Add(cloneMs.Name, cloneMs);
+                }
+            }
+
+            if(count > 0)
+            {
+                result.UniverseViewX = avgX / count;
+                result.UniverseViewY = avgY / count;
+            }
+
+            foreach(MapSystem ms in result.MapSystems.Values)
+            {
+                ms.ActualSystem = GetEveSystem(ms.Name);
+            }
+
+            SaveCustomRegion(result);
+
+            MapRegion existing = GetRegion(result.Name);
+            if(existing != null)
+            {
+                Regions.Remove(existing);
+            }
+            Regions.Add(result);
+
+            return result;
+        }
+
+        public bool SaveCustomRegion(MapRegion region)
+        {
+            if(region == null || string.IsNullOrWhiteSpace(region.Name))
+            {
+                return false;
+            }
+
+            region.IsCustom = true;
+            region.GroupName = "Custom Regions";
+
+            string folder = GetCustomRegionsFolder();
+            Directory.CreateDirectory(folder);
+
+            string fileName = SanitizeFileName(region.Name) + ".region.xml";
+            string outPath = Path.Combine(folder, fileName);
+            Serialization.SerializeToDisk<MapRegion>(region, outPath);
+            return true;
+        }
+
+        private static MapSystem CloneMapSystem(MapSystem source)
+        {
+            MapSystem ms = new MapSystem
+            {
+                Name = source.Name,
+                Layout = source.Layout,
+                TextPos = source.TextPos,
+                OutOfRegion = source.OutOfRegion,
+                Region = source.Region,
+                CellPoints = source.CellPoints != null ? new List<Vector2>(source.CellPoints) : new List<Vector2>()
+            };
+            return ms;
+        }
+
+        public bool DeleteCustomRegion(string name)
+        {
+            if(string.IsNullOrWhiteSpace(name))
+            {
+                return false;
+            }
+
+            string folder = GetCustomRegionsFolder();
+            string fileName = SanitizeFileName(name) + ".region.xml";
+            string path = Path.Combine(folder, fileName);
+            if(File.Exists(path))
+            {
+                File.Delete(path);
+            }
+
+            MapRegion existing = GetRegion(name);
+            if(existing != null && existing.IsCustom)
+            {
+                Regions.Remove(existing);
+            }
+
+            return true;
+        }
+
+        public bool ExportRegion(MapRegion region, string outputPath, out string error)
+        {
+            error = string.Empty;
+            if(region == null || string.IsNullOrWhiteSpace(outputPath))
+            {
+                error = "Invalid region or output path.";
+                return false;
+            }
+
+            string ext = Path.GetExtension(outputPath).ToLowerInvariant();
+            if(ext == ".xml")
+            {
+                Serialization.SerializeToDisk<MapRegion>(region, outputPath);
+                return true;
+            }
+
+            if(ext == ".zip" || ext == ".smtregion")
+            {
+                string tempDir = Path.Combine(Path.GetTempPath(), "SMT_CustomRegionExport_" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(tempDir);
+                try
+                {
+                    string xmlPath = Path.Combine(tempDir, SanitizeFileName(region.Name) + ".region.xml");
+                    Serialization.SerializeToDisk<MapRegion>(region, xmlPath);
+                    if(File.Exists(outputPath))
+                    {
+                        File.Delete(outputPath);
+                    }
+                    global::System.IO.Compression.ZipFile.CreateFromDirectory(tempDir, outputPath);
+                    return true;
+                }
+                catch(Exception ex)
+                {
+                    error = ex.Message;
+                    return false;
+                }
+                finally
+                {
+                    try
+                    {
+                        Directory.Delete(tempDir, true);
+                    }
+                    catch
+                    {
+                        // ignore
+                    }
+                }
+            }
+
+            error = "Unsupported export format.";
+            return false;
+        }
+
+        private static MapRegion CloneRegion(MapRegion source)
+        {
+            try
+            {
+                XmlSerializer xms = new XmlSerializer(typeof(MapRegion));
+                using(MemoryStream ms = new MemoryStream())
+                {
+                    xms.Serialize(ms, source);
+                    ms.Position = 0;
+                    return (MapRegion)xms.Deserialize(ms);
+                }
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private void LoadCustomRegions()
+        {
+            string folder = GetCustomRegionsFolder();
+            if(!Directory.Exists(folder))
+            {
+                return;
+            }
+
+            foreach(string file in Directory.GetFiles(folder, "*.region.xml", SearchOption.TopDirectoryOnly))
+            {
+                MapRegion region = Serialization.DeserializeFromDisk<MapRegion>(file);
+                if(region == null || string.IsNullOrWhiteSpace(region.Name))
+                {
+                    continue;
+                }
+
+                region.IsCustom = true;
+                region.GroupName = "Custom Regions";
+                if(!region.AllowEdit)
+                {
+                    region.AllowEdit = false;
+                }
+
+                MapRegion existing = GetRegion(region.Name);
+                if(existing != null)
+                {
+                    Regions.Remove(existing);
+                }
+                Regions.Add(region);
+            }
+        }
+
         public void AutoArrangeRegionLayout(string regionName, int iterations = 260, float strength = 1.2f)
         {
             MapRegion region = GetRegion(regionName);
@@ -2091,6 +2445,24 @@ namespace SMT.EVEData
             }
         }
 
+        private void EnsureCustomRegionDefaults()
+        {
+            if(Regions == null || Regions.Count == 0)
+            {
+                return;
+            }
+
+            MapRegion gsf = GetRegion("GSF Space");
+            if(gsf != null && !gsf.IsCustom)
+            {
+                gsf.IsCustom = true;
+                gsf.GroupName = "Custom Regions";
+                gsf.AllowEdit = true;
+
+                SaveCustomRegion(gsf);
+            }
+        }
+
         private string GetLayoutOverrideFileName(string regionName)
         {
             string safeName = SanitizeFileName(regionName);
@@ -2100,6 +2472,11 @@ namespace SMT.EVEData
                 return Path.Combine(projectRoot, "EVEData", "data", "LayoutOverrides", $"MapLayoutOverrides_{safeName}.dat");
             }
             return Path.Combine(SaveDataRootFolder, $"MapLayoutOverrides_{safeName}.dat");
+        }
+
+        private string GetCustomRegionsFolder()
+        {
+            return Path.Combine(EveAppConfig.VersionStorage, "CustomRegions");
         }
 
         private static string SanitizeFileName(string input)
@@ -2652,6 +3029,16 @@ namespace SMT.EVEData
             }
 
             ApplyLayoutOverrides();
+            EnsureCustomRegionDefaults();
+            LoadCustomRegions();
+
+            foreach(MapRegion r in Regions)
+            {
+                if(!r.IsCustom)
+                {
+                    r.GroupName = "Regions";
+                }
+            }
 
             CharacterIDToName = new SerializableDictionary<int, string>();
             AllianceIDToName = new SerializableDictionary<int, string>();

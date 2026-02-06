@@ -17,6 +17,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using System.Xml;
 using System.Xml.Serialization;
+using Microsoft.Win32;
 using Microsoft.Toolkit.Uwp.Notifications;
 using NAudio.Wave;
 using NHotkey;
@@ -1080,6 +1081,71 @@ namespace SMT
             if (result == true && RegionUC != null)
             {
                 RegionUC.ReDrawMap(false);
+            }
+        }
+
+        private void ImportCustomRegions_MenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            RegionUC?.ImportCustomRegionsFromDialog();
+        }
+
+        private void ManageCustomRegions_MenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            CustomRegionsWindow win = new CustomRegionsWindow(EVEManager, RegionUC);
+            win.Owner = this;
+            win.ShowDialog();
+        }
+
+        private void CreateCustomRegion_MenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            if(EVEManager == null)
+            {
+                return;
+            }
+
+            List<MapRegion> baseRegions = EVEManager.Regions.Where(r => !r.IsCustom).ToList();
+            CustomRegionCreateWindow dlg = new CustomRegionCreateWindow(baseRegions);
+            dlg.Owner = this;
+            if(dlg.ShowDialog() != true)
+            {
+                return;
+            }
+
+            string name = dlg.RegionName;
+            List<MapRegion> selected = dlg.SelectedRegions;
+            MapRegion created = EVEManager.CreateCustomRegionFromRegions(selected, name, out string error);
+            if(created == null)
+            {
+                MessageBox.Show("Create failed: " + error, "Custom Regions", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            RegionUC.RefreshRegionList();
+            RegionUC.SelectRegion(created.Name);
+        }
+
+        private void ExportCustomRegion_MenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            if(RegionUC?.Region == null)
+            {
+                return;
+            }
+
+            SaveFileDialog dlg = new SaveFileDialog
+            {
+                Title = "Export Region",
+                Filter = "SMT Region Pack (*.smtregion)|*.smtregion|Zip (*.zip)|*.zip|XML (*.xml)|*.xml|All files (*.*)|*.*",
+                FileName = RegionUC.Region.Name + ".smtregion"
+            };
+
+            if(dlg.ShowDialog() != true)
+            {
+                return;
+            }
+
+            if(!EVEManager.ExportRegion(RegionUC.Region, dlg.FileName, out string error))
+            {
+                MessageBox.Show("Export failed: " + error, "Custom Regions", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 

@@ -62,7 +62,17 @@
         </Grid.RowDefinitions>
 
         <StackPanel Margin="4,2,1,2"  Orientation="Horizontal" HorizontalAlignment="Left">
-            <ComboBox x:Name="RegionSelectCB"  Width="120" Margin="5,0" FontSize="12" SelectionChanged="RegionSelectCB_SelectionChanged" />
+            <ComboBox x:Name="RegionSelectCB"  Width="120" Margin="5,0" FontSize="12" SelectionChanged="RegionSelectCB_SelectionChanged">
+                <ComboBox.GroupStyle>
+                    <GroupStyle>
+                        <GroupStyle.HeaderTemplate>
+                            <DataTemplate>
+                                <TextBlock FontWeight="Bold" Foreground="#FF9FA0A0" Margin="2,4,2,2" Text="{Binding Name}" />
+                            </DataTemplate>
+                        </GroupStyle.HeaderTemplate>
+                    </GroupStyle>
+                </ComboBox.GroupStyle>
+            </ComboBox>
             <ComboBox x:Name="SystemDropDownAC" IsEditable="True" Text="System"  Width="100" FontSize="12" Margin="5,0" SelectionChanged="SystemDropDownAC_SelectionChanged" />
             <Label Content="Search :" HorizontalAlignment="Center" VerticalAlignment="Center" />
             <dotNetKitControls:AutoCompleteComboBox x:Name="GlobalSystemDropDownAC" Width="200" FontSize="12" Margin="5,0" SelectionChanged="GlobalSystemDropDownAC_SelectionChanged" Foreground="Black" TextSearch.TextPath="Name">
@@ -139,7 +149,7 @@
                         <Setter Property="Height" Value="170" />
                         <Style.Triggers>
                             <DataTrigger Binding="{Binding ElementName=LayoutEditToggle, Path=IsChecked}" Value="True">
-                                <Setter Property="Height" Value="320" />
+                                <Setter Property="Height" Value="360" />
                             </DataTrigger>
                         </Style.Triggers>
                     </Style>
@@ -489,9 +499,9 @@
                             </StackPanel>
 
                             <StackPanel Orientation="Horizontal" Margin="0,2" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                        Visibility="{Binding Path=MapConf.Debug_EnableMapEdit, Converter={StaticResource BoolToVis}}">
+                                        >
                                 <ToggleButton x:Name="LayoutEditToggle" Content="Edit Layout" Width="78" Height="20" FontSize="10" ToolTip="Enable manual layout editing" Checked="LayoutEditToggle_Checked" Unchecked="LayoutEditToggle_Unchecked"
-                                              IsEnabled="{Binding Path=MapConf.Debug_EnableMapEdit}" />
+                                              />
                                 <Button x:Name="AutoLayoutBtn" Content="Auto Arrange" Width="78" Height="20" FontSize="10" Margin="4,0,0,0" ToolTip="Auto arrange systems for this region" Click="AutoLayoutBtn_Click" IsEnabled="False"
                                         Visibility="{Binding ElementName=LayoutEditToggle, Path=IsChecked, Converter={StaticResource BoolToVis}}" />
                             </StackPanel>

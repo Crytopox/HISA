@@ -6,10 +6,12 @@ using System.Numerics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Data;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Shapes;
 using System.Windows.Threading;
+using Microsoft.Win32;
 using SMT.EVEData;
 using SMT.ResourceUsage;
 
@@ -773,7 +775,7 @@ namespace SMT
 
             ActiveCharacter = null;
 
-            RegionSelectCB.ItemsSource = EM.Regions;
+            RefreshRegionList();
 
             ShowJumpBridges = MapConf.ToolBox_ShowJumpBridges;
             ShowNPCKills = MapConf.ToolBox_ShowNPCKills;
@@ -801,6 +803,35 @@ namespace SMT
             SystemDropDownAC.ItemsSource = newList;
 
             PropertyChanged += MapObjectChanged;
+        }
+
+        public void RefreshRegionList()
+        {
+            if(EM == null)
+            {
+                return;
+            }
+
+            foreach(MapRegion r in EM.Regions)
+            {
+                if(r.IsCustom)
+                {
+                    r.GroupName = "Custom Regions";
+                }
+                else
+                {
+                    r.GroupName = "Regions";
+                }
+            }
+
+            CollectionViewSource cvs = new CollectionViewSource
+            {
+                Source = EM.Regions
+            };
+            cvs.GroupDescriptions.Add(new PropertyGroupDescription("GroupName"));
+            cvs.SortDescriptions.Add(new SortDescription("GroupSortKey", ListSortDirection.Ascending));
+            cvs.SortDescriptions.Add(new SortDescription("Name", ListSortDirection.Ascending));
+            RegionSelectCB.ItemsSource = cvs.View;
         }
 
         /// <summary>
@@ -1122,7 +1153,7 @@ namespace SMT
             Region = mr;
             RegionNameLabel.Content = mr.Name;
             MapConf.DefaultRegion = mr.Name;
-            if(m_IsLayoutEditMode && mr.Name != "Wicked Creek Area")
+            if(m_IsLayoutEditMode && (!mr.IsCustom || !mr.AllowEdit))
             {
                 m_IsLayoutEditMode = false;
                 LayoutEditToggle.IsChecked = false;
@@ -4045,9 +4076,22 @@ namespace SMT
 
         private void LayoutEditToggle_Checked(object sender, RoutedEventArgs e)
         {
-            if(Region == null || Region.Name != "Wicked Creek Area")
+            if(Region == null)
             {
-                MessageBox.Show("Layout editing is only enabled for Wicked Creek Area.", "Layout Edit", MessageBoxButton.OK, MessageBoxImage.Information);
+                LayoutEditToggle.IsChecked = false;
+                return;
+            }
+
+            if(!Region.IsCustom)
+            {
+                MessageBox.Show("Layout editing is only enabled for custom regions.", "Layout Edit", MessageBoxButton.OK, MessageBoxImage.Information);
+                LayoutEditToggle.IsChecked = false;
+                return;
+            }
+
+            if(Region.IsCustom && !Region.AllowEdit)
+            {
+                MessageBox.Show("Editing is locked for imported custom regions. Use Custom Regions > Manage Custom Regions to enable editing.", "Layout Edit", MessageBoxButton.OK, MessageBoxImage.Information);
                 LayoutEditToggle.IsChecked = false;
                 return;
             }
@@ -4076,12 +4120,6 @@ namespace SMT
                 return;
             }
 
-            if(Region.Name != "Wicked Creek Area")
-            {
-                MessageBox.Show("This save action is only intended for Wicked Creek Area.", "Layout Save", MessageBoxButton.OK, MessageBoxImage.Information);
-                return;
-            }
-
             EM.SaveRegionLayoutOverrides(Region.Name);
             MessageBox.Show("Layout overrides saved. These will re-apply after data regeneration.", "Layout Save", MessageBoxButton.OK, MessageBoxImage.Information);
         }
@@ -4093,12 +4131,6 @@ namespace SMT
                 return;
             }
 
-            if(Region.Name != "Wicked Creek Area")
-            {
-                MessageBox.Show("Auto arrange is only enabled for Wicked Creek Area.", "Layout Auto Arrange", MessageBoxButton.OK, MessageBoxImage.Information);
-                return;
-            }
-
             float strength = 1.2f;
             if(AutoLayoutStrengthSlider != null)
             {
@@ -4107,6 +4139,48 @@ namespace SMT
 
             EM.AutoArrangeRegionLayout(Region.Name, 240, strength);
             ReDrawMap(true);
+        }
+
+        public int ImportCustomRegionsFromDialog()
+        {
+            if(EM == null)
+            {
+                return 0;
+            }
+
+            OpenFileDialog ofd = new OpenFileDialog
+            {
+                Title = "Import Custom Regions",
+                Filter = "SMT Region Packs (*.smtregion;*.zip;*.xml)|*.smtregion;*.zip;*.xml|All files (*.*)|*.*",
+                Multiselect = true
+            };
+
+            if(ofd.ShowDialog() != true)
+            {
+                return 0;
+            }
+
+            int imported = EM.ImportCustomRegions(ofd.FileNames, out string error);
+            if(imported > 0)
+            {
+                RefreshRegionList();
+                MessageBox.Show($"Imported {imported} custom region(s). They are now listed under Custom Regions.", "Import Regions", MessageBoxButton.OK, MessageBoxImage.Information);
+                return imported;
+            }
+
+            if(!string.IsNullOrWhiteSpace(error))
+            {
+                MessageBox.Show("Import failed: " + error, "Import Regions", MessageBoxButton.OK, MessageBoxImage.Error);
+                return 0;
+            }
+
+            MessageBox.Show("No regions were imported.", "Import Regions", MessageBoxButton.OK, MessageBoxImage.Information);
+            return 0;
+        }
+
+        private void ImportRegionsBtn_Click(object sender, RoutedEventArgs e)
+        {
+            ImportCustomRegionsFromDialog();
         }
 
         private void SnapToGridChk_Checked(object sender, RoutedEventArgs e)
