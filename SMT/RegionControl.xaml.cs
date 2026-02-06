@@ -1087,6 +1087,15 @@ namespace SMT
             double startY = Math.Floor(minY / LAYOUT_GRID_SIZE) * LAYOUT_GRID_SIZE;
             double endY = Math.Ceiling(maxY / LAYOUT_GRID_SIZE) * LAYOUT_GRID_SIZE;
 
+            double centerX = (minX + maxX) * 0.5;
+            double centerY = (minY + maxY) * 0.5;
+
+            SolidColorBrush axisBrush = new SolidColorBrush(Color.FromArgb(110, 255, 255, 255));
+            axisBrush.Freeze();
+
+            SolidColorBrush centerBrush = new SolidColorBrush(Color.FromArgb(180, 255, 215, 0));
+            centerBrush.Freeze();
+
             for(double x = startX; x <= endX; x += LAYOUT_GRID_SIZE)
             {
                 Line l = new Line
@@ -1118,6 +1127,48 @@ namespace SMT
                 Canvas.SetZIndex(l, ZINDEX_POLY - 1);
                 MainCanvas.Children.Add(l);
             }
+
+            // main axes through the center
+            Line axisX = new Line
+            {
+                X1 = startX,
+                Y1 = centerY,
+                X2 = endX,
+                Y2 = centerY,
+                Stroke = axisBrush,
+                StrokeThickness = 1.5,
+                IsHitTestVisible = false
+            };
+            Canvas.SetZIndex(axisX, ZINDEX_POLY);
+            MainCanvas.Children.Add(axisX);
+
+            Line axisY = new Line
+            {
+                X1 = centerX,
+                Y1 = startY,
+                X2 = centerX,
+                Y2 = endY,
+                Stroke = axisBrush,
+                StrokeThickness = 1.5,
+                IsHitTestVisible = false
+            };
+            Canvas.SetZIndex(axisY, ZINDEX_POLY);
+            MainCanvas.Children.Add(axisY);
+
+            // center mark
+            Ellipse centerDot = new Ellipse
+            {
+                Width = 6,
+                Height = 6,
+                Stroke = centerBrush,
+                StrokeThickness = 1.5,
+                Fill = Brushes.Transparent,
+                IsHitTestVisible = false
+            };
+            Canvas.SetLeft(centerDot, centerX - 3);
+            Canvas.SetTop(centerDot, centerY - 3);
+            Canvas.SetZIndex(centerDot, ZINDEX_POLY + 1);
+            MainCanvas.Children.Add(centerDot);
         }
 
         /// <summary>

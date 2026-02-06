@@ -11,7 +11,14 @@
 
         <StackPanel Grid.Row="0" Margin="0,0,0,8">
             <TextBlock Text="Name" />
-            <TextBox x:Name="RegionNameBox" Height="22" Margin="0,2,0,8" />
+            <TextBox x:Name="RegionNameBox" Height="22" Margin="0,2,0,6" />
+
+            <TextBlock Text="Template from custom region" />
+            <StackPanel Orientation="Horizontal" Margin="0,2,0,6">
+                <ComboBox x:Name="TemplateCustomRegionBox" Width="240" />
+                <Button Content="Apply" Width="60" Margin="6,0,0,0" Click="ApplyTemplate_Click" />
+            </StackPanel>
+
             <TextBlock Text="Select regions to include" />
         </StackPanel>
 
@@ -25,21 +32,25 @@
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="60" />
                     <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="90" />
                 </Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" Text="Include" />
                 <TextBlock Grid.Column="1" Text="Region" />
+                <TextBlock Grid.Column="2" Text="Type" />
             </Grid>
 
             <ListView x:Name="RegionList" Grid.Row="1">
                 <ListView.ItemTemplate>
                     <DataTemplate>
-                        <Grid>
+                        <Grid ClipToBounds="True">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="60" />
                                 <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="90" />
                             </Grid.ColumnDefinitions>
                             <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected}" HorizontalAlignment="Center" />
-                            <TextBlock Grid.Column="1" Text="{Binding Name}" />
+                            <TextBlock Grid.Column="1" Text="{Binding Name}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" Margin="0,0,6,0" />
+                            <TextBlock Grid.Column="2" Text="{Binding TypeLabel}" HorizontalAlignment="Center" />
                         </Grid>
                     </DataTemplate>
                 </ListView.ItemTemplate>

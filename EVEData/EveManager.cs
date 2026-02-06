@@ -2195,6 +2195,11 @@ namespace SMT.EVEData
             result.GroupName = "Custom Regions";
             result.AllowEdit = true;
 
+            List<MapRegion> ordered = sourceList.OrderBy(r => r.Name).ToList();
+            MapRegion anchor = ordered.FirstOrDefault(r => r.IsCustom) ?? ordered.First();
+
+            Dictionary<string, Vector2> offsets = BuildRegionOffsets(ordered, anchor, 200f);
+
             double avgX = 0;
             double avgY = 0;
             int count = 0;
@@ -2205,6 +2210,7 @@ namespace SMT.EVEData
                 avgY += src.UniverseViewY;
                 count++;
 
+                Vector2 offset = offsets.TryGetValue(src.Name, out Vector2 v) ? v : Vector2.Zero;
                 foreach(MapSystem ms in src.MapSystems.Values)
                 {
                     if(result.MapSystems.ContainsKey(ms.Name))
@@ -2213,6 +2219,7 @@ namespace SMT.EVEData
                     }
 
                     MapSystem cloneMs = CloneMapSystem(ms);
+                    cloneMs.Layout += offset;
                     result.MapSystems.Add(cloneMs.Name, cloneMs);
                 }
             }
@@ -2271,6 +2278,66 @@ namespace SMT.EVEData
                 CellPoints = source.CellPoints != null ? new List<Vector2>(source.CellPoints) : new List<Vector2>()
             };
             return ms;
+        }
+
+        private static Dictionary<string, Vector2> BuildRegionOffsets(List<MapRegion> ordered, MapRegion anchor, float padding)
+        {
+            Dictionary<string, Vector2> offsets = new Dictionary<string, Vector2>(StringComparer.Ordinal);
+            if(ordered == null || ordered.Count == 0 || anchor == null)
+            {
+                return offsets;
+            }
+
+            Dictionary<string, (float width, float height, float minX, float minY)> bounds = new Dictionary<string, (float, float, float, float)>(StringComparer.Ordinal);
+            foreach(MapRegion r in ordered)
+            {
+                if(r.MapSystems == null || r.MapSystems.Count == 0)
+                {
+                    bounds[r.Name] = (0, 0, 0, 0);
+                    continue;
+                }
+
+                float minX = float.MaxValue;
+                float minY = float.MaxValue;
+                float maxX = float.MinValue;
+                float maxY = float.MinValue;
+                foreach(MapSystem ms in r.MapSystems.Values)
+                {
+                    Vector2 p = ms.Layout;
+                    if(p.X < minX) minX = p.X;
+                    if(p.Y < minY) minY = p.Y;
+                    if(p.X > maxX) maxX = p.X;
+                    if(p.Y > maxY) maxY = p.Y;
+                }
+                bounds[r.Name] = (maxX - minX, maxY - minY, minX, minY);
+            }
+
+            offsets[anchor.Name] = Vector2.Zero;
+
+            List<MapRegion> others = ordered.Where(r => r.Name != anchor.Name).ToList();
+            if(others.Count == 0)
+            {
+                return offsets;
+            }
+
+            float anchorWidth = bounds[anchor.Name].width;
+            float maxWidth = others.Max(r => bounds[r.Name].width);
+            float maxHeight = others.Max(r => bounds[r.Name].height);
+
+            int columns = 2;
+            for(int i = 0; i < others.Count; i++)
+            {
+                MapRegion r = others[i];
+                int col = i % columns;
+                int row = i / columns;
+
+                float x = anchorWidth + padding + col * (maxWidth + padding);
+                float y = row * (maxHeight + padding);
+
+                offsets[r.Name] = new Vector2(x, y);
+            }
+
+            return offsets;
         }
 
         public bool DeleteCustomRegion(string name)

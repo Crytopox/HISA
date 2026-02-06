@@ -1103,8 +1103,8 @@ namespace SMT
                 return;
             }
 
-            List<MapRegion> baseRegions = EVEManager.Regions.Where(r => !r.IsCustom).ToList();
-            CustomRegionCreateWindow dlg = new CustomRegionCreateWindow(baseRegions);
+            List<MapRegion> allRegions = EVEManager.Regions.ToList();
+            CustomRegionCreateWindow dlg = new CustomRegionCreateWindow(EVEManager, allRegions);
             dlg.Owner = this;
             if(dlg.ShowDialog() != true)
             {
