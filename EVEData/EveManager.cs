@@ -2054,7 +2054,7 @@ namespace SMT.EVEData
                 return;
             }
 
-            OptimizeRegionLayout(region, iterations, 80.0f, strength);
+            OptimizeRegionLayout(region, iterations, 80.0f, strength, 1.15f, 6);
             RebuildRegionVoronoiCells(region);
         }
 
@@ -2143,7 +2143,7 @@ namespace SMT.EVEData
             return string.Empty;
         }
 
-        private static void OptimizeRegionLayout(MapRegion mr, int iterations, float minSpacing, float strength)
+        private static void OptimizeRegionLayout(MapRegion mr, int iterations, float minSpacing, float strength, float expandFactor, int crossingIterations)
         {
             List<MapSystem> systems = mr.MapSystems.Values.ToList();
             int n = systems.Count;
@@ -2324,6 +2324,12 @@ namespace SMT.EVEData
                 }
             }
 
+            // reduce crossings before final spacing/fit
+            if(crossingIterations > 0)
+            {
+                ReduceEdgeCrossings(pos, edges, crossingIterations);
+            }
+
             float newMinX = float.MaxValue;
             float newMinY = float.MaxValue;
             float newMaxX = float.MinValue;
@@ -2340,16 +2346,102 @@ namespace SMT.EVEData
 
             float newWidth = Math.Max(1.0f, newMaxX - newMinX);
             float newHeight = Math.Max(1.0f, newMaxY - newMinY);
-            float scale = Math.Min(width / newWidth, height / newHeight);
 
-            float offsetX = minX + (width - (newWidth * scale)) / 2.0f - (newMinX * scale);
-            float offsetY = minY + (height - (newHeight * scale)) / 2.0f - (newMinY * scale);
+            float targetWidth = width * Math.Max(1.0f, expandFactor);
+            float targetHeight = height * Math.Max(1.0f, expandFactor);
+            float scale = Math.Min(targetWidth / newWidth, targetHeight / newHeight);
+
+            float offsetX = minX + (targetWidth - (newWidth * scale)) / 2.0f - (newMinX * scale);
+            float offsetY = minY + (targetHeight - (newHeight * scale)) / 2.0f - (newMinY * scale);
 
             for(int i = 0; i < n; i++)
             {
                 Vector2 p = pos[i];
                 systems[i].Layout = new Vector2((p.X * scale) + offsetX, (p.Y * scale) + offsetY);
             }
+        }
+
+        private static void ReduceEdgeCrossings(Vector2[] pos, List<(int a, int b)> edges, int iterations)
+        {
+            if(edges.Count < 2)
+            {
+                return;
+            }
+
+            float push = 2.0f;
+            for(int iter = 0; iter < iterations; iter++)
+            {
+                int crossings = 0;
+                for(int i = 0; i < edges.Count; i++)
+                {
+                    (int a, int b) = edges[i];
+                    for(int j = i + 1; j < edges.Count; j++)
+                    {
+                        (int c, int d) = edges[j];
+                        if(a == c || a == d || b == c || b == d)
+                        {
+                            continue;
+                        }
+
+                        Vector2 a1 = pos[a];
+                        Vector2 b1 = pos[b];
+                        Vector2 c1 = pos[c];
+                        Vector2 d1 = pos[d];
+
+                        if(!SegmentsIntersect(a1, b1, c1, d1))
+                        {
+                            continue;
+                        }
+
+                        crossings++;
+
+                        Vector2 ab = b1 - a1;
+                        Vector2 cd = d1 - c1;
+                        Vector2 n1 = NormalizeSafe(new Vector2(-ab.Y, ab.X));
+                        Vector2 n2 = NormalizeSafe(new Vector2(-cd.Y, cd.X));
+
+                        pos[a] += n1 * push;
+                        pos[b] += n1 * push;
+                        pos[c] -= n2 * push;
+                        pos[d] -= n2 * push;
+                    }
+                }
+
+                if(crossings == 0)
+                {
+                    break;
+                }
+            }
+        }
+
+        private static bool SegmentsIntersect(Vector2 a, Vector2 b, Vector2 c, Vector2 d)
+        {
+            float o1 = Orientation(a, b, c);
+            float o2 = Orientation(a, b, d);
+            float o3 = Orientation(c, d, a);
+            float o4 = Orientation(c, d, b);
+
+            if(o1 == 0 && o2 == 0 && o3 == 0 && o4 == 0)
+            {
+                return false;
+            }
+
+            return (o1 * o2 < 0) && (o3 * o4 < 0);
+        }
+
+        private static float Orientation(Vector2 a, Vector2 b, Vector2 c)
+        {
+            return (b.X - a.X) * (c.Y - a.Y) - (b.Y - a.Y) * (c.X - a.X);
+        }
+
+        private static Vector2 NormalizeSafe(Vector2 v)
+        {
+            float len = v.Length();
+            if(len < 0.0001f)
+            {
+                return Vector2.Zero;
+            }
+            return v / len;
         }
 
         private static void RebuildRegionVoronoiCells(MapRegion mr)
