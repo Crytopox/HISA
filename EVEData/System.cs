@@ -5,7 +5,7 @@
 using System.Numerics;
 using System.Xml.Serialization;
 
-namespace SMT.EVEData
+namespace HISA.EVEData
 {
     /// <summary>
     /// Represents the actual eve system, this may be referenced by multiple regions in the case of either border systems or systems that make sense to be drawn in another region
@@ -249,3 +249,4 @@ namespace SMT.EVEData
         }
     }
 }
+

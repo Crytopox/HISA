@@ -24,7 +24,7 @@ using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
-namespace SMT.EVEData
+namespace HISA.EVEData
 {
     /// <summary>
     /// The main EVE Manager
@@ -102,9 +102,9 @@ namespace SMT.EVEData
                     return;
                 }
 
-                string oldSettingsFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "SMT");
+                string oldSettingsFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "HISA");
 
-                // prior to 1.39 all settings were stored in the My Documents\SMT\ folder
+                // prior to 1.39 all settings were stored in the My Documents\HISA\ folder
                 if(Directory.Exists(oldSettingsFolder))
                 {
                     // move the old settings folder to the new location
@@ -2064,11 +2064,11 @@ namespace SMT.EVEData
                 }
 
                 string ext = Path.GetExtension(path).ToLowerInvariant();
-                if(ext == ".zip" || ext == ".smtregion")
+                if(ext == ".zip" || ext == ".hisaregion")
                 {
                     try
                     {
-                        string tempDir = Path.Combine(Path.GetTempPath(), "SMT_CustomRegions_" + Guid.NewGuid().ToString("N"));
+                        string tempDir = Path.Combine(Path.GetTempPath(), "HISA_CustomRegions_" + Guid.NewGuid().ToString("N"));
                         Directory.CreateDirectory(tempDir);
                         global::System.IO.Compression.ZipFile.ExtractToDirectory(path, tempDir);
                         foreach(string xml in Directory.GetFiles(tempDir, "*.xml", SearchOption.AllDirectories))
@@ -2382,9 +2382,9 @@ namespace SMT.EVEData
                 return true;
             }
 
-            if(ext == ".zip" || ext == ".smtregion")
+            if(ext == ".zip" || ext == ".hisaregion")
             {
-                string tempDir = Path.Combine(Path.GetTempPath(), "SMT_CustomRegionExport_" + Guid.NewGuid().ToString("N"));
+                string tempDir = Path.Combine(Path.GetTempPath(), "HISA_CustomRegionExport_" + Guid.NewGuid().ToString("N"));
                 Directory.CreateDirectory(tempDir);
                 try
                 {
@@ -3077,9 +3077,9 @@ namespace SMT.EVEData
         }
 
         /// <summary>
-        /// Hand the custom smtauth- url we get back from the logon screen
+        /// Hand the custom HISAauth- url we get back from the logon screen
         /// </summary>
-        public async void HandleEveAuthSMTUri(Uri uri, string challengeCode)
+        public async void HandleEveAuthHISAUri(Uri uri, string challengeCode)
         {
             // parse the uri
             var query = HttpUtility.ParseQueryString(uri.Query);
@@ -4024,7 +4024,7 @@ namespace SMT.EVEData
                 ClientId = EveAppConfig.ClientID,
                 SecretKey = "Unneeded",
                 CallbackUrl = EveAppConfig.CallbackURL,
-                UserAgent = "SMT-map-app : " + EveAppConfig.SMT_VERSION,
+                UserAgent = "HISA-map-app : " + EveAppConfig.HISA_VERSION,
             });
 
             ESIClient = new ESI.NET.EsiClient(config);
@@ -4705,7 +4705,7 @@ namespace SMT.EVEData
 
                 HttpClient hc = new HttpClient();
                 string versionNum = VersionStr.Split("_")[1];
-                string userAgent = $"Mozilla/5.0 (Slazanger's Map Tool https://github.com/Slazanger/SMT/ version {versionNum} )";
+                string userAgent = $"Mozilla/5.0 (HISA https://github.com/Slazanger/HISA/ version {versionNum} )";
                 hc.DefaultRequestHeaders.Add("User-Agent", userAgent);
                 hc.DefaultRequestHeaders.IfModifiedSince = LastDotlanUpdate;
 
@@ -5349,3 +5349,5 @@ namespace SMT.EVEData
         }
     }
 }
+
+

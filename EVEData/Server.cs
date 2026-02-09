@@ -2,7 +2,7 @@
 using ElapsedEventHandler = System.Timers.ElapsedEventHandler;
 using Timer = System.Timers.Timer;
 
-namespace SMT.EVEData
+namespace HISA.EVEData
 {
     public class Server : INotifyPropertyChanged
     {
@@ -81,3 +81,4 @@ namespace SMT.EVEData
         }
     }
 }
+

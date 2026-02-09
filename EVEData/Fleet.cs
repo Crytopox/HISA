@@ -2,7 +2,7 @@
 // Fleet
 //-----------------------------------------------------------------------
 
-namespace SMT.EVEData
+namespace HISA.EVEData
 {
     /// <summary>
     /// Represents a fleet
@@ -61,3 +61,4 @@ namespace SMT.EVEData
         }
     }
 }
+

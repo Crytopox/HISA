@@ -2,7 +2,7 @@
 // EVE AnomManager
 //-----------------------------------------------------------------------
 
-namespace SMT.EVEData
+namespace HISA.EVEData
 {
     /// <summary>
     /// EVE Character
@@ -60,3 +60,4 @@ namespace SMT.EVEData
         public string Name { get; set; }
     }
 }
+

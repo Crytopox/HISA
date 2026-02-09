@@ -1,4 +1,4 @@
-﻿namespace SMT.EVEData
+﻿namespace HISA.EVEData
 {
     /// <summary>
     /// A Point of Interest in the game
@@ -11,3 +11,4 @@
         public string LongDesc { get; set; }
     }
 }
+

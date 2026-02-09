@@ -6,7 +6,7 @@ using System.Numerics;
 using System.Xml.Serialization;
 using EVEDataUtils;
 
-namespace SMT.EVEData
+namespace HISA.EVEData
 {
     /// <summary>
     /// Represents a Map of a Region (will have out of region systems on the map)
@@ -142,3 +142,5 @@ namespace SMT.EVEData
         public override string ToString() => Name;
     }
 }
+
+

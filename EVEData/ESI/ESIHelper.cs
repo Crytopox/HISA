@@ -2,7 +2,7 @@
 using System.Net;
 using ESI.NET;
 
-namespace SMT.EVEData
+namespace HISA.EVEData
 {
     public class ESIHelpers
     {
@@ -18,3 +18,4 @@ namespace SMT.EVEData
         }
     }
 }
+

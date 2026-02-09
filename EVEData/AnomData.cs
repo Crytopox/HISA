@@ -4,7 +4,7 @@
 
 using EVEDataUtils;
 
-namespace SMT.EVEData
+namespace HISA.EVEData
 {
     /// <summary>
     /// The Per system Anom Data
@@ -101,3 +101,4 @@ namespace SMT.EVEData
         }
     }
 }
+

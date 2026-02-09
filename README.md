@@ -1,15 +1,28 @@
-# SMT
-Slazanger's Eve Map Tool
+﻿# HISA
+Haakario Interstellar Survey Authority (HISA)
 
-Build: [](https://github.com/rafaga/SMT/workflows/.NET/badge.svg)
+HISA is a standalone EVE Online map and intel toolkit focused on intel visualization, custom regions, and fast operational overlays.
 
-More info here : https://forums.eveonline.com/t/smt-eve-map-tool/3845/
+Key features
+- Multi-view map: Regions, Region, and Universe views with dockable layout
+- Custom regions: create, import/export `.hisaregion` packs, and edit layouts
+- Layout overrides: per-region layout editing with persistent overrides
+- Intel workflows: log watchers, filters, alerts, and map overlays
+- Navigation tools: routing, jump bridges, Thera/Turnur/Zarzakh connections
+- Overlay modes: hunter/gatherer with range visualization
 
-Discord :  https://discord.gg/QSuJjNn
+Project status
+- Actively maintained under the HISA fork
+- Data generation handled via the `DataGen` project
 
-#### Build from source setup 2023.07
-- download [Visual Studio 2022 Community](https://visualstudio.microsoft.com/vs/compare)
-- install using .NET desktop development
-- clone a repository locally using the GitHub url
-- run using Debug>Start Without Debugging
-- to submit changes: fork on GitHub, clone and edit your fork, create a pull request
+Build from source
+- Install Visual Studio 2022 Community with `.NET desktop development`
+- Open `HISA.sln`
+- Build and run `HISA` (Debug > Start Without Debugging)
+
+Custom region packs
+- Export: `.hisaregion` (zip container with region XML)
+- Import: `.hisaregion`, `.zip`, `.xml`
+
+Acknowledgment
+HISA is a standalone fork of the original SMT (Slazanger's Map Tool). The original project and its contributors are acknowledged and credited.

@@ -2,7 +2,7 @@
 // EVE Alliance
 //-----------------------------------------------------------------------
 
-namespace SMT.EVEData
+namespace HISA.EVEData
 {
     /// <summary>
     /// A simple container for Alliance items
@@ -29,3 +29,4 @@ namespace SMT.EVEData
         public string Name { get; set; }
     }
 }
+

@@ -2,7 +2,7 @@
 // EVE App Config
 //-----------------------------------------------------------------------
 
-namespace SMT.EVEData
+namespace HISA.EVEData
 {
     public class EveAppConfig
     {
@@ -19,25 +19,26 @@ namespace SMT.EVEData
         public const string ClientID = "ID Goes here.. ";
 
         /// <summary>
-        /// SMT Version Tagline
+        /// HISA Version Tagline
         /// </summary>
-        public const string SMT_TITLE = "Winter Migration Time";
+        public const string HISA_TITLE = "Haakario Interstellar Survey Authority";
 
         /// <summary>
-        /// SMT Version
+        /// HISA Version
         /// </summary>
-        public const string SMT_VERSION = "SMT_144";
-
-        /// <summary>
-        /// Folder to store all of the data from
-        /// </summary>
-        public static readonly string StorageRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SMT");
+        public const string HISA_VERSION = "HISA";
 
         /// <summary>
         /// Folder to store all of the data from
         /// </summary>
-        public static readonly string VersionStorage = Path.Combine(StorageRoot, $"{SMT_VERSION}");
+        public static readonly string StorageRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "HISA");
+
+        /// <summary>
+        /// Folder to store all of the data from
+        /// </summary>
+        public static readonly string VersionStorage = StorageRoot;
 
         #endregion Fields
     }
 }
+

@@ -5,7 +5,7 @@
 using System.Numerics;
 using System.Xml.Serialization;
 
-namespace SMT.EVEData
+namespace HISA.EVEData
 {
     /// <summary>
     /// This is a representation of a System on a map.. usually these would be in the same region, however
@@ -58,3 +58,4 @@ namespace SMT.EVEData
         public override string ToString() => Name;
     }
 }
+

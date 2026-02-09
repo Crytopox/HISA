@@ -1,4 +1,4 @@
-﻿namespace SMT.EVEData
+﻿namespace HISA.EVEData
 {
     public class GameLogData
     {
@@ -12,3 +12,4 @@
         public string RawText { get; set; }
     }
 }
+

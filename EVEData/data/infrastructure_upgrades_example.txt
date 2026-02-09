@@ -1,4 +1,4 @@
-L5D-ZL
+﻿L5D-ZL
 1    Major Threat Detection Array    3    Online
 2    Minor Threat Detection Array    2    Online
 
@@ -32,3 +32,4 @@ G-C8QO
 2    Pyerite Prospecting Array    2    Online
 3    Minor Threat Detection Array    3    Online
 4    Major Threat Detection Array    2    Offline
+

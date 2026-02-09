@@ -4,7 +4,7 @@
 
 using System.ComponentModel;
 
-namespace SMT.EVEData
+namespace HISA.EVEData
 {
     /// <summary>
     /// Intel Data, Represents a single line of intel data
@@ -29,7 +29,7 @@ namespace SMT.EVEData
         public IntelData(string intelText, string intelChannel)
         {
             RawIntelString = intelText;
-            // text will be in the format ﻿[ 2017.05.01 18:24:28 ] Charname > blah, blah blah
+            // text will be in the format ?[ 2017.05.01 18:24:28 ] Charname > blah, blah blah
             int start = intelText.IndexOf('>') + 1;
             IntelString = intelText.Substring(start);
             IntelTime = DateTime.Now;
@@ -65,3 +65,4 @@ namespace SMT.EVEData
         // public override string ToString() => "[" + IntelTime.ToString("HH:mm") + "] " + IntelString;
     }
 }
+

@@ -1,4 +1,4 @@
-namespace nAlpha
+﻿namespace nAlpha
 {
     internal class VertexCounter
     {

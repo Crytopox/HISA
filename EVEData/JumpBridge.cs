@@ -5,7 +5,7 @@
 using System.ComponentModel;
 using System.Xml.Serialization;
 
-namespace SMT.EVEData
+namespace HISA.EVEData
 {
     /// <summary>
     /// A Player owned link between systems
@@ -86,3 +86,4 @@ namespace SMT.EVEData
         }
     }
 }
+

@@ -1,4 +1,4 @@
-﻿namespace SMT.EVEData
+﻿namespace HISA.EVEData
 {
     public class JumpRoute
     {
@@ -92,3 +92,4 @@
         }
     }
 }
+

@@ -4,7 +4,7 @@
 using System.ComponentModel;
 using Timer = System.Timers.Timer;
 
-namespace SMT.EVEData
+namespace HISA.EVEData
 {
     /// <summary>
     /// The ZKillboard RedisQ representation
@@ -46,7 +46,7 @@ namespace SMT.EVEData
             KillStream = new List<ZKBDataSimple>();
 
             // set the queue id which is now required
-            QueueID = "SMT_" + EVEDataUtils.Misc.RandomString(35);
+            QueueID = "HISA_" + EVEDataUtils.Misc.RandomString(35);
 
             backgroundWorker = new BackgroundWorker();
             backgroundWorker.WorkerSupportsCancellation = true;
@@ -78,7 +78,7 @@ namespace SMT.EVEData
 
         private void zkb_DoWork(object sender, DoWorkEventArgs e)
         {
-            string redistURL = $"https://zkillredisq.stream/listen.php?queueID=SMT_{QueueID}";
+            string redistURL = $"https://zkillredisq.stream/listen.php?queueID=HISA_{QueueID}";
             string strContent = string.Empty;
             try
             {
@@ -285,3 +285,4 @@ namespace SMT.EVEData
         }
     }
 }
+

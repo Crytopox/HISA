@@ -5,7 +5,7 @@
 using System.ComponentModel;
 using EVEDataUtils;
 
-namespace SMT.EVEData
+namespace HISA.EVEData
 {
     /// <summary>
     /// Anom Manager
@@ -89,3 +89,4 @@ namespace SMT.EVEData
         }
     }
 }
+

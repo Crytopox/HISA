@@ -3,7 +3,7 @@ using System.Xml.Serialization;
 using ESI.NET.Enumerations;
 using ESI.NET.Models.SSO;
 
-namespace SMT.EVEData
+namespace HISA.EVEData
 {
     //jumpclones
 
@@ -1404,3 +1404,4 @@ namespace SMT.EVEData
         }
     }
 }
+

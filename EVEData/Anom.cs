@@ -2,7 +2,7 @@
 // EVE Anoms
 //-----------------------------------------------------------------------
 
-namespace SMT.EVEData
+namespace HISA.EVEData
 {
     /// <summary>
     /// An Signature / Anom
@@ -81,8 +81,9 @@ namespace SMT.EVEData
         public string Type { get; set; }
 
         /// <summary>
-        /// Convert to string, keeping the in-game format so that the string can be imported back into SMT
+        /// Convert to string, keeping the in-game format so that the string can be imported back into HISA
         /// </summary>
         public override string ToString() => Signature + "\t" + "Cosmic Signature" + "\t" + Type + "\t" + Name + "\t\t";
     }
 }
+

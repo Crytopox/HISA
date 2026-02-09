@@ -1,6 +1,6 @@
 ﻿using System.ComponentModel;
 
-namespace SMT.EVEData
+namespace HISA.EVEData
 {
     public class SOVCampaign : INotifyPropertyChanged
     {
@@ -101,3 +101,4 @@ namespace SMT.EVEData
         }
     }
 }
+

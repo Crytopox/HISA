@@ -1,19 +1,19 @@
-﻿using SMT.EVEData;
+﻿using HISA.EVEData;
 
 namespace DataGen
 {
     internal static class Program
     {
-        private static SMT.EVEData.EveManager EM { get; set; }
+        private static HISA.EVEData.EveManager EM { get; set; }
 
         private static void Main(string[] args)
         {
             // Data Creation
-            Console.WriteLine("Creating SMT Data");
+            Console.WriteLine("Creating HISA Data");
 
             // Initialise the Main Mananger
             Console.WriteLine("Initializing EveManager...");
-            EM = new(SMT.EVEData.EveAppConfig.SMT_VERSION);
+            EM = new(HISA.EVEData.EveAppConfig.HISA_VERSION);
             EveManager.Instance = EM;
             string inputDataFolder = AppDomain.CurrentDomain.BaseDirectory + @"..\..\..\..\..\EVEData\";
             string outputDataFolder = AppDomain.CurrentDomain.BaseDirectory + @"..\..\..\..\..\EVEData\";
@@ -124,3 +124,5 @@ namespace DataGen
         }
     }
 }
+
+

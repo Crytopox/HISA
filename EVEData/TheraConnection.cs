@@ -2,7 +2,7 @@
 // Thera Connection
 //-----------------------------------------------------------------------
 
-namespace SMT.EVEData
+namespace HISA.EVEData
 {
     /// <summary>
     /// Represents a Connection into Thera (sourced from Eve-Scout)
@@ -52,3 +52,4 @@ namespace SMT.EVEData
         public string System { get; set; }
     }
 }
+

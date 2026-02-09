@@ -1,11 +1,11 @@
-//-----------------------------------------------------------------------
+﻿//-----------------------------------------------------------------------
 // Region Layout Overrides
 //-----------------------------------------------------------------------
 
 using System.Numerics;
 using EVEDataUtils;
 
-namespace SMT.EVEData
+namespace HISA.EVEData
 {
     public class RegionLayoutOverrides
     {
@@ -14,3 +14,5 @@ namespace SMT.EVEData
         public SerializableDictionary<string, Vector2> Positions { get; set; } = new SerializableDictionary<string, Vector2>();
     }
 }
+
+
