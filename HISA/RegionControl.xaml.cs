@@ -130,7 +130,7 @@ namespace HISA
         private readonly Dictionary<string, Brush> m_RegionTintStrokeCache = new Dictionary<string, Brush>(StringComparer.Ordinal);
         private readonly Dictionary<string, int> m_RegionTintIndex = new Dictionary<string, int>(StringComparer.Ordinal);
         private string m_RegionTintKey;
-        private bool m_ShowRegionTint = true;
+        private bool m_ShowRegionTint = false;
         private readonly HashSet<string> m_SelectedTintRegions = new HashSet<string>(StringComparer.Ordinal);
         public List<RegionColorItem> RegionColorLegendItems { get; private set; } = new List<RegionColorItem>();
         public bool ShowRegionLegend { get; private set; }
@@ -5074,14 +5074,20 @@ namespace HISA
             }
 
             EnsureRegionTintPalette(regions);
-
-            foreach(MapSystem ms in Region.MapSystems.Values)
+            List<MapSystem> tintSystems = Region.MapSystems.Values.Where(ms => HasFiniteLayout(ms)).ToList();
+            if(tintSystems.Count == 0)
             {
-                if(ms.CellPoints == null || ms.CellPoints.Count == 0)
-                {
-                    continue;
-                }
+                return;
+            }
 
+            Rect layoutBounds = GetRegionLayoutBounds(Region.MapSystems.Values);
+            double layoutDiagonal = GetRectDiagonal(layoutBounds);
+            Dictionary<MapSystem, double> nearestSystemDistances = BuildNearestSystemDistanceMap(tintSystems);
+            double medianNearestDistance = GetMedian(nearestSystemDistances.Values.ToList());
+            Rect tintClipBounds = GetRegionTintClipBounds(tintSystems, layoutBounds, layoutDiagonal);
+
+            foreach(MapSystem ms in tintSystems)
+            {
                 string regionName = GetSystemRegionName(ms);
                 Brush fill = GetRegionTintBrush(regionName);
                 if(fill == null)
@@ -5090,12 +5096,15 @@ namespace HISA
                 }
 
                 Polygon poly = new Polygon();
-                Vector2 centroid = GetCellCentroid(ms.CellPoints);
-                double expand = 1;
-                foreach(Vector2 p in ms.CellPoints)
+                List<Point> tintPoints = BuildTintVoronoiPolygon(ms, tintSystems, tintClipBounds, nearestSystemDistances, medianNearestDistance, layoutDiagonal);
+                if(tintPoints.Count < 3)
                 {
-                    Vector2 pp = new Vector2((float)(centroid.X + (p.X - centroid.X) * expand), (float)(centroid.Y + (p.Y - centroid.Y) * expand));
-                    poly.Points.Add(new Point(pp.X, pp.Y));
+                    continue;
+                }
+
+                foreach(Point p in tintPoints)
+                {
+                    poly.Points.Add(p);
                 }
                 poly.Fill = fill;
                 poly.Stroke = fill;
@@ -5401,6 +5410,445 @@ namespace HISA
                 y += p.Y;
             }
             return new Vector2(x / points.Count, y / points.Count);
+        }
+
+        private static bool TryGetCellBounds(List<Vector2> points, out Rect bounds)
+        {
+            bounds = Rect.Empty;
+            if(points == null || points.Count < 3)
+            {
+                return false;
+            }
+
+            bool hasPoint = false;
+            double minX = 0;
+            double minY = 0;
+            double maxX = 0;
+            double maxY = 0;
+
+            foreach(Vector2 p in points)
+            {
+                if(float.IsNaN(p.X) || float.IsNaN(p.Y) || float.IsInfinity(p.X) || float.IsInfinity(p.Y))
+                {
+                    continue;
+                }
+
+                if(!hasPoint)
+                {
+                    minX = maxX = p.X;
+                    minY = maxY = p.Y;
+                    hasPoint = true;
+                }
+                else
+                {
+                    if(p.X < minX) minX = p.X;
+                    if(p.Y < minY) minY = p.Y;
+                    if(p.X > maxX) maxX = p.X;
+                    if(p.Y > maxY) maxY = p.Y;
+                }
+            }
+
+            if(!hasPoint)
+            {
+                return false;
+            }
+
+            bounds = new Rect(new Point(minX, minY), new Point(maxX, maxY));
+            return bounds.Width > 0.1 && bounds.Height > 0.1;
+        }
+
+        private static Rect GetRegionLayoutBounds(IEnumerable<MapSystem> systems)
+        {
+            Rect bounds = Rect.Empty;
+            foreach(MapSystem ms in systems)
+            {
+                Point p = new Point(ms.Layout.X, ms.Layout.Y);
+                if(bounds.IsEmpty)
+                {
+                    bounds = new Rect(p, p);
+                }
+                else
+                {
+                    bounds.Union(p);
+                }
+            }
+
+            if(bounds.IsEmpty)
+            {
+                return new Rect(0, 0, 1, 1);
+            }
+
+            return bounds;
+        }
+
+        private static double GetRectDiagonal(Rect rect)
+        {
+            return Math.Sqrt((rect.Width * rect.Width) + (rect.Height * rect.Height));
+        }
+
+        private static double GetMedian(List<double> values)
+        {
+            if(values == null || values.Count == 0)
+            {
+                return 0.0;
+            }
+
+            values.Sort();
+            int mid = values.Count / 2;
+            if((values.Count % 2) == 0)
+            {
+                return (values[mid - 1] + values[mid]) * 0.5;
+            }
+
+            return values[mid];
+        }
+
+        private static bool HasFiniteLayout(MapSystem ms)
+        {
+            if(ms == null)
+            {
+                return false;
+            }
+
+            return !float.IsNaN(ms.Layout.X) &&
+                   !float.IsNaN(ms.Layout.Y) &&
+                   !float.IsInfinity(ms.Layout.X) &&
+                   !float.IsInfinity(ms.Layout.Y);
+        }
+
+        private static Rect GetRegionTintClipBounds(List<MapSystem> systems, Rect layoutBounds, double layoutDiagonal)
+        {
+            Rect bounds = layoutBounds;
+            foreach(MapSystem ms in systems)
+            {
+                if(TryGetCellBounds(ms.CellPoints, out Rect cellBounds))
+                {
+                    if(bounds.IsEmpty)
+                    {
+                        bounds = cellBounds;
+                    }
+                    else
+                    {
+                        bounds.Union(cellBounds);
+                    }
+                }
+            }
+
+            if(bounds.IsEmpty)
+            {
+                bounds = new Rect(0, 0, 100, 100);
+            }
+
+            double padding = Math.Max(90.0, layoutDiagonal * 0.15);
+            bounds.Inflate(padding, padding);
+            return bounds;
+        }
+
+        private static Dictionary<MapSystem, double> BuildNearestSystemDistanceMap(List<MapSystem> systems)
+        {
+            Dictionary<MapSystem, double> nearest = new Dictionary<MapSystem, double>();
+            if(systems == null || systems.Count == 0)
+            {
+                return nearest;
+            }
+
+            foreach(MapSystem s in systems)
+            {
+                nearest[s] = double.MaxValue;
+            }
+
+            for(int i = 0; i < systems.Count; i++)
+            {
+                MapSystem a = systems[i];
+                for(int j = i + 1; j < systems.Count; j++)
+                {
+                    MapSystem b = systems[j];
+                    double dx = a.Layout.X - b.Layout.X;
+                    double dy = a.Layout.Y - b.Layout.Y;
+                    double d = Math.Sqrt((dx * dx) + (dy * dy));
+                    if(d < nearest[a]) nearest[a] = d;
+                    if(d < nearest[b]) nearest[b] = d;
+                }
+            }
+
+            foreach(MapSystem s in systems)
+            {
+                if(double.IsNaN(nearest[s]) || double.IsInfinity(nearest[s]) || nearest[s] <= 0 || nearest[s] == double.MaxValue)
+                {
+                    nearest[s] = 120.0;
+                }
+            }
+
+            return nearest;
+        }
+
+        private static List<Point> BuildTintVoronoiPolygon(
+            MapSystem target,
+            List<MapSystem> systems,
+            Rect clipBounds,
+            Dictionary<MapSystem, double> nearestSystemDistances,
+            double medianNearestDistance,
+            double layoutDiagonal)
+        {
+            if(target == null || systems == null || systems.Count == 0)
+            {
+                return new List<Point>();
+            }
+
+            Point a = new Point(target.Layout.X, target.Layout.Y);
+            double nearest = nearestSystemDistances != null && nearestSystemDistances.TryGetValue(target, out double n) ? n : 120.0;
+            double median = medianNearestDistance > 0 ? medianNearestDistance : nearest;
+            double hardRadiusLimit = Math.Max(170.0, Math.Min(Math.Max(220.0, median * 2.0), Math.Max(260.0, layoutDiagonal * 0.32)));
+
+            List<Point> fullPolygon = new List<Point>
+            {
+                new Point(clipBounds.Left, clipBounds.Top),
+                new Point(clipBounds.Right, clipBounds.Top),
+                new Point(clipBounds.Right, clipBounds.Bottom),
+                new Point(clipBounds.Left, clipBounds.Bottom)
+            };
+
+            foreach(MapSystem other in systems)
+            {
+                if(other == null || ReferenceEquals(other, target))
+                {
+                    continue;
+                }
+
+                Point b = new Point(other.Layout.X, other.Layout.Y);
+                double fullDx = b.X - a.X;
+                double fullDy = b.Y - a.Y;
+                if(Math.Abs(fullDx) < 0.0001 && Math.Abs(fullDy) < 0.0001)
+                {
+                    continue;
+                }
+
+                fullPolygon = ClipPolygonToNearestHalfPlane(fullPolygon, a, b);
+                if(fullPolygon.Count < 3)
+                {
+                    break;
+                }
+            }
+
+            fullPolygon = SimplifyPolygon(fullPolygon);
+            bool fullTouchesEdge = PolygonTouchesRectEdge(fullPolygon, clipBounds);
+            if(fullPolygon.Count >= 3 && !fullTouchesEdge && IsPolygonReasonable(fullPolygon, a, hardRadiusLimit * 1.5))
+            {
+                // Enclosed by nearby systems: fill all interior space.
+                return fullPolygon;
+            }
+
+            if(fullPolygon.Count < 3)
+            {
+                return new List<Point>();
+            }
+
+            Rect localCapRect = BuildTintLocalCapRect(a, nearest, median, layoutDiagonal);
+            List<Point> cappedPolygon = ClipPolygonToRect(fullPolygon, localCapRect);
+            cappedPolygon = SimplifyPolygon(cappedPolygon);
+            if(cappedPolygon.Count >= 3)
+            {
+                return cappedPolygon;
+            }
+
+            return fullPolygon;
+        }
+
+        private static bool IsPolygonReasonable(List<Point> polygon, Point center, double maxDistance)
+        {
+            if(polygon == null || polygon.Count < 3)
+            {
+                return false;
+            }
+
+            double maxDistanceSq = maxDistance * maxDistance;
+            foreach(Point p in polygon)
+            {
+                double dx = p.X - center.X;
+                double dy = p.Y - center.Y;
+                if((dx * dx) + (dy * dy) > maxDistanceSq)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static Rect BuildTintLocalCapRect(Point center, double nearestDistance, double medianNearestDistance, double layoutDiagonal)
+        {
+            double nearest = Math.Max(40.0, nearestDistance);
+            double median = Math.Max(nearest, medianNearestDistance > 0 ? medianNearestDistance : nearest);
+            double halfSpan = Math.Max(120.0, nearest * 1.35);
+            halfSpan = Math.Min(halfSpan, Math.Max(190.0, median * 2.0));
+            halfSpan = Math.Min(halfSpan, Math.Max(240.0, layoutDiagonal * 0.30));
+
+            return new Rect(center.X - halfSpan, center.Y - halfSpan, halfSpan * 2.0, halfSpan * 2.0);
+        }
+
+        private static bool PolygonTouchesRectEdge(List<Point> polygon, Rect rect)
+        {
+            if(polygon == null || polygon.Count == 0 || rect.IsEmpty)
+            {
+                return false;
+            }
+
+            const double edgeEpsilon = 0.75;
+            foreach(Point p in polygon)
+            {
+                if(Math.Abs(p.X - rect.Left) <= edgeEpsilon ||
+                   Math.Abs(p.X - rect.Right) <= edgeEpsilon ||
+                   Math.Abs(p.Y - rect.Top) <= edgeEpsilon ||
+                   Math.Abs(p.Y - rect.Bottom) <= edgeEpsilon)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static List<Point> ClipPolygonToRect(List<Point> polygon, Rect rect)
+        {
+            if(polygon == null || polygon.Count < 3 || rect.IsEmpty)
+            {
+                return new List<Point>();
+            }
+
+            List<Point> clipped = polygon;
+            clipped = ClipPolygonToHalfPlane(clipped, 1, 0, rect.Right);
+            clipped = ClipPolygonToHalfPlane(clipped, -1, 0, -rect.Left);
+            clipped = ClipPolygonToHalfPlane(clipped, 0, 1, rect.Bottom);
+            clipped = ClipPolygonToHalfPlane(clipped, 0, -1, -rect.Top);
+            return clipped;
+        }
+
+        private static List<Point> ClipPolygonToHalfPlane(List<Point> polygon, double nx, double ny, double c)
+        {
+            if(polygon == null || polygon.Count < 3)
+            {
+                return new List<Point>();
+            }
+
+            bool IsInside(Point p) => ((nx * p.X) + (ny * p.Y)) <= (c + 0.01);
+
+            List<Point> output = new List<Point>();
+            Point prev = polygon[polygon.Count - 1];
+            bool prevInside = IsInside(prev);
+            foreach(Point cur in polygon)
+            {
+                bool curInside = IsInside(cur);
+                if(curInside != prevInside)
+                {
+                    Point intersect = IntersectSegmentWithLine(prev, cur, nx, ny, c);
+                    output.Add(intersect);
+                }
+
+                if(curInside)
+                {
+                    output.Add(cur);
+                }
+
+                prev = cur;
+                prevInside = curInside;
+            }
+
+            return output;
+        }
+
+        private static List<Point> ClipPolygonToNearestHalfPlane(List<Point> polygon, Point a, Point b)
+        {
+            if(polygon == null || polygon.Count < 3)
+            {
+                return new List<Point>();
+            }
+
+            double nx = b.X - a.X;
+            double ny = b.Y - a.Y;
+            double c = ((b.X * b.X) + (b.Y * b.Y) - (a.X * a.X) - (a.Y * a.Y)) / 2.0;
+
+            bool IsInside(Point p) => ((nx * p.X) + (ny * p.Y)) <= (c + 0.01);
+
+            List<Point> output = new List<Point>();
+            Point prev = polygon[polygon.Count - 1];
+            bool prevInside = IsInside(prev);
+
+            foreach(Point cur in polygon)
+            {
+                bool curInside = IsInside(cur);
+
+                if(curInside != prevInside)
+                {
+                    Point intersect = IntersectSegmentWithLine(prev, cur, nx, ny, c);
+                    output.Add(intersect);
+                }
+
+                if(curInside)
+                {
+                    output.Add(cur);
+                }
+
+                prev = cur;
+                prevInside = curInside;
+            }
+
+            return output;
+        }
+
+        private static Point IntersectSegmentWithLine(Point p1, Point p2, double nx, double ny, double c)
+        {
+            double dx = p2.X - p1.X;
+            double dy = p2.Y - p1.Y;
+            double denom = (nx * dx) + (ny * dy);
+            if(Math.Abs(denom) < 0.000001)
+            {
+                return p1;
+            }
+
+            double t = (c - ((nx * p1.X) + (ny * p1.Y))) / denom;
+            t = Math.Max(0.0, Math.Min(1.0, t));
+            return new Point(p1.X + (dx * t), p1.Y + (dy * t));
+        }
+
+        private static List<Point> SimplifyPolygon(List<Point> points)
+        {
+            if(points == null || points.Count < 3)
+            {
+                return new List<Point>();
+            }
+
+            const double minDistanceSq = 0.2 * 0.2;
+            List<Point> simplified = new List<Point>();
+            foreach(Point p in points)
+            {
+                if(simplified.Count == 0)
+                {
+                    simplified.Add(p);
+                    continue;
+                }
+
+                Point last = simplified[simplified.Count - 1];
+                double dx = p.X - last.X;
+                double dy = p.Y - last.Y;
+                if((dx * dx) + (dy * dy) > minDistanceSq)
+                {
+                    simplified.Add(p);
+                }
+            }
+
+            if(simplified.Count > 2)
+            {
+                Point first = simplified[0];
+                Point last = simplified[simplified.Count - 1];
+                double dx = first.X - last.X;
+                double dy = first.Y - last.Y;
+                if((dx * dx) + (dy * dy) <= minDistanceSq)
+                {
+                    simplified.RemoveAt(simplified.Count - 1);
+                }
+            }
+
+            return simplified.Count >= 3 ? simplified : new List<Point>();
         }
 
         private string GetSystemRegionName(MapSystem ms)
