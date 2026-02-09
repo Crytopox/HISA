@@ -58,6 +58,12 @@
             <Separator />
             <MenuItem Header="Add Missing Direct Connections" Click="LayoutAddMissingConnections_Click" />
             <MenuItem Header="Delete System Node" Click="LayoutDeleteSystem_Click" />
+            <Separator />
+            <MenuItem Header="Rotate Selected">
+                <MenuItem Header="Rotate 90° CW" Click="LayoutRotate90CW_Click" />
+                <MenuItem Header="Rotate 90° CCW" Click="LayoutRotate90CCW_Click" />
+                <MenuItem Header="Rotate 180°" Click="LayoutRotate180_Click" />
+            </MenuItem>
         </ContextMenu>
     </UserControl.Resources>
 

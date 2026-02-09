@@ -4237,6 +4237,91 @@ namespace HISA
             ReDrawMap(true);
         }
 
+        private void LayoutRotate90CW_Click(object sender, RoutedEventArgs e)
+        {
+            RotateLayoutSelection(GetContextMenuSystem(sender), 90);
+        }
+
+        private void LayoutRotate90CCW_Click(object sender, RoutedEventArgs e)
+        {
+            RotateLayoutSelection(GetContextMenuSystem(sender), -90);
+        }
+
+        private void LayoutRotate180_Click(object sender, RoutedEventArgs e)
+        {
+            RotateLayoutSelection(GetContextMenuSystem(sender), 180);
+        }
+
+        private void RotateLayoutSelection(EVEData.MapSystem contextSystem, int degrees)
+        {
+            if(!CanEditCustomRegionLayout())
+            {
+                return;
+            }
+
+            List<MapSystem> targets = new List<MapSystem>();
+            if(contextSystem != null && m_SelectedSystems.Count > 0 && m_SelectedSystems.Contains(contextSystem))
+            {
+                targets.AddRange(m_SelectedSystems.Where(ms => ms != null));
+            }
+            else if(contextSystem != null)
+            {
+                targets.Add(contextSystem);
+            }
+            else
+            {
+                targets.AddRange(m_SelectedSystems.Where(ms => ms != null));
+            }
+
+            if(targets.Count < 2)
+            {
+                return;
+            }
+
+            Vector2 center = GetSelectionCenter(targets);
+            double radians = degrees * (Math.PI / 180.0);
+            float cos = (float)Math.Cos(radians);
+            float sin = (float)Math.Sin(radians);
+
+            foreach(MapSystem ms in targets)
+            {
+                Vector2 rel = ms.Layout - center;
+                Vector2 rotated = new Vector2(
+                    (rel.X * cos) - (rel.Y * sin),
+                    (rel.X * sin) + (rel.Y * cos)
+                );
+
+                Vector2 newPos = center + rotated;
+                if(m_SnapToGrid)
+                {
+                    newPos = SnapToGrid(newPos);
+                }
+                ms.Layout = newPos;
+            }
+
+            EM.RebuildRegionCells(Region);
+            EM.SaveCustomRegion(Region);
+            ReDrawMap(true);
+        }
+
+        private static Vector2 GetSelectionCenter(IEnumerable<MapSystem> systems)
+        {
+            float minX = float.MaxValue;
+            float minY = float.MaxValue;
+            float maxX = float.MinValue;
+            float maxY = float.MinValue;
+
+            foreach(MapSystem ms in systems)
+            {
+                if(ms.Layout.X < minX) minX = ms.Layout.X;
+                if(ms.Layout.Y < minY) minY = ms.Layout.Y;
+                if(ms.Layout.X > maxX) maxX = ms.Layout.X;
+                if(ms.Layout.Y > maxY) maxY = ms.Layout.Y;
+            }
+
+            return new Vector2((minX + maxX) / 2f, (minY + maxY) / 2f);
+        }
+
         private EVEData.MapSystem GetContextMenuSystem(object sender)
         {
             if(sender is FrameworkElement fe && fe.DataContext is EVEData.MapSystem ms)
