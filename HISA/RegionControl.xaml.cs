@@ -1118,9 +1118,9 @@ namespace HISA
                 MainCanvas.Children.Add(name);
             }
 
-            if(m_IsLayoutEditMode && m_SelectedSystems.Count > 0)
+            if(m_IsLayoutEditMode)
             {
-                AddMissingConnectionStubs(m_SelectedSystems, MissingLinkBrush);
+                AddMissingConnectionStubs(Region.MapSystems.Values, MissingLinkBrush);
             }
 
             if(m_IsSelecting && m_SelectHasDrag)
