@@ -4695,7 +4695,6 @@ namespace HISA
 
             if(shift)
             {
-                m_SelectedSystems.Clear();
                 BeginBoxSelection(e);
                 e.Handled = true;
                 return;
@@ -4790,11 +4789,6 @@ namespace HISA
                     Math.Min(m_SelectStartPoint.Y, endPoint.Y),
                     Math.Abs(m_SelectStartPoint.X - endPoint.X),
                     Math.Abs(m_SelectStartPoint.Y - endPoint.Y));
-
-                if(!m_SelectAdditive)
-                {
-                    m_SelectedSystems.Clear();
-                }
 
                 foreach(MapSystem ms in Region.MapSystems.Values)
                 {
