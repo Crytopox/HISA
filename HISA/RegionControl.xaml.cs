@@ -3489,6 +3489,15 @@ namespace HISA
             return Dark;
         }
 
+        private static Color LightenColour(Color inCol, float amount)
+        {
+            float clamp = Math.Clamp(amount, 0f, 1f);
+            byte r = (byte)Math.Min(255, inCol.R + (255 - inCol.R) * clamp);
+            byte g = (byte)Math.Min(255, inCol.G + (255 - inCol.G) * clamp);
+            byte b = (byte)Math.Min(255, inCol.B + (255 - inCol.B) * clamp);
+            return Color.FromArgb(inCol.A, r, g, b);
+        }
+
         private void FollowCharacterChk_Checked(object sender, RoutedEventArgs e)
         {
             UpdateActiveCharacter();
@@ -4231,7 +4240,7 @@ namespace HISA
 
                 Polygon poly = new Polygon();
                 Vector2 centroid = GetCellCentroid(ms.CellPoints);
-                double expand = 1.0;
+                double expand = 1;
                 foreach(Vector2 p in ms.CellPoints)
                 {
                     Vector2 pp = new Vector2((float)(centroid.X + (p.X - centroid.X) * expand), (float)(centroid.Y + (p.Y - centroid.Y) * expand));
@@ -4239,7 +4248,8 @@ namespace HISA
                 }
                 poly.Fill = fill;
                 poly.Stroke = fill;
-                poly.StrokeThickness = 1.2;
+                poly.StrokeThickness = 0.8;
+                poly.StrokeLineJoin = PenLineJoin.Round;
                 poly.SnapsToDevicePixels = true;
                 poly.IsHitTestVisible = false;
                 Canvas.SetZIndex(poly, ZINDEX_POLY - 2);
@@ -4380,7 +4390,8 @@ namespace HISA
             m_RegionTintCache.Clear();
             m_RegionTintStrokeCache.Clear();
 
-            List<Color> palette = BuildPastelPalette();
+            int paletteSize = Math.Max(24, regions.Count * 2);
+            List<Color> palette = BuildPastelPalette(paletteSize);
 
             Dictionary<string, HashSet<string>> adjacency = BuildRegionAdjacency(regions);
             List<string> ordered = regions.OrderByDescending(r => adjacency[r].Count).ToList();
@@ -4388,7 +4399,16 @@ namespace HISA
             foreach(string region in ordered)
             {
                 HashSet<int> used = new HashSet<int>();
+                HashSet<string> nearby = new HashSet<string>(adjacency[region]);
                 foreach(string neighbor in adjacency[region])
+                {
+                    foreach(string nn in adjacency[neighbor])
+                    {
+                        nearby.Add(nn);
+                    }
+                }
+
+                foreach(string neighbor in nearby)
                 {
                     if(m_RegionTintIndex.TryGetValue(neighbor, out int idx))
                     {
@@ -4462,13 +4482,23 @@ namespace HISA
             return graph;
         }
 
-        private static List<Color> BuildPastelPalette()
+        private static List<Color> BuildPastelPalette(int count)
         {
-            List<double> hues = new List<double> { 0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330 };
             List<Color> list = new List<Color>();
-            foreach(double h in hues)
+            double hue = 0.0;
+            const double golden = 0.618033988749895;
+            for(int i = 0; i < count; i++)
             {
-                Color c = HslToRgb(h, 0.5, 0.82);
+                hue = (hue + golden) % 1.0;
+                double h = hue * 360.0;
+                double s = (i % 3) switch
+                {
+                    0 => 0.55,
+                    1 => 0.48,
+                    _ => 0.62
+                };
+                double l = (i % 2 == 0) ? 0.80 : 0.72;
+                Color c = HslToRgb(h, s, l);
                 c.A = 120;
                 list.Add(c);
             }
