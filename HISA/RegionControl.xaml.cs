@@ -874,6 +874,8 @@ namespace HISA
 
             if(FullRedraw)
             {
+                UpdateCanvasBounds();
+
                 Color c1 = MapConf.ActiveColourScheme.MapBackgroundColour;
                 Color c2 = MapConf.ActiveColourScheme.MapBackgroundColour;
                 c1.R = (byte)(0.9 * c1.R);
@@ -947,6 +949,45 @@ namespace HISA
             AddSovConflictsToMap();
             AddTrigInvasionSytemsToMap();
             AddPOIsToMap();
+        }
+
+        private void UpdateCanvasBounds()
+        {
+            if(Region == null || Region.MapSystems == null || Region.MapSystems.Count == 0)
+            {
+                return;
+            }
+
+            double minX = double.MaxValue;
+            double minY = double.MaxValue;
+            double maxX = double.MinValue;
+            double maxY = double.MinValue;
+
+            foreach(MapSystem ms in Region.MapSystems.Values)
+            {
+                if(ms == null)
+                {
+                    continue;
+                }
+
+                minX = Math.Min(minX, ms.Layout.X);
+                minY = Math.Min(minY, ms.Layout.Y);
+                maxX = Math.Max(maxX, ms.Layout.X);
+                maxY = Math.Max(maxY, ms.Layout.Y);
+            }
+
+            if(double.IsInfinity(minX) || double.IsInfinity(minY) || double.IsInfinity(maxX) || double.IsInfinity(maxY))
+            {
+                return;
+            }
+
+            double pad = Math.Max(120, SYSTEM_SHAPE_SIZE * 6);
+            double width = Math.Max(200, (maxX - minX) + (pad * 2));
+            double height = Math.Max(200, (maxY - minY) + (pad * 2));
+
+            MainCanvas.Width = width;
+            MainCanvas.Height = height;
+            MainCanvas.RenderTransform = new TranslateTransform(pad - minX, pad - minY);
         }
 
         private void AddSystemsToMapLayoutOnly()

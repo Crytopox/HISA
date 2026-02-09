@@ -500,12 +500,7 @@ namespace HISA.ZoomControl
             if(_presenter == null)
                 return;
 
-            //var initialTranslate = GetInitialTranslate();
-
-            Vector initialTranslate = new Vector();
-            initialTranslate.X = 80;
-            initialTranslate.Y = 10;
-
+            var initialTranslate = GetInitialTranslate();
             DoZoomAnimation(1.0, initialTranslate.X, initialTranslate.Y);
         }
 
