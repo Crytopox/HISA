@@ -45,8 +45,8 @@ namespace HISA
         private const int ZINDEX_SOV_FIGHT_LOGO = 105;
         private const int ZINDEX_CYNOBEACON = 105;
         private const int ZINDEX_TEXT = 101;
-        private const int ZINDEX_SYSTEM = 100;
-        private const int ZINDEX_SYSTEM_OUTLINE = 99;
+        private const int ZINDEX_SYSTEM = 110;
+        private const int ZINDEX_SYSTEM_OUTLINE = 109;
         private const int ZINDEX_SOV_FIGHT_SHAPE = 97;
         private const int ZINDEX_THERA = 97;
         private const int ZINDEX_TURNER = 97;
@@ -3196,10 +3196,26 @@ namespace HISA
                     sysLink.Stroke = RegionGateBrush;
                 }
 
+                Line sysLinkOutline = new Line
+                {
+                    X1 = sysLink.X1,
+                    Y1 = sysLink.Y1,
+                    X2 = sysLink.X2,
+                    Y2 = sysLink.Y2,
+                    Stroke = Brushes.Black,
+                    StrokeThickness = 3,
+                    Opacity = 0.5,
+                    Visibility = Visibility.Visible
+                };
+
                 sysLink.StrokeThickness = 2;
+                sysLink.Opacity = 0.7;
                 sysLink.Visibility = Visibility.Visible;
 
-                Canvas.SetZIndex(sysLink, SYSTEM_LINK_INDEX);
+                Canvas.SetZIndex(sysLinkOutline, ZINDEX_POLY + 1);
+                MainCanvas.Children.Add(sysLinkOutline);
+
+                Canvas.SetZIndex(sysLink, ZINDEX_POLY + 2);
                 MainCanvas.Children.Add(sysLink);
             }
 
@@ -3278,7 +3294,19 @@ namespace HISA
                         jbLine.X2 = endPoint.X;
                         jbLine.Y2 = endPoint.Y;
 
+                        Line jbOutline = new Line
+                        {
+                            X1 = jbLine.X1,
+                            Y1 = jbLine.Y1,
+                            X2 = jbLine.X2,
+                            Y2 = jbLine.Y2,
+                            Stroke = Brushes.Black,
+                            StrokeThickness = 3,
+                            Opacity = 0.6
+                        };
+
                         jbLine.StrokeThickness = 2;
+                        jbLine.Opacity = 0.85;
 
                         DoubleCollection dashes = new DoubleCollection();
 
@@ -3296,6 +3324,7 @@ namespace HISA
                         }
 
                         jbLine.StrokeDashArray = dashes;
+                        jbOutline.StrokeDashArray = dashes;
 
                         // animate the jump bridges
                         DoubleAnimation da = new DoubleAnimation();
@@ -3308,11 +3337,14 @@ namespace HISA
 
                         if(!MapConf.DisableJumpBridgesPathAnimation)
                         {
+                            jbOutline.BeginAnimation(Shape.StrokeDashOffsetProperty, da);
                             jbLine.BeginAnimation(Shape.StrokeDashOffsetProperty, da);
                         }
 
-                        Canvas.SetZIndex(jbLine, 19);
+                        Canvas.SetZIndex(jbOutline, ZINDEX_POLY + 3);
+                        MainCanvas.Children.Add(jbOutline);
 
+                        Canvas.SetZIndex(jbLine, ZINDEX_POLY + 4);
                         MainCanvas.Children.Add(jbLine);
                     }
                 }
@@ -5004,16 +5036,31 @@ namespace HISA
                         jbHighlight.X2 = to.X;
                         jbHighlight.Y2 = to.Y;
 
-                        jbHighlight.StrokeThickness = 5;
+                        Line jbHighlightOutline = new Line
+                        {
+                            X1 = jbHighlight.X1,
+                            Y1 = jbHighlight.Y1,
+                            X2 = jbHighlight.X2,
+                            Y2 = jbHighlight.Y2,
+                            Stroke = Brushes.Black,
+                            StrokeThickness = 8,
+                            Opacity = 0.85
+                        };
+
+                        jbHighlight.StrokeThickness = 6;
                         jbHighlight.Visibility = Visibility.Visible;
                         jbHighlight.IsHitTestVisible = false;
                         jbHighlight.Stroke = highlightBrush;
-                        jbHighlight.StrokeThickness = 5;
+                        jbHighlight.StrokeThickness = 6;
 
                         DoubleCollection dashes = new DoubleCollection();
                         dashes.Add(1.0);
                         dashes.Add(1.0);
                         jbHighlight.StrokeDashArray = dashes;
+
+                        DynamicMapElementsJBHighlight.Add(jbHighlightOutline);
+                        Canvas.SetZIndex(jbHighlightOutline, 18);
+                        MainCanvas.Children.Add(jbHighlightOutline);
 
                         DynamicMapElementsJBHighlight.Add(jbHighlight);
 
@@ -5078,7 +5125,23 @@ namespace HISA
                             sysLink.Y2 = s1.Layout.Y;
 
 
-                            sysLink.StrokeThickness = 4;
+                            Line sysLinkOutline = new Line
+                            {
+                                X1 = sysLink.X1,
+                                Y1 = sysLink.Y1,
+                                X2 = sysLink.X2,
+                                Y2 = sysLink.Y2,
+                                Stroke = Brushes.Black,
+                                StrokeThickness = 7,
+                                Opacity = 0.85
+                            };
+
+                            sysLink.StrokeThickness = 5;
+                            sysLink.Opacity = 1.0;
+
+                            DynamicMapElementsSysLinkHighlight.Add(sysLinkOutline);
+                            Canvas.SetZIndex(sysLinkOutline, 18);
+                            MainCanvas.Children.Add(sysLinkOutline);
 
                             DynamicMapElementsSysLinkHighlight.Add(sysLink);
                             Canvas.SetZIndex(sysLink, 19);

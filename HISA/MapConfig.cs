@@ -1253,8 +1253,8 @@ namespace HISA
             {
                 Name = "Default",
                 UserEditable = false,
-                FriendlyJumpBridgeColour = Colors.Goldenrod,
-                DisabledJumpBridgeColour = Color.FromRgb(205, 55, 50),
+                FriendlyJumpBridgeColour = Color.FromRgb(255, 215, 0),
+                DisabledJumpBridgeColour = Color.FromRgb(255, 30, 30),
                 SystemOutlineColour = Color.FromRgb(0, 0, 0),
                 InRegionSystemColour = Colors.SlateGray,
                 InRegionSystemTextColour = Colors.BlanchedAlmond,
@@ -1262,10 +1262,10 @@ namespace HISA
                 OutRegionSystemTextColour = (Color)ColorConverter.ConvertFromString("#FF7E8184"),
 
                 UniverseSystemColour = Colors.SlateGray,
-                UniverseConstellationGateColour = Colors.SlateGray,
+                UniverseConstellationGateColour = Color.FromRgb(120, 255, 120),
                 UniverseSystemTextColour = Colors.BlanchedAlmond,
-                UniverseGateColour = Colors.DarkSlateBlue,
-                UniverseRegionGateColour = Color.FromRgb(128, 64, 64),
+                UniverseGateColour = Color.FromRgb(90, 220, 255),
+                UniverseRegionGateColour = Color.FromRgb(255, 110, 230),
                 UniverseMapBackgroundColour = Color.FromRgb(43, 43, 48),
 
                 PopupText = Color.FromRgb(0, 0, 0),
@@ -1279,9 +1279,9 @@ namespace HISA
                 IntelOverlayColour = Color.FromRgb(178, 34, 34),
                 IntelClearOverlayColour = Colors.Orange,
 
-                NormalGateColour = Colors.DarkSlateBlue,
-                ConstellationGateColour = Colors.SlateGray,
-                RegionGateColour = Color.FromRgb(128, 64, 64),
+                NormalGateColour = Color.FromRgb(90, 220, 255),
+                ConstellationGateColour = Color.FromRgb(120, 255, 120),
+                RegionGateColour = Color.FromRgb(255, 110, 230),
                 SelectedSystemColour = Color.FromRgb(255, 255, 255),
                 CharacterHighlightColour = Color.FromRgb(170, 130, 180),
                 CharacterOfflineTextColour = Colors.DarkGray,
