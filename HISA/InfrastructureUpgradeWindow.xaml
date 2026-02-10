@@ -7,7 +7,7 @@
         Title="SOV Infrastructure Upgrades" Height="760" Width="1180"
         WindowStartupLocation="CenterOwner" ResizeMode="CanResize"
         Background="{DynamicResource UiBackgroundBrush}"
-        Loaded="Window_Loaded">
+        Loaded="Window_Loaded" Style="{StaticResource ModernWindowStyle}">
 
     <Grid Margin="18">
         <Grid.RowDefinitions>
@@ -143,7 +143,7 @@
                                 <ComboBoxItem Content="3"/>
                             </ComboBox>
 
-                            <CheckBox x:Name="OnlineCheckBox" Grid.Row="1" Grid.Column="2" Grid.ColumnSpan="2" Content="Online" Margin="14,6,0,0" IsChecked="True" Foreground="{DynamicResource UiTextPrimaryBrush}" />
+                            <CheckBox x:Name="OnlineCheckBox" Grid.Row="1" Grid.Column="2" Grid.ColumnSpan="2" Content="Online" Margin="14,6,0,0" IsChecked="True" Style="{StaticResource ModernCheckBoxStyle}" />
 
                             <Button x:Name="AddUpdateButton" Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="4" Content="Add Upgrade" Style="{StaticResource GoldButtonStyle}" Margin="0,10,0,0" HorizontalAlignment="Left" Click="AddUpdateButton_Click" />
                         </Grid>
@@ -220,3 +220,4 @@
         </StackPanel>
     </Grid>
 </Window>
+

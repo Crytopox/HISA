@@ -1,4 +1,4 @@
-﻿<Window x:Class="HISA.NavStructuresWindow"
+<Window x:Class="HISA.NavStructuresWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -7,7 +7,7 @@
         Title="Navigation Structures" Height="720" Width="1020"
         WindowStartupLocation="CenterOwner" ResizeMode="CanResize"
         Background="{DynamicResource UiBackgroundBrush}"
-        Loaded="Window_Loaded">
+        Loaded="Window_Loaded" Style="{StaticResource ModernWindowStyle}">
 
     <Grid Margin="18">
         <Grid.RowDefinitions>
@@ -104,3 +104,4 @@
         </StackPanel>
     </Grid>
 </Window>
+
