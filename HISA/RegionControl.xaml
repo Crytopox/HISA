@@ -3,7 +3,6 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-             xmlns:dotNetKitControls="clr-namespace:DotNetKit.Windows.Controls;assembly=DotNetKit.Wpf.AutoCompleteComboBox"
              xmlns:zc="clr-namespace:HISA.ZoomControl"
              mc:Ignorable="d"
              d:DesignHeight="800" d:DesignWidth="800">
@@ -79,26 +78,62 @@
 
         <Border Grid.Row="0" Style="{StaticResource CardBorderStyle}" Margin="4,2,4,2" Padding="4,2" BorderBrush="{DynamicResource UiGoldSoftBrush}">
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
-            <ComboBox x:Name="RegionSelectCB" Width="170" Height="18" MaxHeight="18" Margin="0,0,6,0" Style="{StaticResource CompactComboInputStyle}" DisplayMemberPath="Name" SelectionChanged="RegionSelectCB_SelectionChanged">
+            <ComboBox x:Name="RegionSelectCB" Width="150" Height="18" MaxHeight="18" MaxDropDownHeight="220" Margin="0,0,6,0" Style="{StaticResource CompactComboInputStyle}" DisplayMemberPath="Name" SelectionChanged="RegionSelectCB_SelectionChanged">
                 <ComboBox.GroupStyle>
                     <GroupStyle>
                         <GroupStyle.HeaderTemplate>
                             <DataTemplate>
-                                <TextBlock FontWeight="SemiBold" Foreground="{DynamicResource UiTextMutedBrush}" Margin="4,6,4,3" Text="{Binding Name}" />
+                                <TextBlock FontWeight="SemiBold" Foreground="{DynamicResource UiTextMutedBrush}" Margin="4,3,4,1" Text="{Binding Name}" />
                             </DataTemplate>
                         </GroupStyle.HeaderTemplate>
                     </GroupStyle>
                 </ComboBox.GroupStyle>
+                <ComboBox.ItemContainerStyle>
+                    <Style TargetType="ComboBoxItem">
+                        <Setter Property="Padding" Value="4,1" />
+                        <Setter Property="MinHeight" Value="18" />
+                    </Style>
+                </ComboBox.ItemContainerStyle>
             </ComboBox>
             <ComboBox x:Name="SystemDropDownAC" IsEditable="True" Text="System" Width="120" Height="18" MaxHeight="18" Margin="0,0,6,0" Style="{StaticResource CompactComboInputStyle}" DisplayMemberPath="Name" SelectionChanged="SystemDropDownAC_SelectionChanged" />
             <TextBlock Text="Search" Style="{StaticResource FieldLabelTextStyle}" VerticalAlignment="Center" Margin="0,0,5,0" />
-            <dotNetKitControls:AutoCompleteComboBox x:Name="GlobalSystemDropDownAC" Width="170" Height="18" MaxHeight="18" Margin="0,0,8,0" MinHeight="18" Style="{StaticResource CompactComboInputStyle}" SelectionChanged="GlobalSystemDropDownAC_SelectionChanged" Foreground="{DynamicResource UiTextPrimaryBrush}" DisplayMemberPath="Name" TextSearch.TextPath="Name">
-                <dotNetKitControls:AutoCompleteComboBox.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <VirtualizingStackPanel />
-                    </ItemsPanelTemplate>
-                </dotNetKitControls:AutoCompleteComboBox.ItemsPanel>
-            </dotNetKitControls:AutoCompleteComboBox>
+            <Grid Width="170" Height="18" Margin="0,0,8,0">
+                <TextBox x:Name="GlobalSystemSearchBox"
+                         Height="18"
+                         MaxHeight="18"
+                         Padding="4,0"
+                         FontSize="10"
+                         VerticalContentAlignment="Center"
+                         Style="{StaticResource ModernTextBoxStyle}"
+                         ToolTip="Type a system name and press Enter"
+                         KeyDown="GlobalSystemSearchBox_KeyDown"
+                         TextChanged="GlobalSystemSearchBox_TextChanged" />
+                <Popup x:Name="GlobalSystemSuggestionsPopup"
+                       Placement="Bottom"
+                       PlacementTarget="{Binding ElementName=GlobalSystemSearchBox}"
+                       IsOpen="False"
+                       StaysOpen="False"
+                       AllowsTransparency="True"
+                       Focusable="False">
+                    <Border Width="{Binding ActualWidth, ElementName=GlobalSystemSearchBox}"
+                            MaxHeight="220"
+                            Background="{StaticResource UiSurfaceAltBrush}"
+                            BorderBrush="{StaticResource UiStrokeBrush}"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            Padding="2">
+                        <ListBox x:Name="GlobalSystemSuggestionsList"
+                                 MaxHeight="216"
+                                 BorderThickness="0"
+                                 Background="Transparent"
+                                 Foreground="{DynamicResource UiTextPrimaryBrush}"
+                                 FontSize="10"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 PreviewMouseLeftButtonUp="GlobalSystemSuggestionsList_PreviewMouseLeftButtonUp" />
+                    </Border>
+                </Popup>
+            </Grid>
 
             <CheckBox x:Name="FollowCharacterChk" Margin="0,0,0,0" FontSize="11" Content="Auto Follow Active Character" HorizontalAlignment="Left" VerticalAlignment="Center" IsChecked="False" Checked="FollowCharacterChk_Checked" />
             </StackPanel>

@@ -205,8 +205,14 @@ namespace HISA
         private const int HOVER_POPUP_REBUILD_MS = 300;
         private const int HOVER_SUPPRESS_AFTER_MAP_INTERACTION_MS = 250;
         private const int MAP_INTERACTION_SETTLE_MS = 220;
+        private const int GLOBAL_SYSTEM_SUGGESTION_LIMIT = 40;
         private bool m_MapInteractionActive = false;
         private System.Windows.Threading.DispatcherTimer m_MapInteractionSettleTimer;
+        private bool m_SuppressRegionComboSelectionPersistence = false;
+        private bool m_SuppressGlobalSystemSuggestionUpdates = false;
+        private List<EVEData.System> m_GlobalSystemList = new List<EVEData.System>();
+        private Dictionary<string, EVEData.System> m_GlobalSystemByName = new Dictionary<string, EVEData.System>(StringComparer.OrdinalIgnoreCase);
+        private Dictionary<string, string> m_GlobalSystemNormalizedByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         // events
 
@@ -259,6 +265,7 @@ namespace HISA
             MainZoomControl.PreviewMouseLeftButtonDown += MainCanvas_MouseLeftButtonDown;
             MainZoomControl.PreviewMouseLeftButtonUp += MainCanvas_MouseLeftButtonUp;
             MainZoomControl.MouseLeave += MainCanvas_MouseLeftButtonUp;
+            RegionSelectCB.PreviewMouseWheel += RegionSelectCB_PreviewMouseWheel;
             SnapToGridChk.IsEnabled = false;
 
             m_MapInteractionSettleTimer = new System.Windows.Threading.DispatcherTimer();
@@ -834,10 +841,29 @@ namespace HISA
             EM = EVEData.EveManager.Instance;
             SelectedSystem = string.Empty;
 
-            List<EVEData.System> globalSystemList = new List<EVEData.System>(EM.Systems);
-            globalSystemList.Sort((a, b) => string.Compare(a.Name, b.Name));
-            GlobalSystemDropDownAC.SelectedItem = null;
-            GlobalSystemDropDownAC.ItemsSource = globalSystemList;
+            m_GlobalSystemList = new List<EVEData.System>(EM.Systems);
+            m_GlobalSystemList.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+            m_GlobalSystemByName.Clear();
+            m_GlobalSystemNormalizedByName.Clear();
+            foreach(EVEData.System sys in m_GlobalSystemList)
+            {
+                if(sys != null && !string.IsNullOrWhiteSpace(sys.Name) && !m_GlobalSystemByName.ContainsKey(sys.Name))
+                {
+                    m_GlobalSystemByName.Add(sys.Name, sys);
+                    m_GlobalSystemNormalizedByName[sys.Name] = NormalizeSystemSearchText(sys.Name);
+                }
+            }
+
+            m_SuppressGlobalSystemSuggestionUpdates = true;
+            try
+            {
+                GlobalSystemSearchBox.Text = string.Empty;
+            }
+            finally
+            {
+                m_SuppressGlobalSystemSuggestionUpdates = false;
+            }
+            CloseGlobalSystemSuggestions();
 
             DynamicMapElements = new List<UIElement>();
             DynamicMapElementsRangeMarkers = new List<UIElement>();
@@ -1367,7 +1393,15 @@ namespace HISA
             MainZoomControl.ZoomToFill();
 
             // select the item in the dropdown
-            RegionSelectCB.SelectedItem = Region;
+            m_SuppressRegionComboSelectionPersistence = true;
+            try
+            {
+                RegionSelectCB.SelectedItem = Region;
+            }
+            finally
+            {
+                m_SuppressRegionComboSelectionPersistence = false;
+            }
 
             OnRegionChanged(regionName);
         }
@@ -4190,18 +4224,251 @@ namespace HISA
             UpdateActiveCharacter();
         }
 
-        private void GlobalSystemDropDownAC_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private void GlobalSystemSearchBox_KeyDown(object sender, KeyEventArgs e)
         {
+            if(e.Key == Key.Down)
+            {
+                if(!GlobalSystemSuggestionsPopup.IsOpen)
+                {
+                    UpdateGlobalSystemSuggestions();
+                }
+
+                if(GlobalSystemSuggestionsPopup.IsOpen && GlobalSystemSuggestionsList.Items.Count > 0)
+                {
+                    int next = GlobalSystemSuggestionsList.SelectedIndex + 1;
+                    if(next >= GlobalSystemSuggestionsList.Items.Count)
+                    {
+                        next = 0;
+                    }
+                    GlobalSystemSuggestionsList.SelectedIndex = next;
+                    GlobalSystemSuggestionsList.ScrollIntoView(GlobalSystemSuggestionsList.SelectedItem);
+                }
+
+                e.Handled = true;
+                return;
+            }
+
+            if(e.Key == Key.Up)
+            {
+                if(GlobalSystemSuggestionsPopup.IsOpen && GlobalSystemSuggestionsList.Items.Count > 0)
+                {
+                    int prev = GlobalSystemSuggestionsList.SelectedIndex - 1;
+                    if(prev < 0)
+                    {
+                        prev = GlobalSystemSuggestionsList.Items.Count - 1;
+                    }
+                    GlobalSystemSuggestionsList.SelectedIndex = prev;
+                    GlobalSystemSuggestionsList.ScrollIntoView(GlobalSystemSuggestionsList.SelectedItem);
+                }
+
+                e.Handled = true;
+                return;
+            }
+
+            if(e.Key == Key.Escape)
+            {
+                CloseGlobalSystemSuggestions();
+                e.Handled = true;
+                return;
+            }
+
+            if(e.Key != Key.Enter && e.Key != Key.Return)
+            {
+                return;
+            }
+
+            if(GlobalSystemSuggestionsPopup.IsOpen && GlobalSystemSuggestionsList.SelectedItem is string selectedName)
+            {
+                ApplyGlobalSystemSelection(selectedName);
+            }
+            else
+            {
+                ExecuteGlobalSystemSearch();
+            }
+            e.Handled = true;
+        }
+
+        private void GlobalSystemSearchBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if(m_SuppressGlobalSystemSuggestionUpdates)
+            {
+                return;
+            }
+
+            UpdateGlobalSystemSuggestions();
+        }
+
+        private void GlobalSystemSuggestionsList_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            if(GlobalSystemSuggestionsList.SelectedItem is string selectedName)
+            {
+                ApplyGlobalSystemSelection(selectedName);
+                e.Handled = true;
+            }
+        }
+
+        private void ExecuteGlobalSystemSearch()
+        {
+            string query = GlobalSystemSearchBox?.Text?.Trim();
+            if(string.IsNullOrWhiteSpace(query))
+            {
+                return;
+            }
+
+            List<EVEData.System> matches = FindGlobalSystemMatches(query, 1);
+            if(matches.Count == 0)
+            {
+                CloseGlobalSystemSuggestions();
+                return;
+            }
+
+            ApplyGlobalSystemSelection(matches[0].Name);
+        }
+
+        private void UpdateGlobalSystemSuggestions()
+        {
+            string query = GlobalSystemSearchBox?.Text?.Trim();
+            if(string.IsNullOrWhiteSpace(query))
+            {
+                CloseGlobalSystemSuggestions();
+                return;
+            }
+
+            List<EVEData.System> matches = FindGlobalSystemMatches(query, GLOBAL_SYSTEM_SUGGESTION_LIMIT);
+            if(matches.Count == 0)
+            {
+                CloseGlobalSystemSuggestions();
+                return;
+            }
+
+            GlobalSystemSuggestionsList.ItemsSource = matches.Select(s => s.Name).ToList();
+            if(GlobalSystemSuggestionsList.Items.Count > 0)
+            {
+                GlobalSystemSuggestionsList.SelectedIndex = 0;
+            }
+            GlobalSystemSuggestionsPopup.IsOpen = true;
+        }
+
+        private List<EVEData.System> FindGlobalSystemMatches(string query, int maxResults)
+        {
+            List<EVEData.System> results = new List<EVEData.System>();
+            if(string.IsNullOrWhiteSpace(query) || m_GlobalSystemList.Count == 0 || maxResults <= 0)
+            {
+                return results;
+            }
+
+            string trimmedQuery = query.Trim();
+            string normalizedQuery = NormalizeSystemSearchText(trimmedQuery);
+            HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            AddGlobalSystemMatches(results, seen, maxResults, s => string.Equals(s.Name, trimmedQuery, StringComparison.OrdinalIgnoreCase));
+            AddGlobalSystemMatches(results, seen, maxResults, s => s.Name.StartsWith(trimmedQuery, StringComparison.OrdinalIgnoreCase));
+            AddGlobalSystemMatches(results, seen, maxResults, s => !string.IsNullOrEmpty(normalizedQuery) && GetNormalizedSystemName(s.Name).StartsWith(normalizedQuery, StringComparison.Ordinal));
+            AddGlobalSystemMatches(results, seen, maxResults, s => s.Name.IndexOf(trimmedQuery, StringComparison.OrdinalIgnoreCase) >= 0);
+            AddGlobalSystemMatches(results, seen, maxResults, s => !string.IsNullOrEmpty(normalizedQuery) && GetNormalizedSystemName(s.Name).Contains(normalizedQuery));
+
+            return results;
+        }
+
+        private void AddGlobalSystemMatches(List<EVEData.System> results, HashSet<string> seen, int maxResults, Func<EVEData.System, bool> predicate)
+        {
+            if(results.Count >= maxResults)
+            {
+                return;
+            }
+
+            foreach(EVEData.System sys in m_GlobalSystemList)
+            {
+                if(results.Count >= maxResults)
+                {
+                    return;
+                }
+
+                if(sys == null || string.IsNullOrWhiteSpace(sys.Name))
+                {
+                    continue;
+                }
+
+                if(seen.Contains(sys.Name))
+                {
+                    continue;
+                }
+
+                if(!predicate(sys))
+                {
+                    continue;
+                }
+
+                seen.Add(sys.Name);
+                results.Add(sys);
+            }
+        }
+
+        private string GetNormalizedSystemName(string systemName)
+        {
+            if(string.IsNullOrWhiteSpace(systemName))
+            {
+                return string.Empty;
+            }
+
+            if(m_GlobalSystemNormalizedByName.TryGetValue(systemName, out string normalized))
+            {
+                return normalized;
+            }
+
+            normalized = NormalizeSystemSearchText(systemName);
+            m_GlobalSystemNormalizedByName[systemName] = normalized;
+            return normalized;
+        }
+
+        private static string NormalizeSystemSearchText(string input)
+        {
+            if(string.IsNullOrWhiteSpace(input))
+            {
+                return string.Empty;
+            }
+
+            char[] chars = input.Where(char.IsLetterOrDigit).Select(char.ToUpperInvariant).ToArray();
+            return new string(chars);
+        }
+
+        private void ApplyGlobalSystemSelection(string systemName)
+        {
+            if(string.IsNullOrWhiteSpace(systemName))
+            {
+                return;
+            }
+
+            if(!m_GlobalSystemByName.TryGetValue(systemName, out EVEData.System sd) || sd == null)
+            {
+                return;
+            }
+
             FollowCharacter = false;
 
-            EVEData.System sd = GlobalSystemDropDownAC.SelectedItem as EVEData.System;
+            bool changeRegion = Region == null || !string.Equals(sd.Region, Region.Name, StringComparison.Ordinal);
+            SelectSystem(sd.Name, changeRegion);
+            ReDrawMap(changeRegion);
 
-            if(sd != null && Region != null)
+            m_SuppressGlobalSystemSuggestionUpdates = true;
+            try
             {
-                bool ChangeRegion = sd.Region != Region.Name;
-                SelectSystem(sd.Name, ChangeRegion);
-                ReDrawMap(ChangeRegion);
+                GlobalSystemSearchBox.Text = sd.Name;
+                GlobalSystemSearchBox.SelectionStart = GlobalSystemSearchBox.Text.Length;
             }
+            finally
+            {
+                m_SuppressGlobalSystemSuggestionUpdates = false;
+            }
+
+            CloseGlobalSystemSuggestions();
+        }
+
+        private void CloseGlobalSystemSuggestions()
+        {
+            GlobalSystemSuggestionsPopup.IsOpen = false;
+            GlobalSystemSuggestionsList.ItemsSource = null;
+            GlobalSystemSuggestionsList.SelectedIndex = -1;
         }
 
         private void HelpIcon_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -4264,7 +4531,38 @@ namespace HISA
                 return;
             }
 
+            if(!m_SuppressRegionComboSelectionPersistence)
+            {
+                PersistLastSelectedRegion(rd.Name);
+            }
+
             SelectRegion(rd.Name);
+        }
+
+        private void RegionSelectCB_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            if(sender is ComboBox cb && !cb.IsDropDownOpen)
+            {
+                // Prevent mouse-wheel over the closed control from cycling region selection.
+                e.Handled = true;
+            }
+        }
+
+        private static void PersistLastSelectedRegion(string regionName)
+        {
+            if(string.IsNullOrWhiteSpace(regionName))
+            {
+                return;
+            }
+
+            try
+            {
+                HISA.Properties.Settings.Default.LastRegionsViewRegion = regionName;
+                HISA.Properties.Settings.Default.Save();
+            }
+            catch
+            {
+            }
         }
 
         private void SetJumpRange_Click(object sender, RoutedEventArgs e)

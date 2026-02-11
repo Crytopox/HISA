@@ -602,6 +602,7 @@
                                PopupAnimation="Fade">
                             <Border x:Name="DropDownBorder"
                                     MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
+                                    MaxHeight="{TemplateBinding MaxDropDownHeight}"
                                     Margin="0,2,0,0"
                                     Background="{StaticResource UiSurfaceAltBrush}"
                                     BorderBrush="{StaticResource UiStrokeBrush}"
@@ -609,7 +610,9 @@
                                     CornerRadius="5"
                                     SnapsToDevicePixels="True">
                                 <ScrollViewer Margin="2"
-                                              CanContentScroll="True"
+                                              CanContentScroll="False"
+                                              VerticalScrollBarVisibility="Auto"
+                                              HorizontalScrollBarVisibility="Disabled"
                                               KeyboardNavigation.DirectionalNavigation="Contained">
                                     <ItemsPresenter />
                                 </ScrollViewer>

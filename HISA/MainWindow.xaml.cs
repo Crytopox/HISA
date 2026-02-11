@@ -52,6 +52,7 @@ namespace HISA
 
         private bool manualZKillFilterRefreshRequired = true;
         private string lastHoveredSystemForIntel = string.Empty;
+        private int suppressRegionSelectionPersistenceCount = 0;
 
         private List<InfoItem> InfoLayer;
 
@@ -174,16 +175,36 @@ namespace HISA
             // Set up UI thread marshaling for ObservableCollection operations
             EVEData.EveManager.UIThreadInvoker = (action) =>
             {
-                if (Application.Current.Dispatcher != null)
+                if(action == null)
                 {
-                    if (Application.Current.Dispatcher.CheckAccess())
+                    return;
+                }
+
+                Dispatcher dispatcher = Application.Current?.Dispatcher;
+                if(dispatcher == null || dispatcher.HasShutdownStarted || dispatcher.HasShutdownFinished)
+                {
+                    return;
+                }
+
+                try
+                {
+                    if(dispatcher.CheckAccess())
                     {
                         action();
                     }
                     else
                     {
-                        Application.Current.Dispatcher.Invoke(action);
+                        // Non-blocking marshal avoids shutdown races while background threads are winding down.
+                        dispatcher.BeginInvoke(action, DispatcherPriority.Normal);
                     }
+                }
+                catch(InvalidOperationException)
+                {
+                    // Dispatcher/app is shutting down.
+                }
+                catch(TaskCanceledException)
+                {
+                    // Dispatcher queue was canceled during shutdown.
                 }
             };
             
@@ -208,6 +229,7 @@ namespace HISA
             }
 
             ApplyLastRegionPreference();
+            string resolvedStartupRegion = GetStartupRegionName();
 
             EVEManager.SetupIntelWatcher();
             EVEManager.SetupGameLogWatcher();
@@ -333,10 +355,9 @@ namespace HISA
             RegionUC.MapConf = MapConf;
             RegionUC.ANOMManager = ANOMManager;
             RegionUC.Init();
-            string startupRegion = GetStartupRegionName();
-            if(!string.IsNullOrWhiteSpace(startupRegion))
+            if(!string.IsNullOrWhiteSpace(resolvedStartupRegion))
             {
-                RegionUC.SelectRegion(startupRegion);
+                SelectRegionWithoutPersist(resolvedStartupRegion);
             }
 
             RegionUC.RegionChanged += RegionUC_RegionChanged;
@@ -458,7 +479,14 @@ namespace HISA
 
             CheckGitHubVersion();
 
-            RegionUC.SelectRegion(MapConf.DefaultRegion);
+            if(!string.IsNullOrWhiteSpace(resolvedStartupRegion))
+            {
+                SelectRegionWithoutPersist(resolvedStartupRegion);
+            }
+            else
+            {
+                SelectRegionWithoutPersist(MapConf.DefaultRegion);
+            }
         }
 
         private void RegionUC_SystemHoverEvent(string system)
@@ -676,6 +704,11 @@ namespace HISA
                 return;
             }
 
+            if(suppressRegionSelectionPersistenceCount > 0)
+            {
+                return;
+            }
+
             try
             {
                 Properties.Settings.Default.LastRegionsViewRegion = regionName;
@@ -703,18 +736,77 @@ namespace HISA
 
         private string GetStartupRegionName()
         {
-            string lastRegion = Properties.Settings.Default.LastRegionsViewRegion;
-            if(!string.IsNullOrWhiteSpace(lastRegion) && EVEManager?.GetRegion(lastRegion) != null)
+            string preferredRegion = GetPreferredStartupRegionName();
+            string resolvedPreferredRegion = ResolveKnownRegionName(preferredRegion);
+            if(!string.IsNullOrWhiteSpace(resolvedPreferredRegion))
+            {
+                return resolvedPreferredRegion;
+            }
+
+            return EVEManager?.Regions?.FirstOrDefault()?.Name;
+        }
+
+        private string GetPreferredStartupRegionName()
+        {
+            string lastRegion = NormalizeRegionName(Properties.Settings.Default.LastRegionsViewRegion);
+            if(!string.IsNullOrWhiteSpace(lastRegion))
             {
                 return lastRegion;
             }
 
-            if(!string.IsNullOrWhiteSpace(MapConf?.DefaultRegion) && EVEManager?.GetRegion(MapConf.DefaultRegion) != null)
+            return NormalizeRegionName(MapConf?.DefaultRegion);
+        }
+
+        private static string NormalizeRegionName(string regionName)
+        {
+            if(string.IsNullOrWhiteSpace(regionName))
             {
-                return MapConf.DefaultRegion;
+                return null;
             }
 
-            return EVEManager?.Regions?.FirstOrDefault()?.Name;
+            string trimmed = regionName.Trim();
+            return trimmed.Length == 0 ? null : trimmed;
+        }
+
+        private string ResolveKnownRegionName(string regionName)
+        {
+            if(string.IsNullOrWhiteSpace(regionName) || EVEManager?.Regions == null)
+            {
+                return null;
+            }
+
+            string candidate = regionName.Trim();
+            if(candidate.Length == 0)
+            {
+                return null;
+            }
+
+            MapRegion exact = EVEManager.GetRegion(candidate);
+            if(exact != null)
+            {
+                return exact.Name;
+            }
+
+            MapRegion caseInsensitive = EVEManager.Regions.FirstOrDefault(r => string.Equals(r.Name, candidate, StringComparison.OrdinalIgnoreCase));
+            return caseInsensitive?.Name;
+        }
+
+        private void SelectRegionWithoutPersist(string regionName)
+        {
+            if(string.IsNullOrWhiteSpace(regionName) || RegionUC == null)
+            {
+                return;
+            }
+
+            suppressRegionSelectionPersistenceCount++;
+            try
+            {
+                RegionUC.SelectRegion(regionName);
+            }
+            finally
+            {
+                suppressRegionSelectionPersistenceCount--;
+            }
         }
 
         private async void StartCustomRegionLoadAsync()
@@ -732,13 +824,13 @@ namespace HISA
 
                 if(RegionUC?.Region != null)
                 {
-                    RegionUC.SelectRegion(RegionUC.Region.Name);
+                    SelectRegionWithoutPersist(RegionUC.Region.Name);
                 }
 
-                string startupRegion = GetStartupRegionName();
+                string startupRegion = ResolveKnownRegionName(GetPreferredStartupRegionName()) ?? GetStartupRegionName();
                 if(!string.IsNullOrWhiteSpace(startupRegion) && RegionUC?.Region?.Name != startupRegion && EVEManager.GetRegion(startupRegion) != null)
                 {
-                    RegionUC.SelectRegion(startupRegion);
+                    SelectRegionWithoutPersist(startupRegion);
                 }
 
                 sw.Stop();
