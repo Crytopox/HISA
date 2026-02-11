@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
+using System.Linq;
 using System.Windows;
 using System.Windows.Data;
 
@@ -17,6 +18,8 @@ namespace HISA
     /// </summary>
     public partial class PreferencesWindow : Window
     {
+        private const string AnyCharacterOption = "Any character";
+
         public HISA.MapConfig MapConf;
         public HISA.EVEData.EveManager EM { get; set; }
 
@@ -97,6 +100,8 @@ namespace HISA
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
+            RefreshDangerZoneCharacterOptions();
+
             ColoursPropertyGrid.SelectedObject = MapConf.ActiveColourScheme;
             ColoursPropertyGrid.CollapseAllProperties();
             ColoursPropertyGrid.Update();
@@ -149,6 +154,62 @@ namespace HISA
         {
             MapConf.CustomEveLogFolderLocation = string.Empty;
             MessageBoxResult result = MessageBox.Show("Restart HISA for the log folder location to take effect", "Please Restart HISA", MessageBoxButton.OK);
+        }
+
+        private void RefreshDangerZoneCharacterOptions()
+        {
+            if(dangerZoneCharacterCombo == null || MapConf == null || EM == null)
+            {
+                return;
+            }
+
+            List<string> characterOptions = new List<string> { AnyCharacterOption };
+            characterOptions.AddRange(
+                EM.LocalCharacters
+                    .Where(c => !string.IsNullOrWhiteSpace(c?.Name))
+                    .Select(c => c.Name)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(n => n, StringComparer.OrdinalIgnoreCase));
+
+            string selectedCharacter = string.IsNullOrWhiteSpace(MapConf.DangerZoneCharacter)
+                ? AnyCharacterOption
+                : MapConf.DangerZoneCharacter;
+
+            string matchedOption = characterOptions.FirstOrDefault(o => string.Equals(o, selectedCharacter, StringComparison.OrdinalIgnoreCase));
+            if(string.IsNullOrWhiteSpace(matchedOption))
+            {
+                if(!string.IsNullOrWhiteSpace(MapConf.DangerZoneCharacter))
+                {
+                    characterOptions.Add(MapConf.DangerZoneCharacter);
+                    selectedCharacter = MapConf.DangerZoneCharacter;
+                }
+                else
+                {
+                    selectedCharacter = AnyCharacterOption;
+                }
+            }
+            else
+            {
+                selectedCharacter = matchedOption;
+            }
+
+            dangerZoneCharacterCombo.ItemsSource = characterOptions;
+            dangerZoneCharacterCombo.SelectedItem = selectedCharacter;
+        }
+
+        private void DangerZoneCharacterCombo_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        {
+            if(MapConf == null || dangerZoneCharacterCombo?.SelectedItem == null)
+            {
+                return;
+            }
+
+            string selectedCharacter = dangerZoneCharacterCombo.SelectedItem.ToString();
+            MapConf.DangerZoneCharacter = string.Equals(selectedCharacter, AnyCharacterOption, StringComparison.Ordinal)
+                ? string.Empty
+                : selectedCharacter;
+
+            MainWindow.AppWindow?.RegionUC?.ReDrawMap(false);
         }
 
     }

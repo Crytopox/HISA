@@ -3,10 +3,12 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
 using System.Numerics;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Data;
+using System.Windows.Documents;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Shapes;
@@ -44,8 +46,9 @@ namespace HISA
         private const double INTEL_RING_STROKE_THICKNESS = 11.0;
         private const double INTEL_BADGE_RING_INSET = 0.0;
         private const double INTEL_RING_ROTATION_SECONDS = 9.0;
-        private const int ZINDEX_INTEL_RING = 112;
-        private const int ZINDEX_INTEL_BADGE = 113;
+        private const int ZINDEX_INTEL_RING = 98;
+        private const int ZINDEX_INTEL_BADGE = 1;
+        private const int ZINDEX_INTEL_COUNT = 104;
 
         private const int SYSTEM_TEXT_WIDTH = 100;
         private const int SYSTEM_TEXT_HEIGHT = 50;
@@ -73,6 +76,27 @@ namespace HISA
         private const int ZINDEX_JOVE = 105;
 
         private const int THERA_Z_INDEX = 22;
+        private static readonly Regex IntelPlusCountRegex = new Regex(@"(?:^|[\s,;:])\+(\d{1,3})(?=$|[\s,;:.!?])", RegexOptions.Compiled);
+        private static readonly Regex IntelStandaloneCountRegex = new Regex(@"(?:^|[\s,;:])(\d{1,3})(?=$|[\s,;:.!?])", RegexOptions.Compiled);
+        private static readonly Regex IntelNameTokenRegex = new Regex(@"[A-Za-z0-9'._\-]+", RegexOptions.Compiled);
+        private static readonly Regex IntelCountContextRegex = new Regex(@"\b(hostile|hostiles|neut|neuts|enemy|enemies|fleet|gang|local|inbound|outbound|plus|spike|spiked)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        private static readonly Regex IntelLargeEnemyGroupRegex = new Regex(@"\b(gang|spike|spiked)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        private static readonly HashSet<string> IntelCountStopWords = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "hostile", "hostiles", "neut", "neuts", "neutral", "enemy", "enemies", "fleet", "gang", "clear", "clr",
+            "local", "status", "reported", "report", "intel", "dscan", "scan", "camp", "gate", "in", "on", "at",
+            "to", "from", "with", "plus", "is", "are", "was", "were", "spike", "spiked", "ship", "ships", "pilot", "pilots",
+            "frigate", "destroyer", "cruiser", "battlecruiser", "battleship", "industrial", "freighter", "capital", "fighter",
+            "mining", "structure", "capsule", "pod", "pods", "cyno", "bubble", "dictor", "hictor", "logi", "jump", "inbound", "outbound"
+        };
+
+        public enum SystemBackgroundTintMode
+        {
+            None,
+            Region,
+            Enemies,
+            SovUpgrades
+        }
 
         private readonly Brush SelectedAllianceBrush = new SolidColorBrush(Color.FromArgb(180, 200, 200, 200));
         private Dictionary<string, EVEData.EveManager.JumpShip> activeJumpSpheres;
@@ -138,10 +162,15 @@ namespace HISA
         private readonly Dictionary<string, Brush> m_RegionTintCache = new Dictionary<string, Brush>(StringComparer.Ordinal);
         private readonly Dictionary<string, Brush> m_RegionTintStrokeCache = new Dictionary<string, Brush>(StringComparer.Ordinal);
         private readonly Dictionary<string, int> m_RegionTintIndex = new Dictionary<string, int>(StringComparer.Ordinal);
+        private readonly Dictionary<string, Brush> m_SovUpgradeTintCache = new Dictionary<string, Brush>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, Brush> m_SovUpgradeTintStrokeCache = new Dictionary<string, Brush>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, int> m_SovUpgradeTintIndex = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         private string m_RegionTintKey;
-        private bool m_ShowRegionTint = false;
-        private readonly HashSet<string> m_SelectedTintRegions = new HashSet<string>(StringComparer.Ordinal);
+        private string m_SovUpgradeTintKey;
+        private SystemBackgroundTintMode m_SelectedBackgroundTintMode = SystemBackgroundTintMode.None;
+        private readonly HashSet<string> m_SelectedTintRegions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         public List<RegionColorItem> RegionColorLegendItems { get; private set; } = new List<RegionColorItem>();
+        public List<BackgroundTintModeItem> BackgroundTintModeItems { get; private set; } = new List<BackgroundTintModeItem>();
         public bool ShowRegionLegend { get; private set; }
         private bool m_PreviousShowToolBox = true;
         private Brush StandingBadBrush = new SolidColorBrush(Color.FromArgb(110, 196, 72, 6));
@@ -210,6 +239,9 @@ namespace HISA
         private System.Windows.Threading.DispatcherTimer m_MapInteractionSettleTimer;
         private bool m_SuppressRegionComboSelectionPersistence = false;
         private bool m_SuppressGlobalSystemSuggestionUpdates = false;
+        private bool m_SuppressRegionLegendSelectionChanged = false;
+        private bool m_IsReDrawingMap = false;
+        private bool m_IsUpdatingRegionTintPalette = false;
         private List<EVEData.System> m_GlobalSystemList = new List<EVEData.System>();
         private Dictionary<string, EVEData.System> m_GlobalSystemByName = new Dictionary<string, EVEData.System>(StringComparer.OrdinalIgnoreCase);
         private Dictionary<string, string> m_GlobalSystemNormalizedByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -271,6 +303,15 @@ namespace HISA
             m_MapInteractionSettleTimer = new System.Windows.Threading.DispatcherTimer();
             m_MapInteractionSettleTimer.Interval = TimeSpan.FromMilliseconds(MAP_INTERACTION_SETTLE_MS);
             m_MapInteractionSettleTimer.Tick += MapInteractionSettleTimer_Tick;
+
+            BackgroundTintModeItems = new List<BackgroundTintModeItem>
+            {
+                new BackgroundTintModeItem { Name = "None", Mode = SystemBackgroundTintMode.None },
+                new BackgroundTintModeItem { Name = "Region", Mode = SystemBackgroundTintMode.Region },
+                new BackgroundTintModeItem { Name = "Enemies", Mode = SystemBackgroundTintMode.Enemies },
+                new BackgroundTintModeItem { Name = "Sov Upgrades", Mode = SystemBackgroundTintMode.SovUpgrades }
+            };
+            OnPropertyChanged("BackgroundTintModeItems");
         }
 
         public event PropertyChangedEventHandler PropertyChanged;
@@ -335,15 +376,48 @@ namespace HISA
         {
             get
             {
-                return m_ShowRegionTint;
+                return SelectedBackgroundTintMode != SystemBackgroundTintMode.None;
             }
             set
             {
-                if(m_ShowRegionTint == value)
+                bool isShown = SelectedBackgroundTintMode != SystemBackgroundTintMode.None;
+                if(isShown == value)
                 {
                     return;
                 }
-                m_ShowRegionTint = value;
+
+                if(value)
+                {
+                    SelectedBackgroundTintMode = SystemBackgroundTintMode.Region;
+                }
+                else
+                {
+                    SelectedBackgroundTintMode = SystemBackgroundTintMode.None;
+                }
+            }
+        }
+
+        public SystemBackgroundTintMode SelectedBackgroundTintMode
+        {
+            get
+            {
+                return m_SelectedBackgroundTintMode;
+            }
+            set
+            {
+                if(m_SelectedBackgroundTintMode == value)
+                {
+                    return;
+                }
+
+                m_SelectedBackgroundTintMode = value;
+                if(MapConf != null)
+                {
+                    MapConf.RegionBackgroundTintMode = value.ToString();
+                }
+                m_SelectedTintRegions.Clear();
+                UpdateRegionLegend();
+                OnPropertyChanged("SelectedBackgroundTintMode");
                 OnPropertyChanged("ShowRegionTint");
                 ReDrawMap(true);
             }
@@ -898,6 +972,7 @@ namespace HISA
                     SelectRegion(fallbackRegion);
                 }
             }
+            SelectedBackgroundTintMode = ParseBackgroundTintMode(MapConf.RegionBackgroundTintMode);
 
             uiRefreshTimer = new System.Windows.Threading.DispatcherTimer();
             uiRefreshTimer.Tick += UiRefreshTimer_Tick; ;
@@ -912,6 +987,18 @@ namespace HISA
             SystemDropDownAC.ItemsSource = newList;
 
             PropertyChanged += MapObjectChanged;
+        }
+
+        private static SystemBackgroundTintMode ParseBackgroundTintMode(string modeText)
+        {
+            if(string.IsNullOrWhiteSpace(modeText))
+            {
+                return SystemBackgroundTintMode.None;
+            }
+
+            return Enum.TryParse(modeText, true, out SystemBackgroundTintMode mode)
+                ? mode
+                : SystemBackgroundTintMode.None;
         }
 
         public void RefreshRegionList()
@@ -964,88 +1051,106 @@ namespace HISA
         /// <param name="FullRedraw">Clear all the static items or not</param>
         public void ReDrawMap(bool FullRedraw = false)
         {
-            if(ActiveCharacter != null && FollowCharacter == true)
+            if(m_IsReDrawingMap)
             {
-                UpdateActiveCharacter();
+                return;
             }
 
-            if(FullRedraw)
+            if(Region == null || Region.MapSystems == null)
             {
-                UpdateCanvasBounds();
-
-                Color c1 = MapConf.ActiveColourScheme.MapBackgroundColour;
-                Color c2 = MapConf.ActiveColourScheme.MapBackgroundColour;
-                c1.R = (byte)(0.9 * c1.R);
-                c1.G = (byte)(0.9 * c1.G);
-                c1.B = (byte)(0.9 * c1.B);
-
-                LinearGradientBrush lgb = new LinearGradientBrush();
-                lgb.StartPoint = new Point(0, 0);
-                lgb.EndPoint = new Point(0, 1);
-
-                lgb.GradientStops.Add(new GradientStop(c1, 0.0));
-                lgb.GradientStops.Add(new GradientStop(c2, 0.05));
-                lgb.GradientStops.Add(new GradientStop(c2, 0.95));
-                lgb.GradientStops.Add(new GradientStop(c1, 1.0));
-
-                MainCanvasGrid.Background = lgb;
-                MainZoomControl.Background = lgb;
-
-                MainCanvas.Children.Clear();
-
-                // re-add the static content
-                if(m_IsLayoutEditMode)
-                {
-                    AddSystemsToMapLayoutOnly();
-                    return;
-                }
-                AddSystemsToMap();
-            }
-            else
-            {
-                // remove anything temporary
-                foreach(UIElement uie in DynamicMapElements)
-                {
-                    MainCanvas.Children.Remove(uie);
-                }
-                DynamicMapElements.Clear();
-
-                foreach(UIElement uie in DynamicMapElementsRangeMarkers)
-                {
-                    MainCanvas.Children.Remove(uie);
-                }
-                DynamicMapElementsRangeMarkers.Clear();
-
-                foreach(UIElement uie in DynamicMapElementsRouteHighlight)
-                {
-                    MainCanvas.Children.Remove(uie);
-                }
-                DynamicMapElementsRouteHighlight.Clear();
-
-                foreach(UIElement uie in DynamicMapElementsCharacters)
-                {
-                    MainCanvas.Children.Remove(uie);
-                }
-                DynamicMapElementsCharacters.Clear();
+                return;
             }
 
-            AddFWDataToMap();
-
-            AddCharactersToMap();
-            AddDataToMap();
-            AddSystemIntelOverlay();
-            AddHighlightToSystem(SelectedSystem);
-
-            if(MapConf.DrawRoute)
+            m_IsReDrawingMap = true;
+            try
             {
-                AddRouteToMap();
-            }
+                if(ActiveCharacter != null && FollowCharacter == true)
+                {
+                    UpdateActiveCharacter();
+                }
 
-            AddWHLinksSystemsToMap();
-            AddStormsToMap();
-            AddSovConflictsToMap();
-            AddTrigInvasionSytemsToMap();
-            AddPOIsToMap();
+                if(FullRedraw)
+                {
+                    UpdateCanvasBounds();
+
+                    Color c1 = MapConf.ActiveColourScheme.MapBackgroundColour;
+                    Color c2 = MapConf.ActiveColourScheme.MapBackgroundColour;
+                    c1.R = (byte)(0.9 * c1.R);
+                    c1.G = (byte)(0.9 * c1.G);
+                    c1.B = (byte)(0.9 * c1.B);
+
+                    LinearGradientBrush lgb = new LinearGradientBrush();
+                    lgb.StartPoint = new Point(0, 0);
+                    lgb.EndPoint = new Point(0, 1);
+
+                    lgb.GradientStops.Add(new GradientStop(c1, 0.0));
+                    lgb.GradientStops.Add(new GradientStop(c2, 0.05));
+                    lgb.GradientStops.Add(new GradientStop(c2, 0.95));
+                    lgb.GradientStops.Add(new GradientStop(c1, 1.0));
+
+                    MainCanvasGrid.Background = lgb;
+                    MainZoomControl.Background = lgb;
+
+                    MainCanvas.Children.Clear();
+
+                    // re-add the static content
+                    if(m_IsLayoutEditMode)
+                    {
+                        AddSystemsToMapLayoutOnly();
+                        return;
+                    }
+                    AddSystemsToMap();
+                }
+                else
+                {
+                    // remove anything temporary
+                    foreach(UIElement uie in DynamicMapElements)
+                    {
+                        MainCanvas.Children.Remove(uie);
+                    }
+                    DynamicMapElements.Clear();
+
+                    foreach(UIElement uie in DynamicMapElementsRangeMarkers)
+                    {
+                        MainCanvas.Children.Remove(uie);
+                    }
+                    DynamicMapElementsRangeMarkers.Clear();
+
+                    foreach(UIElement uie in DynamicMapElementsRouteHighlight)
+                    {
+                        MainCanvas.Children.Remove(uie);
+                    }
+                    DynamicMapElementsRouteHighlight.Clear();
+
+                    foreach(UIElement uie in DynamicMapElementsCharacters)
+                    {
+                        MainCanvas.Children.Remove(uie);
+                    }
+                    DynamicMapElementsCharacters.Clear();
+                }
+
+                AddFWDataToMap();
+
+                AddCharactersToMap();
+                AddDataToMap();
+                AddSystemIntelOverlay();
+                AddHighlightToSystem(SelectedSystem);
+
+                if(MapConf.DrawRoute)
+                {
+                    AddRouteToMap();
+                }
+
+                AddWHLinksSystemsToMap();
+                AddStormsToMap();
+                AddSovConflictsToMap();
+                AddTrigInvasionSytemsToMap();
+                AddPOIsToMap();
+            }
+            finally
+            {
+                m_IsReDrawingMap = false;
+            }
         }
 
         private void UpdateCanvasBounds()
@@ -1097,7 +1202,7 @@ namespace HISA
             Brush MissingLinkBrush = new SolidColorBrush(MapConf.ActiveColourScheme.RegionGateColour);
 
             AddLayoutGrid();
-            AddRegionTintBackground();
+            AddSystemTintBackground();
 
             HashSet<long> linkSet = new HashSet<long>();
             Dictionary<string, int> index = new Dictionary<string, int>(Region.MapSystems.Count, StringComparer.Ordinal);
@@ -1776,16 +1881,14 @@ namespace HISA
 
             List<string> WarningZoneHighlights = new List<string>();
 
-            foreach(EVEData.LocalCharacter c in EM.LocalCharacters)
+            if(MapConf.ShowDangerZone)
             {
-                if(MapConf.ShowDangerZone && c.WarningSystems != null && c.DangerZoneActive)
+                HashSet<string> warningSystems = DangerZoneHelper.GetDangerZoneSystems(MapConf, EM);
+                foreach(string systemName in warningSystems)
                 {
-                    foreach(string s in c.WarningSystems)
+                    if(!WarningZoneHighlights.Contains(systemName))
                     {
-                        if(!WarningZoneHighlights.Contains(s))
-                        {
-                            WarningZoneHighlights.Add(s);
-                        }
+                        WarningZoneHighlights.Add(systemName);
                     }
                 }
             }
@@ -2899,89 +3002,190 @@ namespace HISA
 
         private void AddSystemIntelOverlay()
         {
-            Brush intelBlobBrush = new SolidColorBrush(MapConf.ActiveColourScheme.IntelOverlayColour);
-            Brush intelClearBlobBrush = new SolidColorBrush(MapConf.ActiveColourScheme.IntelClearOverlayColour);
-
-            //The tolist creates a temporary copy; however this is updated on a second thread
-            foreach(EVEData.IntelData id in EM.IntelDataList.ToList())
+            if(Region == null || Region.MapSystems == null || MapConf == null)
             {
-                foreach(string sysStr in id.Systems)
+                return;
+            }
+
+            Brush intelBlobBrush = new SolidColorBrush(MapConf.ActiveColourScheme.IntelOverlayColour);
+            DateTime now = DateTime.Now;
+            double maxIntelSeconds = Math.Max(1.0, (double)(MapConf?.MaxIntelSeconds ?? 1));
+            Dictionary<string, IntelData> latestIntelBySystem = GetLatestIntelBySystem();
+
+            foreach(KeyValuePair<string, IntelData> intelEntry in latestIntelBySystem)
+            {
+                IntelData id = intelEntry.Value;
+                if(id == null || id.ClearNotification)
                 {
-                    if(Region.IsSystemOnMap(sysStr))
+                    // Latest clear report resets the system back to blank.
+                    continue;
+                }
+
+                if(!Region.MapSystems.TryGetValue(intelEntry.Key, out EVEData.MapSystem sys) || sys == null)
+                {
+                    continue;
+                }
+
+                double radiusScale = (now - id.IntelTime).TotalSeconds / maxIntelSeconds;
+                if(radiusScale < 0.0 || radiusScale >= 1.0)
+                {
+                    continue;
+                }
+
+                // keep intel ring static and close to the system node; age is represented by fade only
+                double ringDiameter = INTEL_RING_DIAMETER;
+                double ringPathRadius = ringDiameter / 2.0;
+                double ringVisualRadius = ringPathRadius + (INTEL_RING_STROKE_THICKNESS / 2.0);
+                double ringVisualDiameter = ringVisualRadius * 2.0;
+
+                Canvas intelOverlay = new Canvas
+                {
+                    Width = ringVisualDiameter,
+                    Height = ringVisualDiameter,
+                    Opacity = Math.Max(0.78, 1.0 - (radiusScale * 0.22)),
+                    IsHitTestVisible = false
+                };
+
+                Shape intelShape = new Ellipse() { Height = ringDiameter, Width = ringDiameter };
+                intelShape.Fill = Brushes.Transparent;
+                intelShape.Stroke = intelBlobBrush;
+                intelShape.StrokeThickness = INTEL_RING_STROKE_THICKNESS;
+                intelShape.IsHitTestVisible = false;
+
+                double localCenter = ringVisualRadius;
+                Canvas.SetLeft(intelShape, localCenter - ringPathRadius);
+                Canvas.SetTop(intelShape, localCenter - ringPathRadius);
+                Canvas.SetZIndex(intelShape, 0);
+                intelOverlay.Children.Add(intelShape);
+
+                AddIntelAlertBadges(id, intelOverlay, localCenter, localCenter, ringPathRadius);
+
+                RotateTransform rt = new RotateTransform
+                {
+                    CenterX = localCenter,
+                    CenterY = localCenter
+                };
+                intelOverlay.RenderTransform = rt;
+
+                DoubleAnimation da = new DoubleAnimation
+                {
+                    From = 360,
+                    To = 0,
+                    Duration = new Duration(TimeSpan.FromSeconds(INTEL_RING_ROTATION_SECONDS)),
+                    RepeatBehavior = RepeatBehavior.Forever
+                };
+                Timeline.SetDesiredFrameRate(da, 20);
+                rt.BeginAnimation(RotateTransform.AngleProperty, da);
+
+                Canvas.SetLeft(intelOverlay, sys.Layout.X - localCenter);
+                Canvas.SetTop(intelOverlay, sys.Layout.Y - localCenter);
+                Canvas.SetZIndex(intelOverlay, ZINDEX_INTEL_RING);
+                MainCanvas.Children.Add(intelOverlay);
+
+                DynamicMapElements.Add(intelOverlay);
+
+                AddIntelHostileCountBadge(id, sys, ringVisualRadius);
+            }
+        }
+
+        private void AddIntelHostileCountBadge(IntelData intelData, MapSystem sys, double ringVisualRadius)
+        {
+            if(intelData == null || sys == null || intelData.ClearNotification)
+            {
+                return;
+            }
+
+            int hostileCount = EstimateIntelHostileCount(intelData);
+            if(hostileCount <= 0)
+            {
+                return;
+            }
+
+            string countText = hostileCount > 99 ? "99+" : hostileCount.ToString();
+            double badgeSize = countText.Length >= 3 ? 18 : 14;
+
+            Color accent = MapConf.ActiveColourScheme.IntelOverlayColour;
+            SolidColorBrush fillBrush = new SolidColorBrush(Color.FromArgb(235, accent.R, accent.G, accent.B));
+            SolidColorBrush textBrush = new SolidColorBrush(Colors.White);
+            SolidColorBrush borderBrush = new SolidColorBrush(Color.FromArgb(235, 20, 20, 20));
+            fillBrush.Freeze();
+            textBrush.Freeze();
+            borderBrush.Freeze();
+
+            TextBlock textBlock = new TextBlock
+            {
+                Text = countText,
+                Foreground = textBrush,
+                FontWeight = FontWeights.Bold,
+                FontSize = 8,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextAlignment = TextAlignment.Center,
+                IsHitTestVisible = false
+            };
+
+            Border badge = new Border
+            {
+                Width = badgeSize,
+                Height = badgeSize,
+                Background = fillBrush,
+                BorderBrush = borderBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(badgeSize / 2.0),
+                Child = textBlock,
+                ToolTip = $"{hostileCount} hostile reported",
+                IsHitTestVisible = false
+            };
+
+            double badgeCenterX = sys.Layout.X + (ringVisualRadius * 0.72);
+            double badgeCenterY = sys.Layout.Y - (ringVisualRadius * 0.72);
+            Canvas.SetLeft(badge, badgeCenterX - (badgeSize / 2.0));
+            Canvas.SetTop(badge, badgeCenterY - (badgeSize / 2.0));
+            Canvas.SetZIndex(badge, ZINDEX_INTEL_COUNT);
+            MainCanvas.Children.Add(badge);
+            DynamicMapElements.Add(badge);
+        }
+
+        private Dictionary<string, IntelData> GetLatestIntelBySystem()
+        {
+            Dictionary<string, IntelData> latestIntelBySystem = new Dictionary<string, IntelData>(StringComparer.OrdinalIgnoreCase);
+
+            if(EM == null || EM.IntelDataList == null || Region == null || MapConf == null)
+            {
+                return latestIntelBySystem;
+            }
+
+            DateTime now = DateTime.Now;
+            double maxIntelSeconds = Math.Max(1.0, (double)MapConf.MaxIntelSeconds);
+
+            foreach(EVEData.IntelData report in EM.IntelDataList.ToList())
+            {
+                if(report == null || report.Systems == null || report.Systems.Count == 0)
+                {
+                    continue;
+                }
+
+                double ageSeconds = (now - report.IntelTime).TotalSeconds;
+                if(ageSeconds < 0.0 || ageSeconds >= maxIntelSeconds)
+                {
+                    continue;
+                }
+
+                foreach(string systemName in report.Systems)
+                {
+                    if(string.IsNullOrWhiteSpace(systemName) || !Region.IsSystemOnMap(systemName))
                     {
-                        EVEData.MapSystem sys = Region.MapSystems[sysStr];
+                        continue;
+                    }
 
-                        double radiusScale = (DateTime.Now - id.IntelTime).TotalSeconds / (double)MapConf.MaxIntelSeconds;
-
-                        if(radiusScale < 0.0 || radiusScale >= 1.0)
-                        {
-                            continue;
-                        }
-
-                        // keep intel ring static and close to the system node; age is represented by fade only
-                        double ringDiameter = INTEL_RING_DIAMETER;
-                        double ringPathRadius = ringDiameter / 2.0;
-                        double ringVisualRadius = ringPathRadius + (INTEL_RING_STROKE_THICKNESS / 2.0);
-                        double ringVisualDiameter = ringVisualRadius * 2.0;
-
-                        Canvas intelOverlay = new Canvas
-                        {
-                            Width = ringVisualDiameter,
-                            Height = ringVisualDiameter,
-                            Opacity = Math.Max(0.35, 1.0 - (radiusScale * 0.7)),
-                            IsHitTestVisible = false
-                        };
-
-                        Shape intelShape = new Ellipse() { Height = ringDiameter, Width = ringDiameter };
-                        intelShape.Fill = Brushes.Transparent;
-                        if(id.ClearNotification)
-                        {
-                            intelShape.Stroke = intelClearBlobBrush;
-                        }
-                        else
-                        {
-                            intelShape.Stroke = intelBlobBrush;
-                        }
-                        intelShape.StrokeThickness = INTEL_RING_STROKE_THICKNESS;
-                        intelShape.IsHitTestVisible = false;
-
-                        double localCenter = ringVisualRadius;
-                        Canvas.SetLeft(intelShape, localCenter - ringPathRadius);
-                        Canvas.SetTop(intelShape, localCenter - ringPathRadius);
-                        Canvas.SetZIndex(intelShape, 0);
-                        intelOverlay.Children.Add(intelShape);
-
-                        AddIntelAlertBadges(id, intelOverlay, localCenter, localCenter, ringPathRadius);
-
-                        if(!id.ClearNotification)
-                        {
-                            RotateTransform rt = new RotateTransform
-                            {
-                                CenterX = localCenter,
-                                CenterY = localCenter
-                            };
-                            intelOverlay.RenderTransform = rt;
-
-                            DoubleAnimation da = new DoubleAnimation
-                            {
-                                From = 360,
-                                To = 0,
-                                Duration = new Duration(TimeSpan.FromSeconds(INTEL_RING_ROTATION_SECONDS)),
-                                RepeatBehavior = RepeatBehavior.Forever
-                            };
-                            Timeline.SetDesiredFrameRate(da, 20);
-                            rt.BeginAnimation(RotateTransform.AngleProperty, da);
-                        }
-
-                        Canvas.SetLeft(intelOverlay, sys.Layout.X - localCenter);
-                        Canvas.SetTop(intelOverlay, sys.Layout.Y - localCenter);
-                        Canvas.SetZIndex(intelOverlay, ZINDEX_INTEL_RING);
-                        MainCanvas.Children.Add(intelOverlay);
-
-                        DynamicMapElements.Add(intelOverlay);
+                    if(!latestIntelBySystem.TryGetValue(systemName, out IntelData existingReport) || existingReport.IntelTime < report.IntelTime)
+                    {
+                        latestIntelBySystem[systemName] = report;
                     }
                 }
             }
+
+            return latestIntelBySystem;
         }
 
         private ImageSource GetIntelShipClassIcon(IntelShipClass shipClass)
@@ -3021,8 +3225,16 @@ namespace HISA
             }
         }
 
-        private string GetIntelBadgeTooltip(IntelData intelData, IntelShipClass shipClass)
+        private string GetIntelBadgeTooltip(IntelData intelData, IntelShipClass shipClass, bool overflowFighterFill = false)
         {
+            if(overflowFighterFill)
+            {
+                int hostileCount = EstimateIntelHostileCount(intelData);
+                return hostileCount > MAX_INTEL_BADGES
+                    ? $"Heavy hostile presence ({hostileCount} reported)"
+                    : "Heavy hostile presence";
+            }
+
             string classText = GetIntelShipClassLabel(shipClass);
             if(intelData?.ReportedShips == null || intelData.ReportedShips.Count == 0)
             {
@@ -3037,6 +3249,79 @@ namespace HISA
                 : $"{classText}: {string.Join(", ", shownShips)}";
         }
 
+        private static int GetIntelShipClassSortOrder(IntelShipClass shipClass)
+        {
+            switch(shipClass)
+            {
+                case IntelShipClass.Capsule: return 0;
+                case IntelShipClass.Frigate: return 1;
+                case IntelShipClass.Destroyer: return 2;
+                case IntelShipClass.Cruiser: return 3;
+                case IntelShipClass.Battlecruiser: return 4;
+                case IntelShipClass.Battleship: return 5;
+                case IntelShipClass.Industrial: return 6;
+                case IntelShipClass.Mining: return 7;
+                case IntelShipClass.Freighter: return 8;
+                case IntelShipClass.Capital: return 9;
+                case IntelShipClass.Fighter: return 10;
+                case IntelShipClass.Structure: return 11;
+                case IntelShipClass.UnknownHostile:
+                default:
+                    return 100;
+            }
+        }
+
+        private List<IntelShipClass> BuildIntelBadgeClasses(IntelData intelData, out bool overflowFighterFill)
+        {
+            overflowFighterFill = false;
+
+            if(intelData == null || intelData.ClearNotification)
+            {
+                return new List<IntelShipClass>();
+            }
+
+            int hostileCount = EstimateIntelHostileCount(intelData);
+
+            List<IntelShipClass> classPool = intelData.ReportedShipClasses?
+                .Where(c => Enum.IsDefined(typeof(IntelShipClass), c))
+                .Distinct()
+                .ToList() ?? new List<IntelShipClass>();
+
+            if(classPool.Count > 1)
+            {
+                classPool.Remove(IntelShipClass.UnknownHostile);
+            }
+
+            classPool = classPool
+                .OrderBy(GetIntelShipClassSortOrder)
+                .ToList();
+
+            if(classPool.Count == 0)
+            {
+                classPool.Add(IntelShipClass.UnknownHostile);
+            }
+
+            hostileCount = Math.Max(hostileCount, classPool.Count);
+
+            if(hostileCount > MAX_INTEL_BADGES)
+            {
+                overflowFighterFill = true;
+                return Enumerable.Repeat(IntelShipClass.Fighter, MAX_INTEL_BADGES).ToList();
+            }
+
+            List<IntelShipClass> badges = new List<IntelShipClass>(hostileCount);
+
+            for(int i = 0; i < hostileCount; i++)
+            {
+                IntelShipClass shipClass = i < classPool.Count
+                    ? classPool[i]
+                    : classPool[(i - classPool.Count) % classPool.Count];
+                badges.Add(shipClass);
+            }
+
+            return badges;
+        }
+
         private void AddIntelAlertBadges(IntelData intelData, Canvas parentCanvas, double centerX, double centerY, double ringRadius)
         {
             if(intelData == null || parentCanvas == null)
@@ -3044,28 +3329,7 @@ namespace HISA
                 return;
             }
 
-            List<IntelShipClass> badges = new List<IntelShipClass>();
-            if(intelData.ReportedShipClasses != null)
-            {
-                foreach(IntelShipClass shipClass in intelData.ReportedShipClasses)
-                {
-                    if(!badges.Contains(shipClass))
-                    {
-                        badges.Add(shipClass);
-                    }
-                }
-            }
-
-            if(intelData.ClearNotification)
-            {
-                // clear intel shouldn't render hostile class icons
-                badges.Clear();
-            }
-
-            if(!intelData.ClearNotification && badges.Count == 0)
-            {
-                badges.Add(IntelShipClass.UnknownHostile);
-            }
+            List<IntelShipClass> badges = BuildIntelBadgeClasses(intelData, out bool overflowFighterFill);
 
             int badgeCount = Math.Min(MAX_INTEL_BADGES, badges.Count);
             if(badgeCount == 0)
@@ -3087,7 +3351,7 @@ namespace HISA
                     Height = INTEL_BADGE_SIZE,
                     Source = GetIntelShipClassIcon(shipClass),
                     Stretch = Stretch.Uniform,
-                    ToolTip = GetIntelBadgeTooltip(intelData, shipClass),
+                    ToolTip = GetIntelBadgeTooltip(intelData, shipClass, overflowFighterFill),
                     IsHitTestVisible = false
                 };
 
@@ -3173,37 +3437,254 @@ namespace HISA
                 return 0;
             }
 
-            int count = 0;
-            if(intelData.ReportedPilots != null)
+            int shipCount = intelData.ReportedShips?.Count ?? 0;
+            int classCount = intelData.ReportedShipClasses?.Count(c => c != IntelShipClass.UnknownHostile) ?? 0;
+            int pilotMentions = EstimatePilotMentionsFromIntelText(intelData);
+            if(pilotMentions == 0 && intelData.ReportedPilots != null)
             {
-                count = Math.Max(count, intelData.ReportedPilots.Count);
+                pilotMentions = intelData.ReportedPilots.Count;
             }
 
-            if(intelData.ReportedShips != null)
+            int baseCount = Math.Max(shipCount, Math.Max(classCount, pilotMentions));
+
+            (int additionalFromPlus, int explicitStandaloneCount) = GetIntelCountHints(intelData?.IntelString);
+
+            int count;
+            if(additionalFromPlus > 0)
             {
-                count = Math.Max(count, intelData.ReportedShips.Count);
+                count = baseCount + additionalFromPlus;
+            }
+            else if(explicitStandaloneCount > 0)
+            {
+                count = baseCount > 0
+                    ? baseCount + explicitStandaloneCount
+                    : explicitStandaloneCount;
+            }
+            else
+            {
+                count = baseCount;
+            }
+
+            // Treat gang/spike intel as a high-hostile report even when explicit counts are missing.
+            if(!intelData.ClearNotification &&
+               !string.IsNullOrWhiteSpace(intelData.IntelString) &&
+               IntelLargeEnemyGroupRegex.IsMatch(intelData.IntelString))
+            {
+                count = Math.Max(count, 6);
+            }
+
+            if(!intelData.ClearNotification && count == 0)
+            {
+                count = 1;
             }
 
             return count;
         }
 
-        private void AddIntelHoverSection(MapSystem selectedSys, SolidColorBrush popupTextBrush, Thickness one)
+        private static (int plusAdditional, int explicitStandalone) GetIntelCountHints(string intelText)
         {
-            if(selectedSys == null || EM == null || EM.IntelDataList == null)
+            if(string.IsNullOrWhiteSpace(intelText))
             {
-                return;
+                return (0, 0);
             }
 
-            List<IntelData> intelForSystem = EM.IntelDataList
-                .Where(i => i != null && i.Systems != null && i.Systems.Any(s => string.Equals(s, selectedSys.Name, StringComparison.OrdinalIgnoreCase)))
-                .OrderByDescending(i => i.IntelTime)
-                .Take(3)
+            int plusAdditional = 0;
+            foreach(Match m in IntelPlusCountRegex.Matches(intelText))
+            {
+                if(int.TryParse(m.Groups[1].Value, out int parsed) && parsed > 0 && parsed <= 250)
+                {
+                    plusAdditional += parsed;
+                }
+            }
+
+            List<int> standalone = new List<int>();
+            foreach(Match m in IntelStandaloneCountRegex.Matches(intelText))
+            {
+                if(int.TryParse(m.Groups[1].Value, out int parsed) && parsed > 0 && parsed <= 250)
+                {
+                    standalone.Add(parsed);
+                }
+            }
+
+            int explicitStandalone = 0;
+            if(standalone.Count > 0)
+            {
+                bool hasContext = IntelCountContextRegex.IsMatch(intelText);
+                explicitStandalone = hasContext ? standalone.Sum() : standalone.Max();
+            }
+
+            return (plusAdditional, explicitStandalone);
+        }
+
+        private static int EstimatePilotMentionsFromIntelText(IntelData intelData)
+        {
+            if(intelData == null || string.IsNullOrWhiteSpace(intelData.IntelString))
+            {
+                return 0;
+            }
+
+            HashSet<string> matchedSystems = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if(intelData.Systems != null)
+            {
+                foreach(string systemName in intelData.Systems)
+                {
+                    if(!string.IsNullOrWhiteSpace(systemName))
+                    {
+                        matchedSystems.Add(systemName);
+                    }
+                }
+            }
+
+            HashSet<string> shipWords = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if(intelData.ReportedShips != null)
+            {
+                foreach(string shipName in intelData.ReportedShips)
+                {
+                    if(string.IsNullOrWhiteSpace(shipName))
+                    {
+                        continue;
+                    }
+
+                    foreach(Match m in IntelNameTokenRegex.Matches(shipName))
+                    {
+                        if(!string.IsNullOrWhiteSpace(m.Value))
+                        {
+                            shipWords.Add(m.Value);
+                        }
+                    }
+                }
+            }
+
+            List<string> tokens = IntelNameTokenRegex.Matches(intelData.IntelString)
+                .Cast<Match>()
+                .Select(m => m.Value)
+                .Where(v => !string.IsNullOrWhiteSpace(v))
                 .ToList();
 
-            if(intelForSystem.Count == 0)
+            bool IsCandidateNameToken(string token)
+            {
+                if(string.IsNullOrWhiteSpace(token))
+                {
+                    return false;
+                }
+
+                if(token.All(char.IsDigit))
+                {
+                    return false;
+                }
+
+                if(!token.Any(char.IsLetter))
+                {
+                    return false;
+                }
+
+                if(!char.IsUpper(token[0]))
+                {
+                    return false;
+                }
+
+                if(IntelCountStopWords.Contains(token))
+                {
+                    return false;
+                }
+
+                if(matchedSystems.Contains(token))
+                {
+                    return false;
+                }
+
+                if(LooksLikeSystemStyleToken(token))
+                {
+                    return false;
+                }
+
+                if(shipWords.Contains(token))
+                {
+                    return false;
+                }
+
+                return true;
+            }
+
+            HashSet<string> nameMentions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            for(int i = 0; i < tokens.Count; i++)
+            {
+                string token = tokens[i];
+                if(!IsCandidateNameToken(token))
+                {
+                    continue;
+                }
+
+                string mention = token;
+                if(i + 1 < tokens.Count && IsCandidateNameToken(tokens[i + 1]))
+                {
+                    mention = token + " " + tokens[i + 1];
+                    i++;
+                }
+
+                nameMentions.Add(mention);
+            }
+
+            return nameMentions.Count;
+        }
+
+        private static bool LooksLikeSystemStyleToken(string token)
+        {
+            if(string.IsNullOrWhiteSpace(token))
+            {
+                return false;
+            }
+
+            bool hasDigit = token.Any(char.IsDigit);
+            bool hasHyphen = token.Contains('-');
+            if(hasDigit && hasHyphen)
+            {
+                return true;
+            }
+
+            int systemLikeChars = token.Count(ch => char.IsUpper(ch) || char.IsDigit(ch) || ch == '-');
+            return token.Length >= 4 && systemLikeChars == token.Length;
+        }
+
+        private IntelData GetLatestIntelForSystem(string systemName)
+        {
+            if(string.IsNullOrWhiteSpace(systemName))
+            {
+                return null;
+            }
+
+            Dictionary<string, IntelData> latestBySystem = GetLatestIntelBySystem();
+            return latestBySystem.TryGetValue(systemName, out IntelData report) ? report : null;
+        }
+
+        private void AddIntelHoverSection(MapSystem selectedSys, SolidColorBrush popupTextBrush, Thickness one)
+        {
+            if(selectedSys == null || popupTextBrush == null)
             {
                 return;
             }
+
+            IntelData latestIntel = GetLatestIntelForSystem(selectedSys.Name);
+            if(latestIntel == null || latestIntel.ClearNotification)
+            {
+                return;
+            }
+
+            Color accentColor = MapConf.ActiveColourScheme.IntelOverlayColour;
+            Brush accentBrush = new SolidColorBrush(accentColor);
+            Brush cardBorderBrush = new SolidColorBrush(Color.FromArgb(200, accentColor.R, accentColor.G, accentColor.B));
+            Brush cardBackground = new SolidColorBrush(Color.FromArgb(45, accentColor.R, accentColor.G, accentColor.B));
+            Brush labelBrush = new SolidColorBrush(Color.FromArgb(220, popupTextBrush.Color.R, popupTextBrush.Color.G, popupTextBrush.Color.B));
+
+            List<string> ships = latestIntel.ReportedShips?
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList() ?? new List<string>();
+
+            List<string> pilots = latestIntel.ReportedPilots?
+                .Where(p => !string.IsNullOrWhiteSpace(p))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList() ?? new List<string>();
 
             SystemInfoPopupSP.Children.Add(new Separator());
 
@@ -3211,95 +3692,79 @@ namespace HISA
             {
                 Padding = one,
                 Margin = one,
-                Content = "Intel Reports",
+                Content = "Intel (Last Hostile Report)",
                 FontWeight = FontWeights.Bold,
-                Foreground = popupTextBrush
+                Foreground = accentBrush
             };
             SystemInfoPopupSP.Children.Add(intelHeader);
 
-            foreach(IntelData report in intelForSystem)
+            Border reportCard = new Border
             {
-                Border reportCard = new Border
-                {
-                    BorderBrush = new SolidColorBrush(Color.FromArgb(90, popupTextBrush.Color.R, popupTextBrush.Color.G, popupTextBrush.Color.B)),
-                    BorderThickness = new Thickness(1),
-                    CornerRadius = new CornerRadius(3),
-                    Margin = new Thickness(1, 1, 1, 4),
-                    Padding = new Thickness(2)
-                };
+                BorderBrush = cardBorderBrush,
+                Background = cardBackground,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(4),
+                Margin = new Thickness(1, 1, 1, 4),
+                Padding = new Thickness(4)
+            };
 
-                StackPanel reportBody = new StackPanel();
+            StackPanel reportBody = new StackPanel();
 
-                string status = report.ClearNotification ? "CLEAR" : "HOSTILE";
-                int hostileCount = EstimateIntelHostileCount(report);
-                string hostileLabel = report.ClearNotification
-                    ? "clear notification"
-                    : hostileCount > 0 ? $"{hostileCount} tracked" : "count unknown";
+            Label ageLine = new Label
+            {
+                Padding = one,
+                Margin = new Thickness(0),
+                Content = $"Reported : {FormatIntelAge(latestIntel.IntelTime)}",
+                Foreground = accentBrush,
+                FontWeight = FontWeights.SemiBold
+            };
+            reportBody.Children.Add(ageLine);
 
-                Label summary = new Label
-                {
-                    Padding = one,
-                    Margin = new Thickness(0),
-                    Content = $"{status} | {hostileLabel} | {FormatIntelAge(report.IntelTime)}",
-                    Foreground = report.ClearNotification ? new SolidColorBrush(Colors.LightGreen) : popupTextBrush
-                };
-                reportBody.Children.Add(summary);
+            Label timeLine = new Label
+            {
+                Padding = one,
+                Margin = new Thickness(0),
+                Content = $"Time : {latestIntel.IntelTime:HH:mm:ss}",
+                Foreground = labelBrush
+            };
+            reportBody.Children.Add(timeLine);
 
-                if(!report.ClearNotification)
-                {
-                    string classes = report.ReportedShipClasses != null
-                        ? JoinIntelValues(report.ReportedShipClasses.Select(GetIntelShipClassLabel), 4)
-                        : "None";
-
-                    Label classLine = new Label
-                    {
-                        Padding = one,
-                        Margin = new Thickness(0),
-                        Content = $"Classes : {classes}",
-                        Foreground = popupTextBrush
-                    };
-                    reportBody.Children.Add(classLine);
-
-                    Label shipLine = new Label
-                    {
-                        Padding = one,
-                        Margin = new Thickness(0),
-                        Content = $"Ships : {JoinIntelValues(report.ReportedShips, 4)}",
-                        Foreground = popupTextBrush
-                    };
-                    reportBody.Children.Add(shipLine);
-
-                    Label pilotLine = new Label
-                    {
-                        Padding = one,
-                        Margin = new Thickness(0),
-                        Content = $"Pilots : {JoinIntelValues(report.ReportedPilots, 4)}",
-                        Foreground = popupTextBrush
-                    };
-                    reportBody.Children.Add(pilotLine);
-                }
-
-                Label sourceLine = new Label
+            if(ships.Count > 0)
+            {
+                Label shipsLine = new Label
                 {
                     Padding = one,
                     Margin = new Thickness(0),
-                    Content = $"Channel : {report.IntelChannel}",
+                    Content = $"Ships : {JoinIntelValues(ships, 6)}",
                     Foreground = popupTextBrush
                 };
-                reportBody.Children.Add(sourceLine);
-
-                TextBlock textLine = new TextBlock
-                {
-                    Margin = new Thickness(4, 2, 4, 2),
-                    TextWrapping = TextWrapping.Wrap,
-                    Text = $"Intel : {CompactIntelText(report.IntelString)}",
-                    Foreground = popupTextBrush
-                };
-                reportBody.Children.Add(textLine);
-
-                reportCard.Child = reportBody;
-                SystemInfoPopupSP.Children.Add(reportCard);
+                reportBody.Children.Add(shipsLine);
             }
+
+            if(pilots.Count > 0)
+            {
+                Label pilotsLine = new Label
+                {
+                    Padding = one,
+                    Margin = new Thickness(0),
+                    Content = $"Pilots : {JoinIntelValues(pilots, 6)}",
+                    Foreground = popupTextBrush
+                };
+                reportBody.Children.Add(pilotsLine);
+            }
+
+            TextBlock reportTextLine = new TextBlock
+            {
+                Margin = new Thickness(4, 3, 4, 2),
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = popupTextBrush
+            };
+            reportTextLine.Inlines.Add(new Run("Report: ") { Foreground = labelBrush, FontWeight = FontWeights.SemiBold });
+            reportTextLine.Inlines.Add(new Run(CompactIntelText(latestIntel.IntelString, 200)));
+            reportBody.Children.Add(reportTextLine);
+
+            reportCard.Child = reportBody;
+            SystemInfoPopupSP.Children.Add(reportCard);
         }
 
         /// <summary>
@@ -3356,7 +3821,7 @@ namespace HISA
             // cache all system links
             List<GateHelper> systemLinks = new List<GateHelper>();
 
-            AddRegionTintBackground();
+            AddSystemTintBackground();
 
             Random rnd = new Random(4);
 
@@ -5868,9 +6333,15 @@ namespace HISA
             public Brush Brush { get; set; }
         }
 
+        public sealed class BackgroundTintModeItem
+        {
+            public string Name { get; set; }
+            public SystemBackgroundTintMode Mode { get; set; }
+        }
+
         public List<RegionColorItem> GetRegionColorLegend()
         {
-            if(Region == null || !Region.IsCustom)
+            if(Region == null || Region.MapSystems == null)
             {
                 return new List<RegionColorItem>();
             }
@@ -5897,9 +6368,44 @@ namespace HISA
             return list;
         }
 
+        private sealed class SystemTintStyle
+        {
+            public Brush Fill { get; set; }
+            public Brush Stroke { get; set; }
+            public string LegendKey { get; set; }
+        }
+
+        private const string EnemyLegendLow = "Enemies: 1-2";
+        private const string EnemyLegendMedium = "Enemies: 3-5";
+        private const string EnemyLegendHigh = "Enemies: 6+";
+
+        private void AddSystemTintBackground()
+        {
+            if(Region == null || Region.MapSystems == null)
+            {
+                return;
+            }
+
+            switch(SelectedBackgroundTintMode)
+            {
+                case SystemBackgroundTintMode.None:
+                    return;
+                case SystemBackgroundTintMode.Enemies:
+                    AddEnemyTintBackground();
+                    break;
+                case SystemBackgroundTintMode.SovUpgrades:
+                    AddSovUpgradeTintBackground();
+                    break;
+                case SystemBackgroundTintMode.Region:
+                default:
+                    AddRegionTintBackground();
+                    break;
+            }
+        }
+
         private void AddRegionTintBackground()
         {
-            if(Region == null || !Region.IsCustom || !m_ShowRegionTint)
+            if(Region == null || Region.MapSystems == null)
             {
                 return;
             }
@@ -5935,37 +6441,130 @@ namespace HISA
                     continue;
                 }
 
-                Polygon poly = new Polygon();
-                Vector2 centroid = GetCellCentroid(ms.CellPoints);
-                double expand = 1;
-                foreach(Vector2 p in ms.CellPoints)
+                SystemTintStyle style = new SystemTintStyle
                 {
-                    Vector2 pp = new Vector2((float)(centroid.X + (p.X - centroid.X) * expand), (float)(centroid.Y + (p.Y - centroid.Y) * expand));
-                    poly.Points.Add(new Point(pp.X, pp.Y));
-                }
-                poly.Fill = fill;
-                poly.Stroke = fill;
-                poly.StrokeThickness = 0.8;
-                poly.StrokeLineJoin = PenLineJoin.Round;
-                poly.SnapsToDevicePixels = true;
-                poly.IsHitTestVisible = false;
-                Canvas.SetZIndex(poly, ZINDEX_POLY - 2);
-                MainCanvas.Children.Add(poly);
+                    Fill = fill,
+                    Stroke = GetRegionTintStrokeBrush(regionName),
+                    LegendKey = regionName
+                };
+                AddTintPolygon(ms, style);
+            }
+        }
 
-                if(m_SelectedTintRegions.Contains(regionName))
+        private void AddEnemyTintBackground()
+        {
+            Dictionary<string, IntelData> latestIntelBySystem = GetLatestIntelBySystem();
+            if(latestIntelBySystem.Count == 0)
+            {
+                return;
+            }
+
+            foreach(MapSystem ms in Region.MapSystems.Values)
+            {
+                if(ms == null || ms.CellPoints == null || ms.CellPoints.Count == 0)
                 {
-                    Polygon outline = new Polygon();
-                    foreach(Point pt in poly.Points)
-                    {
-                        outline.Points.Add(pt);
-                    }
-                    outline.Fill = Brushes.Transparent;
-                    outline.Stroke = GetRegionTintStrokeBrush(regionName);
-                    outline.StrokeThickness = 2.4;
-                    outline.IsHitTestVisible = false;
-                    Canvas.SetZIndex(outline, ZINDEX_POLY - 1);
-                    MainCanvas.Children.Add(outline);
+                    continue;
                 }
+
+                if(!latestIntelBySystem.TryGetValue(ms.Name, out IntelData report) || report == null || report.ClearNotification)
+                {
+                    continue;
+                }
+
+                SystemTintStyle style = GetEnemyTintStyle(report);
+                if(style == null)
+                {
+                    continue;
+                }
+
+                AddTintPolygon(ms, style);
+            }
+        }
+
+        private void AddSovUpgradeTintBackground()
+        {
+            if(Region == null || Region.MapSystems == null)
+            {
+                return;
+            }
+
+            HashSet<string> upgradeTypes = GetSovUpgradeTypesInRegion();
+            if(upgradeTypes.Count == 0)
+            {
+                return;
+            }
+
+            EnsureSovUpgradeTintPalette(upgradeTypes);
+
+            foreach(MapSystem ms in Region.MapSystems.Values)
+            {
+                if(ms == null || ms.CellPoints == null || ms.CellPoints.Count == 0)
+                {
+                    continue;
+                }
+
+                string upgradeType = GetPrimarySovUpgradeType(ms);
+                if(string.IsNullOrWhiteSpace(upgradeType))
+                {
+                    continue;
+                }
+
+                Brush fill = GetSovUpgradeTintBrush(upgradeType);
+                if(fill == null)
+                {
+                    continue;
+                }
+
+                SystemTintStyle style = new SystemTintStyle
+                {
+                    Fill = fill,
+                    Stroke = GetSovUpgradeTintStrokeBrush(upgradeType),
+                    LegendKey = upgradeType
+                };
+
+                AddTintPolygon(ms, style);
+            }
+        }
+
+        private void AddTintPolygon(MapSystem ms, SystemTintStyle style)
+        {
+            if(ms == null || style?.Fill == null || ms.CellPoints == null || ms.CellPoints.Count == 0)
+            {
+                return;
+            }
+
+            Polygon poly = new Polygon();
+            Vector2 centroid = GetCellCentroid(ms.CellPoints);
+            const double expand = 1.0;
+            foreach(Vector2 p in ms.CellPoints)
+            {
+                Vector2 pp = new Vector2((float)(centroid.X + (p.X - centroid.X) * expand), (float)(centroid.Y + (p.Y - centroid.Y) * expand));
+                poly.Points.Add(new Point(pp.X, pp.Y));
+            }
+
+            poly.Fill = style.Fill;
+            poly.Stroke = style.Fill;
+            poly.StrokeThickness = 0.8;
+            poly.StrokeLineJoin = PenLineJoin.Round;
+            poly.SnapsToDevicePixels = true;
+            poly.IsHitTestVisible = false;
+            Canvas.SetZIndex(poly, ZINDEX_POLY - 2);
+            MainCanvas.Children.Add(poly);
+
+            if(!string.IsNullOrWhiteSpace(style.LegendKey) && m_SelectedTintRegions.Contains(style.LegendKey))
+            {
+                Polygon outline = new Polygon();
+                foreach(Point pt in poly.Points)
+                {
+                    outline.Points.Add(pt);
+                }
+
+                outline.Fill = Brushes.Transparent;
+                outline.Stroke = style.Stroke ?? style.Fill;
+                outline.StrokeThickness = 2.4;
+                outline.IsHitTestVisible = false;
+                Canvas.SetZIndex(outline, ZINDEX_POLY - 1);
+                MainCanvas.Children.Add(outline);
             }
         }
 
@@ -6023,38 +6622,316 @@ namespace HISA
 
         private void UpdateRegionLegend()
         {
-            if(Region == null || !Region.IsCustom)
+            m_SuppressRegionLegendSelectionChanged = true;
+            try
             {
-                RegionColorLegendItems = new List<RegionColorItem>();
-                ShowRegionLegend = false;
-                m_SelectedTintRegions.Clear();
+                if(Region == null || Region.MapSystems == null)
+                {
+                    RegionColorLegendItems = new List<RegionColorItem>();
+                    ShowRegionLegend = false;
+                    m_SelectedTintRegions.Clear();
+                    OnPropertyChanged("RegionColorLegendItems");
+                    OnPropertyChanged("ShowRegionLegend");
+                    return;
+                }
+
+                List<RegionColorItem> legendItems = new List<RegionColorItem>();
+
+                switch(SelectedBackgroundTintMode)
+                {
+                    case SystemBackgroundTintMode.None:
+                        break;
+                    case SystemBackgroundTintMode.Enemies:
+                        {
+                            bool hasLow = false;
+                            bool hasMedium = false;
+                            bool hasHigh = false;
+
+                            foreach(IntelData report in GetLatestIntelBySystem().Values)
+                            {
+                                if(report == null || report.ClearNotification)
+                                {
+                                    continue;
+                                }
+
+                                int hostileCount = EstimateIntelHostileCount(report);
+                                string band = GetEnemyLegendKey(hostileCount);
+                                if(string.Equals(band, EnemyLegendLow, StringComparison.Ordinal))
+                                {
+                                    hasLow = true;
+                                }
+                                else if(string.Equals(band, EnemyLegendMedium, StringComparison.Ordinal))
+                                {
+                                    hasMedium = true;
+                                }
+                                else if(string.Equals(band, EnemyLegendHigh, StringComparison.Ordinal))
+                                {
+                                    hasHigh = true;
+                                }
+                            }
+
+                            if(hasLow)
+                            {
+                                legendItems.Add(new RegionColorItem { Name = EnemyLegendLow, Brush = BuildEnemyLegendBrush(EnemyLegendLow) });
+                            }
+                            if(hasMedium)
+                            {
+                                legendItems.Add(new RegionColorItem { Name = EnemyLegendMedium, Brush = BuildEnemyLegendBrush(EnemyLegendMedium) });
+                            }
+                            if(hasHigh)
+                            {
+                                legendItems.Add(new RegionColorItem { Name = EnemyLegendHigh, Brush = BuildEnemyLegendBrush(EnemyLegendHigh) });
+                            }
+                        }
+                        break;
+                    case SystemBackgroundTintMode.SovUpgrades:
+                        {
+                            HashSet<string> upgradeTypes = GetSovUpgradeTypesInRegion();
+                            EnsureSovUpgradeTintPalette(upgradeTypes);
+                            legendItems = upgradeTypes
+                                .OrderBy(t => t, StringComparer.OrdinalIgnoreCase)
+                                .Select(t => new RegionColorItem { Name = t, Brush = GetSovUpgradeTintBrush(t) })
+                                .Where(i => i.Brush != null)
+                                .ToList();
+                        }
+                        break;
+                    case SystemBackgroundTintMode.Region:
+                    default:
+                        {
+                            HashSet<string> regions = new HashSet<string>(StringComparer.Ordinal);
+                            foreach(MapSystem ms in Region.MapSystems.Values)
+                            {
+                                string regionName = GetSystemRegionName(ms);
+                                if(!string.IsNullOrWhiteSpace(regionName))
+                                {
+                                    regions.Add(regionName);
+                                }
+                            }
+
+                            if(regions.Count > 0)
+                            {
+                                EnsureRegionTintPalette(regions);
+                            }
+
+                            legendItems = regions
+                                .OrderBy(r => r)
+                                .Select(r => new RegionColorItem { Name = r, Brush = GetRegionTintBrush(r) })
+                                .Where(i => i.Brush != null)
+                                .ToList();
+                        }
+                        break;
+                }
+
+                HashSet<string> validKeys = new HashSet<string>(legendItems.Select(i => i.Name), StringComparer.OrdinalIgnoreCase);
+                m_SelectedTintRegions.RemoveWhere(k => !validKeys.Contains(k));
+
+                RegionColorLegendItems = legendItems;
+                ShowRegionLegend = legendItems.Count > 0;
                 OnPropertyChanged("RegionColorLegendItems");
                 OnPropertyChanged("ShowRegionLegend");
-                return;
+            }
+            finally
+            {
+                m_SuppressRegionLegendSelectionChanged = false;
+            }
+        }
+
+        private SystemTintStyle GetEnemyTintStyle(IntelData report)
+        {
+            if(report == null || report.ClearNotification)
+            {
+                return null;
             }
 
-            HashSet<string> regions = new HashSet<string>(StringComparer.Ordinal);
+            int hostileCount = EstimateIntelHostileCount(report);
+            if(hostileCount <= 0)
+            {
+                return null;
+            }
+
+            string legendKey = GetEnemyLegendKey(hostileCount);
+            Color baseColor = GetEnemyLegendColor(legendKey);
+
+            double maxIntelSeconds = Math.Max(1.0, (double)MapConf.MaxIntelSeconds);
+            double ageRatio = Math.Clamp((DateTime.Now - report.IntelTime).TotalSeconds / maxIntelSeconds, 0.0, 1.0);
+            byte alpha = (byte)Math.Max(50, 115 - (ageRatio * 45));
+            Color fillColor = Color.FromArgb(alpha, baseColor.R, baseColor.G, baseColor.B);
+            Color strokeColor = Darken(fillColor, 0.35f);
+
+            SolidColorBrush fillBrush = new SolidColorBrush(fillColor);
+            fillBrush.Freeze();
+            SolidColorBrush strokeBrush = new SolidColorBrush(strokeColor);
+            strokeBrush.Freeze();
+
+            return new SystemTintStyle
+            {
+                Fill = fillBrush,
+                Stroke = strokeBrush,
+                LegendKey = legendKey
+            };
+        }
+
+        private static string GetEnemyLegendKey(int hostileCount)
+        {
+            if(hostileCount >= 6)
+            {
+                return EnemyLegendHigh;
+            }
+
+            if(hostileCount >= 3)
+            {
+                return EnemyLegendMedium;
+            }
+
+            return EnemyLegendLow;
+        }
+
+        private static Color GetEnemyLegendColor(string legendKey)
+        {
+            if(string.Equals(legendKey, EnemyLegendHigh, StringComparison.Ordinal))
+            {
+                return Color.FromArgb(115, 214, 57, 57);
+            }
+
+            if(string.Equals(legendKey, EnemyLegendMedium, StringComparison.Ordinal))
+            {
+                return Color.FromArgb(110, 225, 114, 36);
+            }
+
+            return Color.FromArgb(105, 216, 166, 26);
+        }
+
+        private Brush BuildEnemyLegendBrush(string legendKey)
+        {
+            Color c = GetEnemyLegendColor(legendKey);
+            SolidColorBrush brush = new SolidColorBrush(c);
+            brush.Freeze();
+            return brush;
+        }
+
+        private HashSet<string> GetSovUpgradeTypesInRegion()
+        {
+            HashSet<string> types = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            if(Region == null || Region.MapSystems == null)
+            {
+                return types;
+            }
+
             foreach(MapSystem ms in Region.MapSystems.Values)
             {
-                string regionName = GetSystemRegionName(ms);
-                if(!string.IsNullOrWhiteSpace(regionName))
+                if(ms?.ActualSystem?.InfrastructureUpgrades == null)
                 {
-                    regions.Add(regionName);
+                    continue;
+                }
+
+                foreach(InfrastructureUpgrade upgrade in ms.ActualSystem.InfrastructureUpgrades)
+                {
+                    if(upgrade == null || !IsUpgradeIconVisible(upgrade.DisplayName))
+                    {
+                        continue;
+                    }
+
+                    string type = NormalizeSovUpgradeType(upgrade?.UpgradeName);
+                    if(!string.IsNullOrWhiteSpace(type))
+                    {
+                        types.Add(type);
+                    }
                 }
             }
 
-            ShowRegionLegend = regions.Count > 1;
-            RegionColorLegendItems = regions
-                .OrderBy(r => r)
-                .Select(r => new RegionColorItem { Name = r, Brush = GetRegionTintBrush(r) })
-                .ToList();
+            return types;
+        }
 
-            OnPropertyChanged("RegionColorLegendItems");
-            OnPropertyChanged("ShowRegionLegend");
+        private static string NormalizeSovUpgradeType(string upgradeName)
+        {
+            return string.IsNullOrWhiteSpace(upgradeName) ? string.Empty : upgradeName.Trim();
+        }
+
+        private string GetPrimarySovUpgradeType(MapSystem ms)
+        {
+            if(ms?.ActualSystem?.InfrastructureUpgrades == null || ms.ActualSystem.InfrastructureUpgrades.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            InfrastructureUpgrade selected = ms.ActualSystem.InfrastructureUpgrades
+                .Where(u => u != null && !string.IsNullOrWhiteSpace(u.UpgradeName) && IsUpgradeIconVisible(u.DisplayName))
+                .OrderByDescending(u => u.IsOnline)
+                .ThenBy(u => u.SlotNumber)
+                .FirstOrDefault();
+
+            return NormalizeSovUpgradeType(selected?.UpgradeName);
+        }
+
+        private void EnsureSovUpgradeTintPalette(HashSet<string> upgradeTypes)
+        {
+            string key = Region?.Name + ":" + string.Join("|", upgradeTypes.OrderBy(t => t, StringComparer.OrdinalIgnoreCase));
+            if(key == m_SovUpgradeTintKey && m_SovUpgradeTintIndex.Count == upgradeTypes.Count)
+            {
+                return;
+            }
+
+            m_SovUpgradeTintKey = key;
+            m_SovUpgradeTintIndex.Clear();
+            m_SovUpgradeTintCache.Clear();
+            m_SovUpgradeTintStrokeCache.Clear();
+
+            if(upgradeTypes.Count == 0)
+            {
+                return;
+            }
+
+            int paletteSize = Math.Max(16, upgradeTypes.Count * 2);
+            List<Color> palette = BuildPastelPalette(paletteSize);
+            int idx = 0;
+
+            foreach(string type in upgradeTypes.OrderBy(t => t, StringComparer.OrdinalIgnoreCase))
+            {
+                int paletteIdx = idx % palette.Count;
+                idx++;
+
+                m_SovUpgradeTintIndex[type] = paletteIdx;
+                Color fill = palette[paletteIdx];
+                Color stroke = Darken(fill, 0.2f);
+
+                SolidColorBrush fillBrush = new SolidColorBrush(fill);
+                fillBrush.Freeze();
+                SolidColorBrush strokeBrush = new SolidColorBrush(stroke);
+                strokeBrush.Freeze();
+
+                m_SovUpgradeTintCache[type] = fillBrush;
+                m_SovUpgradeTintStrokeCache[type] = strokeBrush;
+            }
+        }
+
+        private Brush GetSovUpgradeTintBrush(string upgradeType)
+        {
+            if(string.IsNullOrWhiteSpace(upgradeType))
+            {
+                return null;
+            }
+
+            return m_SovUpgradeTintCache.TryGetValue(upgradeType, out Brush brush) ? brush : null;
+        }
+
+        private Brush GetSovUpgradeTintStrokeBrush(string upgradeType)
+        {
+            if(string.IsNullOrWhiteSpace(upgradeType))
+            {
+                return null;
+            }
+
+            return m_SovUpgradeTintStrokeCache.TryGetValue(upgradeType, out Brush brush) ? brush : null;
         }
 
         private void RegionLegendList_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            if(m_SuppressRegionLegendSelectionChanged)
+            {
+                return;
+            }
+
             m_SelectedTintRegions.Clear();
             if(sender is ListView lv)
             {
@@ -6076,64 +6953,77 @@ namespace HISA
                 return;
             }
 
-            string key = Region.Name + ":" + string.Join("|", regions.OrderBy(r => r));
-            if(key == m_RegionTintKey && m_RegionTintIndex.Count == regions.Count)
+            if(m_IsUpdatingRegionTintPalette)
             {
                 return;
             }
 
-            m_RegionTintKey = key;
-            m_RegionTintIndex.Clear();
-            m_RegionTintCache.Clear();
-            m_RegionTintStrokeCache.Clear();
-
-            int paletteSize = Math.Max(24, regions.Count * 2);
-            List<Color> palette = BuildPastelPalette(paletteSize);
-
-            Dictionary<string, HashSet<string>> adjacency = BuildRegionAdjacency(regions);
-            List<string> ordered = regions.OrderByDescending(r => adjacency[r].Count).ToList();
-
-            foreach(string region in ordered)
+            m_IsUpdatingRegionTintPalette = true;
+            try
             {
-                HashSet<int> used = new HashSet<int>();
-                HashSet<string> nearby = new HashSet<string>(adjacency[region]);
-                foreach(string neighbor in adjacency[region])
+                string key = Region.Name + ":" + string.Join("|", regions.OrderBy(r => r));
+                if(key == m_RegionTintKey && m_RegionTintIndex.Count == regions.Count)
                 {
-                    foreach(string nn in adjacency[neighbor])
-                    {
-                        nearby.Add(nn);
-                    }
+                    return;
                 }
 
-                foreach(string neighbor in nearby)
-                {
-                    if(m_RegionTintIndex.TryGetValue(neighbor, out int idx))
-                    {
-                        used.Add(idx);
-                    }
-                }
+                m_RegionTintKey = key;
+                m_RegionTintIndex.Clear();
+                m_RegionTintCache.Clear();
+                m_RegionTintStrokeCache.Clear();
 
-                int selected = 0;
-                double bestScore = -1;
-                for(int i = 0; i < palette.Count; i++)
-                {
-                    double score = used.Contains(i) ? -1 : ColorDistanceScore(palette[i], used.Select(u => palette[u]).ToList());
-                    if(score > bestScore)
-                    {
-                        bestScore = score;
-                        selected = i;
-                    }
-                }
+                int paletteSize = Math.Max(24, regions.Count * 2);
+                List<Color> palette = BuildPastelPalette(paletteSize);
 
-                m_RegionTintIndex[region] = selected;
-                Color fill = palette[selected];
-                Color stroke = Darken(fill, 0.2f);
-                SolidColorBrush fillBrush = new SolidColorBrush(fill);
-                fillBrush.Freeze();
-                SolidColorBrush strokeBrush = new SolidColorBrush(stroke);
-                strokeBrush.Freeze();
-                m_RegionTintCache[region] = fillBrush;
-                m_RegionTintStrokeCache[region] = strokeBrush;
+                Dictionary<string, HashSet<string>> adjacency = BuildRegionAdjacency(regions);
+                List<string> ordered = regions.OrderByDescending(r => adjacency[r].Count).ToList();
+
+                foreach(string region in ordered)
+                {
+                    HashSet<int> used = new HashSet<int>();
+                    HashSet<string> nearby = new HashSet<string>(adjacency[region]);
+                    foreach(string neighbor in adjacency[region])
+                    {
+                        foreach(string nn in adjacency[neighbor])
+                        {
+                            nearby.Add(nn);
+                        }
+                    }
+
+                    foreach(string neighbor in nearby)
+                    {
+                        if(m_RegionTintIndex.TryGetValue(neighbor, out int idx))
+                        {
+                            used.Add(idx);
+                        }
+                    }
+
+                    int selected = 0;
+                    double bestScore = -1;
+                    for(int i = 0; i < palette.Count; i++)
+                    {
+                        double score = used.Contains(i) ? -1 : ColorDistanceScore(palette[i], used.Select(u => palette[u]).ToList());
+                        if(score > bestScore)
+                        {
+                            bestScore = score;
+                            selected = i;
+                        }
+                    }
+
+                    m_RegionTintIndex[region] = selected;
+                    Color fill = palette[selected];
+                    Color stroke = Darken(fill, 0.2f);
+                    SolidColorBrush fillBrush = new SolidColorBrush(fill);
+                    fillBrush.Freeze();
+                    SolidColorBrush strokeBrush = new SolidColorBrush(stroke);
+                    strokeBrush.Freeze();
+                    m_RegionTintCache[region] = fillBrush;
+                    m_RegionTintStrokeCache[region] = strokeBrush;
+                }
+            }
+            finally
+            {
+                m_IsUpdatingRegionTintPalette = false;
             }
         }
 
@@ -6464,6 +7354,7 @@ namespace HISA
                 hash = (hash * 31) + MapConf.ActiveColourScheme.PopupText.GetHashCode();
                 hash = (hash * 31) + (ShowJumpBridges ? 1 : 0);
                 hash = (hash * 31) + (ShowRegionTint ? 1 : 0);
+                hash = (hash * 31) + (int)SelectedBackgroundTintMode;
                 return hash;
             }
         }
@@ -7274,6 +8165,7 @@ namespace HISA
                 hash = (hash * 31) + (ShowSystemTimers ? 1 : 0);
                 hash = (hash * 31) + (ShowInfrastructureUpgrades ? 1 : 0);
                 hash = (hash * 31) + (ShowRegionTint ? 1 : 0);
+                hash = (hash * 31) + (int)SelectedBackgroundTintMode;
                 hash = (hash * 31) + (MapConf?.DrawRoute == true ? 1 : 0);
                 hash = (hash * 31) + (MapConf?.ShowCharacterNamesOnMap == true ? 1 : 0);
                 hash = (hash * 31) + (EM?.LocalCharacters?.Count ?? 0);

@@ -1765,6 +1765,22 @@ namespace HISA
                 }
             }), DispatcherPriority.Normal);
 
+            // Always refresh map intel visuals (ring/background) when intel updates,
+            // including clear notifications.
+            Application.Current.Dispatcher.Invoke((Action)(() =>
+            {
+                if(RegionUC != null)
+                {
+                    bool fullRedrawForEnemyBackground = RegionUC.SelectedBackgroundTintMode == RegionControl.SystemBackgroundTintMode.Enemies;
+                    RegionUC.ReDrawMap(fullRedrawForEnemyBackground);
+                }
+            }), DispatcherPriority.Normal);
+
+            if(IntelCache.Count == 0)
+            {
+                return;
+            }
+
             IntelData id = IntelCache[0];
 
             if(id.ClearNotification)
@@ -1784,22 +1800,15 @@ namespace HISA
             {
                 if(MapConf.PlaySoundOnlyInDangerZone || MapConf.FlashWindowOnlyInDangerZone)
                 {
+                    HashSet<string> warningSystems = DangerZoneHelper.GetDangerZoneSystems(MapConf, EVEManager);
+
                     foreach(string s in id.Systems)
                     {
-                        foreach(EVEData.LocalCharacter lc in EVEManager.LocalCharacters)
+                        if(warningSystems.Contains(s))
                         {
-                            if(lc.WarningSystems != null && lc.DangerZoneActive)
-                            {
-                                foreach(string ls in lc.WarningSystems)
-                                {
-                                    if(ls == s)
-                                    {
-                                        playSound = playSound || MapConf.PlaySoundOnlyInDangerZone;
-                                        flashWindow = flashWindow || MapConf.FlashWindowOnlyInDangerZone;
-                                        break;
-                                    }
-                                }
-                            }
+                            playSound = playSound || MapConf.PlaySoundOnlyInDangerZone;
+                            flashWindow = flashWindow || MapConf.FlashWindowOnlyInDangerZone;
+                            break;
                         }
                     }
                 }

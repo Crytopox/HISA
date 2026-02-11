@@ -45,6 +45,9 @@ namespace HISA
         private bool m_ShowCharacterNamesOnMap = true;
 
         private bool m_ShowDangerZone;
+        private int m_DangerZoneRange = 5;
+        private string m_DangerZoneCharacter = string.Empty;
+        private string m_RegionBackgroundTintMode = "None";
 
         private bool m_ShowIhubVunerabilities;
 
@@ -626,6 +629,51 @@ namespace HISA
             {
                 m_ShowDangerZone = value;
                 OnPropertyChanged("ShowDangerZone");
+            }
+        }
+
+        [Category("Intel")]
+        [DisplayName("DangerZone Jumps")]
+        public int DangerZoneRange
+        {
+            get
+            {
+                return m_DangerZoneRange;
+            }
+            set
+            {
+                m_DangerZoneRange = value < 1 ? 1 : value;
+                OnPropertyChanged("DangerZoneRange");
+            }
+        }
+
+        [Category("Intel")]
+        [DisplayName("DangerZone Character")]
+        public string DangerZoneCharacter
+        {
+            get
+            {
+                return m_DangerZoneCharacter;
+            }
+            set
+            {
+                m_DangerZoneCharacter = value ?? string.Empty;
+                OnPropertyChanged("DangerZoneCharacter");
+            }
+        }
+
+        [Category("Navigation")]
+        [DisplayName("System Background Tint Mode")]
+        public string RegionBackgroundTintMode
+        {
+            get
+            {
+                return m_RegionBackgroundTintMode;
+            }
+            set
+            {
+                m_RegionBackgroundTintMode = string.IsNullOrWhiteSpace(value) ? "None" : value;
+                OnPropertyChanged("RegionBackgroundTintMode");
             }
         }
 
@@ -1335,6 +1383,9 @@ namespace HISA
             ShowOfflineCharactersOnMap = true;
             ShowIhubVunerabilities = true;
             PlayIntelSoundOnUnknown = true;
+            DangerZoneRange = 5;
+            DangerZoneCharacter = string.Empty;
+            RegionBackgroundTintMode = "None";
 
 
             ShowJoveObservatories = true;

@@ -195,7 +195,7 @@
             </Border>
 
             <Border BorderThickness="2" BorderBrush="Black" Background="#FF232223" Width="170" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,10,200" CornerRadius="4" Panel.ZIndex="110"
-                    Visibility="{Binding Path=ShowRegionLegend, Converter={StaticResource BoolToVis}}" Grid.ColumnSpan="3" ClipToBounds="True">
+                    Visibility="Visible" Grid.ColumnSpan="3" ClipToBounds="True">
                 <Border.Style>
                     <Style TargetType="Border">
                         <Setter Property="Margin" Value="0,0,10,200" />
@@ -212,8 +212,16 @@
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
-                    <TextBlock Grid.Row="0" Text="Region Colors" FontWeight="Bold" Margin="0,0,0,4" Foreground="{DynamicResource UiTextPrimaryBrush}" />
-                    <CheckBox Grid.Row="1" Content="Show Background" IsChecked="{Binding ShowRegionTint}" Margin="0,0,0,4" Foreground="{DynamicResource UiTextPrimaryBrush}" />
+                    <TextBlock Grid.Row="0" Text="System Background" FontWeight="Bold" Margin="0,0,0,4" Foreground="{DynamicResource UiTextPrimaryBrush}" />
+                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,4">
+                        <TextBlock Text="Color By" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="{DynamicResource UiTextPrimaryBrush}" />
+                        <ComboBox Width="108"
+                                  Height="20"
+                                  ItemsSource="{Binding BackgroundTintModeItems}"
+                                  DisplayMemberPath="Name"
+                                  SelectedValuePath="Mode"
+                                  SelectedValue="{Binding SelectedBackgroundTintMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                    </StackPanel>
                     <ListView Grid.Row="2" ItemsSource="{Binding RegionColorLegendItems}" SelectionMode="Multiple" SelectionChanged="RegionLegendList_SelectionChanged">
                         <ListView.ItemTemplate>
                             <DataTemplate>

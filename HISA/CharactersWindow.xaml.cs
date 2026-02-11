@@ -54,24 +54,6 @@ namespace HISA
             mw.AddCharacter();
         }
 
-        private void dangerzone_ValueChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
-        {
-            EVEData.LocalCharacter lc = characterInfoGrid.DataContext as EVEData.LocalCharacter;
-            if (lc != null)
-            {
-                lc.warningSystemsNeedsUpdate = true;
-            }
-        }
-
-        private void dangerZoneEnabled_Checked(object sender, RoutedEventArgs e)
-        {
-            EVEData.LocalCharacter lc = characterInfoGrid.DataContext as EVEData.LocalCharacter;
-            if (lc != null)
-            {
-                lc.warningSystemsNeedsUpdate = true;
-            }
-        }
-
         private void deleteBtn_Click(object sender, RoutedEventArgs e)
         {
             EVEData.LocalCharacter lc = characterInfoGrid.DataContext as EVEData.LocalCharacter;
