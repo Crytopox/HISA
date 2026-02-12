@@ -24,6 +24,7 @@ using NAudio.Wave;
 using NHotkey;
 using NHotkey.Wpf;
 using HISA.EVEData;
+using HISA.Helpers;
 using static HISA.EVEData.ZKillRedisQ;
 using AvalonDock.Layout;
 
@@ -229,7 +230,10 @@ namespace HISA
             }
 
             ApplyLastRegionPreference();
-            string resolvedStartupRegion = GetStartupRegionName();
+            string resolvedStartupRegion = RegionStartupResolver.GetStartupRegionName(
+                EVEManager,
+                Properties.Settings.Default.LastRegionsViewRegion,
+                MapConf?.DefaultRegion);
 
             EVEManager.SetupIntelWatcher();
             EVEManager.SetupGameLogWatcher();
@@ -441,23 +445,7 @@ namespace HISA
                             // Need to dispatch to UI thread if performing UI operations
                             Application.Current.Dispatcher.Invoke(delegate
                             {
-                                ActiveCharacter = lc;
-                                CurrentActiveCharacterCombo.SelectedItem = lc;
-
-                                FleetMembersList.ItemsSource = lc.FleetInfo.Members;
-                                lc.FleetUpdatedEvent -= OnFleetMemebersUpdate;
-                                lc.FleetUpdatedEvent += OnFleetMemebersUpdate;
-
-                                lc.RouteUpdatedEvent -= OnCharacterRouteUpdate;
-                                lc.RouteUpdatedEvent += OnCharacterRouteUpdate;
-
-                                CollectionViewSource.GetDefaultView(FleetMembersList.ItemsSource).Refresh();
-
-                                RegionUC.FollowCharacter = true;
-                                RegionUC.SelectSystem(lc.Location, true);
-
-                                UniverseUC.FollowCharacter = true;
-                                UniverseUC.UpdateActiveCharacter(lc);
+                                ActivateCharacter(lc, setComboSelection: true, followCharacterOnMap: true, updateRegionsViewCharacter: false);
                             });
 
                             break;
@@ -686,7 +674,10 @@ namespace HISA
         {
             try
             {
-                string regionName = GetStartupRegionName();
+                string regionName = RegionStartupResolver.GetStartupRegionName(
+                    EVEManager,
+                    Properties.Settings.Default.LastRegionsViewRegion,
+                    MapConf?.DefaultRegion);
                 if(!string.IsNullOrWhiteSpace(regionName))
                 {
                     RegionsViewUC?.SetSelectedRegion(regionName);
@@ -723,7 +714,10 @@ namespace HISA
         {
             try
             {
-                string startupRegion = GetStartupRegionName();
+                string startupRegion = RegionStartupResolver.GetStartupRegionName(
+                    EVEManager,
+                    Properties.Settings.Default.LastRegionsViewRegion,
+                    MapConf?.DefaultRegion);
                 if(!string.IsNullOrWhiteSpace(startupRegion))
                 {
                     MapConf.DefaultRegion = startupRegion;
@@ -732,63 +726,6 @@ namespace HISA
             catch
             {
             }
-        }
-
-        private string GetStartupRegionName()
-        {
-            string preferredRegion = GetPreferredStartupRegionName();
-            string resolvedPreferredRegion = ResolveKnownRegionName(preferredRegion);
-            if(!string.IsNullOrWhiteSpace(resolvedPreferredRegion))
-            {
-                return resolvedPreferredRegion;
-            }
-
-            return EVEManager?.Regions?.FirstOrDefault()?.Name;
-        }
-
-        private string GetPreferredStartupRegionName()
-        {
-            string lastRegion = NormalizeRegionName(Properties.Settings.Default.LastRegionsViewRegion);
-            if(!string.IsNullOrWhiteSpace(lastRegion))
-            {
-                return lastRegion;
-            }
-
-            return NormalizeRegionName(MapConf?.DefaultRegion);
-        }
-
-        private static string NormalizeRegionName(string regionName)
-        {
-            if(string.IsNullOrWhiteSpace(regionName))
-            {
-                return null;
-            }
-
-            string trimmed = regionName.Trim();
-            return trimmed.Length == 0 ? null : trimmed;
-        }
-
-        private string ResolveKnownRegionName(string regionName)
-        {
-            if(string.IsNullOrWhiteSpace(regionName) || EVEManager?.Regions == null)
-            {
-                return null;
-            }
-
-            string candidate = regionName.Trim();
-            if(candidate.Length == 0)
-            {
-                return null;
-            }
-
-            MapRegion exact = EVEManager.GetRegion(candidate);
-            if(exact != null)
-            {
-                return exact.Name;
-            }
-
-            MapRegion caseInsensitive = EVEManager.Regions.FirstOrDefault(r => string.Equals(r.Name, candidate, StringComparison.OrdinalIgnoreCase));
-            return caseInsensitive?.Name;
         }
 
         private void SelectRegionWithoutPersist(string regionName)
@@ -827,7 +764,14 @@ namespace HISA
                     SelectRegionWithoutPersist(RegionUC.Region.Name);
                 }
 
-                string startupRegion = ResolveKnownRegionName(GetPreferredStartupRegionName()) ?? GetStartupRegionName();
+                string preferredRegion = RegionStartupResolver.GetPreferredRegionName(
+                    Properties.Settings.Default.LastRegionsViewRegion,
+                    MapConf?.DefaultRegion);
+                string startupRegion = RegionStartupResolver.ResolveKnownRegionName(EVEManager, preferredRegion)
+                    ?? RegionStartupResolver.GetStartupRegionName(
+                        EVEManager,
+                        Properties.Settings.Default.LastRegionsViewRegion,
+                        MapConf?.DefaultRegion);
                 if(!string.IsNullOrWhiteSpace(startupRegion) && RegionUC?.Region?.Name != startupRegion && EVEManager.GetRegion(startupRegion) != null)
                 {
                     SelectRegionWithoutPersist(startupRegion);
@@ -1049,12 +993,7 @@ namespace HISA
 
                     if(sc != null)
                     {
-                        RegionUC.SelectSystem(sc.System, true);
-                    }
-
-                    if(RegionLayoutDoc != null)
-                    {
-                        RegionLayoutDoc.IsSelected = true;
+                        SelectSystemOnRegionMap(sc.System, focusRegionDocument: true);
                     }
                 }
             }
@@ -1121,6 +1060,21 @@ namespace HISA
         #endregion RegionsView Control
 
         #region Region Control
+
+        private void SelectSystemOnRegionMap(string systemName, bool focusRegionDocument)
+        {
+            if(string.IsNullOrWhiteSpace(systemName))
+            {
+                return;
+            }
+
+            RegionUC.SelectSystem(systemName, true);
+
+            if(focusRegionDocument && RegionLayoutDoc != null)
+            {
+                RegionLayoutDoc.IsSelected = true;
+            }
+        }
 
         private void MapConf_PropertyChanged(object sender, PropertyChangedEventArgs e)
         {
@@ -1214,12 +1168,7 @@ namespace HISA
         {
             string sysName = e.OriginalSource as string;
             RegionUC.FollowCharacter = false;
-            RegionUC.SelectSystem(sysName, true);
-
-            if(RegionLayoutDoc != null)
-            {
-                RegionLayoutDoc.IsSelected = true;
-            }
+            SelectSystemOnRegionMap(sysName, focusRegionDocument: true);
         }
 
         #endregion Universe Control
@@ -1570,6 +1519,46 @@ namespace HISA
             logonBrowserWindow.ShowDialog();
         }
 
+        private void ActivateCharacter(EVEData.LocalCharacter character, bool setComboSelection, bool followCharacterOnMap, bool updateRegionsViewCharacter)
+        {
+            if(character == null)
+            {
+                return;
+            }
+
+            ActiveCharacter = character;
+
+            if(setComboSelection)
+            {
+                CurrentActiveCharacterCombo.SelectedItem = character;
+            }
+
+            FleetMembersList.ItemsSource = character.FleetInfo.Members;
+            CollectionViewSource.GetDefaultView(FleetMembersList.ItemsSource).Refresh();
+
+            character.FleetUpdatedEvent -= OnFleetMemebersUpdate;
+            character.FleetUpdatedEvent += OnFleetMemebersUpdate;
+
+            character.RouteUpdatedEvent -= OnCharacterRouteUpdate;
+            character.RouteUpdatedEvent += OnCharacterRouteUpdate;
+
+            if(updateRegionsViewCharacter)
+            {
+                RegionsViewUC.ActiveCharacter = character;
+            }
+
+            RegionUC.UpdateActiveCharacter(character);
+            UniverseUC.UpdateActiveCharacter(character);
+
+            if(followCharacterOnMap)
+            {
+                RegionUC.FollowCharacter = true;
+                RegionUC.SelectSystem(character.Location, true);
+
+                UniverseUC.FollowCharacter = true;
+            }
+        }
+
         private void CharactersList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
             if(sender != null)
@@ -1582,23 +1571,7 @@ namespace HISA
 
                     if(lc != null)
                     {
-                        ActiveCharacter = lc;
-                        CurrentActiveCharacterCombo.SelectedItem = lc;
-
-                        lc.FleetUpdatedEvent -= OnFleetMemebersUpdate;
-                        lc.FleetUpdatedEvent += OnFleetMemebersUpdate;
-
-                        lc.RouteUpdatedEvent -= OnCharacterRouteUpdate;
-                        lc.RouteUpdatedEvent += OnCharacterRouteUpdate;
-
-                        FleetMembersList.ItemsSource = lc.FleetInfo.Members;
-                        CollectionViewSource.GetDefaultView(FleetMembersList.ItemsSource).Refresh();
-
-                        RegionUC.FollowCharacter = true;
-                        RegionUC.SelectSystem(lc.Location, true);
-
-                        UniverseUC.FollowCharacter = true;
-                        UniverseUC.UpdateActiveCharacter(lc);
+                        ActivateCharacter(lc, setComboSelection: true, followCharacterOnMap: true, updateRegionsViewCharacter: false);
                     }
                 }
             }
@@ -1651,19 +1624,7 @@ namespace HISA
             else
             {
                 EVEData.LocalCharacter lc = CurrentActiveCharacterCombo.SelectedItem as EVEData.LocalCharacter;
-                ActiveCharacter = lc;
-
-                FleetMembersList.ItemsSource = lc.FleetInfo.Members;
-                CollectionViewSource.GetDefaultView(FleetMembersList.ItemsSource).Refresh();
-                lc.FleetUpdatedEvent -= OnFleetMemebersUpdate;
-                lc.FleetUpdatedEvent += OnFleetMemebersUpdate;
-
-                lc.RouteUpdatedEvent -= OnCharacterRouteUpdate;
-                lc.RouteUpdatedEvent += OnCharacterRouteUpdate;
-
-                RegionsViewUC.ActiveCharacter = lc;
-                RegionUC.UpdateActiveCharacter(lc);
-                UniverseUC.UpdateActiveCharacter(lc);
+                ActivateCharacter(lc, setComboSelection: false, followCharacterOnMap: false, updateRegionsViewCharacter: true);
             }
 
             OnCharacterSelectionChanged();
@@ -1680,18 +1641,7 @@ namespace HISA
                 {
                     if(lc.Name == characterName)
                     {
-                        ActiveCharacter = lc;
-                        CurrentActiveCharacterCombo.SelectedItem = lc;
-                        FleetMembersList.ItemsSource = lc.FleetInfo.Members;
-                        CollectionViewSource.GetDefaultView(FleetMembersList.ItemsSource).Refresh();
-                        lc.FleetUpdatedEvent -= OnFleetMemebersUpdate;
-                        lc.FleetUpdatedEvent += OnFleetMemebersUpdate;
-
-                        lc.RouteUpdatedEvent -= OnCharacterRouteUpdate;
-                        lc.RouteUpdatedEvent += OnCharacterRouteUpdate;
-
-                        RegionUC.UpdateActiveCharacter(lc);
-                        UniverseUC.UpdateActiveCharacter(lc);
+                        ActivateCharacter(lc, setComboSelection: true, followCharacterOnMap: false, updateRegionsViewCharacter: false);
 
                         break;
                     }
@@ -1729,40 +1679,9 @@ namespace HISA
 
         private void OnIntelUpdated(List<IntelData> idl)
         {
-            bool playSound = false;
-            bool flashWindow = false;
-
             Application.Current.Dispatcher.Invoke((Action)(() =>
             {
-                List<IntelData> removeList = new List<IntelData>();
-                List<IntelData> addList = new List<IntelData>();
-
-                // remove old
-
-                if(IntelCache.Count >= 250)
-                {
-                    foreach(IntelData id in IntelCache)
-                    {
-                        if(!idl.Contains(id))
-                        {
-                            removeList.Add(id);
-                        }
-                    }
-
-                    foreach(IntelData id in removeList)
-                    {
-                        IntelCache.Remove(id);
-                    }
-                }
-
-                // add new
-                foreach(IntelData id in idl)
-                {
-                    if(!IntelCache.Contains(id))
-                    {
-                        IntelCache.Insert(0, id);
-                    }
-                }
+                IntelCacheHelper.SyncRecent(IntelCache, idl, 250);
             }), DispatcherPriority.Normal);
 
             // Always refresh map intel visuals (ring/background) when intel updates,
@@ -1782,56 +1701,27 @@ namespace HISA
             }
 
             IntelData id = IntelCache[0];
-            bool hasKnownSystem = id.Systems != null && id.Systems.Count > 0;
-
             if(id.ClearNotification)
             {
                 // do nothing for now
                 return;
             }
 
-            if(MapConf.PlayIntelSoundOnUnknown && !hasKnownSystem)
+            HashSet<string> warningSystems = null;
+            if(MapConf.PlaySoundOnlyInDangerZone || MapConf.FlashWindowOnlyInDangerZone)
             {
-                playSound = true;
-                flashWindow = true;
+                warningSystems = DangerZoneHelper.GetDangerZoneSystems(MapConf, EVEManager);
             }
 
-
-            if(MapConf.PlayIntelSound || MapConf.FlashWindow || MapConf.PlayIntelSoundOnAlert)
-            {
-                if(MapConf.PlaySoundOnlyInDangerZone || MapConf.FlashWindowOnlyInDangerZone)
-                {
-                    HashSet<string> warningSystems = DangerZoneHelper.GetDangerZoneSystems(MapConf, EVEManager);
-
-                    foreach(string s in id.Systems)
-                    {
-                        if(warningSystems.Contains(s))
-                        {
-                            playSound = playSound || MapConf.PlaySoundOnlyInDangerZone;
-                            flashWindow = flashWindow || MapConf.FlashWindowOnlyInDangerZone;
-                            break;
-                        }
-                    }
-                }
-
-                if(MapConf.PlayIntelSoundOnAlert)
-                {
-                    // Check if the intel contains a text we should explicitly alert on
-                    foreach(string alertName in EVEManager.IntelAlertFilters)
-                    {
-                        if(id.RawIntelString.Contains(alertName))
-                        {
-                            playSound = playSound || MapConf.PlayIntelSoundOnAlert;
-                            break;
-                        }
-                    }
-                }
-            }
+            IntelAlertDecision alertDecision = IntelAlertDecisionHelper.Evaluate(
+                id,
+                MapConf,
+                EVEManager.IntelAlertFilters,
+                warningSystems);
 
             Application.Current.Dispatcher.Invoke((Action)(() =>
             {
-                bool shouldPlaySound = hasKnownSystem && (playSound || (!MapConf.PlaySoundOnlyInDangerZone && MapConf.PlayIntelSound));
-                if(shouldPlaySound)
+                if(alertDecision.ShouldPlaySound)
                 {
                     try
                     {
@@ -1847,7 +1737,7 @@ namespace HISA
                         Debug.WriteLine("Failed to play intel sound: " + ex.Message);
                     }
                 }
-                if(flashWindow || (!MapConf.FlashWindowOnlyInDangerZone && MapConf.FlashWindow))
+                if(alertDecision.ShouldFlashWindow)
                 {
                     FlashWindow.Flash(AppWindow, 5);
                 }
@@ -2069,7 +1959,7 @@ namespace HISA
 
                     if(tc != null)
                     {
-                        RegionUC.SelectSystem(tc.System, true);
+                        SelectSystemOnRegionMap(tc.System, focusRegionDocument: false);
                     }
                 }
             }
@@ -2092,7 +1982,7 @@ namespace HISA
 
                     if(tc != null)
                     {
-                        RegionUC.SelectSystem(tc.System, true);
+                        SelectSystemOnRegionMap(tc.System, focusRegionDocument: false);
                     }
                 }
             }
@@ -2130,6 +2020,17 @@ namespace HISA
             }), DispatcherPriority.Normal, null);
         }
 
+        private void RecalculateJumpRoute(bool updateSummary)
+        {
+            CapitalRoute.Recalculate();
+            if(updateSummary)
+            {
+                lblCapitalRouteSummary.Content = JumpRouteSummaryHelper.BuildSummaryText(CapitalRoute);
+            }
+
+            refreshJumpRouteUI();
+        }
+
         private void AddWaypointsBtn_Click(object sender, RoutedEventArgs e)
         {
             if(RegionUC.ActiveCharacter == null)
@@ -2160,18 +2061,7 @@ namespace HISA
             if(s != null)
             {
                 CapitalRoute.WayPoints.Add(s.Name);
-                CapitalRoute.Recalculate();
-
-                if(CapitalRoute.CurrentRoute.Count == 0)
-                {
-                    lblCapitalRouteSummary.Content = "No Valid Route Found";
-                }
-                else
-                {
-                    lblCapitalRouteSummary.Content = $"{CapitalRoute.CurrentRoute.Count - 2} Mids";
-                }
-
-                refreshJumpRouteUI();
+                RecalculateJumpRoute(updateSummary: true);
             }
         }
 
@@ -2186,18 +2076,7 @@ namespace HISA
             if(s != null)
             {
                 CapitalRoute.AvoidSystems.Add(s.Name);
-                CapitalRoute.Recalculate();
-
-                if(CapitalRoute.CurrentRoute.Count == 0)
-                {
-                    lblCapitalRouteSummary.Content = "No Valid Route Found";
-                }
-                else
-                {
-                    lblCapitalRouteSummary.Content = $"{CapitalRoute.CurrentRoute.Count - 2} Mids";
-                }
-
-                refreshJumpRouteUI();
+                RecalculateJumpRoute(updateSummary: true);
             }
         }
 
@@ -2256,72 +2135,55 @@ namespace HISA
 
         private bool zkbFilterByRegion = true;
 
-        private void ZKBContexMenu_ShowSystem_Click(object sender, RoutedEventArgs e)
+        private EVEData.ZKillRedisQ.ZKBDataSimple GetSelectedZkbEntry()
         {
             if(ZKBFeed.SelectedIndex == -1)
+            {
+                return null;
+            }
+
+            return ZKBFeed.SelectedItem as EVEData.ZKillRedisQ.ZKBDataSimple;
+        }
+
+        private void ShowZkbSystemOnMap(EVEData.ZKillRedisQ.ZKBDataSimple zkbEntry)
+        {
+            if(zkbEntry == null)
             {
                 return;
             }
 
-            EVEData.ZKillRedisQ.ZKBDataSimple zkbs = ZKBFeed.SelectedItem as EVEData.ZKillRedisQ.ZKBDataSimple;
+            SelectSystemOnRegionMap(zkbEntry.SystemName, focusRegionDocument: true);
+        }
 
-            if(zkbs != null)
+        private static void OpenZkbKillInBrowser(EVEData.ZKillRedisQ.ZKBDataSimple zkbEntry)
+        {
+            if(zkbEntry == null)
             {
-                RegionUC.SelectSystem(zkbs.SystemName, true);
-
-                if(RegionLayoutDoc != null)
-                {
-                    RegionLayoutDoc.IsSelected = true;
-                }
+                return;
             }
+
+            string killUrl = $"https://zkillboard.com/kill/{zkbEntry.KillID}/";
+            Process.Start(new ProcessStartInfo(killUrl) { UseShellExecute = true });
+        }
+
+        private void ZKBContexMenu_ShowSystem_Click(object sender, RoutedEventArgs e)
+        {
+            ShowZkbSystemOnMap(GetSelectedZkbEntry());
         }
 
         private void ZKBContexMenu_ShowZKB_Click(object sender, RoutedEventArgs e)
         {
-            if(ZKBFeed.SelectedIndex == -1)
-            {
-                return;
-            }
-
-            EVEData.ZKillRedisQ.ZKBDataSimple zkbs = ZKBFeed.SelectedItem as EVEData.ZKillRedisQ.ZKBDataSimple;
-
-            if(zkbs != null)
-            {
-                string KillURL = "https://zkillboard.com/kill/" + zkbs.KillID + "/";
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(KillURL) { UseShellExecute = true });
-            }
+            OpenZkbKillInBrowser(GetSelectedZkbEntry());
         }
 
         private void ZKBFeed_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
-            if(ZKBFeed.SelectedIndex == -1)
-            {
-                return;
-            }
-
-            EVEData.ZKillRedisQ.ZKBDataSimple zkbs = ZKBFeed.SelectedItem as EVEData.ZKillRedisQ.ZKBDataSimple;
-
-            if(zkbs != null)
-            {
-                string KillURL = "https://zkillboard.com/kill/" + zkbs.KillID + "/";
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(KillURL) { UseShellExecute = true });
-            }
+            OpenZkbKillInBrowser(GetSelectedZkbEntry());
         }
 
         private void ZKBFeed_MouseDoubleClick_1(object sender, MouseButtonEventArgs e)
         {
-            if(ZKBFeed.SelectedIndex == -1)
-            {
-                return;
-            }
-
-            EVEData.ZKillRedisQ.ZKBDataSimple zkbs = ZKBFeed.SelectedItem as EVEData.ZKillRedisQ.ZKBDataSimple;
-
-            if(zkbs != null)
-            {
-                string KillURL = "https://zkillboard.com/kill/" + zkbs.KillID + "/";
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(KillURL) { UseShellExecute = true });
-            }
+            OpenZkbKillInBrowser(GetSelectedZkbEntry());
         }
 
         private bool ZKBFeedFilter(object item)
@@ -2405,9 +2267,7 @@ namespace HISA
             if(ad != null)
             {
                 ad.Anoms.Clear();
-                AnomSigList.Items.Refresh();
-                AnomSigList.UpdateLayout();
-                CollectionViewSource.GetDefaultView(AnomSigList.ItemsSource).Refresh();
+                RefreshAnomListUI();
             }
         }
 
@@ -2425,6 +2285,13 @@ namespace HISA
         private void btnUpdateAnomList_Click(object sender, RoutedEventArgs e)
         {
             updateAnomListFromClipboard();
+        }
+
+        private void RefreshAnomListUI()
+        {
+            AnomSigList.Items.Refresh();
+            AnomSigList.UpdateLayout();
+            CollectionViewSource.GetDefaultView(AnomSigList.ItemsSource).Refresh();
         }
 
         private void updateAnomListFromClipboard()
@@ -2450,9 +2317,7 @@ namespace HISA
             if(AnomSigList.SelectedItems.Count > 0)
                 AnomSigList.ScrollIntoView(AnomSigList.SelectedItems[0]);
 
-            AnomSigList.Items.Refresh();
-            AnomSigList.UpdateLayout();
-            CollectionViewSource.GetDefaultView(AnomSigList.ItemsSource).Refresh();
+            RefreshAnomListUI();
         }
 
         private void copyAnomListToClipboard()
@@ -2461,25 +2326,9 @@ namespace HISA
             if(ad == null)
                 return;
 
-            var str = string.Empty;
-            if(AnomSigList.SelectedItems.Count > 0)
-            {
-                // copy the selected items to clipboard
-                foreach(var entry in AnomSigList.SelectedItems)
-                {
-                    var anom = entry as Anom;
-                    str += anom.ToString() + "\n";
-                }
-            }
-            else
-            {
-                // copy the entire list
-                foreach(var entry in ad.Anoms)
-                {
-                    var anom = entry.Value;
-                    str += anom.ToString() + "\n";
-                }
-            }
+            string str = AnomClipboardHelper.BuildClipboardText(
+                AnomSigList.SelectedItems.Cast<object>().OfType<Anom>(),
+                ad.Anoms.Values);
 
             Clipboard.SetText(str);
         }
@@ -2490,9 +2339,8 @@ namespace HISA
             if(ad == null || AnomSigList.SelectedItems.Count == 0)
                 return;
 
-            var selectedSignatures = AnomSigList.SelectedItems.Cast<Anom>()
-                .Select(anom => anom.Signature)
-                .ToHashSet();
+            HashSet<string> selectedSignatures = AnomClipboardHelper.GetSelectedSignatures(
+                AnomSigList.SelectedItems.Cast<object>().OfType<Anom>());
 
             var keysToRemove = ad.Anoms
                 .Where(kvp => selectedSignatures.Contains(kvp.Value.Signature))
@@ -2502,9 +2350,7 @@ namespace HISA
             foreach(var key in keysToRemove)
                 ad.Anoms.Remove(key);
 
-            AnomSigList.Items.Refresh();
-            AnomSigList.UpdateLayout();
-            CollectionViewSource.GetDefaultView(AnomSigList.ItemsSource).Refresh();
+            RefreshAnomListUI();
         }
 
         #endregion Anoms
@@ -2744,18 +2590,7 @@ namespace HISA
                 ComboBox cb = sender as ComboBox;
                 ComboBoxItem cbi = cb.SelectedItem as ComboBoxItem;
                 CapitalRoute.MaxLY = double.Parse(cbi.DataContext as string);
-                CapitalRoute.Recalculate();
-
-                if(CapitalRoute.CurrentRoute.Count == 0)
-                {
-                    lblCapitalRouteSummary.Content = "No Valid Route Found";
-                }
-                else
-                {
-                    lblCapitalRouteSummary.Content = $"{CapitalRoute.CurrentRoute.Count - 2} Mids";
-                }
-
-                refreshJumpRouteUI();
+                RecalculateJumpRoute(updateSummary: true);
             }
         }
 
@@ -2766,18 +2601,7 @@ namespace HISA
                 ComboBox cb = sender as ComboBox;
                 ComboBoxItem cbi = cb.SelectedItem as ComboBoxItem;
                 CapitalRoute.JDC = int.Parse(cbi.DataContext as string);
-                CapitalRoute.Recalculate();
-
-                if(CapitalRoute.CurrentRoute.Count == 0)
-                {
-                    lblCapitalRouteSummary.Content = "No Valid Route Found";
-                }
-                else
-                {
-                    lblCapitalRouteSummary.Content = $"{CapitalRoute.CurrentRoute.Count - 2} Mids";
-                }
-
-                refreshJumpRouteUI();
+                RecalculateJumpRoute(updateSummary: true);
             }
         }
 
@@ -2810,8 +2634,7 @@ namespace HISA
                 CapitalRoute.WayPoints.RemoveAt(capitalRouteWaypointsLB.SelectedIndex);
                 CapitalRoute.WayPoints.Insert(capitalRouteWaypointsLB.SelectedIndex - 1, sys);
 
-                CapitalRoute.Recalculate();
-                refreshJumpRouteUI();
+                RecalculateJumpRoute(updateSummary: false);
             }
         }
 
@@ -2823,8 +2646,7 @@ namespace HISA
                 CapitalRoute.WayPoints.RemoveAt(capitalRouteWaypointsLB.SelectedIndex);
                 CapitalRoute.WayPoints.Insert(capitalRouteWaypointsLB.SelectedIndex + 1, sys);
 
-                CapitalRoute.Recalculate();
-                refreshJumpRouteUI();
+                RecalculateJumpRoute(updateSummary: false);
             }
         }
 
@@ -2833,8 +2655,7 @@ namespace HISA
             if(capitalRouteWaypointsLB.SelectedItem != null)
             {
                 CapitalRoute.WayPoints.RemoveAt(capitalRouteWaypointsLB.SelectedIndex);
-                CapitalRoute.Recalculate();
-                refreshJumpRouteUI();
+                RecalculateJumpRoute(updateSummary: false);
             }
         }
 
@@ -2865,8 +2686,7 @@ namespace HISA
                     }
                 }
 
-                CapitalRoute.Recalculate();
-                refreshJumpRouteUI();
+                RecalculateJumpRoute(updateSummary: false);
             }
         }
 
@@ -2878,31 +2698,12 @@ namespace HISA
 
         private void OverlayWindow_MenuItem_Click(object sender, RoutedEventArgs e)
         {
-            if(overlayWindows == null) overlayWindows = new List<Overlay>();
-
-            if(MapConf.OverlayIndividualCharacterWindows)
+            if(!OverlayWindowManager.CanOpenOverlay(MapConf, activeCharacter, overlayWindows))
             {
-                if(activeCharacter == null || overlayWindows.Any(w => w.OverlayCharacter == activeCharacter))
-                {
-                    return;
-                }
-            }
-            else
-            {
-                if(overlayWindows.Count > 0)
-                {
-                    return;
-                }
+                return;
             }
 
-            // Set up hotkeys
-            try
-            {
-                HotkeyManager.Current.AddOrReplace("Toggle click trough overlay windows.", Key.T, ModifierKeys.Alt | ModifierKeys.Control | ModifierKeys.Shift, OverlayWindows_ToggleClicktrough_HotkeyTrigger);
-            }
-            catch(NHotkey.HotkeyAlreadyRegisteredException exception)
-            {
-            }
+            OverlayWindowManager.EnsureToggleHotkeyRegistered(OverlayWindows_ToggleClicktrough_HotkeyTrigger);
 
             Overlay newOverlayWindow = new Overlay(this);
             newOverlayWindow.Closing += OnOverlayWindowClosing;
@@ -2922,27 +2723,12 @@ namespace HISA
 
         public void OverlayWindow_ToggleClickTrough()
         {
-            overlayWindowsAreClickTrough = !overlayWindowsAreClickTrough;
-            foreach(Overlay overlayWindow in overlayWindows)
-            {
-                overlayWindow.ToggleClickTrough(overlayWindowsAreClickTrough);
-            }
+            overlayWindowsAreClickTrough = OverlayWindowManager.ToggleClickThrough(overlayWindows, overlayWindowsAreClickTrough);
         }
 
         public void OnOverlayWindowClosing(object sender, CancelEventArgs e)
         {
-            overlayWindows.Remove((Overlay)sender);
-
-            if(overlayWindows.Count < 1)
-            {
-                try
-                {
-                    HotkeyManager.Current.Remove("Toggle click trough overlay windows.");
-                }
-                catch
-                {
-                }
-            }
+            OverlayWindowManager.HandleOverlayClosing(overlayWindows, sender as Overlay);
         }
 
         private void MetaliminalStormList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
@@ -2952,13 +2738,7 @@ namespace HISA
                 EVEData.Storm selectedStorm = MetaliminalStormList.SelectedItem as EVEData.Storm;
                 if(selectedStorm != null)
                 {
-                    // Select the system in the map
-                    RegionUC.SelectSystem(selectedStorm.System, true);
-                    // If the region doc is not selected, select it
-                    if(RegionLayoutDoc != null && !RegionLayoutDoc.IsSelected)
-                    {
-                        RegionLayoutDoc.IsSelected = true;
-                    }
+                    SelectSystemOnRegionMap(selectedStorm.System, focusRegionDocument: true);
                 }
             }
         }
