@@ -36,6 +36,14 @@ namespace HISA
         private const double SYSTEM_SHAPE_OOR_OFFSET = SYSTEM_SHAPE_OOR_SIZE / 2;
         private const double MISSING_LINK_STUB_LENGTH = 65;
         private const double MISSING_LINK_INDICATOR_SIZE = 26;
+        private const double JUMP_BRIDGE_OFFMAP_EDGE_PADDING = 34;
+        private const double JUMP_BRIDGE_OFFMAP_BASE_OFFSET = 80;
+        private const double JUMP_BRIDGE_OFFMAP_SLIDE_STEP = 42;
+        private const int JUMP_BRIDGE_OFFMAP_SLIDE_STEPS = 3;
+        private const double JUMP_BRIDGE_OFFMAP_MAX_DISTANCE = 260;
+        private const double JUMP_BRIDGE_OFFMAP_NODE_CLEARANCE = SYSTEM_SHAPE_SIZE * 1.35;
+        private const double JUMP_BRIDGE_OFFMAP_NEAR_NODE_THRESHOLD = 56;
+        private const double JUMP_BRIDGE_OFFMAP_NEAR_NODE_OUTWARD_MAX = 30;
         private const double JUMP_RANGE_BASE_MARKER_SIZE = SYSTEM_SHAPE_SIZE + 10;
         private const double JUMP_RANGE_MARKER_STEP = 4;
         private const double JUMP_RANGE_ORIGIN_RING_SIZE = SYSTEM_SHAPE_SIZE + 18;
@@ -1179,6 +1187,303 @@ namespace HISA
             MainCanvas.Width = width;
             MainCanvas.Height = height;
             MainCanvas.RenderTransform = new TranslateTransform(pad - minX, pad - minY);
+        }
+
+        private enum OffMapEdge
+        {
+            Left,
+            Right,
+            Top,
+            Bottom
+        }
+
+        private bool TryGetRegionLayoutBounds(out double minX, out double minY, out double maxX, out double maxY)
+        {
+            minX = double.MaxValue;
+            minY = double.MaxValue;
+            maxX = double.MinValue;
+            maxY = double.MinValue;
+
+            if(Region == null || Region.MapSystems == null || Region.MapSystems.Count == 0)
+            {
+                return false;
+            }
+
+            foreach(MapSystem ms in Region.MapSystems.Values)
+            {
+                if(ms == null)
+                {
+                    continue;
+                }
+
+                minX = Math.Min(minX, ms.Layout.X);
+                minY = Math.Min(minY, ms.Layout.Y);
+                maxX = Math.Max(maxX, ms.Layout.X);
+                maxY = Math.Max(maxY, ms.Layout.Y);
+            }
+
+            return !double.IsInfinity(minX) && !double.IsInfinity(minY) && !double.IsInfinity(maxX) && !double.IsInfinity(maxY);
+        }
+
+        private Vector2 DetermineOffMapDirection(MapSystem fromSystem, EVEData.System targetSystem)
+        {
+            if(fromSystem == null || targetSystem == null)
+            {
+                return Vector2.Zero;
+            }
+
+            if(Region != null && Region.MapSystems != null && Region.MapSystems.TryGetValue(targetSystem.Name, out MapSystem inRegionTarget))
+            {
+                Vector2 inRegionDirection = inRegionTarget.Layout - fromSystem.Layout;
+                if(inRegionDirection.LengthSquared() > 0.01f)
+                {
+                    return Vector2.Normalize(inRegionDirection);
+                }
+            }
+
+            MapRegion targetRegion = EM.GetRegion(targetSystem.Region);
+            if(targetRegion != null && Region != null)
+            {
+                Vector2 universeDirection = new Vector2(
+                    (float)(targetRegion.UniverseViewX - Region.UniverseViewX),
+                    (float)(targetRegion.UniverseViewY - Region.UniverseViewY));
+
+                if(universeDirection.LengthSquared() > 0.01f)
+                {
+                    return Vector2.Normalize(universeDirection);
+                }
+            }
+
+            Vector2 fallbackDirection = fromSystem.Layout - GetSelectionCenter(Region.MapSystems.Values);
+            if(fallbackDirection.LengthSquared() > 0.01f)
+            {
+                return Vector2.Normalize(fallbackDirection);
+            }
+
+            return new Vector2(0f, -1f);
+        }
+
+        private static double DistancePointToSegment(Point point, Point segmentStart, Point segmentEnd)
+        {
+            double segX = segmentEnd.X - segmentStart.X;
+            double segY = segmentEnd.Y - segmentStart.Y;
+            double segLenSq = (segX * segX) + (segY * segY);
+            if(segLenSq < 0.0001)
+            {
+                double dx = point.X - segmentStart.X;
+                double dy = point.Y - segmentStart.Y;
+                return Math.Sqrt((dx * dx) + (dy * dy));
+            }
+
+            double px = point.X - segmentStart.X;
+            double py = point.Y - segmentStart.Y;
+            double t = Math.Clamp(((px * segX) + (py * segY)) / segLenSq, 0.0, 1.0);
+            double projX = segmentStart.X + (t * segX);
+            double projY = segmentStart.Y + (t * segY);
+            double distX = point.X - projX;
+            double distY = point.Y - projY;
+            return Math.Sqrt((distX * distX) + (distY * distY));
+        }
+
+        private static Vector2 GetEdgeOutwardDirection(OffMapEdge edge)
+        {
+            switch(edge)
+            {
+                case OffMapEdge.Left:
+                    return new Vector2(-1f, 0f);
+                case OffMapEdge.Right:
+                    return new Vector2(1f, 0f);
+                case OffMapEdge.Top:
+                    return new Vector2(0f, -1f);
+                default:
+                    return new Vector2(0f, 1f);
+            }
+        }
+
+        private Point ComputeOffMapJumpBridgeEndpoint(MapSystem fromSystem, EVEData.System targetSystem, IReadOnlyCollection<Point> usedEndpoints, out Point labelAnchor)
+        {
+            if(fromSystem == null)
+            {
+                labelAnchor = new Point(0, 0);
+                return new Point(0, 0);
+            }
+
+            labelAnchor = new Point(fromSystem.Layout.X - 20, fromSystem.Layout.Y - 60);
+
+            if(!TryGetRegionLayoutBounds(out double minX, out double minY, out double maxX, out double maxY))
+            {
+                return new Point(fromSystem.Layout.X - 20, fromSystem.Layout.Y - 40);
+            }
+
+            Vector2 direction = DetermineOffMapDirection(fromSystem, targetSystem);
+            if(direction.LengthSquared() < 0.01f)
+            {
+                direction = new Vector2(0f, -1f);
+            }
+
+            double clampPad = SYSTEM_SHAPE_SIZE * 1.6;
+            double baseX = fromSystem.Layout.X + (direction.X * JUMP_BRIDGE_OFFMAP_BASE_OFFSET);
+            double baseY = fromSystem.Layout.Y + (direction.Y * JUMP_BRIDGE_OFFMAP_BASE_OFFSET);
+            double regionWidth = Math.Max(1.0, maxX - minX);
+            double regionHeight = Math.Max(1.0, maxY - minY);
+            double localMaxDistance = Math.Min(JUMP_BRIDGE_OFFMAP_MAX_DISTANCE, (Math.Min(regionWidth, regionHeight) * 0.7) + 60.0);
+            Point sourcePoint = new Point(fromSystem.Layout.X, fromSystem.Layout.Y);
+
+            Point bestPoint = new Point(fromSystem.Layout.X - 20, fromSystem.Layout.Y - 40);
+            OffMapEdge bestEdge = OffMapEdge.Top;
+            double bestScore = double.MinValue;
+
+            foreach(OffMapEdge edge in Enum.GetValues(typeof(OffMapEdge)))
+            {
+                for(int i = -JUMP_BRIDGE_OFFMAP_SLIDE_STEPS; i <= JUMP_BRIDGE_OFFMAP_SLIDE_STEPS; i++)
+                {
+                    double slide = i * JUMP_BRIDGE_OFFMAP_SLIDE_STEP;
+                    Point candidate;
+
+                    if(edge == OffMapEdge.Left || edge == OffMapEdge.Right)
+                    {
+                        double x = edge == OffMapEdge.Right ? maxX + JUMP_BRIDGE_OFFMAP_EDGE_PADDING : minX - JUMP_BRIDGE_OFFMAP_EDGE_PADDING;
+                        double y = Math.Clamp(baseY + slide, minY + clampPad, maxY - clampPad);
+                        candidate = new Point(x, y);
+                    }
+                    else
+                    {
+                        double y = edge == OffMapEdge.Bottom ? maxY + JUMP_BRIDGE_OFFMAP_EDGE_PADDING : minY - JUMP_BRIDGE_OFFMAP_EDGE_PADDING;
+                        double x = Math.Clamp(baseX + slide, minX + clampPad, maxX - clampPad);
+                        candidate = new Point(x, y);
+                    }
+
+                    Vector2 fromToCandidate = new Vector2((float)(candidate.X - fromSystem.Layout.X), (float)(candidate.Y - fromSystem.Layout.Y));
+                    double candidateDistance = Math.Sqrt((fromToCandidate.X * fromToCandidate.X) + (fromToCandidate.Y * fromToCandidate.Y));
+                    if(candidateDistance > localMaxDistance)
+                    {
+                        continue;
+                    }
+
+                    Vector2 candidateDirection = fromToCandidate.LengthSquared() > 0.01f ? Vector2.Normalize(fromToCandidate) : direction;
+                    double directionalScore = Vector2.Dot(candidateDirection, direction) * 120.0;
+                    if(directionalScore < -35.0)
+                    {
+                        continue;
+                    }
+
+                    double nearestSystemDistance = double.MaxValue;
+                    int systemsNearLine = 0;
+                    foreach(MapSystem ms in Region.MapSystems.Values)
+                    {
+                        if(ms.Name == fromSystem.Name)
+                        {
+                            continue;
+                        }
+
+                        double dx = candidate.X - ms.Layout.X;
+                        double dy = candidate.Y - ms.Layout.Y;
+                        double dist = Math.Sqrt((dx * dx) + (dy * dy));
+                        if(dist < nearestSystemDistance)
+                        {
+                            nearestSystemDistance = dist;
+                        }
+
+                        double lineDistance = DistancePointToSegment(new Point(ms.Layout.X, ms.Layout.Y), sourcePoint, candidate);
+                        if(lineDistance < JUMP_BRIDGE_OFFMAP_NODE_CLEARANCE)
+                        {
+                            systemsNearLine++;
+                        }
+                    }
+
+                    double nearestEndpointDistance = double.MaxValue;
+                    if(usedEndpoints != null)
+                    {
+                        foreach(Point used in usedEndpoints)
+                        {
+                            double dx = candidate.X - used.X;
+                            double dy = candidate.Y - used.Y;
+                            double dist = Math.Sqrt((dx * dx) + (dy * dy));
+                            if(dist < nearestEndpointDistance)
+                            {
+                                nearestEndpointDistance = dist;
+                            }
+                        }
+                    }
+
+                    if(nearestEndpointDistance == double.MaxValue)
+                    {
+                        nearestEndpointDistance = 180.0;
+                    }
+
+                    double endpointRepelPenalty = nearestEndpointDistance < 36.0 ? 500.0 : 0.0;
+                    double offsetPenalty = (Math.Abs(slide) * Math.Abs(slide)) * 0.2;
+                    double lineCrossPenalty = systemsNearLine * 130.0;
+                    double score =
+                        (-candidateDistance * 1.6) +
+                        directionalScore +
+                        (nearestSystemDistance * 0.4) +
+                        (nearestEndpointDistance * 0.7) -
+                        lineCrossPenalty -
+                        endpointRepelPenalty -
+                        offsetPenalty;
+
+                    if(score > bestScore)
+                    {
+                        bestScore = score;
+                        bestPoint = candidate;
+                        bestEdge = edge;
+                    }
+                }
+            }
+
+            double bestNearestSystemDistance = double.MaxValue;
+            foreach(MapSystem ms in Region.MapSystems.Values)
+            {
+                if(ms.Name == fromSystem.Name)
+                {
+                    continue;
+                }
+
+                double dx = bestPoint.X - ms.Layout.X;
+                double dy = bestPoint.Y - ms.Layout.Y;
+                double dist = Math.Sqrt((dx * dx) + (dy * dy));
+                if(dist < bestNearestSystemDistance)
+                {
+                    bestNearestSystemDistance = dist;
+                }
+            }
+
+            if(bestNearestSystemDistance < JUMP_BRIDGE_OFFMAP_NEAR_NODE_THRESHOLD)
+            {
+                double outwardAmount = Math.Min(
+                    JUMP_BRIDGE_OFFMAP_NEAR_NODE_OUTWARD_MAX,
+                    (JUMP_BRIDGE_OFFMAP_NEAR_NODE_THRESHOLD - bestNearestSystemDistance) * 0.75);
+                Vector2 outward = GetEdgeOutwardDirection(bestEdge) * (float)outwardAmount;
+                bestPoint = new Point(bestPoint.X + outward.X, bestPoint.Y + outward.Y);
+            }
+
+            double labelX;
+            double labelY;
+
+            if(bestEdge == OffMapEdge.Left)
+            {
+                labelX = bestPoint.X - (SYSTEM_REGION_TEXT_WIDTH + 2);
+                labelY = bestPoint.Y - 16;
+            }
+            else if(bestEdge == OffMapEdge.Right)
+            {
+                labelX = bestPoint.X + 2;
+                labelY = bestPoint.Y - 16;
+            }
+            else if(bestEdge == OffMapEdge.Top)
+            {
+                labelX = bestPoint.X + SYSTEM_REGION_TEXT_X_OFFSET;
+                labelY = bestPoint.Y - 28;
+            }
+            else
+            {
+                labelX = bestPoint.X + SYSTEM_REGION_TEXT_X_OFFSET;
+                labelY = bestPoint.Y + 2;
+            }
+
+            labelAnchor = new Point(labelX, labelY);
+            return bestPoint;
         }
 
         private void AddSystemsToMapLayoutOnly()
@@ -4003,6 +4308,8 @@ namespace HISA
 
             if(ShowJumpBridges && EM.JumpBridges != null)
             {
+                List<Point> usedOffMapEndpoints = new List<Point>();
+
                 foreach(EVEData.JumpBridge jb in EM.JumpBridges)
                 {
                     if(Region.IsSystemOnMap(jb.From) || Region.IsSystemOnMap(jb.To))
@@ -4026,7 +4333,8 @@ namespace HISA
 
                         if(!Region.IsSystemOnMap(jb.To) || !Region.IsSystemOnMap(jb.From))
                         {
-                            endPoint = new Point(from.Layout.X - 20, from.Layout.Y - 40);
+                            endPoint = ComputeOffMapJumpBridgeEndpoint(from, to, usedOffMapEndpoints, out Point labelAnchor);
+                            usedOffMapEndpoints.Add(endPoint);
 
                             Shape jbOutofSystemBlob = new Ellipse() { Height = 6, Width = 6 };
                             Canvas.SetLeft(jbOutofSystemBlob, endPoint.X - 3);
@@ -4036,6 +4344,10 @@ namespace HISA
                             MainCanvas.Children.Add(jbOutofSystemBlob);
 
                             Label jbOutofRegionText = new Label();
+                            jbOutofRegionText.Padding = new Thickness(0);
+                            jbOutofRegionText.Margin = new Thickness(0);
+                            jbOutofRegionText.Width = SYSTEM_REGION_TEXT_WIDTH;
+                            jbOutofRegionText.HorizontalContentAlignment = HorizontalAlignment.Left;
 
                             if(jb.Disabled)
                             {
@@ -4056,8 +4368,8 @@ namespace HISA
                             }
                             jbOutofRegionText.IsHitTestVisible = false;
 
-                            Canvas.SetLeft(jbOutofRegionText, from.Layout.X - 20);
-                            Canvas.SetTop(jbOutofRegionText, from.Layout.Y - 60);
+                            Canvas.SetLeft(jbOutofRegionText, labelAnchor.X);
+                            Canvas.SetTop(jbOutofRegionText, labelAnchor.Y);
                             Canvas.SetZIndex(jbOutofRegionText, ZINDEX_SYSTEM);
 
                             MainCanvas.Children.Add(jbOutofRegionText);
@@ -7208,12 +7520,21 @@ namespace HISA
                             from.X = selectedSys.Layout.X;
                             from.Y = selectedSys.Layout.Y;
 
-                            if(Region.IsSystemOnMap(jb.To) && !jb.Disabled)
+                            if(!jb.Disabled)
                             {
-                                MapSystem ms = Region.MapSystems[jb.To];
-                                to.X = ms.Layout.X;
-                                to.Y = ms.Layout.Y;
-                                AddJBHighlight = true;
+                                if(Region.IsSystemOnMap(jb.To))
+                                {
+                                    MapSystem ms = Region.MapSystems[jb.To];
+                                    to.X = ms.Layout.X;
+                                    to.Y = ms.Layout.Y;
+                                    AddJBHighlight = true;
+                                }
+                                else
+                                {
+                                    EVEData.System targetSystem = EM.GetEveSystem(jb.To);
+                                    to = ComputeOffMapJumpBridgeEndpoint(selectedSys, targetSystem, null, out _);
+                                    AddJBHighlight = true;
+                                }
                             }
                         }
 
@@ -7237,12 +7558,21 @@ namespace HISA
                             from.X = selectedSys.Layout.X;
                             from.Y = selectedSys.Layout.Y;
 
-                            if(Region.IsSystemOnMap(jb.From) && !jb.Disabled)
+                            if(!jb.Disabled)
                             {
-                                MapSystem ms = Region.MapSystems[jb.From];
-                                to.X = ms.Layout.X;
-                                to.Y = ms.Layout.Y;
-                                AddJBHighlight = true;
+                                if(Region.IsSystemOnMap(jb.From))
+                                {
+                                    MapSystem ms = Region.MapSystems[jb.From];
+                                    to.X = ms.Layout.X;
+                                    to.Y = ms.Layout.Y;
+                                    AddJBHighlight = true;
+                                }
+                                else
+                                {
+                                    EVEData.System targetSystem = EM.GetEveSystem(jb.From);
+                                    to = ComputeOffMapJumpBridgeEndpoint(selectedSys, targetSystem, null, out _);
+                                    AddJBHighlight = true;
+                                }
                             }
                         }
                     }
