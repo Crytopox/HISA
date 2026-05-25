@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Hisa.App/Hisa.App.csproj" />
+    <Project Path="src/Hisa.Core/Hisa.Core.csproj" />
+    <Project Path="src/Hisa.Data/Hisa.Data.csproj" />
+    <Project Path="src/Hisa.Esi/Hisa.Esi.csproj" />
+    <Project Path="src/Hisa.Logs/Hisa.Logs.csproj" />
+    <Project Path="src/Hisa.Rendering/Hisa.Rendering.csproj" />
+    <Project Path="src/Hisa.Services/Hisa.Services.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Hisa.Core.Tests/Hisa.Core.Tests.csproj" />
+    <Project Path="tests/Hisa.Logs.Tests/Hisa.Logs.Tests.csproj" />
+  </Folder>
+</Solution>

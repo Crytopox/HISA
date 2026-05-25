@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Hisa.Core\Hisa.Core.csproj" />
+    <ProjectReference Include="..\Hisa.Data\Hisa.Data.csproj" />
+    <ProjectReference Include="..\Hisa.Logs\Hisa.Logs.csproj" />
+    <ProjectReference Include="..\Hisa.Esi\Hisa.Esi.csproj" />
+    <ProjectReference Include="..\Hisa.Rendering\Hisa.Rendering.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

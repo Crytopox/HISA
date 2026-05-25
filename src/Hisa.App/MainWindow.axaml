@@ -1,0 +1,40 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:Hisa.App"
+        xmlns:rendering="clr-namespace:Hisa.Rendering.Controls;assembly=Hisa.Rendering"
+        mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="760"
+        x:Class="Hisa.App.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="HISA - Haakario Interstellar Survey Authority"
+        Background="#0B1018">
+  <Grid RowDefinitions="Auto,*,Auto" ColumnDefinitions="240,*,320">
+    <Border Grid.ColumnSpan="3" Padding="10" Background="#121A26" BorderBrush="#263244" BorderThickness="0,0,0,1">
+      <TextBlock Text="HISA" FontSize="22" FontWeight="SemiBold" Foreground="#D1A347" />
+    </Border>
+
+    <Border Grid.Row="1" Grid.Column="0" Margin="8" Padding="10" Background="#121A26" BorderBrush="#263244" BorderThickness="1" CornerRadius="6">
+      <StackPanel Spacing="8">
+        <TextBlock Text="Search &amp; Filters" FontWeight="SemiBold" Foreground="#E6EDF3" />
+        <TextBlock Text="(placeholder)" Foreground="#8A96A8" />
+      </StackPanel>
+    </Border>
+
+    <Border Grid.Row="1" Grid.Column="1" Margin="8" Background="#0D131D" BorderBrush="#263244" BorderThickness="1" CornerRadius="6">
+      <rendering:MapControl />
+    </Border>
+
+    <Border Grid.Row="1" Grid.Column="2" Margin="8" Padding="10" Background="#121A26" BorderBrush="#263244" BorderThickness="1" CornerRadius="6">
+      <StackPanel Spacing="8">
+        <TextBlock Text="System Details" FontWeight="SemiBold" Foreground="#E6EDF3" />
+        <TextBlock Text="{Binding StatusText}" Foreground="#8A96A8" />
+      </StackPanel>
+    </Border>
+
+    <Border Grid.Row="2" Grid.ColumnSpan="3" Padding="8" Background="#121A26" BorderBrush="#263244" BorderThickness="0,1,0,0">
+      <TextBlock Text="Intel feed placeholder" Foreground="#8A96A8" />
+    </Border>
+  </Grid>
+</Window>
+
