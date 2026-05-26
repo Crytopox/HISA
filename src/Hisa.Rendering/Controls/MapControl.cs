@@ -194,7 +194,23 @@ public sealed class MapControl : Control
 
         var delta = e.Delta.Y;
         var factor = delta > 0 ? 1.1 : 0.9;
-        _zoom = Math.Clamp(_zoom * factor, 0.4, 12.0);
+        var mouse = e.GetPosition(this);
+        var oldZoom = _zoom;
+        var newZoom = Math.Clamp(_zoom * factor, 0.4, 12.0);
+        if (Math.Abs(newZoom - oldZoom) < 1e-9)
+        {
+            return;
+        }
+
+        // Keep the world point under the cursor stable while zooming.
+        var worldX = ((mouse.X - (Bounds.Width / 2.0) - _panOffset.X) / oldZoom) + (Bounds.Width / 2.0);
+        var worldY = ((mouse.Y - (Bounds.Height / 2.0) - _panOffset.Y) / oldZoom) + (Bounds.Height / 2.0);
+
+        _zoom = newZoom;
+        _panOffset = new Point(
+            mouse.X - (((worldX - (Bounds.Width / 2.0)) * _zoom) + (Bounds.Width / 2.0)),
+            mouse.Y - (((worldY - (Bounds.Height / 2.0)) * _zoom) + (Bounds.Height / 2.0)));
+
         InvalidateVisual();
     }
 
