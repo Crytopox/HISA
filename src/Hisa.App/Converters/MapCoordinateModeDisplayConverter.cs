@@ -16,8 +16,8 @@ public sealed class MapCoordinateModeDisplayConverter : IValueConverter
 
         return mode switch
         {
-            MapCoordinateMode.ThreeDProjectedXZ => "3D Space Projection",
-            MapCoordinateMode.SdePlanarXY => "2D Flat Map",
+            MapCoordinateMode.ThreeDProjectedXZ => "3D Flattened",
+            MapCoordinateMode.SdePlanarXY => "2D Map",
             _ => mode.ToString()
         };
     }
