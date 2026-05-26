@@ -91,12 +91,16 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorLabelText), true);
     public static readonly StyledProperty<bool> ShowIndicatorGlyphProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorGlyph), true);
+    public static readonly StyledProperty<bool> ShowIndicatorSecurityStatusProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorSecurityStatus), false);
     public static readonly StyledProperty<bool> InfoBoxShowRegionProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowRegion), true);
     public static readonly StyledProperty<bool> InfoBoxShowConstellationProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowConstellation), true);
     public static readonly StyledProperty<bool> InfoBoxShowSystemIdProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowSystemId), false);
+    public static readonly StyledProperty<bool> InfoBoxShowSecurityStatusProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowSecurityStatus), true);
 
     private Point? _lastPanPoint;
     private Point _panOffset = new(0, 0);
@@ -180,6 +184,12 @@ public sealed class MapControl : Control
         set => SetValue(ShowIndicatorGlyphProperty, value);
     }
 
+    public bool ShowIndicatorSecurityStatus
+    {
+        get => GetValue(ShowIndicatorSecurityStatusProperty);
+        set => SetValue(ShowIndicatorSecurityStatusProperty, value);
+    }
+
     public bool InfoBoxShowRegion
     {
         get => GetValue(InfoBoxShowRegionProperty);
@@ -198,10 +208,25 @@ public sealed class MapControl : Control
         set => SetValue(InfoBoxShowSystemIdProperty, value);
     }
 
+    public bool InfoBoxShowSecurityStatus
+    {
+        get => GetValue(InfoBoxShowSecurityStatusProperty);
+        set => SetValue(InfoBoxShowSecurityStatusProperty, value);
+    }
+
     public MapControl()
     {
         AffectsRender<MapControl>(GraphProperty, SelectedNodeIdProperty, ViewModeProperty, StretchToWindowProperty);
-        AffectsRender<MapControl>(NodeColorModeProperty, NodeBackgroundColorModeProperty, ShowIndicatorLabelTextProperty, ShowIndicatorGlyphProperty, InfoBoxShowRegionProperty, InfoBoxShowConstellationProperty, InfoBoxShowSystemIdProperty);
+        AffectsRender<MapControl>(
+            NodeColorModeProperty,
+            NodeBackgroundColorModeProperty,
+            ShowIndicatorLabelTextProperty,
+            ShowIndicatorGlyphProperty,
+            ShowIndicatorSecurityStatusProperty,
+            InfoBoxShowRegionProperty,
+            InfoBoxShowConstellationProperty,
+            InfoBoxShowSystemIdProperty,
+            InfoBoxShowSecurityStatusProperty);
         ClipToBounds = true;
     }
 
@@ -539,10 +564,24 @@ public sealed class MapControl : Control
                 labelsDrawn < labelBudget &&
                 IsPointVisible(p, bounds, labelVisibilityMargin))
             {
-                var labelText = ShowIndicatorGlyph ? $"◆ {node.Name}" : node.Name;
-                var label = GetNodeLabel(node.Id, labelText);
                 var labelOrigin = GetNodeLabelOrigin(p);
-                DrawNodeLabel(context, label, GetNodeLabelHalo(node.Id, labelText), labelOrigin);
+                var labelText = BuildIndicatorLabel(node);
+                if (ShowIndicatorSecurityStatus && node.Security is not null)
+                {
+                    var rounded = RoundSecurityForDisplay(node.Security.Value);
+                    DrawNodeLabelWithSecurity(
+                        context,
+                        node.Id,
+                        labelText,
+                        rounded.ToString("0.0", CultureInfo.InvariantCulture),
+                        GetSecurityColor(node),
+                        labelOrigin);
+                }
+                else
+                {
+                    var label = GetNodeLabel(node.Id, labelText);
+                    DrawNodeLabel(context, label, GetNodeLabelHalo(node.Id, labelText), labelOrigin);
+                }
                 labelsDrawn++;
             }
         }
@@ -1774,15 +1813,41 @@ public sealed class MapControl : Control
 
     private static Color GetSecurityColor(MapNode node)
     {
-        var s = node.Id; // fallback deterministic when no security value in current model
-        var bucket = (int)(Math.Abs(s) % 4);
-        return bucket switch
+        var rounded = RoundSecurityForDisplay(node.Security ?? 0.0);
+        return rounded switch
         {
-            0 => Color.Parse("#8FB0D9"),
-            1 => Color.Parse("#7CCB9A"),
-            2 => Color.Parse("#D9C27A"),
-            _ => Color.Parse("#D98B8B")
+            >= 1.0 => Color.Parse("#2C75E1"),
+            >= 0.9 => Color.Parse("#399AEB"),
+            >= 0.8 => Color.Parse("#4ECEF8"),
+            >= 0.7 => Color.Parse("#60DBA3"),
+            >= 0.6 => Color.Parse("#71E754"),
+            >= 0.5 => Color.Parse("#F5FF83"),
+            >= 0.4 => Color.Parse("#DC6C06"),
+            >= 0.3 => Color.Parse("#CE440F"),
+            >= 0.2 => Color.Parse("#BB1116"),
+            >= 0.1 => Color.Parse("#731F1F"),
+            _ => Color.Parse("#8D3163")
         };
+    }
+
+    private static double RoundSecurityForDisplay(double security)
+    {
+        if (security == 0.0d)
+        {
+            return 0.0d;
+        }
+
+        if (security > 0.0d && security < 0.05d)
+        {
+            return Math.Round((security * 10.0d) + 0.5d, MidpointRounding.AwayFromZero) / 10.0d;
+        }
+
+        return Math.Round(security * 10.0d, MidpointRounding.AwayFromZero) / 10.0d;
+    }
+
+    private string BuildIndicatorLabel(MapNode node)
+    {
+        return ShowIndicatorGlyph ? $"* {node.Name}" : node.Name;
     }
 
     private static Color GetRegionColor(int? regionId)
@@ -1855,6 +1920,41 @@ public sealed class MapControl : Control
         DrawLabelWithHalo(context, label, halo, origin);
     }
 
+    private void DrawNodeLabelWithSecurity(
+        DrawingContext context,
+        long nodeId,
+        string nameLabel,
+        string securityLabel,
+        Color securityColor,
+        Point origin)
+    {
+        const double gap = 7.0;
+        var name = GetNodeLabel(nodeId, nameLabel);
+        var nameHalo = GetNodeLabelHalo(nodeId, nameLabel);
+        var sec = new FormattedText(
+            securityLabel,
+            CultureInfo.InvariantCulture,
+            FlowDirection.LeftToRight,
+            new Typeface("Inter"),
+            11.5,
+            GetCachedBrush(securityColor));
+        var secHalo = new FormattedText(
+            securityLabel,
+            CultureInfo.InvariantCulture,
+            FlowDirection.LeftToRight,
+            new Typeface("Inter"),
+            11.5,
+            new ImmutableSolidColorBrush(Color.Parse("#AA0A111A")));
+
+        var width = name.Width + gap + sec.Width;
+        var height = Math.Max(name.Height, sec.Height);
+        var rect = new Rect(origin.X - 3, origin.Y - 2, width + 6, height + 4);
+        context.FillRectangle(NodeLabelBackgroundBrush, rect, 3);
+        DrawLabelWithHalo(context, name, nameHalo, origin);
+        var secOrigin = new Point(origin.X + name.Width + gap, origin.Y);
+        DrawLabelWithHalo(context, sec, secHalo, secOrigin);
+    }
+
     private static void DrawCenteredText(DrawingContext context, string message, Rect bounds)
     {
         var text = new FormattedText(
@@ -1899,7 +1999,7 @@ public sealed class MapControl : Control
 
     private void DrawHoverOverlay(DrawingContext context, Point anchor, MapNode node)
     {
-        var header = ShowIndicatorGlyph ? $"◆ {node.Name}" : node.Name;
+        var header = ShowIndicatorGlyph ? $"* {node.Name}" : node.Name;
         var detailLines = new List<string>();
         if (InfoBoxShowRegion && !string.IsNullOrWhiteSpace(node.RegionName))
         {
@@ -1914,29 +2014,64 @@ public sealed class MapControl : Control
             detailLines.Add($"System ID: {node.Id}");
         }
 
-        var text = detailLines.Count == 0 ? header : $"{header}\n{string.Join('\n', detailLines)}";
-        var content = new FormattedText(
-            text,
-            System.Globalization.CultureInfo.InvariantCulture,
+        var headerText = new FormattedText(
+            header,
+            CultureInfo.InvariantCulture,
             FlowDirection.LeftToRight,
             new Typeface("Inter"),
             12,
             Brushes.White);
+        FormattedText? securityText = null;
+        if (InfoBoxShowSecurityStatus && node.Security is not null)
+        {
+            var rounded = RoundSecurityForDisplay(node.Security.Value);
+            securityText = new FormattedText(
+                rounded.ToString("0.0", CultureInfo.InvariantCulture),
+                CultureInfo.InvariantCulture,
+                FlowDirection.LeftToRight,
+                new Typeface("Inter"),
+                12,
+                GetCachedBrush(GetSecurityColor(node)));
+        }
+        var detailsText = detailLines.Count == 0
+            ? null
+            : new FormattedText(
+                string.Join('\n', detailLines),
+                CultureInfo.InvariantCulture,
+                FlowDirection.LeftToRight,
+                new Typeface("Inter"),
+                12,
+                Brushes.White);
 
         var start = GetNodeLabelOrigin(anchor);
         var padX = 8.0;
         var padY = 6.0;
+        var headerWidth = headerText.Width + (securityText is null ? 0 : (8 + securityText.Width));
+        var bodyWidth = detailsText?.Width ?? 0;
+        var contentWidth = Math.Max(headerWidth, bodyWidth);
+        var contentHeight = headerText.Height + (detailsText is null ? 0 : detailsText.Height + 2);
         var rect = new Rect(
             start.X - 2,
             start.Y - 2,
-            content.Width + (padX * 2),
-            content.Height + (padY * 2));
+            contentWidth + (padX * 2),
+            contentHeight + (padY * 2));
 
         context.FillRectangle(HoverOverlayBackgroundBrush, rect, 4);
         context.DrawRectangle(HoverOverlayBorderPen, rect, 4);
-        context.DrawText(content, new Point(rect.X + padX, rect.Y + padY));
+        var headerOrigin = new Point(rect.X + padX, rect.Y + padY);
+        context.DrawText(headerText, headerOrigin);
+        if (securityText is not null)
+        {
+            var secOrigin = new Point(headerOrigin.X + headerText.Width + 8, headerOrigin.Y);
+            context.DrawText(securityText, secOrigin);
+        }
+        if (detailsText is not null)
+        {
+            context.DrawText(detailsText, new Point(headerOrigin.X, headerOrigin.Y + headerText.Height + 2));
+        }
     }
 
     private sealed record UniverseRegionLabelLayout(int RegionId, string RegionName, Point Center, Rect Rect, FormattedText Label);
     private readonly record struct PlotMetrics(double OriginX, double OriginY, double Width, double Height);
 }
+

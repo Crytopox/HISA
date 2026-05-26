@@ -13,6 +13,7 @@
         Background="#0D131D">
   <Window.Resources>
     <converters:MapCoordinateModeDisplayConverter x:Key="MapCoordinateModeDisplayConverter" />
+    <converters:MapNodeColorModeDisplayConverter x:Key="MapNodeColorModeDisplayConverter" />
   </Window.Resources>
   <Window.Styles>
     <Style Selector="ToggleButton.view-mode">
@@ -96,9 +97,11 @@
                             NodeBackgroundColorMode="{Binding NodeBackgroundColorMode}"
                             ShowIndicatorLabelText="{Binding ShowIndicatorLabelText}"
                             ShowIndicatorGlyph="{Binding ShowIndicatorGlyph}"
+                            ShowIndicatorSecurityStatus="{Binding ShowIndicatorSecurityStatus}"
                             InfoBoxShowRegion="{Binding InfoBoxShowRegion}"
                             InfoBoxShowConstellation="{Binding InfoBoxShowConstellation}"
                             InfoBoxShowSystemId="{Binding InfoBoxShowSystemId}"
+                            InfoBoxShowSecurityStatus="{Binding InfoBoxShowSecurityStatus}"
                             SelectedNodeId="{Binding SelectedNodeId, Mode=TwoWay}" />
 
       <Border Grid.Column="1"
@@ -113,18 +116,32 @@
             <TextBlock Text="Display Settings" FontSize="14" FontWeight="SemiBold" Foreground="#D8E5F8" />
 
             <TextBlock Text="Node Color" Foreground="#8A96A8" />
-            <ComboBox ItemsSource="{Binding NodeColorModes}" SelectedItem="{Binding NodeColorMode}" />
+            <ComboBox ItemsSource="{Binding NodeColorModes}" SelectedItem="{Binding NodeColorMode}">
+              <ComboBox.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock Text="{Binding Converter={StaticResource MapNodeColorModeDisplayConverter}}" />
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
 
             <TextBlock Text="Node Background Color" Foreground="#8A96A8" />
-            <ComboBox ItemsSource="{Binding NodeColorModes}" SelectedItem="{Binding NodeBackgroundColorMode}" />
+            <ComboBox ItemsSource="{Binding NodeColorModes}" SelectedItem="{Binding NodeBackgroundColorMode}">
+              <ComboBox.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock Text="{Binding Converter={StaticResource MapNodeColorModeDisplayConverter}}" />
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
 
             <TextBlock Text="Indicators" Foreground="#8A96A8" />
-            <CheckBox IsChecked="{Binding ShowIndicatorLabelText}" Content="Show Label Text" />
+            <CheckBox IsChecked="{Binding ShowIndicatorLabelText}" Content="Name" />
             <CheckBox IsChecked="{Binding ShowIndicatorGlyph}" Content="Show Glyph Marker" />
+            <CheckBox IsChecked="{Binding ShowIndicatorSecurityStatus}" Content="Security Status" />
 
             <Separator />
 
             <TextBlock Text="Overlay Fields" Foreground="#8A96A8" />
+            <CheckBox IsChecked="{Binding InfoBoxShowSecurityStatus}" Content="Security Status" />
             <CheckBox IsChecked="{Binding InfoBoxShowRegion}" Content="Show Region" />
             <CheckBox IsChecked="{Binding InfoBoxShowConstellation}" Content="Show Constellation" />
             <CheckBox IsChecked="{Binding InfoBoxShowSystemId}" Content="Show System ID" />

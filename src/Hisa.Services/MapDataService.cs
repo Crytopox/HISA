@@ -198,7 +198,7 @@ public sealed class MapDataService : IMapDataService
         var command = connection.CreateCommand();
         command.CommandText = regionId is null
             ? $"""
-              SELECT s.solarSystemID, s.solarSystemName, {xColumn}, {yColumn}, s.regionID, r.regionName
+              SELECT s.solarSystemID, s.solarSystemName, {xColumn}, {yColumn}, s.security, s.regionID, r.regionName
                      , s.constellationID
                      , c.constellationName
               FROM mapSolarSystems s
@@ -206,7 +206,7 @@ public sealed class MapDataService : IMapDataService
               LEFT JOIN mapConstellations c ON c.constellationID = s.constellationID;
               """
             : $"""
-              SELECT s.solarSystemID, s.solarSystemName, {xColumn}, {yColumn}, s.regionID, r.regionName
+              SELECT s.solarSystemID, s.solarSystemName, {xColumn}, {yColumn}, s.security, s.regionID, r.regionName
                      , s.constellationID
                      , c.constellationName
               FROM mapSolarSystems s
@@ -244,10 +244,11 @@ public sealed class MapDataService : IMapDataService
                 Name = reader.GetString(1),
                 X = reader.GetDouble(2),
                 Y = reader.GetDouble(3),
-                RegionId = reader.IsDBNull(4) ? null : reader.GetInt32(4),
-                RegionName = reader.IsDBNull(5) ? null : reader.GetString(5),
-                ConstellationId = reader.IsDBNull(6) ? null : reader.GetInt32(6),
-                ConstellationName = reader.IsDBNull(7) ? null : reader.GetString(7)
+                Security = reader.IsDBNull(4) ? null : reader.GetDouble(4),
+                RegionId = reader.IsDBNull(5) ? null : reader.GetInt32(5),
+                RegionName = reader.IsDBNull(6) ? null : reader.GetString(6),
+                ConstellationId = reader.IsDBNull(7) ? null : reader.GetInt32(7),
+                ConstellationName = reader.IsDBNull(8) ? null : reader.GetString(8)
             });
         }
 
@@ -336,6 +337,7 @@ public sealed class MapDataService : IMapDataService
                 Name = n.Name,
                 X = (n.X - minX) / width,
                 Y = 1.0 - ((n.Y - minY) / height),
+                Security = n.Security,
                 RegionId = n.RegionId,
                 RegionName = n.RegionName,
                 ConstellationId = n.ConstellationId,
