@@ -28,6 +28,44 @@ public sealed class MapNode
     public int? RegionId { get; init; }
     public string? RegionName { get; init; }
     public int? ConstellationId { get; init; }
+    public string? ConstellationName { get; init; }
+}
+
+public enum MapSearchKind
+{
+    Region = 0,
+    Constellation = 1,
+    SolarSystem = 2
+}
+
+public sealed class MapSearchCandidate
+{
+    public required MapSearchKind Kind { get; init; }
+    public required string Name { get; init; }
+    public int? RegionId { get; init; }
+    public int? ConstellationId { get; init; }
+    public long? SolarSystemId { get; init; }
+
+    public override string ToString()
+    {
+        var prefix = Kind switch
+        {
+            MapSearchKind.Region => "Region",
+            MapSearchKind.Constellation => "Constellation",
+            MapSearchKind.SolarSystem => "System",
+            _ => "Result"
+        };
+
+        return $"{prefix}: {Name}";
+    }
+}
+
+public sealed class MapSearchFocus
+{
+    public MapSearchKind Kind { get; init; }
+    public int? RegionId { get; init; }
+    public int? ConstellationId { get; init; }
+    public long? SolarSystemId { get; init; }
 }
 
 public sealed class MapLink

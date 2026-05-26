@@ -22,11 +22,15 @@ public sealed class MapControl : Control
     private long? _hoveredNodeId;
     private int? _hoveredRegionId;
     private int? _selectedRegionId;
+    private long? _searchHighlightedNodeId;
+    private int? _searchHighlightedConstellationId;
+    private int? _searchHighlightedRegionId;
     private MapGraph? _lastGraphForCaches;
     private readonly Dictionary<long, FormattedText> _nodeLabelCache = [];
     private readonly Dictionary<int, FormattedText> _regionLabelCache = [];
     private const double BasePadding = 0.0;
     private const double FitPadding = 30.0;
+    public event EventHandler<int>? UniverseRegionNodeDoubleClicked;
 
     public MapGraph? Graph
     {
@@ -118,6 +122,7 @@ public sealed class MapControl : Control
         var highlightedSameConstellationPen = new Pen(new SolidColorBrush(Color.Parse("#7FA7E3")), 2.2);
         var highlightedSameRegionPen = new Pen(new SolidColorBrush(Color.Parse("#63C2B2")), 2.2);
         var highlightedCrossRegionPen = new Pen(new SolidColorBrush(Color.Parse("#C28ABB")), 2.2);
+        var highlightedSearchConstellationPen = new Pen(new SolidColorBrush(Color.Parse("#E8B75E")), 2.4);
         var regionEmphasisDefaultPen = new Pen(new SolidColorBrush(Color.Parse("#6F8FB6")), 1.8);
         var regionEmphasisSameConstellationPen = new Pen(new SolidColorBrush(Color.Parse("#6F97D2")), 1.8);
         var regionEmphasisSameRegionPen = new Pen(new SolidColorBrush(Color.Parse("#57AEA1")), 1.8);
@@ -146,6 +151,16 @@ public sealed class MapControl : Control
                                  (link.FromId == SelectedNodeId.Value || link.ToId == SelectedNodeId.Value);
             var isHoveredLink = _hoveredNodeId is not null &&
                                 (link.FromId == _hoveredNodeId.Value || link.ToId == _hoveredNodeId.Value);
+            var isSearchConstellationLink = _searchHighlightedConstellationId is not null &&
+                                            nodeById.TryGetValue(link.FromId, out var fromNodeForSearchConstellation) &&
+                                            nodeById.TryGetValue(link.ToId, out var toNodeForSearchConstellation) &&
+                                            (fromNodeForSearchConstellation.ConstellationId == _searchHighlightedConstellationId.Value ||
+                                             toNodeForSearchConstellation.ConstellationId == _searchHighlightedConstellationId.Value);
+            var isSearchRegionLink = _searchHighlightedRegionId is not null &&
+                                     nodeById.TryGetValue(link.FromId, out var fromNodeForSearchRegion) &&
+                                     nodeById.TryGetValue(link.ToId, out var toNodeForSearchRegion) &&
+                                     (fromNodeForSearchRegion.RegionId == _searchHighlightedRegionId.Value ||
+                                      toNodeForSearchRegion.RegionId == _searchHighlightedRegionId.Value);
             var activeRegionId = _selectedRegionId ?? _hoveredRegionId;
             var isRegionLink = activeRegionId is not null &&
                                nodeById.TryGetValue(link.FromId, out var fromNodeForRegion) &&
@@ -153,7 +168,9 @@ public sealed class MapControl : Control
                                (fromNodeForRegion.RegionId == activeRegionId.Value || toNodeForRegion.RegionId == activeRegionId.Value);
 
             var basePen = GetLinkPen(linksPen, sameConstellationPen, sameRegionPen, crossRegionPen, link, nodeById);
-            var pen = isSelectedLink || isHoveredLink
+            var pen = isSearchConstellationLink
+                ? highlightedSearchConstellationPen
+                : isSelectedLink || isHoveredLink || isSearchRegionLink
                 ? GetHighlightedPen(basePen, linksPen, sameConstellationPen, sameRegionPen, crossRegionPen, highlightedDefaultPen, highlightedSameConstellationPen, highlightedSameRegionPen, highlightedCrossRegionPen)
                 : isRegionLink
                     ? GetHighlightedPen(basePen, linksPen, sameConstellationPen, sameRegionPen, crossRegionPen, regionEmphasisDefaultPen, regionEmphasisSameConstellationPen, regionEmphasisSameRegionPen, regionEmphasisCrossRegionPen)
@@ -178,13 +195,21 @@ public sealed class MapControl : Control
 
             var isSelected = SelectedNodeId == node.Id;
             var isHovered = _hoveredNodeId == node.Id;
+            var isSearchHighlightedConstellation = _searchHighlightedConstellationId is not null && node.ConstellationId == _searchHighlightedConstellationId.Value;
+            var isSearchHighlighted = _searchHighlightedNodeId == node.Id ||
+                                      isSearchHighlightedConstellation ||
+                                      (_searchHighlightedRegionId is not null && node.RegionId == _searchHighlightedRegionId.Value);
             var activeRegionId = _selectedRegionId ?? _hoveredRegionId;
             var isInActiveRegion = activeRegionId is not null && node.RegionId == activeRegionId.Value;
-            var radius = isSelected ? 4.8 : isHovered ? 4.2 : 3.2;
+            var radius = isSelected ? 4.8 : isHovered ? 4.2 : isSearchHighlighted ? 4.0 : 3.2;
             var brush = isSelected
                 ? selectedBrush
                 : isHovered
                     ? hoveredBrush
+                    : isSearchHighlightedConstellation
+                        ? selectedBrush
+                    : isSearchHighlighted
+                        ? regionSelectedBrush
                     : isInActiveRegion
                         ? regionSelectedBrush
                     : nodeBrush;
@@ -269,11 +294,22 @@ public sealed class MapControl : Control
         var point = e.GetPosition(this);
         var props = e.GetCurrentPoint(this).Properties;
 
+        if (e.ClickCount >= 2 &&
+            ViewMode == MapViewMode.UniverseRegions &&
+            props.IsLeftButtonPressed &&
+            TrySelectNodeAt(point) &&
+            SelectedNodeId is long selectedId)
+        {
+            UniverseRegionNodeDoubleClicked?.Invoke(this, (int)selectedId);
+            return;
+        }
+
         if (props.IsLeftButtonPressed)
         {
             if (TryToggleRegionSelectionFromLabel(point))
             {
                 SelectedNodeId = null;
+                ClearSearchHighlight();
                 InvalidateVisual();
                 return;
             }
@@ -281,12 +317,14 @@ public sealed class MapControl : Control
             if (TrySelectNodeAt(point))
             {
                 _selectedRegionId = null;
+                ClearSearchHighlight();
                 InvalidateVisual();
                 return;
             }
 
             SelectedNodeId = null;
             _selectedRegionId = null;
+            ClearSearchHighlight();
             InvalidateVisual();
             return;
         }
@@ -424,6 +462,159 @@ public sealed class MapControl : Control
         }
     }
 
+    public void FocusOnSearch(MapSearchFocus focus)
+    {
+        if (Graph is null || Graph.Nodes.Count == 0)
+        {
+            return;
+        }
+
+        ClearSearchHighlight();
+
+        if (ViewMode == MapViewMode.Region)
+        {
+            if (focus.Kind == MapSearchKind.SolarSystem && focus.SolarSystemId is not null)
+            {
+                _searchHighlightedNodeId = focus.SolarSystemId.Value;
+                SelectedNodeId = focus.SolarSystemId.Value;
+            }
+            else if (focus.Kind == MapSearchKind.Constellation && focus.ConstellationId is not null)
+            {
+                _searchHighlightedConstellationId = focus.ConstellationId.Value;
+                SelectedNodeId = null;
+            }
+            else
+            {
+                SelectedNodeId = null;
+            }
+
+            FitToView();
+            InvalidateVisual();
+            return;
+        }
+
+        if (focus.Kind == MapSearchKind.SolarSystem && focus.SolarSystemId is not null)
+        {
+            _searchHighlightedNodeId = focus.SolarSystemId.Value;
+            _selectedRegionId = null;
+            FocusOnNode(focus.SolarSystemId.Value);
+            return;
+        }
+
+        if (focus.Kind == MapSearchKind.Constellation && focus.ConstellationId is not null)
+        {
+            _searchHighlightedConstellationId = focus.ConstellationId.Value;
+            _selectedRegionId = null;
+            SelectedNodeId = null;
+            FocusOnConstellation(focus.ConstellationId.Value);
+            return;
+        }
+
+        if (focus.Kind == MapSearchKind.Region && focus.RegionId is not null)
+        {
+            _searchHighlightedRegionId = focus.RegionId.Value;
+            _selectedRegionId = ViewMode == MapViewMode.Universe ? focus.RegionId.Value : null;
+            SelectedNodeId = null;
+            FocusOnRegion(focus.RegionId.Value);
+            InvalidateVisual();
+        }
+    }
+
+    private void FocusOnNode(long nodeId)
+    {
+        if (Graph is null)
+        {
+            return;
+        }
+
+        var node = Graph.Nodes.FirstOrDefault(n => n.Id == nodeId);
+        if (node is null)
+        {
+            return;
+        }
+
+        var targetZoom = ViewMode == MapViewMode.Universe ? 8.0 : 10.0;
+        CenterOnWorld(node.X, node.Y, targetZoom);
+    }
+
+    private void FocusOnConstellation(int constellationId)
+    {
+        if (Graph is null)
+        {
+            return;
+        }
+
+        var nodes = Graph.Nodes.Where(n => n.ConstellationId == constellationId).ToList();
+        if (nodes.Count == 0)
+        {
+            return;
+        }
+
+        FocusOnNodes(nodes, 130);
+    }
+
+    private void FocusOnRegion(int regionId)
+    {
+        if (Graph is null)
+        {
+            return;
+        }
+
+        var nodes = Graph.Nodes.Where(n => n.RegionId == regionId).ToList();
+        if (nodes.Count == 0)
+        {
+            return;
+        }
+
+        FocusOnNodes(nodes, 150);
+    }
+
+    private void FocusOnNodes(IReadOnlyList<MapNode> nodes, double padding)
+    {
+        if (nodes.Count == 0 || Bounds.Width <= 1 || Bounds.Height <= 1)
+        {
+            return;
+        }
+
+        var plotWidth = Math.Max(1.0, Bounds.Width - (BasePadding * 2));
+        var plotHeight = Math.Max(1.0, Bounds.Height - (BasePadding * 2));
+
+        var minX = nodes.Min(n => n.X);
+        var maxX = nodes.Max(n => n.X);
+        var minY = nodes.Min(n => n.Y);
+        var maxY = nodes.Max(n => n.Y);
+
+        var graphWidthPx = Math.Max(1e-9, (maxX - minX) * plotWidth);
+        var graphHeightPx = Math.Max(1e-9, (maxY - minY) * plotHeight);
+
+        var availableWidth = Math.Max(1.0, plotWidth - (padding * 2));
+        var availableHeight = Math.Max(1.0, plotHeight - (padding * 2));
+
+        var zoomX = availableWidth / graphWidthPx;
+        var zoomY = availableHeight / graphHeightPx;
+        _zoom = Math.Clamp(Math.Min(zoomX, zoomY), 0.4, GetMaxZoom());
+
+        var centerX = (minX + maxX) * 0.5;
+        var centerY = (minY + maxY) * 0.5;
+        CenterOnWorld(centerX, centerY, _zoom);
+    }
+
+    private void CenterOnWorld(double worldX, double worldY, double zoom)
+    {
+        _zoom = Math.Clamp(zoom, 0.4, GetMaxZoom());
+        var padding = BasePadding;
+        var w = Math.Max(1.0, Bounds.Width - (padding * 2));
+        var h = Math.Max(1.0, Bounds.Height - (padding * 2));
+        var baseX = padding + (worldX * w);
+        var baseY = padding + (worldY * h);
+        var cx = Bounds.Width * 0.5;
+        var cy = Bounds.Height * 0.5;
+        _panOffset = new Point(
+            cx - (((baseX - cx) * _zoom) + cx),
+            cy - (((baseY - cy) * _zoom) + cy));
+        InvalidateVisual();
+    }
+
     private Point ToScreenPoint(MapNode node)
     {
         var padding = BasePadding;
@@ -501,6 +692,13 @@ public sealed class MapControl : Control
 
         _selectedRegionId = _selectedRegionId == regionId ? null : regionId;
         return true;
+    }
+
+    private void ClearSearchHighlight()
+    {
+        _searchHighlightedNodeId = null;
+        _searchHighlightedConstellationId = null;
+        _searchHighlightedRegionId = null;
     }
 
     private IReadOnlyList<UniverseRegionLabelLayout> BuildUniverseRegionLabelLayouts()

@@ -124,6 +124,70 @@ public sealed class MapDataService : IMapDataService
         return BuildNormalizedGraph(systems, links);
     }
 
+    public async Task<IReadOnlyList<MapSearchCandidate>> SearchAsync(string term, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(term))
+        {
+            return [];
+        }
+
+        await using var connection = _sdeDatabase.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        var like = $"%{term.Trim()}%";
+        var results = new List<MapSearchCandidate>();
+
+        async Task RunAsync(string sql, MapSearchKind kind)
+        {
+            var cmd = connection.CreateCommand();
+            cmd.CommandText = sql;
+            cmd.Parameters.AddWithValue("$term", like);
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                results.Add(new MapSearchCandidate
+                {
+                    Kind = kind,
+                    Name = reader.GetString(1),
+                    RegionId = reader.IsDBNull(2) ? null : reader.GetInt32(2),
+                    ConstellationId = reader.IsDBNull(3) ? null : reader.GetInt32(3),
+                    SolarSystemId = reader.IsDBNull(4) ? null : reader.GetInt32(4)
+                });
+            }
+        }
+
+        await RunAsync("""
+            SELECT r.regionID AS id, r.regionName, r.regionID, NULL AS constellationID, NULL AS solarSystemID
+            FROM mapRegions r
+            WHERE r.regionName LIKE $term
+              AND r.regionID IN (
+                    SELECT fromRegionID FROM mapRegionJumps
+                    UNION
+                    SELECT toRegionID FROM mapRegionJumps
+              )
+            ORDER BY r.regionName
+            LIMIT 20;
+            """, MapSearchKind.Region);
+
+        await RunAsync("""
+            SELECT c.constellationID AS id, c.constellationName, c.regionID, c.constellationID, NULL AS solarSystemID
+            FROM mapConstellations c
+            WHERE c.constellationName LIKE $term
+            ORDER BY c.constellationName
+            LIMIT 30;
+            """, MapSearchKind.Constellation);
+
+        await RunAsync("""
+            SELECT s.solarSystemID AS id, s.solarSystemName, s.regionID, s.constellationID, s.solarSystemID
+            FROM mapSolarSystems s
+            WHERE s.solarSystemName LIKE $term
+            ORDER BY s.solarSystemName
+            LIMIT 60;
+            """, MapSearchKind.SolarSystem);
+
+        return results;
+    }
+
     private async Task<List<MapNode>> QuerySystemsAsync(int? regionId, MapCoordinateMode coordinateMode, CancellationToken cancellationToken)
     {
         await using var connection = _sdeDatabase.CreateConnection();
@@ -136,14 +200,18 @@ public sealed class MapDataService : IMapDataService
             ? $"""
               SELECT s.solarSystemID, s.solarSystemName, {xColumn}, {yColumn}, s.regionID, r.regionName
                      , s.constellationID
+                     , c.constellationName
               FROM mapSolarSystems s
-              LEFT JOIN mapRegions r ON r.regionID = s.regionID;
+              LEFT JOIN mapRegions r ON r.regionID = s.regionID
+              LEFT JOIN mapConstellations c ON c.constellationID = s.constellationID;
               """
             : $"""
               SELECT s.solarSystemID, s.solarSystemName, {xColumn}, {yColumn}, s.regionID, r.regionName
                      , s.constellationID
+                     , c.constellationName
               FROM mapSolarSystems s
               LEFT JOIN mapRegions r ON r.regionID = s.regionID
+              LEFT JOIN mapConstellations c ON c.constellationID = s.constellationID
               WHERE s.regionID = $regionId;
               """;
 
@@ -178,7 +246,8 @@ public sealed class MapDataService : IMapDataService
                 Y = reader.GetDouble(3),
                 RegionId = reader.IsDBNull(4) ? null : reader.GetInt32(4),
                 RegionName = reader.IsDBNull(5) ? null : reader.GetString(5),
-                ConstellationId = reader.IsDBNull(6) ? null : reader.GetInt32(6)
+                ConstellationId = reader.IsDBNull(6) ? null : reader.GetInt32(6),
+                ConstellationName = reader.IsDBNull(7) ? null : reader.GetString(7)
             });
         }
 
@@ -269,7 +338,8 @@ public sealed class MapDataService : IMapDataService
                 Y = 1.0 - ((n.Y - minY) / height),
                 RegionId = n.RegionId,
                 RegionName = n.RegionName,
-                ConstellationId = n.ConstellationId
+                ConstellationId = n.ConstellationId,
+                ConstellationName = n.ConstellationName
             })
             .ToList();
 

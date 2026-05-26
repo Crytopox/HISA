@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using Hisa.Core.Abstractions;
 using Hisa.Core.Models;
 
@@ -17,8 +18,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private RegionOption? _selectedRegion;
     private MapGraph? _currentGraph;
     private long? _selectedNodeId;
+    private string _mapSearchText = string.Empty;
+    private MapSearchCandidate? _selectedSearchSuggestion;
     private string _regionSearchText = string.Empty;
     private string _statusText = "Loading map...";
+    private CancellationTokenSource? _searchSuggestionsCts;
     private const string ViewModeKey = "Map.SelectedViewMode";
     private const string RegionIdKey = "Map.SelectedRegionId";
     private const string CoordinateModeKey = "Map.SelectedCoordinateMode";
@@ -38,6 +42,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public ObservableCollection<MapViewMode> ViewModes { get; }
     public ObservableCollection<MapCoordinateMode> CoordinateModes { get; }
     public ObservableCollection<RegionOption> Regions { get; }
+    public ObservableCollection<MapSearchCandidate> SearchSuggestions { get; } = [];
 
     public MapViewMode SelectedViewMode
     {
@@ -50,8 +55,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsUniverseRegionsMode)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsRegionMode)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsCoordinateSelectorVisible)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsRegionSelectorVisible)));
                 EnforceCoordinateModeForView();
                 _ = _settingsService.SetAsync(ViewModeKey, value);
+                _ = UpdateSearchSuggestionsAsync(MapSearchText);
                 _ = ReloadGraphAsync();
             }
         }
@@ -94,6 +101,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     }
 
     public bool IsCoordinateSelectorVisible => SelectedViewMode != MapViewMode.UniverseRegions;
+    public bool IsRegionSelectorVisible => SelectedViewMode == MapViewMode.Region;
 
     public RegionOption? SelectedRegion
     {
@@ -138,6 +146,24 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
+    public string MapSearchText
+    {
+        get => _mapSearchText;
+        set
+        {
+            if (SetProperty(ref _mapSearchText, value))
+            {
+                _ = UpdateSearchSuggestionsAsync(value);
+            }
+        }
+    }
+
+    public MapSearchCandidate? SelectedSearchSuggestion
+    {
+        get => _selectedSearchSuggestion;
+        set => SetProperty(ref _selectedSearchSuggestion, value);
+    }
+
     public MapGraph? CurrentGraph
     {
         get => _currentGraph;
@@ -155,6 +181,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         get => _statusText;
         private set => SetProperty(ref _statusText, value);
     }
+
+    public bool HasSearchSuggestions => SearchSuggestions.Count > 0;
 
     private async Task LoadAsync()
     {
@@ -207,6 +235,79 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
+    public async Task<MapSearchFocus?> ExecuteSearchAsync(MapSearchCandidate? explicitCandidate = null)
+    {
+        MapSearchCandidate? pick = explicitCandidate;
+        if (pick is null)
+        {
+            var term = MapSearchText.Trim();
+            if (string.IsNullOrWhiteSpace(term))
+            {
+                return null;
+            }
+
+            var candidates = await _mapDataService.SearchAsync(term);
+            if (candidates.Count == 0)
+            {
+                return null;
+            }
+
+            pick = PickBestCandidateForMode(candidates);
+        }
+
+        if (pick is null)
+        {
+            return null;
+        }
+
+        if (SelectedViewMode == MapViewMode.Region && pick.RegionId is not null)
+        {
+            var targetRegion = _allRegions.FirstOrDefault(r => r.RegionId == pick.RegionId.Value);
+            if (targetRegion is not null && (_selectedRegion?.RegionId != targetRegion.RegionId))
+            {
+                _selectedRegion = targetRegion;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedRegion)));
+                await _settingsService.SetAsync(RegionIdKey, targetRegion.RegionId);
+                await ReloadGraphAsync();
+            }
+        }
+
+        return new MapSearchFocus
+        {
+            Kind = pick.Kind,
+            RegionId = pick.RegionId,
+            ConstellationId = pick.ConstellationId,
+            SolarSystemId = pick.SolarSystemId
+        };
+    }
+
+    public void ClearSearchSuggestions()
+    {
+        if (SearchSuggestions.Count == 0)
+        {
+            return;
+        }
+
+        SearchSuggestions.Clear();
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasSearchSuggestions)));
+    }
+
+    public async Task OpenRegionFromUniverseRegionsNodeAsync(int regionId)
+    {
+        var region = _allRegions.FirstOrDefault(r => r.RegionId == regionId);
+        if (region is null)
+        {
+            return;
+        }
+
+        _selectedRegion = region;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedRegion)));
+        await _settingsService.SetAsync(RegionIdKey, region.RegionId);
+
+        SelectedViewMode = MapViewMode.Region;
+        await ReloadGraphAsync();
+    }
+
     private void ApplyRegionFilter()
     {
         var term = RegionSearchText.Trim();
@@ -251,5 +352,69 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedCoordinateMode)));
             _ = _settingsService.SetAsync(CoordinateModeKey, MapCoordinateMode.SdePlanarXY);
         }
+    }
+
+    private async Task UpdateSearchSuggestionsAsync(string rawText)
+    {
+        _searchSuggestionsCts?.Cancel();
+        _searchSuggestionsCts?.Dispose();
+        _searchSuggestionsCts = new CancellationTokenSource();
+        var ct = _searchSuggestionsCts.Token;
+
+        var term = rawText.Trim();
+        if (string.IsNullOrWhiteSpace(term))
+        {
+            ClearSearchSuggestions();
+            return;
+        }
+
+        try
+        {
+            await Task.Delay(120, ct);
+            var candidates = await _mapDataService.SearchAsync(term, ct);
+            var filtered = FilterCandidatesForCurrentMode(candidates).Take(10).ToList();
+
+            SearchSuggestions.Clear();
+            foreach (var candidate in filtered)
+            {
+                SearchSuggestions.Add(candidate);
+            }
+
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasSearchSuggestions)));
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch
+        {
+            ClearSearchSuggestions();
+        }
+    }
+
+    private IReadOnlyList<MapSearchCandidate> FilterCandidatesForCurrentMode(IReadOnlyList<MapSearchCandidate> candidates)
+    {
+        return SelectedViewMode switch
+        {
+            MapViewMode.UniverseRegions => candidates.Where(c => c.Kind == MapSearchKind.Region).ToList(),
+            MapViewMode.Universe => candidates.ToList(),
+            MapViewMode.Region => candidates.ToList(),
+            _ => candidates.ToList()
+        };
+    }
+
+    private MapSearchCandidate? PickBestCandidateForMode(IReadOnlyList<MapSearchCandidate> candidates)
+    {
+        var filtered = FilterCandidatesForCurrentMode(candidates);
+        return SelectedViewMode switch
+        {
+            MapViewMode.UniverseRegions => filtered.FirstOrDefault(c => c.Kind == MapSearchKind.Region),
+            MapViewMode.Universe => filtered.FirstOrDefault(c => c.Kind == MapSearchKind.SolarSystem)
+                ?? filtered.FirstOrDefault(c => c.Kind == MapSearchKind.Constellation)
+                ?? filtered.FirstOrDefault(c => c.Kind == MapSearchKind.Region),
+            MapViewMode.Region => filtered.FirstOrDefault(c => c.Kind == MapSearchKind.SolarSystem)
+                ?? filtered.FirstOrDefault(c => c.Kind == MapSearchKind.Constellation)
+                ?? filtered.FirstOrDefault(c => c.Kind == MapSearchKind.Region),
+            _ => filtered.FirstOrDefault()
+        };
     }
 }
