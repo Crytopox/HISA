@@ -10,6 +10,9 @@ using NtsEnvelope = NetTopologySuite.Geometries.Envelope;
 using NtsGeometryCollection = NetTopologySuite.Geometries.GeometryCollection;
 using NtsGeometryFactory = NetTopologySuite.Geometries.GeometryFactory;
 using NtsPolygon = NetTopologySuite.Geometries.Polygon;
+using NtsGeometry = NetTopologySuite.Geometries.Geometry;
+using NtsMultiPolygon = NetTopologySuite.Geometries.MultiPolygon;
+using NtsUnaryUnionOp = NetTopologySuite.Operation.Union.UnaryUnionOp;
 
 namespace Hisa.Rendering.Controls;
 
@@ -1045,22 +1048,51 @@ public sealed class MapControl : Control
             return;
         }
 
+        var geometryFactory = new NtsGeometryFactory();
+
         var minX = Graph.Nodes.Min(n => n.X);
         var maxX = Graph.Nodes.Max(n => n.X);
         var minY = Graph.Nodes.Min(n => n.Y);
         var maxY = Graph.Nodes.Max(n => n.Y);
-        var padX = Math.Max((maxX - minX) * 0.15, 0.02);
-        var padY = Math.Max((maxY - minY) * 0.15, 0.02);
+
+        var spacing = EstimateTypicalLinkSpacing(Graph.Nodes, Graph.Links);
+
+        // Main tuning values.
+        var nodeMaskRadius = Math.Clamp(spacing * 1.70, 0.010, 0.075);
+        var linkMaskRadius = Math.Clamp(spacing * 0.62, 0.005, 0.034);
+
+        // The Voronoi envelope can be generous because the final shape is clipped by the mask.
+        var envelopePad = Math.Clamp(spacing * 5.0, 0.04, 0.20);
 
         var nodeKeyToId = Graph.Nodes.ToDictionary(
             n => $"{Math.Round(n.X, 8)}:{Math.Round(n.Y, 8)}",
             n => n.Id);
-        var sites = Graph.Nodes.Select(n => new NtsCoordinate(n.X, n.Y)).ToList();
+
+        var sites = Graph.Nodes
+            .Select(n => new NtsCoordinate(n.X, n.Y))
+            .ToList();
+
+        var territoryMask = BuildVoronoiTerritoryMask(
+            Graph.Nodes,
+            Graph.Links,
+            geometryFactory,
+            nodeMaskRadius,
+            linkMaskRadius);
+
+        if (territoryMask is null || territoryMask.IsEmpty)
+        {
+            return;
+        }
 
         var builder = new VoronoiDiagramBuilder();
         builder.SetSites(sites);
-        builder.ClipEnvelope = new NtsEnvelope(minX - padX, maxX + padX, minY - padY, maxY + padY);
-        var diagram = builder.GetDiagram(new NtsGeometryFactory()) as NtsGeometryCollection;
+        builder.ClipEnvelope = new NtsEnvelope(
+            minX - envelopePad,
+            maxX + envelopePad,
+            minY - envelopePad,
+            maxY + envelopePad);
+
+        var diagram = builder.GetDiagram(geometryFactory) as NtsGeometryCollection;
         if (diagram is null)
         {
             return;
@@ -1075,44 +1107,193 @@ public sealed class MapControl : Control
                 continue;
             }
 
-            long nodeId;
-            if (polygon.UserData is NtsCoordinate site)
+            var nodeId = ResolveVoronoiOwnerNodeId(polygon, nodeKeyToId);
+            if (nodeId is null)
             {
-                var key = $"{Math.Round(site.X, 8)}:{Math.Round(site.Y, 8)}";
-                if (!nodeKeyToId.TryGetValue(key, out nodeId))
-                {
-                    var centroid = polygon.Centroid;
-                    var nearest = Graph.Nodes
-                        .OrderBy(n => ((n.X - centroid.X) * (n.X - centroid.X)) + ((n.Y - centroid.Y) * (n.Y - centroid.Y)))
-                        .FirstOrDefault();
-                    if (nearest is null)
-                    {
-                        continue;
-                    }
-
-                    nodeId = nearest.Id;
-                }
-            }
-            else
-            {
-                var centroid = polygon.Centroid;
-                var nearest = Graph.Nodes
-                    .OrderBy(n => ((n.X - centroid.X) * (n.X - centroid.X)) + ((n.Y - centroid.Y) * (n.Y - centroid.Y)))
-                    .FirstOrDefault();
-                if (nearest is null)
-                {
-                    continue;
-                }
-
-                nodeId = nearest.Id;
+                continue;
             }
 
-            var points = polygon.ExteriorRing.Coordinates
-                .Take(polygon.ExteriorRing.Coordinates.Length - 1)
-                .Select(c => (c.X, c.Y))
-                .ToList();
-            _voronoiWorldPolygonsByNodeId[nodeId] = points;
+            var clipped = polygon.Intersection(territoryMask);
+            var points = ExtractLargestPolygonCoordinates(clipped);
+
+            if (points.Count < 3)
+            {
+                continue;
+            }
+
+            _voronoiWorldPolygonsByNodeId[nodeId.Value] = points;
         }
+    }
+
+    private static NtsGeometry? BuildVoronoiTerritoryMask(
+    IReadOnlyList<MapNode> nodes,
+    IReadOnlyList<MapLink> links,
+    NtsGeometryFactory geometryFactory,
+    double nodeMaskRadius,
+    double linkMaskRadius)
+    {
+        var byId = nodes.ToDictionary(n => n.Id);
+        var parts = new List<NtsGeometry>();
+
+        foreach (var node in nodes)
+        {
+            var point = geometryFactory.CreatePoint(new NtsCoordinate(node.X, node.Y));
+            parts.Add(point.Buffer(nodeMaskRadius, 8));
+        }
+
+        foreach (var link in links)
+        {
+            if (!byId.TryGetValue(link.FromId, out var from) ||
+                !byId.TryGetValue(link.ToId, out var to))
+            {
+                continue;
+            }
+
+            var line = geometryFactory.CreateLineString([
+                new NtsCoordinate(from.X, from.Y),
+            new NtsCoordinate(to.X, to.Y)
+            ]);
+
+            parts.Add(line.Buffer(linkMaskRadius, 6));
+        }
+
+        if (parts.Count == 0)
+        {
+            return null;
+        }
+
+        var union = NtsUnaryUnionOp.Union(parts);
+
+        // Small smoothing pass.
+        var smoothOut = nodeMaskRadius * 0.15;
+        var smoothIn = nodeMaskRadius * 0.10;
+
+        return union
+            .Buffer(smoothOut, 4)
+            .Buffer(-smoothIn, 4);
+    }
+
+    private long? ResolveVoronoiOwnerNodeId(
+    NtsPolygon polygon,
+    IReadOnlyDictionary<string, long> nodeKeyToId)
+    {
+        if (polygon.UserData is NtsCoordinate site)
+        {
+            var key = $"{Math.Round(site.X, 8)}:{Math.Round(site.Y, 8)}";
+            if (nodeKeyToId.TryGetValue(key, out var nodeId))
+            {
+                return nodeId;
+            }
+        }
+
+        if (Graph is null)
+        {
+            return null;
+        }
+
+        var centroid = polygon.Centroid;
+
+        var nearest = Graph.Nodes
+            .OrderBy(n =>
+            {
+                var dx = n.X - centroid.X;
+                var dy = n.Y - centroid.Y;
+                return (dx * dx) + (dy * dy);
+            })
+            .FirstOrDefault();
+
+        return nearest?.Id;
+    }
+
+    private static IReadOnlyList<(double X, double Y)> ExtractLargestPolygonCoordinates(NtsGeometry geometry)
+    {
+        if (geometry.IsEmpty)
+        {
+            return [];
+        }
+
+        NtsPolygon? bestPolygon = null;
+        var bestArea = 0.0;
+
+        void Consider(NtsGeometry candidate)
+        {
+            if (candidate is NtsPolygon polygon &&
+                polygon.ExteriorRing is not null &&
+                polygon.ExteriorRing.NumPoints >= 4 &&
+                polygon.Area > bestArea)
+            {
+                bestPolygon = polygon;
+                bestArea = polygon.Area;
+            }
+        }
+
+        if (geometry is NtsPolygon singlePolygon)
+        {
+            Consider(singlePolygon);
+        }
+        else if (geometry is NtsMultiPolygon multiPolygon)
+        {
+            for (var i = 0; i < multiPolygon.NumGeometries; i++)
+            {
+                Consider(multiPolygon.GetGeometryN(i));
+            }
+        }
+        else if (geometry is NtsGeometryCollection collection)
+        {
+            for (var i = 0; i < collection.NumGeometries; i++)
+            {
+                Consider(collection.GetGeometryN(i));
+            }
+        }
+
+        if (bestPolygon is null)
+        {
+            return [];
+        }
+
+        return bestPolygon.ExteriorRing.Coordinates
+            .Take(bestPolygon.ExteriorRing.Coordinates.Length - 1)
+            .Select(c => (c.X, c.Y))
+            .ToList();
+    }
+
+    private static double EstimateTypicalLinkSpacing(
+    IReadOnlyList<MapNode> nodes,
+    IReadOnlyList<MapLink> links)
+    {
+        var byId = nodes.ToDictionary(n => n.Id);
+        var lengths = new List<double>(links.Count);
+
+        foreach (var link in links)
+        {
+            if (!byId.TryGetValue(link.FromId, out var from) ||
+                !byId.TryGetValue(link.ToId, out var to))
+            {
+                continue;
+            }
+
+            var dx = from.X - to.X;
+            var dy = from.Y - to.Y;
+            var d = Math.Sqrt((dx * dx) + (dy * dy));
+
+            if (d > 0)
+            {
+                lengths.Add(d);
+            }
+        }
+
+        if (lengths.Count == 0)
+        {
+            var minX = nodes.Min(n => n.X);
+            var maxX = nodes.Max(n => n.X);
+            var minY = nodes.Min(n => n.Y);
+            var maxY = nodes.Max(n => n.Y);
+
+            return Math.Max((maxX - minX + maxY - minY) * 0.015, 0.01);
+        }
+
+        lengths.Sort();
+        return lengths[lengths.Count / 2];
     }
 
     private void DrawVoronoiCell(DrawingContext context, MapNode node, Point centerPoint)
