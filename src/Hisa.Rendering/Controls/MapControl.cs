@@ -18,6 +18,8 @@ public sealed class MapControl : Control
     private Point _panOffset = new(0, 0);
     private double _zoom = 1.0;
     private long? _hoveredNodeId;
+    private const double BasePadding = 0.0;
+    private const double FitPadding = 8.0;
 
     public MapGraph? Graph
     {
@@ -37,15 +39,50 @@ public sealed class MapControl : Control
         ClipToBounds = true;
     }
 
+    public void FitToView()
+    {
+        if (Graph is null || Graph.Nodes.Count == 0 || Bounds.Width <= 1 || Bounds.Height <= 1)
+        {
+            _zoom = 1.0;
+            _panOffset = new Point(0, 0);
+            InvalidateVisual();
+            return;
+        }
+
+        var plotWidth = Math.Max(1.0, Bounds.Width - (BasePadding * 2));
+        var plotHeight = Math.Max(1.0, Bounds.Height - (BasePadding * 2));
+
+        var minX = Graph.Nodes.Min(n => n.X);
+        var maxX = Graph.Nodes.Max(n => n.X);
+        var minY = Graph.Nodes.Min(n => n.Y);
+        var maxY = Graph.Nodes.Max(n => n.Y);
+
+        var graphWidthPx = Math.Max(1e-9, (maxX - minX) * plotWidth);
+        var graphHeightPx = Math.Max(1e-9, (maxY - minY) * plotHeight);
+
+        var availableWidth = Math.Max(1.0, plotWidth - (FitPadding * 2));
+        var availableHeight = Math.Max(1.0, plotHeight - (FitPadding * 2));
+
+        var zoomX = availableWidth / graphWidthPx;
+        var zoomY = availableHeight / graphHeightPx;
+        _zoom = Math.Clamp(Math.Min(zoomX, zoomY), 0.4, 12.0);
+
+        var baseCenterX = BasePadding + (((minX + maxX) * 0.5) * plotWidth);
+        var baseCenterY = BasePadding + (((minY + maxY) * 0.5) * plotHeight);
+        var viewCenterX = Bounds.Width * 0.5;
+        var viewCenterY = Bounds.Height * 0.5;
+
+        _panOffset = new Point(
+            viewCenterX - (((baseCenterX - viewCenterX) * _zoom) + viewCenterX),
+            viewCenterY - (((baseCenterY - viewCenterY) * _zoom) + viewCenterY));
+
+        InvalidateVisual();
+    }
+
     public override void Render(DrawingContext context)
     {
-        base.Render(context);
-
         var bounds = Bounds;
-        context.FillRectangle(new SolidColorBrush(Color.Parse("#101826")), bounds);
-
-        var borderPen = new Pen(new SolidColorBrush(Color.Parse("#2A3A52")), 1);
-        context.DrawRectangle(borderPen, bounds.Deflate(0.5));
+        context.FillRectangle(new SolidColorBrush(Color.Parse("#0D131D")), bounds);
 
         if (Graph is null || Graph.Nodes.Count == 0)
         {
@@ -84,7 +121,7 @@ public sealed class MapControl : Control
             var brush = isSelected ? selectedBrush : isHovered ? hoveredBrush : nodeBrush;
             context.DrawEllipse(brush, null, p, radius, radius);
 
-            if (_zoom >= 1.4 || isSelected || isHovered)
+            if (_zoom >= 1.0 || isSelected || isHovered)
             {
                 var label = new FormattedText(
                     node.Name,
@@ -211,7 +248,7 @@ public sealed class MapControl : Control
 
     private Point ToScreenPoint(MapNode node)
     {
-        var padding = 28.0;
+        var padding = BasePadding;
         var w = Math.Max(1.0, Bounds.Width - (padding * 2));
         var h = Math.Max(1.0, Bounds.Height - (padding * 2));
 
