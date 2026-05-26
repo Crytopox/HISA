@@ -37,7 +37,7 @@
     <Content Include="Data\eve-hk-sde.db">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="Data\JoveObservatory Systems.txt">
+    <Content Include="Data\solarsystemsstaticdata.db">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>

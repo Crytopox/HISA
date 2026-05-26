@@ -32,12 +32,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _showIndicatorStarClass;
     private bool _showIndicatorA0StarIcon = true;
     private bool _showIndicatorJoveObservatoryIcon = true;
+    private bool _showIndicatorIceBeltsIcon = true;
     private bool _infoBoxShowRegion = true;
     private bool _infoBoxShowConstellation = true;
     private bool _infoBoxShowSecurityStatus = true;
     private bool _infoBoxShowStarClass;
     private bool _infoBoxShowA0StarIcon = true;
     private bool _infoBoxShowJoveObservatoryIcon = true;
+    private bool _infoBoxShowIceBeltsIcon = true;
     private CancellationTokenSource? _searchSuggestionsCts;
     private bool _isInitializing = true;
     private const string ViewModeKey = "Map.SelectedViewMode";
@@ -52,12 +54,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string ShowIndicatorStarClassKey = "Map.ShowIndicatorStarClass";
     private const string ShowIndicatorA0StarIconKey = "Map.ShowIndicatorA0StarIcon";
     private const string ShowIndicatorJoveObservatoryIconKey = "Map.ShowIndicatorJoveObservatoryIcon";
+    private const string ShowIndicatorIceBeltsIconKey = "Map.ShowIndicatorIceBeltsIcon";
     private const string InfoBoxShowRegionKey = "Map.InfoBoxShowRegion";
     private const string InfoBoxShowConstellationKey = "Map.InfoBoxShowConstellation";
     private const string InfoBoxShowSecurityStatusKey = "Map.InfoBoxShowSecurityStatus";
     private const string InfoBoxShowStarClassKey = "Map.InfoBoxShowStarClass";
     private const string InfoBoxShowA0StarIconKey = "Map.InfoBoxShowA0StarIcon";
     private const string InfoBoxShowJoveObservatoryIconKey = "Map.InfoBoxShowJoveObservatoryIcon";
+    private const string InfoBoxShowIceBeltsIconKey = "Map.InfoBoxShowIceBeltsIcon";
     private const string WindowPlacementKey = "Window.Main.Placement";
     private const string MapViewportPrefixKey = "Map.Viewport";
     private readonly Task _initialLoadTask;
@@ -261,6 +265,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
+    public bool ShowIndicatorIceBeltsIcon
+    {
+        get => _showIndicatorIceBeltsIcon;
+        set
+        {
+            if (SetProperty(ref _showIndicatorIceBeltsIcon, value) && !_isInitializing)
+            {
+                _ = _settingsService.SetAsync(ShowIndicatorIceBeltsIconKey, value);
+            }
+        }
+    }
+
     public bool InfoBoxShowRegion
     {
         get => _infoBoxShowRegion;
@@ -329,6 +345,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             if (SetProperty(ref _infoBoxShowJoveObservatoryIcon, value) && !_isInitializing)
             {
                 _ = _settingsService.SetAsync(InfoBoxShowJoveObservatoryIconKey, value);
+            }
+        }
+    }
+
+    public bool InfoBoxShowIceBeltsIcon
+    {
+        get => _infoBoxShowIceBeltsIcon;
+        set
+        {
+            if (SetProperty(ref _infoBoxShowIceBeltsIcon, value) && !_isInitializing)
+            {
+                _ = _settingsService.SetAsync(InfoBoxShowIceBeltsIconKey, value);
             }
         }
     }
@@ -470,12 +498,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         ShowIndicatorStarClass = await _settingsService.GetAsync<bool?>(ShowIndicatorStarClassKey) ?? false;
         ShowIndicatorA0StarIcon = await _settingsService.GetAsync<bool?>(ShowIndicatorA0StarIconKey) ?? true;
         ShowIndicatorJoveObservatoryIcon = await _settingsService.GetAsync<bool?>(ShowIndicatorJoveObservatoryIconKey) ?? true;
+        ShowIndicatorIceBeltsIcon = await _settingsService.GetAsync<bool?>(ShowIndicatorIceBeltsIconKey) ?? true;
         InfoBoxShowRegion = await _settingsService.GetAsync<bool?>(InfoBoxShowRegionKey) ?? true;
         InfoBoxShowConstellation = await _settingsService.GetAsync<bool?>(InfoBoxShowConstellationKey) ?? true;
         InfoBoxShowSecurityStatus = await _settingsService.GetAsync<bool?>(InfoBoxShowSecurityStatusKey) ?? true;
         InfoBoxShowStarClass = await _settingsService.GetAsync<bool?>(InfoBoxShowStarClassKey) ?? false;
         InfoBoxShowA0StarIcon = await _settingsService.GetAsync<bool?>(InfoBoxShowA0StarIconKey) ?? true;
         InfoBoxShowJoveObservatoryIcon = await _settingsService.GetAsync<bool?>(InfoBoxShowJoveObservatoryIconKey) ?? true;
+        InfoBoxShowIceBeltsIcon = await _settingsService.GetAsync<bool?>(InfoBoxShowIceBeltsIconKey) ?? true;
         SelectedViewMode = await _settingsService.GetAsync<MapViewMode?>(ViewModeKey) ?? MapViewMode.Universe;
         EnforceCoordinateModeForView();
 

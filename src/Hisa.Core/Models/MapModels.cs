@@ -20,7 +20,8 @@ public enum MapNodeColorMode
     Region = 2,
     Star = 3,
     NullsecTrueSec = 4,
-    JoveObservatory = 5
+    JoveObservatory = 5,
+    IceBelts = 6
 }
 
 public sealed class MapGraph
@@ -40,6 +41,7 @@ public sealed class MapNode
     public string? StarTypeName { get; init; }
     public string? SpectralClass { get; init; }
     public bool HasJoveObservatory { get; init; }
+    public int IceFieldCount { get; init; }
     public int? RegionId { get; init; }
     public string? RegionName { get; init; }
     public int? ConstellationId { get; init; }

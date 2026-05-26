@@ -8,8 +8,10 @@ namespace Hisa.Services;
 
 public sealed class MapDataService : IMapDataService
 {
-    private static readonly Lazy<HashSet<string>> JoveObservatorySystemNames = new(LoadJoveObservatorySystemNames);
+    private static readonly Lazy<IReadOnlyDictionary<int, StaticSolarSystemData>> StaticSolarSystemDataById = new(LoadStaticSolarSystemDataById);
     private readonly ISdeDatabase _sdeDatabase;
+
+    private sealed record StaticSolarSystemData(bool HasJoveObservatory, int IceFieldCount);
 
     public MapDataService(ISdeDatabase sdeDatabase)
     {
@@ -245,9 +247,14 @@ public sealed class MapDataService : IMapDataService
                 continue;
             }
 
+            var solarSystemId = reader.GetInt32(0);
+            var staticData = StaticSolarSystemDataById.Value.TryGetValue(solarSystemId, out var loadedStaticData)
+                ? loadedStaticData
+                : null;
+
             nodes.Add(new MapNode
             {
-                Id = reader.GetInt32(0),
+                Id = solarSystemId,
                 Name = reader.GetString(1),
                 X = reader.GetDouble(2),
                 Y = reader.GetDouble(3),
@@ -255,7 +262,8 @@ public sealed class MapDataService : IMapDataService
                 SunTypeId = reader.IsDBNull(5) ? null : reader.GetInt32(5),
                 StarTypeName = reader.IsDBNull(6) ? null : reader.GetString(6),
                 SpectralClass = reader.IsDBNull(7) ? null : reader.GetString(7),
-                HasJoveObservatory = JoveObservatorySystemNames.Value.Contains(reader.GetString(1)),
+                HasJoveObservatory = staticData?.HasJoveObservatory ?? false,
+                IceFieldCount = staticData?.IceFieldCount ?? 0,
                 RegionId = reader.IsDBNull(8) ? null : reader.GetInt32(8),
                 RegionName = reader.IsDBNull(9) ? null : reader.GetString(9),
                 ConstellationId = reader.IsDBNull(10) ? null : reader.GetInt32(10),
@@ -353,6 +361,7 @@ public sealed class MapDataService : IMapDataService
                 StarTypeName = n.StarTypeName,
                 SpectralClass = n.SpectralClass,
                 HasJoveObservatory = n.HasJoveObservatory,
+                IceFieldCount = n.IceFieldCount,
                 RegionId = n.RegionId,
                 RegionName = n.RegionName,
                 ConstellationId = n.ConstellationId,
@@ -372,43 +381,47 @@ public sealed class MapDataService : IMapDataService
         };
     }
 
-    private static HashSet<string> LoadJoveObservatorySystemNames()
+    private static IReadOnlyDictionary<int, StaticSolarSystemData> LoadStaticSolarSystemDataById()
     {
         var candidates = new[]
         {
-            Path.Combine(AppContext.BaseDirectory, "Data", "JoveObservatory Systems.txt"),
-            Path.Combine(Directory.GetCurrentDirectory(), "src", "Hisa.App", "Data", "JoveObservatory Systems.txt"),
-            Path.Combine(Directory.GetCurrentDirectory(), "Data", "JoveObservatory Systems.txt")
+            Path.Combine(AppContext.BaseDirectory, "Data", "solarsystemsstaticdata.db"),
+            Path.Combine(Directory.GetCurrentDirectory(), "src", "Hisa.App", "Data", "solarsystemsstaticdata.db"),
+            Path.Combine(Directory.GetCurrentDirectory(), "Data", "solarsystemsstaticdata.db")
         };
 
         var path = candidates.FirstOrDefault(File.Exists);
         if (path is null)
         {
-            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            return new Dictionary<int, StaticSolarSystemData>();
         }
 
-        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var line in File.ReadLines(path))
+        var result = new Dictionary<int, StaticSolarSystemData>();
+        var connectionStringBuilder = new SqliteConnectionStringBuilder
         {
-            if (string.IsNullOrWhiteSpace(line) || line.StartsWith("Region,", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
+            DataSource = path,
+            Mode = SqliteOpenMode.ReadOnly
+        };
 
-            var commaIndex = line.IndexOf(',');
-            if (commaIndex < 0 || commaIndex >= line.Length - 1)
-            {
-                continue;
-            }
+        using var connection = new SqliteConnection(connectionStringBuilder.ToString());
+        connection.Open();
 
-            var systemName = line[(commaIndex + 1)..].Trim();
-            if (!string.IsNullOrWhiteSpace(systemName))
-            {
-                set.Add(systemName);
-            }
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT solarSystemID, hasJoveObservatory, iceFieldCount
+            FROM SolarSystems;
+            """;
+
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            var id = reader.GetInt32(0);
+            var hasJoveObservatory = !reader.IsDBNull(1) && reader.GetBoolean(1);
+            var iceFieldCount = reader.IsDBNull(2) ? 0 : reader.GetInt32(2);
+            result[id] = new StaticSolarSystemData(hasJoveObservatory, iceFieldCount);
         }
 
-        return set;
+        return result;
     }
 }
 
