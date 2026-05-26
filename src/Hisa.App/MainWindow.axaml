@@ -99,10 +99,12 @@
                             ShowIndicatorConstellation="{Binding ShowIndicatorConstellation}"
                             ShowIndicatorSecurityStatus="{Binding ShowIndicatorSecurityStatus}"
                             ShowIndicatorStarClass="{Binding ShowIndicatorStarClass}"
+                            ShowIndicatorA0StarIcon="{Binding ShowIndicatorA0StarIcon}"
                             InfoBoxShowRegion="{Binding InfoBoxShowRegion}"
                             InfoBoxShowConstellation="{Binding InfoBoxShowConstellation}"
                             InfoBoxShowSecurityStatus="{Binding InfoBoxShowSecurityStatus}"
                             InfoBoxShowStarClass="{Binding InfoBoxShowStarClass}"
+                            InfoBoxShowA0StarIcon="{Binding InfoBoxShowA0StarIcon}"
                             SelectedNodeId="{Binding SelectedNodeId, Mode=TwoWay}" />
 
       <Border Grid.Column="1"
@@ -139,6 +141,7 @@
             <CheckBox IsChecked="{Binding ShowIndicatorRegion}" Content="Region" />
             <CheckBox IsChecked="{Binding ShowIndicatorConstellation}" Content="Constellation" />
             <CheckBox IsChecked="{Binding ShowIndicatorStarClass}" Content="Star Class" />
+            <CheckBox IsChecked="{Binding ShowIndicatorA0StarIcon}" Content="A0 Stars Icon" />
 
             <Separator />
 
@@ -147,6 +150,7 @@
             <CheckBox IsChecked="{Binding InfoBoxShowRegion}" Content="Region" />
             <CheckBox IsChecked="{Binding InfoBoxShowConstellation}" Content="Constellation" />
             <CheckBox IsChecked="{Binding InfoBoxShowStarClass}" Content="Star Class" />
+            <CheckBox IsChecked="{Binding InfoBoxShowA0StarIcon}" Content="A0 Stars Icon" />
           </StackPanel>
         </ScrollViewer>
       </Border>

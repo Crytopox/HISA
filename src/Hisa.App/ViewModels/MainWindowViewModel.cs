@@ -30,10 +30,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _showIndicatorConstellation;
     private bool _showIndicatorSecurityStatus;
     private bool _showIndicatorStarClass;
+    private bool _showIndicatorA0StarIcon = true;
     private bool _infoBoxShowRegion = true;
     private bool _infoBoxShowConstellation = true;
     private bool _infoBoxShowSecurityStatus = true;
     private bool _infoBoxShowStarClass;
+    private bool _infoBoxShowA0StarIcon = true;
     private CancellationTokenSource? _searchSuggestionsCts;
     private bool _isInitializing = true;
     private const string ViewModeKey = "Map.SelectedViewMode";
@@ -46,10 +48,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string ShowIndicatorConstellationKey = "Map.ShowIndicatorConstellation";
     private const string ShowIndicatorSecurityStatusKey = "Map.ShowIndicatorSecurityStatus";
     private const string ShowIndicatorStarClassKey = "Map.ShowIndicatorStarClass";
+    private const string ShowIndicatorA0StarIconKey = "Map.ShowIndicatorA0StarIcon";
     private const string InfoBoxShowRegionKey = "Map.InfoBoxShowRegion";
     private const string InfoBoxShowConstellationKey = "Map.InfoBoxShowConstellation";
     private const string InfoBoxShowSecurityStatusKey = "Map.InfoBoxShowSecurityStatus";
     private const string InfoBoxShowStarClassKey = "Map.InfoBoxShowStarClass";
+    private const string InfoBoxShowA0StarIconKey = "Map.InfoBoxShowA0StarIcon";
     private const string WindowPlacementKey = "Window.Main.Placement";
     private const string MapViewportPrefixKey = "Map.Viewport";
     private readonly Task _initialLoadTask;
@@ -229,6 +233,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
+    public bool ShowIndicatorA0StarIcon
+    {
+        get => _showIndicatorA0StarIcon;
+        set
+        {
+            if (SetProperty(ref _showIndicatorA0StarIcon, value) && !_isInitializing)
+            {
+                _ = _settingsService.SetAsync(ShowIndicatorA0StarIconKey, value);
+            }
+        }
+    }
+
     public bool InfoBoxShowRegion
     {
         get => _infoBoxShowRegion;
@@ -273,6 +289,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             if (SetProperty(ref _infoBoxShowStarClass, value) && !_isInitializing)
             {
                 _ = _settingsService.SetAsync(InfoBoxShowStarClassKey, value);
+            }
+        }
+    }
+
+    public bool InfoBoxShowA0StarIcon
+    {
+        get => _infoBoxShowA0StarIcon;
+        set
+        {
+            if (SetProperty(ref _infoBoxShowA0StarIcon, value) && !_isInitializing)
+            {
+                _ = _settingsService.SetAsync(InfoBoxShowA0StarIconKey, value);
             }
         }
     }
@@ -412,10 +440,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         ShowIndicatorConstellation = await _settingsService.GetAsync<bool?>(ShowIndicatorConstellationKey) ?? false;
         ShowIndicatorSecurityStatus = await _settingsService.GetAsync<bool?>(ShowIndicatorSecurityStatusKey) ?? false;
         ShowIndicatorStarClass = await _settingsService.GetAsync<bool?>(ShowIndicatorStarClassKey) ?? false;
+        ShowIndicatorA0StarIcon = await _settingsService.GetAsync<bool?>(ShowIndicatorA0StarIconKey) ?? true;
         InfoBoxShowRegion = await _settingsService.GetAsync<bool?>(InfoBoxShowRegionKey) ?? true;
         InfoBoxShowConstellation = await _settingsService.GetAsync<bool?>(InfoBoxShowConstellationKey) ?? true;
         InfoBoxShowSecurityStatus = await _settingsService.GetAsync<bool?>(InfoBoxShowSecurityStatusKey) ?? true;
         InfoBoxShowStarClass = await _settingsService.GetAsync<bool?>(InfoBoxShowStarClassKey) ?? false;
+        InfoBoxShowA0StarIcon = await _settingsService.GetAsync<bool?>(InfoBoxShowA0StarIconKey) ?? true;
         SelectedViewMode = await _settingsService.GetAsync<MapViewMode?>(ViewModeKey) ?? MapViewMode.Universe;
         EnforceCoordinateModeForView();
 
