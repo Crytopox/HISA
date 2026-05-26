@@ -65,7 +65,7 @@ public sealed class MapControl : Control
     private static readonly IBrush HoveredBrush = new ImmutableSolidColorBrush(Color.Parse("#7CC8FF"));
     private static readonly IBrush RegionSelectedBrush = new ImmutableSolidColorBrush(Color.Parse("#6BC1B5"));
     private static readonly IBrush NodeHoleBrush = new ImmutableSolidColorBrush(Color.Parse("#0D131D"));
-    private static readonly IBrush NodeLabelBackgroundBrush = new ImmutableSolidColorBrush(Color.Parse("#8A000000"));
+    private static readonly IBrush NodeLabelBackgroundBrush = new ImmutableSolidColorBrush(Color.Parse("#B5000000"));
     private static readonly IBrush TooltipBackgroundBrush = new ImmutableSolidColorBrush(Color.Parse("#1A2536"));
     private static readonly IBrush HoverOverlayBackgroundBrush = new ImmutableSolidColorBrush(Color.Parse("#99000000"));
     private static readonly Pen NodeOutlinePen = new(new ImmutableSolidColorBrush(Color.Parse("#88000000")), 1.1);
@@ -1227,8 +1227,8 @@ public sealed class MapControl : Control
             System.Globalization.CultureInfo.InvariantCulture,
             FlowDirection.LeftToRight,
             new Typeface("Inter"),
-            11.5,
-            new SolidColorBrush(Color.Parse("#D8E6F8")));
+            10,
+            new SolidColorBrush(Color.Parse("#EEF6FF")));
         _nodeLabelCache[key] = text;
         return text;
     }
@@ -1246,7 +1246,7 @@ public sealed class MapControl : Control
             System.Globalization.CultureInfo.InvariantCulture,
             FlowDirection.LeftToRight,
             new Typeface("Inter"),
-            11.5,
+            10,
             new ImmutableSolidColorBrush(Color.Parse("#AA0A111A")));
         _nodeLabelHaloCache[key] = text;
         return text;
@@ -1266,7 +1266,7 @@ public sealed class MapControl : Control
             FlowDirection.LeftToRight,
             new Typeface("Inter"),
             10.0,
-            new SolidColorBrush(Color.Parse("#D8E6F8")));
+            new SolidColorBrush(Color.Parse("#E6F0FF")));
         _nodeSecondaryLabelCache[key] = text;
         return text;
     }
@@ -1952,14 +1952,14 @@ public sealed class MapControl : Control
                 CultureInfo.InvariantCulture,
                 FlowDirection.LeftToRight,
                 new Typeface("Inter"),
-                11.5,
+                10,
                 GetCachedBrush(GetSecurityColor(node)));
             secHalo = new FormattedText(
                 securityLabel,
                 CultureInfo.InvariantCulture,
                 FlowDirection.LeftToRight,
                 new Typeface("Inter"),
-                11.5,
+                10,
                 new ImmutableSolidColorBrush(Color.Parse("#AA0A111A")));
         }
 
