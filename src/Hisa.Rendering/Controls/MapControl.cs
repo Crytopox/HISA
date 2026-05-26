@@ -5,6 +5,10 @@ using Avalonia.Media;
 using Avalonia.Media.Immutable;
 using Avalonia.Threading;
 using Hisa.Core.Models;
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using NetTopologySuite.Triangulate;
 using NtsCoordinate = NetTopologySuite.Geometries.Coordinate;
 using NtsEnvelope = NetTopologySuite.Geometries.Envelope;
@@ -19,6 +23,23 @@ namespace Hisa.Rendering.Controls;
 
 public sealed class MapControl : Control
 {
+    private sealed class VoronoiCacheModel
+    {
+        public required string Key { get; init; }
+        public required Dictionary<long, List<PointDto>> Polygons { get; init; }
+    }
+
+    private sealed class PointDto
+    {
+        public double X { get; init; }
+        public double Y { get; init; }
+    }
+
+    private static readonly string VoronoiCacheDirectory =
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Hisa", "voronoi-cache-v1");
+    private static readonly Dictionary<string, Dictionary<long, IReadOnlyList<(double X, double Y)>>> VoronoiMemoryCache = [];
+    private static readonly JsonSerializerOptions VoronoiJsonOptions = new() { WriteIndented = false };
+
     private static readonly Point NodeLabelOffset = new(9, 3);
 
     private static readonly IBrush BackgroundBrush = new ImmutableSolidColorBrush(Color.Parse("#0D131D"));
@@ -92,6 +113,7 @@ public sealed class MapControl : Control
     private readonly Dictionary<int, FormattedText> _regionLabelHaloCache = [];
     private readonly Dictionary<long, IReadOnlyList<(double X, double Y)>> _voronoiWorldPolygonsByNodeId = [];
     private MapGraph? _lastGraphForVoronoi;
+    private string? _lastVoronoiCacheKey;
     private bool _voronoiBuildQueued;
     private readonly Dictionary<long, MapNode> _nodeById = [];
     private readonly Dictionary<long, int> _nodeIndexById = [];
@@ -385,6 +407,7 @@ public sealed class MapControl : Control
             _voronoiWorldPolygonsByNodeId.Clear();
             _voronoiWorldGeometriesByNodeId.Clear();
             _lastGraphForVoronoi = null;
+            _lastVoronoiCacheKey = null;
             RebuildGraphCaches();
         }
 
@@ -1231,16 +1254,30 @@ public sealed class MapControl : Control
         {
             _voronoiWorldPolygonsByNodeId.Clear();
             _lastGraphForVoronoi = null;
+            _lastVoronoiCacheKey = null;
             return;
         }
 
-        if (ReferenceEquals(_lastGraphForVoronoi, Graph) && _voronoiWorldPolygonsByNodeId.Count > 0)
+        var cacheKey = ComputeVoronoiCacheKey(Graph);
+        if (ReferenceEquals(_lastGraphForVoronoi, Graph) && _lastVoronoiCacheKey == cacheKey && _voronoiWorldPolygonsByNodeId.Count > 0)
         {
             return;
         }
 
         _voronoiWorldPolygonsByNodeId.Clear();
+        _voronoiWorldGeometriesByNodeId.Clear();
         _lastGraphForVoronoi = Graph;
+        _lastVoronoiCacheKey = cacheKey;
+
+        if (TryLoadVoronoiFromCache(cacheKey, out var cachedPolygons))
+        {
+            foreach (var kvp in cachedPolygons)
+            {
+                _voronoiWorldPolygonsByNodeId[kvp.Key] = kvp.Value;
+                _voronoiWorldGeometriesByNodeId[kvp.Key] = BuildWorldGeometry(kvp.Value);
+            }
+            return;
+        }
 
         if (Graph.Nodes.Count < 2)
         {
@@ -1324,6 +1361,104 @@ public sealed class MapControl : Control
 
             _voronoiWorldPolygonsByNodeId[nodeId.Value] = points;
             _voronoiWorldGeometriesByNodeId[nodeId.Value] = BuildWorldGeometry(points);
+        }
+
+        SaveVoronoiToCache(cacheKey, _voronoiWorldPolygonsByNodeId);
+    }
+
+    private static string ComputeVoronoiCacheKey(MapGraph graph)
+    {
+        var sb = new StringBuilder(graph.Nodes.Count * 48 + graph.Links.Count * 24);
+        sb.Append("v1|");
+        sb.Append(graph.Nodes.Count).Append('|').Append(graph.Links.Count).Append('|');
+        foreach (var node in graph.Nodes.OrderBy(n => n.Id))
+        {
+            sb.Append(node.Id).Append(':')
+                .Append(node.X.ToString("F8", CultureInfo.InvariantCulture)).Append(',')
+                .Append(node.Y.ToString("F8", CultureInfo.InvariantCulture)).Append('|');
+        }
+
+        foreach (var link in graph.Links)
+        {
+            var a = Math.Min(link.FromId, link.ToId);
+            var b = Math.Max(link.FromId, link.ToId);
+            sb.Append(a).Append('-').Append(b).Append('|');
+        }
+
+        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));
+        return Convert.ToHexString(hashBytes);
+    }
+
+    private static bool TryLoadVoronoiFromCache(string key, out Dictionary<long, IReadOnlyList<(double X, double Y)>> polygons)
+    {
+        if (VoronoiMemoryCache.TryGetValue(key, out polygons!))
+        {
+            return true;
+        }
+
+        polygons = [];
+        try
+        {
+            var path = Path.Combine(VoronoiCacheDirectory, $"{key}.json");
+            if (!File.Exists(path))
+            {
+                return false;
+            }
+
+            var json = File.ReadAllText(path);
+            var model = JsonSerializer.Deserialize<VoronoiCacheModel>(json, VoronoiJsonOptions);
+            if (model is null || model.Polygons.Count == 0)
+            {
+                return false;
+            }
+
+            foreach (var kvp in model.Polygons)
+            {
+                polygons[kvp.Key] = kvp.Value.Select(p => (p.X, p.Y)).ToList();
+            }
+
+            VoronoiMemoryCache[key] = polygons;
+            return polygons.Count > 0;
+        }
+        catch
+        {
+            polygons = [];
+            return false;
+        }
+    }
+
+    private static void SaveVoronoiToCache(string key, IReadOnlyDictionary<long, IReadOnlyList<(double X, double Y)>> polygons)
+    {
+        if (polygons.Count == 0)
+        {
+            return;
+        }
+
+        var inMemory = new Dictionary<long, IReadOnlyList<(double X, double Y)>>(polygons.Count);
+        foreach (var kvp in polygons)
+        {
+            inMemory[kvp.Key] = kvp.Value.ToList();
+        }
+        VoronoiMemoryCache[key] = inMemory;
+
+        try
+        {
+            Directory.CreateDirectory(VoronoiCacheDirectory);
+            var model = new VoronoiCacheModel
+            {
+                Key = key,
+                Polygons = polygons.ToDictionary(
+                    kvp => kvp.Key,
+                    kvp => kvp.Value.Select(p => new PointDto { X = p.X, Y = p.Y }).ToList())
+            };
+
+            var json = JsonSerializer.Serialize(model, VoronoiJsonOptions);
+            var path = Path.Combine(VoronoiCacheDirectory, $"{key}.json");
+            File.WriteAllText(path, json);
+        }
+        catch
+        {
+            // Best-effort cache persistence only.
         }
     }
 
