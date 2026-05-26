@@ -10,6 +10,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using NetTopologySuite.Triangulate;
+using NetTopologySuite.Precision;
 using NtsCoordinate = NetTopologySuite.Geometries.Coordinate;
 using NtsEnvelope = NetTopologySuite.Geometries.Envelope;
 using NtsGeometryCollection = NetTopologySuite.Geometries.GeometryCollection;
@@ -113,8 +114,10 @@ public sealed class MapControl : Control
     private readonly Dictionary<int, FormattedText> _regionLabelHaloCache = [];
     private readonly Dictionary<long, IReadOnlyList<(double X, double Y)>> _voronoiWorldPolygonsByNodeId = [];
     private MapGraph? _lastGraphForVoronoi;
+    private Task<Dictionary<long, IReadOnlyList<(double X, double Y)>>>? _voronoiBuildTask;
+    private CancellationTokenSource? _voronoiBuildCts;
+    private string? _voronoiBuildKey;
     private string? _lastVoronoiCacheKey;
-    private bool _voronoiBuildQueued;
     private readonly Dictionary<long, MapNode> _nodeById = [];
     private readonly Dictionary<long, int> _nodeIndexById = [];
     private readonly Dictionary<long, StreamGeometry> _voronoiWorldGeometriesByNodeId = [];
@@ -359,23 +362,6 @@ public sealed class MapControl : Control
         return bestId;
     }
 
-    private void QueueVoronoiBuild()
-    {
-        if (_voronoiBuildQueued || Graph is null)
-        {
-            return;
-        }
-
-        _voronoiBuildQueued = true;
-
-        Dispatcher.UIThread.Post(() =>
-        {
-            _voronoiBuildQueued = false;
-            EnsureVoronoiWorldPolygons();
-            InvalidateVisual();
-        }, DispatcherPriority.Background);
-    }
-
     private IBrush GetCachedBrush(Color color, double alpha01 = 1.0)
     {
         var a = (byte)Math.Clamp((int)(alpha01 * 255), 0, 255);
@@ -408,6 +394,7 @@ public sealed class MapControl : Control
             _voronoiWorldGeometriesByNodeId.Clear();
             _lastGraphForVoronoi = null;
             _lastVoronoiCacheKey = null;
+            CancelVoronoiBuild();
             RebuildGraphCaches();
         }
 
@@ -428,7 +415,7 @@ public sealed class MapControl : Control
         var renderVoronoiBackground = NodeBackgroundColorMode != MapNodeColorMode.None && _zoom >= GetVoronoiZoomThreshold();
         if (renderVoronoiBackground && _voronoiWorldGeometriesByNodeId.Count == 0)
         {
-            QueueVoronoiBuild();
+            EnsureVoronoiWorldPolygons();
         }
 
         if (renderVoronoiBackground && _voronoiWorldGeometriesByNodeId.Count > 0)
@@ -1253,8 +1240,10 @@ public sealed class MapControl : Control
         if (Graph is null)
         {
             _voronoiWorldPolygonsByNodeId.Clear();
+            _voronoiWorldGeometriesByNodeId.Clear();
             _lastGraphForVoronoi = null;
             _lastVoronoiCacheKey = null;
+            CancelVoronoiBuild();
             return;
         }
 
@@ -1279,47 +1268,107 @@ public sealed class MapControl : Control
             return;
         }
 
-        if (Graph.Nodes.Count < 2)
+        StartVoronoiBuild(cacheKey, Graph);
+    }
+
+    private void CancelVoronoiBuild()
+    {
+        _voronoiBuildCts?.Cancel();
+        _voronoiBuildCts?.Dispose();
+        _voronoiBuildCts = null;
+        _voronoiBuildTask = null;
+        _voronoiBuildKey = null;
+    }
+
+    private void StartVoronoiBuild(string cacheKey, MapGraph graph)
+    {
+        if (_voronoiBuildTask is { IsCompleted: false } && _voronoiBuildKey == cacheKey)
         {
             return;
         }
 
+        CancelVoronoiBuild();
+        _voronoiBuildCts = new CancellationTokenSource();
+        _voronoiBuildKey = cacheKey;
+        var token = _voronoiBuildCts.Token;
+
+        _voronoiBuildTask = Task.Run(
+            () => BuildVoronoiPolygons(graph, _graphMinX, _graphMaxX, _graphMinY, _graphMaxY, _typicalLinkSpacing, token),
+            token);
+
+        _ = _voronoiBuildTask.ContinueWith(task =>
+        {
+            if (task.IsCanceled || task.IsFaulted || token.IsCancellationRequested)
+            {
+                return;
+            }
+
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (Graph is null || _lastVoronoiCacheKey != cacheKey || _voronoiBuildKey != cacheKey)
+                {
+                    return;
+                }
+
+                _voronoiWorldPolygonsByNodeId.Clear();
+                _voronoiWorldGeometriesByNodeId.Clear();
+                foreach (var kvp in task.Result)
+                {
+                    _voronoiWorldPolygonsByNodeId[kvp.Key] = kvp.Value;
+                    _voronoiWorldGeometriesByNodeId[kvp.Key] = BuildWorldGeometry(kvp.Value);
+                }
+
+                SaveVoronoiToCache(cacheKey, _voronoiWorldPolygonsByNodeId);
+                InvalidateVisual();
+            }, DispatcherPriority.Background);
+        }, CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
+    }
+
+    private static Dictionary<long, IReadOnlyList<(double X, double Y)>> BuildVoronoiPolygons(
+        MapGraph graph,
+        double graphMinX,
+        double graphMaxX,
+        double graphMinY,
+        double graphMaxY,
+        double typicalLinkSpacing,
+        CancellationToken cancellationToken)
+    {
+        var result = new Dictionary<long, IReadOnlyList<(double X, double Y)>>();
+        if (graph.Nodes.Count < 2 || cancellationToken.IsCancellationRequested)
+        {
+            return result;
+        }
+
         var geometryFactory = new NtsGeometryFactory();
-
-        var minX = _graphMinX;
-        var maxX = _graphMaxX;
-        var minY = _graphMinY;
-        var maxY = _graphMaxY;
-
-        var spacing = _typicalLinkSpacing > 0 ? _typicalLinkSpacing : EstimateTypicalLinkSpacing(Graph.Nodes, Graph.Links);
-
-        // Main tuning values.
+        var minX = graphMinX;
+        var maxX = graphMaxX;
+        var minY = graphMinY;
+        var maxY = graphMaxY;
+        var spacing = typicalLinkSpacing > 0 ? typicalLinkSpacing : EstimateTypicalLinkSpacing(graph.Nodes, graph.Links);
         var nodeMaskRadius = Math.Clamp(spacing * 1.95, 0.012, 0.095);
         var linkMaskRadius = Math.Clamp(spacing * 0.72, 0.006, 0.044);
         var maxBufferedLinkLength = spacing * 3.5;
-
-        // The Voronoi envelope can be generous because the final shape is clipped by the mask.
         var envelopePad = Math.Clamp(spacing * 5.0, 0.04, 0.20);
 
-        var nodeKeyToId = Graph.Nodes.ToDictionary(
+        var nodeKeyToId = graph.Nodes.ToDictionary(
             n => $"{Math.Round(n.X, 8)}:{Math.Round(n.Y, 8)}",
             n => n.Id);
 
-        var sites = Graph.Nodes
+        var sites = graph.Nodes
             .Select(n => new NtsCoordinate(n.X, n.Y))
             .ToList();
 
         var territoryMask = BuildVoronoiTerritoryMask(
-            Graph.Nodes,
-            Graph.Links,
+            graph.Nodes,
+            graph.Links,
             geometryFactory,
             nodeMaskRadius,
             linkMaskRadius,
             maxBufferedLinkLength);
 
-        if (territoryMask is null || territoryMask.IsEmpty)
+        if (territoryMask is null || territoryMask.IsEmpty || cancellationToken.IsCancellationRequested)
         {
-            return;
+            return result;
         }
 
         var builder = new VoronoiDiagramBuilder();
@@ -1333,11 +1382,16 @@ public sealed class MapControl : Control
         var diagram = builder.GetDiagram(geometryFactory) as NtsGeometryCollection;
         if (diagram is null)
         {
-            return;
+            return result;
         }
 
         for (var i = 0; i < diagram.NumGeometries; i++)
         {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return result;
+            }
+
             if (diagram.GetGeometryN(i) is not NtsPolygon polygon ||
                 polygon.ExteriorRing is null ||
                 polygon.ExteriorRing.NumPoints < 4)
@@ -1345,13 +1399,17 @@ public sealed class MapControl : Control
                 continue;
             }
 
-            var nodeId = ResolveVoronoiOwnerNodeId(polygon, nodeKeyToId);
+            var nodeId = ResolveVoronoiOwnerNodeId(polygon, nodeKeyToId, graph);
             if (nodeId is null)
             {
                 continue;
             }
 
-            var clipped = polygon.Intersection(territoryMask);
+            var clipped = SafeIntersection(polygon, territoryMask);
+            if (clipped is null || clipped.IsEmpty)
+            {
+                continue;
+            }
             var points = ExtractLargestPolygonCoordinates(clipped);
 
             if (points.Count < 3)
@@ -1359,11 +1417,39 @@ public sealed class MapControl : Control
                 continue;
             }
 
-            _voronoiWorldPolygonsByNodeId[nodeId.Value] = points;
-            _voronoiWorldGeometriesByNodeId[nodeId.Value] = BuildWorldGeometry(points);
+            result[nodeId.Value] = points;
         }
+        return result;
+    }
 
-        SaveVoronoiToCache(cacheKey, _voronoiWorldPolygonsByNodeId);
+    private static NtsGeometry? SafeIntersection(NtsGeometry a, NtsGeometry b)
+    {
+        try
+        {
+            return a.Intersection(b);
+        }
+        catch
+        {
+            // Robust fallback for occasional non-noded intersections from Voronoi edges.
+            try
+            {
+                var precision = new NetTopologySuite.Geometries.PrecisionModel(1_000_000d);
+                var reducer = new GeometryPrecisionReducer(precision)
+                {
+                    ChangePrecisionModel = true,
+                    Pointwise = false,
+                    RemoveCollapsedComponents = true
+                };
+
+                var ra = NetTopologySuite.Geometries.Utilities.GeometryFixer.Fix(reducer.Reduce(a)).Buffer(0);
+                var rb = NetTopologySuite.Geometries.Utilities.GeometryFixer.Fix(reducer.Reduce(b)).Buffer(0);
+                return ra.Intersection(rb);
+            }
+            catch
+            {
+                return null;
+            }
+        }
     }
 
     private static string ComputeVoronoiCacheKey(MapGraph graph)
@@ -1521,9 +1607,10 @@ public sealed class MapControl : Control
             .Buffer(-smoothIn, 4);
     }
 
-    private long? ResolveVoronoiOwnerNodeId(
+    private static long? ResolveVoronoiOwnerNodeId(
     NtsPolygon polygon,
-    IReadOnlyDictionary<string, long> nodeKeyToId)
+    IReadOnlyDictionary<string, long> nodeKeyToId,
+    MapGraph graph)
     {
         if (polygon.UserData is NtsCoordinate site)
         {
@@ -1534,14 +1621,9 @@ public sealed class MapControl : Control
             }
         }
 
-        if (Graph is null)
-        {
-            return null;
-        }
-
         var centroid = polygon.Centroid;
 
-        var nearest = Graph.Nodes
+        var nearest = graph.Nodes
             .OrderBy(n =>
             {
                 var dx = n.X - centroid.X;
