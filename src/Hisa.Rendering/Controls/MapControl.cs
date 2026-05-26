@@ -19,6 +19,20 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, MapViewMode>(nameof(ViewMode), MapViewMode.Universe);
     public static readonly StyledProperty<bool> StretchToWindowProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(StretchToWindow), true);
+    public static readonly StyledProperty<MapNodeColorMode> NodeColorModeProperty =
+        AvaloniaProperty.Register<MapControl, MapNodeColorMode>(nameof(NodeColorMode), MapNodeColorMode.None);
+    public static readonly StyledProperty<MapNodeColorMode> NodeBackgroundColorModeProperty =
+        AvaloniaProperty.Register<MapControl, MapNodeColorMode>(nameof(NodeBackgroundColorMode), MapNodeColorMode.None);
+    public static readonly StyledProperty<bool> ShowIndicatorLabelTextProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorLabelText), true);
+    public static readonly StyledProperty<bool> ShowIndicatorGlyphProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorGlyph), true);
+    public static readonly StyledProperty<bool> InfoBoxShowRegionProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowRegion), true);
+    public static readonly StyledProperty<bool> InfoBoxShowConstellationProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowConstellation), true);
+    public static readonly StyledProperty<bool> InfoBoxShowSystemIdProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowSystemId), false);
 
     private Point? _lastPanPoint;
     private Point _panOffset = new(0, 0);
@@ -30,9 +44,9 @@ public sealed class MapControl : Control
     private int? _searchHighlightedConstellationId;
     private int? _searchHighlightedRegionId;
     private MapGraph? _lastGraphForCaches;
-    private readonly Dictionary<long, FormattedText> _nodeLabelCache = [];
+    private readonly Dictionary<string, FormattedText> _nodeLabelCache = [];
     private readonly Dictionary<int, FormattedText> _regionLabelCache = [];
-    private readonly Dictionary<long, FormattedText> _nodeLabelHaloCache = [];
+    private readonly Dictionary<string, FormattedText> _nodeLabelHaloCache = [];
     private readonly Dictionary<int, FormattedText> _regionLabelHaloCache = [];
     private const double BasePadding = 0.0;
     private const double FitPadding = 30.0;
@@ -62,9 +76,52 @@ public sealed class MapControl : Control
         set => SetValue(StretchToWindowProperty, value);
     }
 
+    public MapNodeColorMode NodeColorMode
+    {
+        get => GetValue(NodeColorModeProperty);
+        set => SetValue(NodeColorModeProperty, value);
+    }
+
+    public MapNodeColorMode NodeBackgroundColorMode
+    {
+        get => GetValue(NodeBackgroundColorModeProperty);
+        set => SetValue(NodeBackgroundColorModeProperty, value);
+    }
+
+    public bool ShowIndicatorLabelText
+    {
+        get => GetValue(ShowIndicatorLabelTextProperty);
+        set => SetValue(ShowIndicatorLabelTextProperty, value);
+    }
+
+    public bool ShowIndicatorGlyph
+    {
+        get => GetValue(ShowIndicatorGlyphProperty);
+        set => SetValue(ShowIndicatorGlyphProperty, value);
+    }
+
+    public bool InfoBoxShowRegion
+    {
+        get => GetValue(InfoBoxShowRegionProperty);
+        set => SetValue(InfoBoxShowRegionProperty, value);
+    }
+
+    public bool InfoBoxShowConstellation
+    {
+        get => GetValue(InfoBoxShowConstellationProperty);
+        set => SetValue(InfoBoxShowConstellationProperty, value);
+    }
+
+    public bool InfoBoxShowSystemId
+    {
+        get => GetValue(InfoBoxShowSystemIdProperty);
+        set => SetValue(InfoBoxShowSystemIdProperty, value);
+    }
+
     public MapControl()
     {
         AffectsRender<MapControl>(GraphProperty, SelectedNodeIdProperty, ViewModeProperty, StretchToWindowProperty);
+        AffectsRender<MapControl>(NodeColorModeProperty, NodeBackgroundColorModeProperty, ShowIndicatorLabelTextProperty, ShowIndicatorGlyphProperty, InfoBoxShowRegionProperty, InfoBoxShowConstellationProperty, InfoBoxShowSystemIdProperty);
         ClipToBounds = true;
     }
 
@@ -156,13 +213,15 @@ public sealed class MapControl : Control
         var regionEmphasisSameConstellationPen = new Pen(new SolidColorBrush(Color.Parse("#6F97D2")), 1.8);
         var regionEmphasisSameRegionPen = new Pen(new SolidColorBrush(Color.Parse("#57AEA1")), 1.8);
         var regionEmphasisCrossRegionPen = new Pen(new SolidColorBrush(Color.Parse("#A2749E")), 1.8);
-        var nodeBrush = new SolidColorBrush(Color.Parse("#8FB0D9"));
         var selectedBrush = new SolidColorBrush(Color.Parse("#E8B75E"));
         var hoveredBrush = new SolidColorBrush(Color.Parse("#7CC8FF"));
         var regionSelectedBrush = new SolidColorBrush(Color.Parse("#6BC1B5"));
 
         var positions = Graph.Nodes.ToDictionary(n => n.Id, ToScreenPoint);
         var nodeById = Graph.Nodes.ToDictionary(n => n.Id);
+        var proximityRadiusByNodeId = NodeBackgroundColorMode != MapNodeColorMode.None
+            ? BuildNodeProximityRadiiFromLinks(Graph.Links, positions)
+            : null;
 
         foreach (var link in Graph.Links)
         {
@@ -230,7 +289,7 @@ public sealed class MapControl : Control
             var activeRegionId = _selectedRegionId ?? _hoveredRegionId;
             var isInActiveRegion = activeRegionId is not null && node.RegionId == activeRegionId.Value;
             var isSelectedRegionNode = _selectedRegionId is not null && node.RegionId == _selectedRegionId.Value;
-            var radius = isSelected ? 4.8 : isHovered ? 4.2 : isSearchHighlighted ? 4.0 : 3.2;
+            var radius = isSelected ? 6.2 : isHovered ? 5.6 : isSearchHighlighted ? 5.2 : 4.5;
             var brush = isSelected
                 ? selectedBrush
                 : isHovered
@@ -241,21 +300,38 @@ public sealed class MapControl : Control
                         ? selectedBrush
                     : isInActiveRegion
                         ? regionSelectedBrush
-                    : nodeBrush;
-            context.DrawEllipse(brush, null, p, radius, radius);
+                    : new SolidColorBrush(GetNodeBaseColor(node, NodeColorMode));
+            if (NodeBackgroundColorMode != MapNodeColorMode.None)
+            {
+                var proximityRadius = proximityRadiusByNodeId is not null &&
+                                      proximityRadiusByNodeId.TryGetValue(node.Id, out var pr)
+                    ? pr
+                    : 10.0;
+                var nodeBackgroundBrush = new SolidColorBrush(WithAlpha(GetNodeBaseColor(node, NodeBackgroundColorMode), 0.88));
+                DrawHexCell(context, p, proximityRadius, nodeBackgroundBrush);
+                context.DrawEllipse(new SolidColorBrush(Color.Parse("#0D131D")), null, p, 7.5, 7.5);
+            }
+            context.DrawEllipse(
+                brush,
+                new Pen(new SolidColorBrush(Color.Parse("#88000000")), 1.1),
+                p,
+                radius,
+                radius);
 
             var labelVisibilityMargin = ViewMode == MapViewMode.Universe ? 180 : 96;
             var suppressInlineLabel =
                 (SelectedNodeId is not null && node.Id == SelectedNodeId.Value) ||
                 (_hoveredNodeId is not null && node.Id == _hoveredNodeId.Value);
-            if (!suppressInlineLabel &&
+            if (ShowIndicatorLabelText &&
+                !suppressInlineLabel &&
                 (_zoom >= GetLabelZoomThreshold() || isSelected || isHovered) &&
                 labelsDrawn < labelBudget &&
                 IsPointVisible(p, bounds, labelVisibilityMargin))
             {
-                var label = GetNodeLabel(node.Id, node.Name);
+                var labelText = ShowIndicatorGlyph ? $"◆ {node.Name}" : node.Name;
+                var label = GetNodeLabel(node.Id, labelText);
                 var labelOrigin = GetNodeLabelOrigin(p);
-                DrawNodeLabel(context, label, GetNodeLabelHalo(node.Id, node.Name), labelOrigin);
+                DrawNodeLabel(context, label, GetNodeLabelHalo(node.Id, labelText), labelOrigin);
                 labelsDrawn++;
             }
         }
@@ -264,7 +340,7 @@ public sealed class MapControl : Control
             positions.TryGetValue(SelectedNodeId.Value, out var selectedPoint) &&
             nodeById.TryGetValue(SelectedNodeId.Value, out var selectedNode))
         {
-            DrawHoverOverlay(context, selectedPoint, selectedNode.Name);
+            DrawHoverOverlay(context, selectedPoint, selectedNode);
         }
 
         if (_hoveredNodeId is not null &&
@@ -272,7 +348,7 @@ public sealed class MapControl : Control
             positions.TryGetValue(_hoveredNodeId.Value, out var hoverPoint) &&
             nodeById.TryGetValue(_hoveredNodeId.Value, out var hoverNode))
         {
-            DrawHoverOverlay(context, hoverPoint, hoverNode.Name);
+            DrawHoverOverlay(context, hoverPoint, hoverNode);
         }
 
         if (ViewMode == MapViewMode.Universe && _zoom < GetLabelZoomThreshold())
@@ -874,7 +950,8 @@ public sealed class MapControl : Control
 
     private FormattedText GetNodeLabel(long nodeId, string name)
     {
-        if (_nodeLabelCache.TryGetValue(nodeId, out var text))
+        var key = $"{nodeId}:{name}";
+        if (_nodeLabelCache.TryGetValue(key, out var text))
         {
             return text;
         }
@@ -886,13 +963,14 @@ public sealed class MapControl : Control
             new Typeface("Inter"),
             11.5,
             new SolidColorBrush(Color.Parse("#D8E6F8")));
-        _nodeLabelCache[nodeId] = text;
+        _nodeLabelCache[key] = text;
         return text;
     }
 
     private FormattedText GetNodeLabelHalo(long nodeId, string name)
     {
-        if (_nodeLabelHaloCache.TryGetValue(nodeId, out var text))
+        var key = $"{nodeId}:{name}";
+        if (_nodeLabelHaloCache.TryGetValue(key, out var text))
         {
             return text;
         }
@@ -904,8 +982,119 @@ public sealed class MapControl : Control
             new Typeface("Inter"),
             11.5,
             new ImmutableSolidColorBrush(Color.Parse("#AA0A111A")));
-        _nodeLabelHaloCache[nodeId] = text;
+        _nodeLabelHaloCache[key] = text;
         return text;
+    }
+
+    private static Dictionary<long, double> BuildNodeProximityRadiiFromLinks(
+        IReadOnlyList<MapLink> links,
+        IReadOnlyDictionary<long, Point> positions)
+    {
+        var minDistanceByNode = new Dictionary<long, double>(positions.Count);
+        foreach (var kv in positions)
+        {
+            minDistanceByNode[kv.Key] = double.MaxValue;
+        }
+
+        foreach (var link in links)
+        {
+            if (!positions.TryGetValue(link.FromId, out var from) || !positions.TryGetValue(link.ToId, out var to))
+            {
+                continue;
+            }
+
+            var d = Distance(from, to);
+            if (d < minDistanceByNode[link.FromId])
+            {
+                minDistanceByNode[link.FromId] = d;
+            }
+            if (d < minDistanceByNode[link.ToId])
+            {
+                minDistanceByNode[link.ToId] = d;
+            }
+        }
+
+        var result = new Dictionary<long, double>(minDistanceByNode.Count);
+        foreach (var kv in minDistanceByNode)
+        {
+            var min = kv.Value == double.MaxValue ? 24 : kv.Value;
+            result[kv.Key] = Math.Clamp(min * 0.45, 10, 30);
+        }
+
+        return result;
+    }
+
+    private static void DrawHexCell(DrawingContext context, Point center, double radius, IBrush brush)
+    {
+        if (radius <= 0)
+        {
+            return;
+        }
+
+        var points = new List<Point>(6);
+        for (var i = 0; i < 6; i++)
+        {
+            var angle = (Math.PI / 180.0) * ((60.0 * i) - 30.0);
+            var x = center.X + (Math.Cos(angle) * radius);
+            var y = center.Y + (Math.Sin(angle) * radius);
+            points.Add(new Point(x, y));
+        }
+
+        var geometry = new StreamGeometry();
+        using (var g = geometry.Open())
+        {
+            g.BeginFigure(points[0], isFilled: true);
+            for (var i = 1; i < points.Count; i++)
+            {
+                g.LineTo(points[i]);
+            }
+            g.EndFigure(isClosed: true);
+        }
+
+        context.DrawGeometry(brush, null, geometry);
+    }
+
+    private Color GetNodeBaseColor(MapNode node, MapNodeColorMode mode)
+    {
+        return mode switch
+        {
+            MapNodeColorMode.Security => GetSecurityColor(node),
+            MapNodeColorMode.Region => GetRegionColor(node.RegionId),
+            _ => Color.Parse("#8FB0D9")
+        };
+    }
+
+    private static Color WithAlpha(Color color, double alpha01)
+    {
+        var a = (byte)Math.Clamp((int)(alpha01 * 255), 0, 255);
+        return Color.FromArgb(a, color.R, color.G, color.B);
+    }
+
+    private static Color GetSecurityColor(MapNode node)
+    {
+        var s = node.Id; // fallback deterministic when no security value in current model
+        var bucket = (int)(Math.Abs(s) % 4);
+        return bucket switch
+        {
+            0 => Color.Parse("#8FB0D9"),
+            1 => Color.Parse("#7CCB9A"),
+            2 => Color.Parse("#D9C27A"),
+            _ => Color.Parse("#D98B8B")
+        };
+    }
+
+    private static Color GetRegionColor(int? regionId)
+    {
+        if (regionId is null)
+        {
+            return Color.Parse("#8FB0D9");
+        }
+
+        var v = Math.Abs(regionId.Value);
+        var r = 96 + (v * 37 % 120);
+        var g = 96 + (v * 53 % 120);
+        var b = 96 + (v * 71 % 120);
+        return Color.FromRgb((byte)r, (byte)g, (byte)b);
     }
 
     private FormattedText GetRegionLabel(int regionId, string name)
@@ -1006,8 +1195,24 @@ public sealed class MapControl : Control
         return new Point(nodePoint.X + NodeLabelOffset.X, nodePoint.Y + NodeLabelOffset.Y);
     }
 
-    private void DrawHoverOverlay(DrawingContext context, Point anchor, string text)
+    private void DrawHoverOverlay(DrawingContext context, Point anchor, MapNode node)
     {
+        var header = ShowIndicatorGlyph ? $"◆ {node.Name}" : node.Name;
+        var detailLines = new List<string>();
+        if (InfoBoxShowRegion && !string.IsNullOrWhiteSpace(node.RegionName))
+        {
+            detailLines.Add($"Region: {node.RegionName}");
+        }
+        if (InfoBoxShowConstellation && !string.IsNullOrWhiteSpace(node.ConstellationName))
+        {
+            detailLines.Add($"Constellation: {node.ConstellationName}");
+        }
+        if (InfoBoxShowSystemId)
+        {
+            detailLines.Add($"System ID: {node.Id}");
+        }
+
+        var text = detailLines.Count == 0 ? header : $"{header}\n{string.Join('\n', detailLines)}";
         var content = new FormattedText(
             text,
             System.Globalization.CultureInfo.InvariantCulture,

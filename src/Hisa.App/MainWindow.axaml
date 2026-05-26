@@ -32,7 +32,7 @@
   </Window.Styles>
   <Grid RowDefinitions="Auto,*,Auto">
     <Border Padding="10,10" Background="#121A26" BorderBrush="#263244" BorderThickness="0,0,0,1">
-      <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto"
+      <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto,Auto"
             ColumnSpacing="12"
             VerticalAlignment="Center">
         <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" Margin="0,0,8,0">
@@ -86,15 +86,56 @@
           <ToggleSwitch IsChecked="{Binding StretchMapToWindow}" OnContent="Adaptive" OffContent="Original" />
         </StackPanel>
         <Button Grid.Column="6" Content="Fit / Center" Click="OnFitCenterClicked" MinWidth="96" />
+        <ToggleButton Grid.Column="7" Content="Display" IsChecked="{Binding IsDisplaySettingsOpen, Mode=TwoWay}" />
       </Grid>
     </Border>
 
-    <rendering:MapControl Grid.Row="1"
-                          x:Name="MainMapControl"
-                          Graph="{Binding CurrentGraph}"
-                          ViewMode="{Binding SelectedViewMode}"
-                          StretchToWindow="{Binding StretchMapToWindow}"
-                          SelectedNodeId="{Binding SelectedNodeId, Mode=TwoWay}" />
+    <Grid Grid.Row="1" ColumnDefinitions="*,Auto">
+      <rendering:MapControl Grid.Column="0"
+                            x:Name="MainMapControl"
+                            Graph="{Binding CurrentGraph}"
+                            ViewMode="{Binding SelectedViewMode}"
+                            StretchToWindow="{Binding StretchMapToWindow}"
+                            NodeColorMode="{Binding NodeColorMode}"
+                            NodeBackgroundColorMode="{Binding NodeBackgroundColorMode}"
+                            ShowIndicatorLabelText="{Binding ShowIndicatorLabelText}"
+                            ShowIndicatorGlyph="{Binding ShowIndicatorGlyph}"
+                            InfoBoxShowRegion="{Binding InfoBoxShowRegion}"
+                            InfoBoxShowConstellation="{Binding InfoBoxShowConstellation}"
+                            InfoBoxShowSystemId="{Binding InfoBoxShowSystemId}"
+                            SelectedNodeId="{Binding SelectedNodeId, Mode=TwoWay}" />
+
+      <Border Grid.Column="1"
+              Width="300"
+              Background="#121A26"
+              BorderBrush="#263244"
+              BorderThickness="1,0,0,0"
+              Padding="10"
+              IsVisible="{Binding IsDisplaySettingsOpen}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel Spacing="10">
+            <TextBlock Text="Display Settings" FontSize="14" FontWeight="SemiBold" Foreground="#D8E5F8" />
+
+            <TextBlock Text="Node Color" Foreground="#8A96A8" />
+            <ComboBox ItemsSource="{Binding NodeColorModes}" SelectedItem="{Binding NodeColorMode}" />
+
+            <TextBlock Text="Node Background Color" Foreground="#8A96A8" />
+            <ComboBox ItemsSource="{Binding NodeColorModes}" SelectedItem="{Binding NodeBackgroundColorMode}" />
+
+            <TextBlock Text="Indicators" Foreground="#8A96A8" />
+            <CheckBox IsChecked="{Binding ShowIndicatorLabelText}" Content="Show Label Text" />
+            <CheckBox IsChecked="{Binding ShowIndicatorGlyph}" Content="Show Glyph Marker" />
+
+            <Separator />
+
+            <TextBlock Text="Overlay Fields" Foreground="#8A96A8" />
+            <CheckBox IsChecked="{Binding InfoBoxShowRegion}" Content="Show Region" />
+            <CheckBox IsChecked="{Binding InfoBoxShowConstellation}" Content="Show Constellation" />
+            <CheckBox IsChecked="{Binding InfoBoxShowSystemId}" Content="Show System ID" />
+          </StackPanel>
+        </ScrollViewer>
+      </Border>
+    </Grid>
 
     <Border Grid.Row="2" Padding="8" Background="#121A26" BorderThickness="0">
       <TextBlock Text="{Binding StatusText}" Foreground="#8A96A8" />

@@ -13,6 +13,13 @@ public enum MapCoordinateMode
     SdePlanarXY = 1
 }
 
+public enum MapNodeColorMode
+{
+    None = 0,
+    Security = 1,
+    Region = 2
+}
+
 public sealed class MapGraph
 {
     public required IReadOnlyList<MapNode> Nodes { get; init; }
