@@ -9,6 +9,7 @@
         x:Class="Hisa.App.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Title="HISA - Haakario Interstellar Survey Authority"
+        Icon="avares://Hisa.App/Assets/HISA-Logo.ico"
         Background="#0D131D">
   <Window.Resources>
     <converters:MapCoordinateModeDisplayConverter x:Key="MapCoordinateModeDisplayConverter" />

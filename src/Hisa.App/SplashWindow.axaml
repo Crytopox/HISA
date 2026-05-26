@@ -3,6 +3,7 @@
         x:Class="Hisa.App.SplashWindow"
         Width="800"
         Height="450"
+        Icon="avares://Hisa.App/Assets/HISA-Logo.ico"
         CanResize="False"
         SystemDecorations="None"
         WindowStartupLocation="CenterScreen"
