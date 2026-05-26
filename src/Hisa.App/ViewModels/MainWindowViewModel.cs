@@ -26,6 +26,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string ViewModeKey = "Map.SelectedViewMode";
     private const string RegionIdKey = "Map.SelectedRegionId";
     private const string CoordinateModeKey = "Map.SelectedCoordinateMode";
+    private readonly Task _initialLoadTask;
 
     public MainWindowViewModel(IMapDataService mapDataService, ISettingsService settingsService)
     {
@@ -34,7 +35,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         ViewModes = new ObservableCollection<MapViewMode>(Enum.GetValues<MapViewMode>());
         CoordinateModes = new ObservableCollection<MapCoordinateMode>(Enum.GetValues<MapCoordinateMode>());
         Regions = [];
-        _ = LoadAsync();
+        _initialLoadTask = LoadAsync();
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -187,6 +188,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     }
 
     public bool HasSearchSuggestions => SearchSuggestions.Count > 0;
+    public Task InitialLoadTask => _initialLoadTask;
 
     private async Task LoadAsync()
     {
