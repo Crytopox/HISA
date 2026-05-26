@@ -99,6 +99,7 @@ public sealed class MapControl : Control
         }
 
         var linksPen = new Pen(new SolidColorBrush(Color.Parse("#304762")), 1);
+        var highlightedLinksPen = new Pen(new SolidColorBrush(Color.Parse("#6EA9E8")), 2);
         var nodeBrush = new SolidColorBrush(Color.Parse("#8FB0D9"));
         var selectedBrush = new SolidColorBrush(Color.Parse("#E8B75E"));
         var hoveredBrush = new SolidColorBrush(Color.Parse("#7CC8FF"));
@@ -113,7 +114,12 @@ public sealed class MapControl : Control
                 continue;
             }
 
-            context.DrawLine(linksPen, from, to);
+            var isSelectedLink = SelectedNodeId is not null &&
+                                 (link.FromId == SelectedNodeId.Value || link.ToId == SelectedNodeId.Value);
+            var isHoveredLink = _hoveredNodeId is not null &&
+                                (link.FromId == _hoveredNodeId.Value || link.ToId == _hoveredNodeId.Value);
+
+            context.DrawLine(isSelectedLink || isHoveredLink ? highlightedLinksPen : linksPen, from, to);
         }
 
         foreach (var node in Graph.Nodes)
