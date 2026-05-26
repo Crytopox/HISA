@@ -1837,6 +1837,7 @@ public sealed class MapControl : Control
             MapNodeColorMode.Security => GetSecurityColor(node),
             MapNodeColorMode.Region => GetRegionColor(node.RegionId),
             MapNodeColorMode.Star => GetStarColor(node),
+            MapNodeColorMode.NullsecTrueSec => GetNullsecTrueSecColor(node),
             _ => Color.Parse("#8FB0D9")
         };
     }
@@ -2054,6 +2055,38 @@ public sealed class MapControl : Control
         }
 
         return Color.Parse("#C9D8EE");
+    }
+
+    private static Color GetNullsecTrueSecColor(MapNode node)
+    {
+        var security = node.Security ?? 0.0;
+        if (security > 0.0)
+        {
+            return Color.Parse("#8FB0D9");
+        }
+
+        // Truesec gradient for null systems:
+        // -0.1 => orange, mid => red, -1.0 => null purple.
+        var clamped = Math.Clamp(security, -1.0, -0.1);
+        var t = (-0.1 - clamped) / 0.9; // 0 at -0.1, 1 at -1.0
+
+        var orange = Color.Parse("#FF9B4A");
+        var red = Color.Parse("#D84545");
+        var purple = Color.Parse("#8D3163");
+
+        if (t < 0.55)
+        {
+            return LerpColor(orange, red, t / 0.55);
+        }
+
+        return LerpColor(red, purple, (t - 0.55) / 0.45);
+    }
+
+    private static Color LerpColor(Color a, Color b, double t)
+    {
+        t = Math.Clamp(t, 0.0, 1.0);
+        byte Mix(byte x, byte y) => (byte)Math.Clamp((int)Math.Round(x + ((y - x) * t)), 0, 255);
+        return Color.FromRgb(Mix(a.R, b.R), Mix(a.G, b.G), Mix(a.B, b.B));
     }
 
     private static Color BrightenForBackground(Color color)

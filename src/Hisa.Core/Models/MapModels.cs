@@ -18,7 +18,8 @@ public enum MapNodeColorMode
     None = 0,
     Security = 1,
     Region = 2,
-    Star = 3
+    Star = 3,
+    NullsecTrueSec = 4
 }
 
 public sealed class MapGraph
