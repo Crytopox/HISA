@@ -11,6 +11,11 @@ public interface IDatabaseInitializer
     Task InitializeAsync(CancellationToken cancellationToken = default);
 }
 
+public interface ISdeDatabase
+{
+    SqliteConnection CreateConnection();
+}
+
 public sealed class SqliteDatabaseInitializer : IDatabaseInitializer
 {
     private readonly string _connectionString;
@@ -83,18 +88,38 @@ public sealed class SqliteSettingsService : ISettingsService
     }
 }
 
+public sealed class SdeSqliteDatabase : ISdeDatabase
+{
+    private readonly string _connectionString;
+
+    public SdeSqliteDatabase(string connectionString)
+    {
+        _connectionString = connectionString;
+    }
+
+    public SqliteConnection CreateConnection() => new(_connectionString);
+}
+
 public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddHisaData(this IServiceCollection services, IConfiguration configuration)
     {
         var fileName = configuration["Hisa:DatabaseFileName"] ?? "hisa.db";
+        var sdeFileName = configuration["Hisa:SdeDatabaseFileName"] ?? "eve-hk-sde.db";
         var dbDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HISA");
         Directory.CreateDirectory(dbDirectory);
         var dbPath = Path.Combine(dbDirectory, fileName);
+        var sdeDbPath = Path.Combine(dbDirectory, sdeFileName);
         var connectionString = new SqliteConnectionStringBuilder { DataSource = dbPath }.ToString();
+        var sdeConnectionString = new SqliteConnectionStringBuilder
+        {
+            DataSource = sdeDbPath,
+            Mode = SqliteOpenMode.ReadOnly
+        }.ToString();
 
         services.AddSingleton<IDatabaseInitializer>(_ => new SqliteDatabaseInitializer(connectionString));
         services.AddSingleton<ISettingsService>(_ => new SqliteSettingsService(connectionString));
+        services.AddSingleton<ISdeDatabase>(_ => new SdeSqliteDatabase(sdeConnectionString));
 
         return services;
     }
