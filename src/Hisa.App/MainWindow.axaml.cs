@@ -1,22 +1,37 @@
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 
 namespace Hisa.App;
 
 public partial class MainWindow : Window
 {
     private bool _clearSearchOnNextFocus;
+    private bool _isApplyingWindowPlacement;
+    private bool _isApplyingViewport;
+    private MainWindowViewModel? _boundVm;
+    private Hisa.Core.Models.MapViewMode _lastKnownViewMode;
 
     public MainWindow()
     {
         InitializeComponent();
         MainMapControl.UniverseRegionNodeDoubleClicked += OnUniverseRegionNodeDoubleClicked;
+        Opened += OnOpened;
+        Closing += (_, _) =>
+        {
+            SaveWindowPlacementNow();
+            SaveViewportNow();
+            SaveSelectedViewModeNow();
+        };
     }
 
     public MainWindow(MainWindowViewModel vm) : this()
     {
         DataContext = vm;
+        _boundVm = vm;
+        _lastKnownViewMode = vm.SelectedViewMode;
+        vm.PropertyChanged += OnViewModelPropertyChanged;
     }
 
     private void OnFitCenterClicked(object? sender, RoutedEventArgs e)
@@ -83,5 +98,139 @@ public partial class MainWindow : Window
 
         await vm.OpenRegionFromUniverseRegionsNodeAsync(regionId);
         MainMapControl.FitToView();
+    }
+
+    private async void OnOpened(object? sender, EventArgs e)
+    {
+        if (_boundVm is null)
+        {
+            return;
+        }
+
+        await _boundVm.InitialLoadTask;
+        await _boundVm.RestoreSelectedViewModeAsync();
+
+        var placement = await _boundVm.GetWindowPlacementAsync();
+        if (placement is not null)
+        {
+            _isApplyingWindowPlacement = true;
+            try
+            {
+                Width = Math.Max(640, placement.Width);
+                Height = Math.Max(420, placement.Height);
+                Position = new Avalonia.PixelPoint(placement.PositionX, placement.PositionY);
+                if (Enum.TryParse<WindowState>(placement.WindowState, out var parsedState))
+                {
+                    WindowState = parsedState;
+                }
+            }
+            finally
+            {
+                _isApplyingWindowPlacement = false;
+            }
+        }
+
+        await RestoreViewportForCurrentModeAsync(fallbackToFit: true);
+    }
+
+    private async void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (_boundVm is null)
+        {
+            return;
+        }
+
+        if (e.PropertyName == nameof(MainWindowViewModel.SelectedViewMode))
+        {
+            SaveViewportForMode(_lastKnownViewMode);
+            _lastKnownViewMode = _boundVm.SelectedViewMode;
+            await RestoreViewportForCurrentModeAsync(fallbackToFit: true);
+            return;
+        }
+
+        if (e.PropertyName == nameof(MainWindowViewModel.CurrentGraph))
+        {
+            await RestoreViewportForCurrentModeAsync(fallbackToFit: true);
+        }
+    }
+
+    private async Task RestoreViewportForCurrentModeAsync(bool fallbackToFit)
+    {
+        if (_boundVm is null || _isApplyingViewport)
+        {
+            return;
+        }
+
+        _isApplyingViewport = true;
+        try
+        {
+            await Dispatcher.UIThread.InvokeAsync(async () =>
+            {
+                await Task.Delay(30);
+                var saved = await _boundVm.GetViewportAsync(_boundVm.SelectedViewMode);
+                if (saved is not null)
+                {
+                    MainMapControl.SetViewportState(saved);
+                }
+                else if (fallbackToFit)
+                {
+                    MainMapControl.FitToView();
+                }
+            });
+        }
+        finally
+        {
+            _isApplyingViewport = false;
+        }
+    }
+
+    private void SaveWindowPlacementNow()
+    {
+        if (_boundVm is null || _isApplyingWindowPlacement)
+        {
+            return;
+        }
+
+        var placement = new WindowPlacementState
+        {
+            Width = Width,
+            Height = Height,
+            PositionX = Position.X,
+            PositionY = Position.Y,
+            WindowState = WindowState.ToString()
+        };
+
+        _ = _boundVm.SaveWindowPlacementAsync(placement);
+    }
+
+    private void SaveViewportNow()
+    {
+        if (_boundVm is null || _isApplyingViewport)
+        {
+            return;
+        }
+
+        SaveViewportForMode(_boundVm.SelectedViewMode);
+    }
+
+    private void SaveViewportForMode(Hisa.Core.Models.MapViewMode mode)
+    {
+        if (_boundVm is null || _isApplyingViewport)
+        {
+            return;
+        }
+
+        var state = MainMapControl.GetViewportState();
+        _ = _boundVm.SaveViewportAsync(mode, state);
+    }
+
+    private void SaveSelectedViewModeNow()
+    {
+        if (_boundVm is null)
+        {
+            return;
+        }
+
+        _boundVm.SaveSelectedViewModeAsync().GetAwaiter().GetResult();
     }
 }

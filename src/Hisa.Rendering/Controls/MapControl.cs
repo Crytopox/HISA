@@ -96,6 +96,20 @@ public sealed class MapControl : Control
         InvalidateVisual();
     }
 
+    public MapViewportState GetViewportState() => new()
+    {
+        Zoom = _zoom,
+        PanOffsetX = _panOffset.X,
+        PanOffsetY = _panOffset.Y
+    };
+
+    public void SetViewportState(MapViewportState state)
+    {
+        _zoom = Math.Clamp(state.Zoom, 0.4, GetMaxZoom());
+        _panOffset = new Point(state.PanOffsetX, state.PanOffsetY);
+        InvalidateVisual();
+    }
+
     public override void Render(DrawingContext context)
     {
         if (!ReferenceEquals(_lastGraphForCaches, Graph))

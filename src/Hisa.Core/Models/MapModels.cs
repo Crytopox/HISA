@@ -68,6 +68,13 @@ public sealed class MapSearchFocus
     public long? SolarSystemId { get; init; }
 }
 
+public sealed class MapViewportState
+{
+    public required double Zoom { get; init; }
+    public required double PanOffsetX { get; init; }
+    public required double PanOffsetY { get; init; }
+}
+
 public sealed class MapLink
 {
     public required long FromId { get; init; }

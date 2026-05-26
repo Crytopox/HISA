@@ -23,9 +23,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private string _regionSearchText = string.Empty;
     private string _statusText = "Loading map...";
     private CancellationTokenSource? _searchSuggestionsCts;
+    private bool _isInitializing = true;
     private const string ViewModeKey = "Map.SelectedViewMode";
     private const string RegionIdKey = "Map.SelectedRegionId";
     private const string CoordinateModeKey = "Map.SelectedCoordinateMode";
+    private const string WindowPlacementKey = "Window.Main.Placement";
+    private const string MapViewportPrefixKey = "Map.Viewport";
     private readonly Task _initialLoadTask;
 
     public MainWindowViewModel(IMapDataService mapDataService, ISettingsService settingsService)
@@ -59,9 +62,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsRegionSelectorVisible)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SearchWatermark)));
                 EnforceCoordinateModeForView();
-                _ = _settingsService.SetAsync(ViewModeKey, value);
-                _ = UpdateSearchSuggestionsAsync(MapSearchText);
-                _ = ReloadGraphAsync();
+                if (!_isInitializing)
+                {
+                    _ = _settingsService.SetAsync(ViewModeKey, value);
+                    _ = UpdateSearchSuggestionsAsync(MapSearchText);
+                    _ = ReloadGraphAsync();
+                }
             }
         }
     }
@@ -115,8 +121,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         {
             if (SetProperty(ref _selectedRegion, value) && SelectedViewMode == MapViewMode.Region)
             {
-                _ = _settingsService.SetAsync(RegionIdKey, value?.RegionId);
-                _ = ReloadGraphAsync();
+                if (!_isInitializing)
+                {
+                    _ = _settingsService.SetAsync(RegionIdKey, value?.RegionId);
+                    _ = ReloadGraphAsync();
+                }
             }
         }
     }
@@ -133,8 +142,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
             if (SetProperty(ref _selectedCoordinateMode, value))
             {
-                _ = _settingsService.SetAsync(CoordinateModeKey, value);
-                _ = ReloadGraphAsync();
+                if (!_isInitializing)
+                {
+                    _ = _settingsService.SetAsync(CoordinateModeKey, value);
+                    _ = ReloadGraphAsync();
+                }
             }
         }
     }
@@ -190,6 +202,40 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public bool HasSearchSuggestions => SearchSuggestions.Count > 0;
     public Task InitialLoadTask => _initialLoadTask;
 
+    public async Task<WindowPlacementState?> GetWindowPlacementAsync()
+    {
+        return await _settingsService.GetAsync<WindowPlacementState>(WindowPlacementKey);
+    }
+
+    public Task SaveWindowPlacementAsync(WindowPlacementState placement)
+    {
+        return _settingsService.SetAsync(WindowPlacementKey, placement);
+    }
+
+    public async Task<MapViewportState?> GetViewportAsync(MapViewMode viewMode)
+    {
+        return await _settingsService.GetAsync<MapViewportState>($"{MapViewportPrefixKey}.{viewMode}");
+    }
+
+    public Task SaveViewportAsync(MapViewMode viewMode, MapViewportState viewport)
+    {
+        return _settingsService.SetAsync($"{MapViewportPrefixKey}.{viewMode}", viewport);
+    }
+
+    public Task SaveSelectedViewModeAsync()
+    {
+        return _settingsService.SetAsync(ViewModeKey, SelectedViewMode);
+    }
+
+    public async Task RestoreSelectedViewModeAsync()
+    {
+        var saved = await _settingsService.GetAsync<MapViewMode?>(ViewModeKey);
+        if (saved is not null && SelectedViewMode != saved.Value)
+        {
+            SelectedViewMode = saved.Value;
+        }
+    }
+
     private async Task LoadAsync()
     {
         _allRegions = (await _mapDataService.GetRegionsAsync()).ToList();
@@ -202,6 +248,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         var savedRegionId = await _settingsService.GetAsync<int?>(RegionIdKey);
         SelectedRegion = _allRegions.FirstOrDefault(r => r.RegionId == savedRegionId) ?? Regions.FirstOrDefault();
 
+        _isInitializing = false;
         await ReloadGraphAsync();
     }
 
