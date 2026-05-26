@@ -3,19 +3,77 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Immutable;
+using Avalonia.Threading;
 using Hisa.Core.Models;
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using NetTopologySuite.Triangulate;
+using NetTopologySuite.Precision;
 using NtsCoordinate = NetTopologySuite.Geometries.Coordinate;
 using NtsEnvelope = NetTopologySuite.Geometries.Envelope;
 using NtsGeometryCollection = NetTopologySuite.Geometries.GeometryCollection;
 using NtsGeometryFactory = NetTopologySuite.Geometries.GeometryFactory;
 using NtsPolygon = NetTopologySuite.Geometries.Polygon;
+using NtsGeometry = NetTopologySuite.Geometries.Geometry;
+using NtsMultiPolygon = NetTopologySuite.Geometries.MultiPolygon;
+using NtsUnaryUnionOp = NetTopologySuite.Operation.Union.UnaryUnionOp;
 
 namespace Hisa.Rendering.Controls;
 
 public sealed class MapControl : Control
 {
+    private sealed class VoronoiCacheModel
+    {
+        public required string Key { get; init; }
+        public required Dictionary<long, List<PointDto>> Polygons { get; init; }
+    }
+
+    private sealed class PointDto
+    {
+        public double X { get; init; }
+        public double Y { get; init; }
+    }
+
+    private static readonly string VoronoiCacheDirectory =
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Hisa", "voronoi-cache-v1");
+    private static readonly Dictionary<string, Dictionary<long, IReadOnlyList<(double X, double Y)>>> VoronoiMemoryCache = [];
+    private static readonly JsonSerializerOptions VoronoiJsonOptions = new() { WriteIndented = false };
+
     private static readonly Point NodeLabelOffset = new(9, 3);
+
+    private static readonly IBrush BackgroundBrush = new ImmutableSolidColorBrush(Color.Parse("#0D131D"));
+
+    private static readonly Pen LinksPen = new(new ImmutableSolidColorBrush(Color.Parse("#304762")), 1);
+    private static readonly Pen SameConstellationPen = new(new ImmutableSolidColorBrush(Color.Parse("#4D6FA2")), 1.1);
+    private static readonly Pen SameRegionPen = new(new ImmutableSolidColorBrush(Color.Parse("#3E8A7E")), 1.1);
+    private static readonly Pen CrossRegionPen = new(new ImmutableSolidColorBrush(Color.Parse("#8E5C8A")), 1.1);
+
+    private static readonly Pen HighlightedDefaultPen = new(new ImmutableSolidColorBrush(Color.Parse("#8CB3DD")), 2.2);
+    private static readonly Pen HighlightedSameConstellationPen = new(new ImmutableSolidColorBrush(Color.Parse("#7FA7E3")), 2.2);
+    private static readonly Pen HighlightedSameRegionPen = new(new ImmutableSolidColorBrush(Color.Parse("#63C2B2")), 2.2);
+    private static readonly Pen HighlightedCrossRegionPen = new(new ImmutableSolidColorBrush(Color.Parse("#C28ABB")), 2.2);
+    private static readonly Pen HighlightedSearchConstellationPen = new(new ImmutableSolidColorBrush(Color.Parse("#E8B75E")), 2.4);
+
+    private static readonly Pen RegionEmphasisDefaultPen = new(new ImmutableSolidColorBrush(Color.Parse("#6F8FB6")), 1.8);
+    private static readonly Pen RegionEmphasisSameConstellationPen = new(new ImmutableSolidColorBrush(Color.Parse("#6F97D2")), 1.8);
+    private static readonly Pen RegionEmphasisSameRegionPen = new(new ImmutableSolidColorBrush(Color.Parse("#57AEA1")), 1.8);
+    private static readonly Pen RegionEmphasisCrossRegionPen = new(new ImmutableSolidColorBrush(Color.Parse("#A2749E")), 1.8);
+
+    private static readonly IBrush SelectedBrush = new ImmutableSolidColorBrush(Color.Parse("#E8B75E"));
+    private static readonly IBrush HoveredBrush = new ImmutableSolidColorBrush(Color.Parse("#7CC8FF"));
+    private static readonly IBrush RegionSelectedBrush = new ImmutableSolidColorBrush(Color.Parse("#6BC1B5"));
+    private static readonly IBrush NodeHoleBrush = new ImmutableSolidColorBrush(Color.Parse("#0D131D"));
+    private static readonly IBrush NodeLabelBackgroundBrush = new ImmutableSolidColorBrush(Color.Parse("#8A000000"));
+    private static readonly IBrush TooltipBackgroundBrush = new ImmutableSolidColorBrush(Color.Parse("#1A2536"));
+    private static readonly IBrush HoverOverlayBackgroundBrush = new ImmutableSolidColorBrush(Color.Parse("#99000000"));
+    private static readonly Pen NodeOutlinePen = new(new ImmutableSolidColorBrush(Color.Parse("#88000000")), 1.1);
+    private static readonly IBrush VoronoiBorderBrush = new ImmutableSolidColorBrush(Color.Parse("#AA0D131D"));
+    private static readonly Pen TooltipBorderPen = new(new ImmutableSolidColorBrush(Color.Parse("#3B5678")), 1);
+    private static readonly Pen HoverOverlayBorderPen = new(new ImmutableSolidColorBrush(Color.Parse("#4A617F")), 1);
+    private static readonly IBrush EmptyTextBrush = new ImmutableSolidColorBrush(Color.Parse("#9FB4D2"));
+
     public static readonly StyledProperty<MapGraph?> GraphProperty =
         AvaloniaProperty.Register<MapControl, MapGraph?>(nameof(Graph));
 
@@ -56,6 +114,20 @@ public sealed class MapControl : Control
     private readonly Dictionary<int, FormattedText> _regionLabelHaloCache = [];
     private readonly Dictionary<long, IReadOnlyList<(double X, double Y)>> _voronoiWorldPolygonsByNodeId = [];
     private MapGraph? _lastGraphForVoronoi;
+    private Task<Dictionary<long, IReadOnlyList<(double X, double Y)>>>? _voronoiBuildTask;
+    private CancellationTokenSource? _voronoiBuildCts;
+    private string? _voronoiBuildKey;
+    private string? _lastVoronoiCacheKey;
+    private readonly Dictionary<long, MapNode> _nodeById = [];
+    private readonly Dictionary<long, int> _nodeIndexById = [];
+    private readonly Dictionary<long, StreamGeometry> _voronoiWorldGeometriesByNodeId = [];
+    private readonly Dictionary<uint, IBrush> _brushCache = [];
+    private Point[] _screenPositions = [];
+    private double _graphMinX;
+    private double _graphMaxX;
+    private double _graphMinY;
+    private double _graphMaxY;
+    private double _typicalLinkSpacing;
     private const double BasePadding = 0.0;
     private const double FitPadding = 30.0;
     public event EventHandler<int>? UniverseRegionNodeDoubleClicked;
@@ -143,17 +215,17 @@ public sealed class MapControl : Control
             return;
         }
 
+        if (_nodeById.Count != Graph.Nodes.Count)
+        {
+            RebuildGraphCaches();
+        }
+
         var plot = GetPlotMetrics();
         var plotWidth = plot.Width;
         var plotHeight = plot.Height;
 
-        var minX = Graph.Nodes.Min(n => n.X);
-        var maxX = Graph.Nodes.Max(n => n.X);
-        var minY = Graph.Nodes.Min(n => n.Y);
-        var maxY = Graph.Nodes.Max(n => n.Y);
-
-        var graphWidthPx = Math.Max(1e-9, (maxX - minX) * plotWidth);
-        var graphHeightPx = Math.Max(1e-9, (maxY - minY) * plotHeight);
+        var graphWidthPx = Math.Max(1e-9, (_graphMaxX - _graphMinX) * plotWidth);
+        var graphHeightPx = Math.Max(1e-9, (_graphMaxY - _graphMinY) * plotHeight);
 
         var availableWidth = Math.Max(1.0, plotWidth - (FitPadding * 2));
         var availableHeight = Math.Max(1.0, plotHeight - (FitPadding * 2));
@@ -162,8 +234,8 @@ public sealed class MapControl : Control
         var zoomY = availableHeight / graphHeightPx;
         _zoom = Math.Clamp(Math.Min(zoomX, zoomY), 0.4, GetMaxZoom());
 
-        var baseCenterX = plot.OriginX + (((minX + maxX) * 0.5) * plotWidth);
-        var baseCenterY = plot.OriginY + (((minY + maxY) * 0.5) * plotHeight);
+        var baseCenterX = plot.OriginX + (((_graphMinX + _graphMaxX) * 0.5) * plotWidth);
+        var baseCenterY = plot.OriginY + (((_graphMinY + _graphMaxY) * 0.5) * plotHeight);
         var viewCenterX = Bounds.Width * 0.5;
         var viewCenterY = Bounds.Height * 0.5;
 
@@ -173,6 +245,7 @@ public sealed class MapControl : Control
 
         InvalidateVisual();
     }
+
 
     public MapViewportState GetViewportState() => new()
     {
@@ -188,6 +261,126 @@ public sealed class MapControl : Control
         InvalidateVisual();
     }
 
+
+    private void RebuildGraphCaches()
+    {
+        _nodeById.Clear();
+        _nodeIndexById.Clear();
+        _screenPositions = [];
+
+        if (Graph is null || Graph.Nodes.Count == 0)
+        {
+            _graphMinX = 0;
+            _graphMaxX = 0;
+            _graphMinY = 0;
+            _graphMaxY = 0;
+            _typicalLinkSpacing = 0.01;
+            return;
+        }
+
+        _graphMinX = double.PositiveInfinity;
+        _graphMaxX = double.NegativeInfinity;
+        _graphMinY = double.PositiveInfinity;
+        _graphMaxY = double.NegativeInfinity;
+
+        for (var i = 0; i < Graph.Nodes.Count; i++)
+        {
+            var node = Graph.Nodes[i];
+            _nodeById[node.Id] = node;
+            _nodeIndexById[node.Id] = i;
+
+            _graphMinX = Math.Min(_graphMinX, node.X);
+            _graphMaxX = Math.Max(_graphMaxX, node.X);
+            _graphMinY = Math.Min(_graphMinY, node.Y);
+            _graphMaxY = Math.Max(_graphMaxY, node.Y);
+        }
+
+        _typicalLinkSpacing = EstimateTypicalLinkSpacing(Graph.Nodes, Graph.Links);
+    }
+
+    private void EnsureScreenPositionBuffer()
+    {
+        if (Graph is null)
+        {
+            _screenPositions = [];
+            return;
+        }
+
+        if (_screenPositions.Length != Graph.Nodes.Count)
+        {
+            _screenPositions = new Point[Graph.Nodes.Count];
+        }
+    }
+
+    private void UpdateScreenPositions(PlotMetrics plot, double viewCenterX, double viewCenterY)
+    {
+        if (Graph is null)
+        {
+            return;
+        }
+
+        EnsureScreenPositionBuffer();
+
+        for (var i = 0; i < Graph.Nodes.Count; i++)
+        {
+            var node = Graph.Nodes[i];
+            _screenPositions[i] = ToScreenPointFast(node.X, node.Y, plot, viewCenterX, viewCenterY);
+        }
+    }
+
+    private long? FindClosestNodeAt(Point point, double threshold)
+    {
+        if (Graph is null || Graph.Nodes.Count == 0)
+        {
+            return null;
+        }
+
+        if (_screenPositions.Length != Graph.Nodes.Count)
+        {
+            var plot = GetPlotMetrics();
+            UpdateScreenPositions(plot, Bounds.Width / 2.0, Bounds.Height / 2.0);
+        }
+
+        var thresholdSq = threshold * threshold;
+        var bestDistSq = thresholdSq;
+        long? bestId = null;
+
+        for (var i = 0; i < Graph.Nodes.Count; i++)
+        {
+            var p = _screenPositions[i];
+            var dx = p.X - point.X;
+            var dy = p.Y - point.Y;
+            var distSq = (dx * dx) + (dy * dy);
+
+            if (distSq <= bestDistSq)
+            {
+                bestDistSq = distSq;
+                bestId = Graph.Nodes[i].Id;
+            }
+        }
+
+        return bestId;
+    }
+
+    private IBrush GetCachedBrush(Color color, double alpha01 = 1.0)
+    {
+        var a = (byte)Math.Clamp((int)(alpha01 * 255), 0, 255);
+        var keyColor = Color.FromArgb(a, color.R, color.G, color.B);
+        var key = ((uint)keyColor.A << 24) |
+                  ((uint)keyColor.R << 16) |
+                  ((uint)keyColor.G << 8) |
+                  keyColor.B;
+
+        if (_brushCache.TryGetValue(key, out var brush))
+        {
+            return brush;
+        }
+
+        brush = new ImmutableSolidColorBrush(keyColor);
+        _brushCache[key] = brush;
+        return brush;
+    }
+
     public override void Render(DrawingContext context)
     {
         if (!ReferenceEquals(_lastGraphForCaches, Graph))
@@ -198,11 +391,15 @@ public sealed class MapControl : Control
             _regionLabelCache.Clear();
             _regionLabelHaloCache.Clear();
             _voronoiWorldPolygonsByNodeId.Clear();
+            _voronoiWorldGeometriesByNodeId.Clear();
             _lastGraphForVoronoi = null;
+            _lastVoronoiCacheKey = null;
+            CancelVoronoiBuild();
+            RebuildGraphCaches();
         }
 
         var bounds = Bounds;
-        context.FillRectangle(new SolidColorBrush(Color.Parse("#0D131D")), bounds);
+        context.FillRectangle(BackgroundBrush, bounds);
 
         if (Graph is null || Graph.Nodes.Count == 0)
         {
@@ -210,51 +407,56 @@ public sealed class MapControl : Control
             return;
         }
 
-        var linksPen = new Pen(new SolidColorBrush(Color.Parse("#304762")), 1);
-        var sameConstellationPen = new Pen(new SolidColorBrush(Color.Parse("#4D6FA2")), 1.1);
-        var sameRegionPen = new Pen(new SolidColorBrush(Color.Parse("#3E8A7E")), 1.1);
-        var crossRegionPen = new Pen(new SolidColorBrush(Color.Parse("#8E5C8A")), 1.1);
-        var highlightedDefaultPen = new Pen(new SolidColorBrush(Color.Parse("#8CB3DD")), 2.2);
-        var highlightedSameConstellationPen = new Pen(new SolidColorBrush(Color.Parse("#7FA7E3")), 2.2);
-        var highlightedSameRegionPen = new Pen(new SolidColorBrush(Color.Parse("#63C2B2")), 2.2);
-        var highlightedCrossRegionPen = new Pen(new SolidColorBrush(Color.Parse("#C28ABB")), 2.2);
-        var highlightedSearchConstellationPen = new Pen(new SolidColorBrush(Color.Parse("#E8B75E")), 2.4);
-        var regionEmphasisDefaultPen = new Pen(new SolidColorBrush(Color.Parse("#6F8FB6")), 1.8);
-        var regionEmphasisSameConstellationPen = new Pen(new SolidColorBrush(Color.Parse("#6F97D2")), 1.8);
-        var regionEmphasisSameRegionPen = new Pen(new SolidColorBrush(Color.Parse("#57AEA1")), 1.8);
-        var regionEmphasisCrossRegionPen = new Pen(new SolidColorBrush(Color.Parse("#A2749E")), 1.8);
-        var selectedBrush = new SolidColorBrush(Color.Parse("#E8B75E"));
-        var hoveredBrush = new SolidColorBrush(Color.Parse("#7CC8FF"));
-        var regionSelectedBrush = new SolidColorBrush(Color.Parse("#6BC1B5"));
+        var plot = GetPlotMetrics();
+        var viewCenterX = Bounds.Width / 2.0;
+        var viewCenterY = Bounds.Height / 2.0;
+        UpdateScreenPositions(plot, viewCenterX, viewCenterY);
 
-        var positions = Graph.Nodes.ToDictionary(n => n.Id, ToScreenPoint);
-        var nodeById = Graph.Nodes.ToDictionary(n => n.Id);
         var renderVoronoiBackground = NodeBackgroundColorMode != MapNodeColorMode.None && _zoom >= GetVoronoiZoomThreshold();
-        if (renderVoronoiBackground)
+        if (renderVoronoiBackground && _voronoiWorldGeometriesByNodeId.Count == 0)
         {
             EnsureVoronoiWorldPolygons();
         }
 
-        if (renderVoronoiBackground)
+        if (renderVoronoiBackground && _voronoiWorldGeometriesByNodeId.Count > 0)
         {
             const double margin = 220;
-            foreach (var node in Graph.Nodes)
-            {
-                if (!positions.TryGetValue(node.Id, out var centerPoint) || !IsPointVisible(centerPoint, bounds, margin))
-                {
-                    continue;
-                }
+            var worldToScreen = GetWorldToScreenMatrix(plot);
+            var worldScale = Math.Max(1e-9, ((plot.Width + plot.Height) * 0.5) * _zoom);
+            var voronoiBorderPen = new Pen(VoronoiBorderBrush, 0.8 / worldScale);
+            var visibleVoronoiNodeIndexes = new List<int>(Math.Min(Graph.Nodes.Count, 512));
 
-                DrawVoronoiCell(context, node, centerPoint);
+            using (context.PushTransform(worldToScreen))
+            {
+                for (var i = 0; i < Graph.Nodes.Count; i++)
+                {
+                    var centerPoint = _screenPositions[i];
+                    if (!IsPointVisible(centerPoint, bounds, margin))
+                    {
+                        continue;
+                    }
+
+                    visibleVoronoiNodeIndexes.Add(i);
+                    DrawVoronoiCellWorld(context, Graph.Nodes[i], voronoiBorderPen);
+                }
+            }
+
+            foreach (var index in visibleVoronoiNodeIndexes)
+            {
+                context.DrawEllipse(NodeHoleBrush, null, _screenPositions[index], 7.2, 7.2);
             }
         }
 
         foreach (var link in Graph.Links)
         {
-            if (!positions.TryGetValue(link.FromId, out var from) || !positions.TryGetValue(link.ToId, out var to))
+            if (!_nodeIndexById.TryGetValue(link.FromId, out var fromIndex) ||
+                !_nodeIndexById.TryGetValue(link.ToId, out var toIndex))
             {
                 continue;
             }
+
+            var from = _screenPositions[fromIndex];
+            var to = _screenPositions[toIndex];
 
             if (!IsSegmentPotentiallyVisible(from, to, bounds, 48))
             {
@@ -266,41 +468,39 @@ public sealed class MapControl : Control
             var isHoveredLink = _hoveredNodeId is not null &&
                                 (link.FromId == _hoveredNodeId.Value || link.ToId == _hoveredNodeId.Value);
             var isSearchConstellationLink = _searchHighlightedConstellationId is not null &&
-                                            nodeById.TryGetValue(link.FromId, out var fromNodeForSearchConstellation) &&
-                                            nodeById.TryGetValue(link.ToId, out var toNodeForSearchConstellation) &&
+                                            _nodeById.TryGetValue(link.FromId, out var fromNodeForSearchConstellation) &&
+                                            _nodeById.TryGetValue(link.ToId, out var toNodeForSearchConstellation) &&
                                             fromNodeForSearchConstellation.ConstellationId == _searchHighlightedConstellationId.Value &&
                                             toNodeForSearchConstellation.ConstellationId == _searchHighlightedConstellationId.Value;
             var isSearchRegionLink = _searchHighlightedRegionId is not null &&
-                                     nodeById.TryGetValue(link.FromId, out var fromNodeForSearchRegion) &&
-                                     nodeById.TryGetValue(link.ToId, out var toNodeForSearchRegion) &&
+                                     _nodeById.TryGetValue(link.FromId, out var fromNodeForSearchRegion) &&
+                                     _nodeById.TryGetValue(link.ToId, out var toNodeForSearchRegion) &&
                                      (fromNodeForSearchRegion.RegionId == _searchHighlightedRegionId.Value ||
                                       toNodeForSearchRegion.RegionId == _searchHighlightedRegionId.Value);
             var activeRegionId = _selectedRegionId ?? _hoveredRegionId;
             var isRegionLink = activeRegionId is not null &&
-                               nodeById.TryGetValue(link.FromId, out var fromNodeForRegion) &&
-                               nodeById.TryGetValue(link.ToId, out var toNodeForRegion) &&
+                               _nodeById.TryGetValue(link.FromId, out var fromNodeForRegion) &&
+                               _nodeById.TryGetValue(link.ToId, out var toNodeForRegion) &&
                                (fromNodeForRegion.RegionId == activeRegionId.Value || toNodeForRegion.RegionId == activeRegionId.Value);
 
-            var basePen = GetLinkPen(linksPen, sameConstellationPen, sameRegionPen, crossRegionPen, link, nodeById);
+            var basePen = GetLinkPen(LinksPen, SameConstellationPen, SameRegionPen, CrossRegionPen, link, _nodeById);
             var pen = isSearchConstellationLink
-                ? highlightedSearchConstellationPen
+                ? HighlightedSearchConstellationPen
                 : isSelectedLink || isHoveredLink || isSearchRegionLink
-                ? GetHighlightedPen(basePen, linksPen, sameConstellationPen, sameRegionPen, crossRegionPen, highlightedDefaultPen, highlightedSameConstellationPen, highlightedSameRegionPen, highlightedCrossRegionPen)
-                : isRegionLink
-                    ? GetHighlightedPen(basePen, linksPen, sameConstellationPen, sameRegionPen, crossRegionPen, regionEmphasisDefaultPen, regionEmphasisSameConstellationPen, regionEmphasisSameRegionPen, regionEmphasisCrossRegionPen)
-                : basePen;
+                    ? GetHighlightedPen(basePen, LinksPen, SameConstellationPen, SameRegionPen, CrossRegionPen, HighlightedDefaultPen, HighlightedSameConstellationPen, HighlightedSameRegionPen, HighlightedCrossRegionPen)
+                    : isRegionLink
+                        ? GetHighlightedPen(basePen, LinksPen, SameConstellationPen, SameRegionPen, CrossRegionPen, RegionEmphasisDefaultPen, RegionEmphasisSameConstellationPen, RegionEmphasisSameRegionPen, RegionEmphasisCrossRegionPen)
+                        : basePen;
 
             context.DrawLine(pen, from, to);
         }
 
         var labelBudget = GetLabelBudget();
         var labelsDrawn = 0;
-        foreach (var node in Graph.Nodes)
+        for (var i = 0; i < Graph.Nodes.Count; i++)
         {
-            if (!positions.TryGetValue(node.Id, out var p))
-            {
-                continue;
-            }
+            var node = Graph.Nodes[i];
+            var p = _screenPositions[i];
 
             if (!IsPointVisible(p, bounds, 24))
             {
@@ -317,22 +517,17 @@ public sealed class MapControl : Control
             var isSelectedRegionNode = _selectedRegionId is not null && node.RegionId == _selectedRegionId.Value;
             var radius = isSelected ? 6.2 : isHovered ? 5.6 : isSearchHighlighted ? 5.2 : 4.5;
             var brush = isSelected
-                ? selectedBrush
+                ? SelectedBrush
                 : isHovered
-                    ? hoveredBrush
+                    ? HoveredBrush
                     : isSearchHighlighted
-                        ? selectedBrush
-                    : isSelectedRegionNode
-                        ? selectedBrush
-                    : isInActiveRegion
-                        ? regionSelectedBrush
-                    : new SolidColorBrush(GetNodeBaseColor(node, NodeColorMode));
-            context.DrawEllipse(
-                brush,
-                new Pen(new SolidColorBrush(Color.Parse("#88000000")), 1.1),
-                p,
-                radius,
-                radius);
+                        ? SelectedBrush
+                        : isSelectedRegionNode
+                            ? SelectedBrush
+                            : isInActiveRegion
+                                ? RegionSelectedBrush
+                                : GetCachedBrush(GetNodeBaseColor(node, NodeColorMode));
+            context.DrawEllipse(brush, NodeOutlinePen, p, radius, radius);
 
             var labelVisibilityMargin = ViewMode == MapViewMode.Universe ? 180 : 96;
             var suppressInlineLabel =
@@ -353,18 +548,18 @@ public sealed class MapControl : Control
         }
 
         if (SelectedNodeId is not null &&
-            positions.TryGetValue(SelectedNodeId.Value, out var selectedPoint) &&
-            nodeById.TryGetValue(SelectedNodeId.Value, out var selectedNode))
+            _nodeIndexById.TryGetValue(SelectedNodeId.Value, out var selectedIndex) &&
+            _nodeById.TryGetValue(SelectedNodeId.Value, out var selectedNode))
         {
-            DrawHoverOverlay(context, selectedPoint, selectedNode);
+            DrawHoverOverlay(context, _screenPositions[selectedIndex], selectedNode);
         }
 
         if (_hoveredNodeId is not null &&
             _hoveredNodeId != SelectedNodeId &&
-            positions.TryGetValue(_hoveredNodeId.Value, out var hoverPoint) &&
-            nodeById.TryGetValue(_hoveredNodeId.Value, out var hoverNode))
+            _nodeIndexById.TryGetValue(_hoveredNodeId.Value, out var hoverIndex) &&
+            _nodeById.TryGetValue(_hoveredNodeId.Value, out var hoverNode))
         {
-            DrawHoverOverlay(context, hoverPoint, hoverNode);
+            DrawHoverOverlay(context, _screenPositions[hoverIndex], hoverNode);
         }
 
         if (ViewMode == MapViewMode.Universe && _zoom < GetLabelZoomThreshold())
@@ -372,6 +567,7 @@ public sealed class MapControl : Control
             DrawUniverseRegionLabels(context);
         }
     }
+
 
     private double GetLabelZoomThreshold()
     {
@@ -493,6 +689,11 @@ public sealed class MapControl : Control
         }
 
         var delta = point - _lastPanPoint.Value;
+        if ((delta.X * delta.X) + (delta.Y * delta.Y) < 0.25)
+        {
+            return;
+        }
+
         _panOffset += delta;
         _lastPanPoint = point;
         InvalidateVisual();
@@ -540,26 +741,16 @@ public sealed class MapControl : Control
 
     private bool TrySelectNodeAt(Point point)
     {
-        if (Graph is null || Graph.Nodes.Count == 0)
+        var closestId = FindClosestNodeAt(point, 8.0);
+        if (closestId is null)
         {
             return false;
         }
 
-        const double threshold = 8.0;
-        var closest = Graph.Nodes
-            .Select(n => new { n.Id, Screen = ToScreenPoint(n), Dist = Distance(ToScreenPoint(n), point) })
-            .Where(x => x.Dist <= threshold)
-            .OrderBy(x => x.Dist)
-            .FirstOrDefault();
-
-        if (closest is not null)
-        {
-            SelectedNodeId = closest.Id;
-            return true;
-        }
-
-        return false;
+        SelectedNodeId = closestId.Value;
+        return true;
     }
+
 
     private void UpdateHover(Point point)
     {
@@ -579,14 +770,7 @@ public sealed class MapControl : Control
             return;
         }
 
-        const double threshold = 10.0;
-        var closest = Graph.Nodes
-            .Select(n => new { n.Id, Dist = Distance(ToScreenPoint(n), point) })
-            .Where(x => x.Dist <= threshold)
-            .OrderBy(x => x.Dist)
-            .FirstOrDefault();
-
-        var hoverId = closest?.Id;
+        var hoverId = FindClosestNodeAt(point, 10.0);
         int? hoveredRegionId = null;
         if (hoverId is null &&
             ViewMode == MapViewMode.Universe &&
@@ -613,6 +797,7 @@ public sealed class MapControl : Control
             InvalidateVisual();
         }
     }
+
 
     public void FocusOnSearch(MapSearchFocus focus)
     {
@@ -691,8 +876,7 @@ public sealed class MapControl : Control
             return;
         }
 
-        var node = Graph.Nodes.FirstOrDefault(n => n.Id == nodeId);
-        if (node is null)
+        if (!_nodeById.TryGetValue(nodeId, out var node))
         {
             return;
         }
@@ -794,12 +978,40 @@ public sealed class MapControl : Control
     private Point ToScreenPoint(double worldX, double worldY)
     {
         var plot = GetPlotMetrics();
+        return ToScreenPointFast(worldX, worldY, plot, Bounds.Width / 2.0, Bounds.Height / 2.0);
+    }
+
+    private Point ToScreenPointFast(
+        double worldX,
+        double worldY,
+        PlotMetrics plot,
+        double viewCenterX,
+        double viewCenterY)
+    {
         var x = plot.OriginX + (worldX * plot.Width);
         var y = plot.OriginY + (worldY * plot.Height);
-        var centeredX = ((x - Bounds.Width / 2.0) * _zoom) + (Bounds.Width / 2.0) + _panOffset.X;
-        var centeredY = ((y - Bounds.Height / 2.0) * _zoom) + (Bounds.Height / 2.0) + _panOffset.Y;
-        return new Point(centeredX, centeredY);
+
+        return new Point(
+            ((x - viewCenterX) * _zoom) + viewCenterX + _panOffset.X,
+            ((y - viewCenterY) * _zoom) + viewCenterY + _panOffset.Y);
     }
+
+    private Matrix GetWorldToScreenMatrix(PlotMetrics plot)
+    {
+        var viewCenterX = Bounds.Width / 2.0;
+        var viewCenterY = Bounds.Height / 2.0;
+
+        var scaleX = plot.Width * _zoom;
+        var scaleY = plot.Height * _zoom;
+        var offsetX = ((plot.OriginX - viewCenterX) * _zoom) + viewCenterX + _panOffset.X;
+        var offsetY = ((plot.OriginY - viewCenterY) * _zoom) + viewCenterY + _panOffset.Y;
+
+        return new Matrix(
+            scaleX, 0,
+            0, scaleY,
+            offsetX, offsetY);
+    }
+
 
     private double GetMaxZoom()
     {
@@ -1028,46 +1240,158 @@ public sealed class MapControl : Control
         if (Graph is null)
         {
             _voronoiWorldPolygonsByNodeId.Clear();
+            _voronoiWorldGeometriesByNodeId.Clear();
             _lastGraphForVoronoi = null;
+            _lastVoronoiCacheKey = null;
+            CancelVoronoiBuild();
             return;
         }
 
-        if (ReferenceEquals(_lastGraphForVoronoi, Graph) && _voronoiWorldPolygonsByNodeId.Count > 0)
+        var cacheKey = ComputeVoronoiCacheKey(Graph);
+        if (ReferenceEquals(_lastGraphForVoronoi, Graph) && _lastVoronoiCacheKey == cacheKey && _voronoiWorldPolygonsByNodeId.Count > 0)
         {
             return;
         }
 
         _voronoiWorldPolygonsByNodeId.Clear();
+        _voronoiWorldGeometriesByNodeId.Clear();
         _lastGraphForVoronoi = Graph;
+        _lastVoronoiCacheKey = cacheKey;
 
-        if (Graph.Nodes.Count < 2)
+        if (TryLoadVoronoiFromCache(cacheKey, out var cachedPolygons))
+        {
+            foreach (var kvp in cachedPolygons)
+            {
+                _voronoiWorldPolygonsByNodeId[kvp.Key] = kvp.Value;
+                _voronoiWorldGeometriesByNodeId[kvp.Key] = BuildWorldGeometry(kvp.Value);
+            }
+            return;
+        }
+
+        StartVoronoiBuild(cacheKey, Graph);
+    }
+
+    private void CancelVoronoiBuild()
+    {
+        _voronoiBuildCts?.Cancel();
+        _voronoiBuildCts?.Dispose();
+        _voronoiBuildCts = null;
+        _voronoiBuildTask = null;
+        _voronoiBuildKey = null;
+    }
+
+    private void StartVoronoiBuild(string cacheKey, MapGraph graph)
+    {
+        if (_voronoiBuildTask is { IsCompleted: false } && _voronoiBuildKey == cacheKey)
         {
             return;
         }
 
-        var minX = Graph.Nodes.Min(n => n.X);
-        var maxX = Graph.Nodes.Max(n => n.X);
-        var minY = Graph.Nodes.Min(n => n.Y);
-        var maxY = Graph.Nodes.Max(n => n.Y);
-        var padX = Math.Max((maxX - minX) * 0.15, 0.02);
-        var padY = Math.Max((maxY - minY) * 0.15, 0.02);
+        CancelVoronoiBuild();
+        _voronoiBuildCts = new CancellationTokenSource();
+        _voronoiBuildKey = cacheKey;
+        var token = _voronoiBuildCts.Token;
 
-        var nodeKeyToId = Graph.Nodes.ToDictionary(
+        _voronoiBuildTask = Task.Run(
+            () => BuildVoronoiPolygons(graph, _graphMinX, _graphMaxX, _graphMinY, _graphMaxY, _typicalLinkSpacing, token),
+            token);
+
+        _ = _voronoiBuildTask.ContinueWith(task =>
+        {
+            if (task.IsCanceled || task.IsFaulted || token.IsCancellationRequested)
+            {
+                return;
+            }
+
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (Graph is null || _lastVoronoiCacheKey != cacheKey || _voronoiBuildKey != cacheKey)
+                {
+                    return;
+                }
+
+                _voronoiWorldPolygonsByNodeId.Clear();
+                _voronoiWorldGeometriesByNodeId.Clear();
+                foreach (var kvp in task.Result)
+                {
+                    _voronoiWorldPolygonsByNodeId[kvp.Key] = kvp.Value;
+                    _voronoiWorldGeometriesByNodeId[kvp.Key] = BuildWorldGeometry(kvp.Value);
+                }
+
+                SaveVoronoiToCache(cacheKey, _voronoiWorldPolygonsByNodeId);
+                InvalidateVisual();
+            }, DispatcherPriority.Background);
+        }, CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
+    }
+
+    private static Dictionary<long, IReadOnlyList<(double X, double Y)>> BuildVoronoiPolygons(
+        MapGraph graph,
+        double graphMinX,
+        double graphMaxX,
+        double graphMinY,
+        double graphMaxY,
+        double typicalLinkSpacing,
+        CancellationToken cancellationToken)
+    {
+        var result = new Dictionary<long, IReadOnlyList<(double X, double Y)>>();
+        if (graph.Nodes.Count < 2 || cancellationToken.IsCancellationRequested)
+        {
+            return result;
+        }
+
+        var geometryFactory = new NtsGeometryFactory();
+        var minX = graphMinX;
+        var maxX = graphMaxX;
+        var minY = graphMinY;
+        var maxY = graphMaxY;
+        var spacing = typicalLinkSpacing > 0 ? typicalLinkSpacing : EstimateTypicalLinkSpacing(graph.Nodes, graph.Links);
+        var nodeMaskRadius = Math.Clamp(spacing * 1.95, 0.012, 0.095);
+        var linkMaskRadius = Math.Clamp(spacing * 0.72, 0.006, 0.044);
+        var maxBufferedLinkLength = spacing * 3.5;
+        var envelopePad = Math.Clamp(spacing * 5.0, 0.04, 0.20);
+
+        var nodeKeyToId = graph.Nodes.ToDictionary(
             n => $"{Math.Round(n.X, 8)}:{Math.Round(n.Y, 8)}",
             n => n.Id);
-        var sites = Graph.Nodes.Select(n => new NtsCoordinate(n.X, n.Y)).ToList();
+
+        var sites = graph.Nodes
+            .Select(n => new NtsCoordinate(n.X, n.Y))
+            .ToList();
+
+        var territoryMask = BuildVoronoiTerritoryMask(
+            graph.Nodes,
+            graph.Links,
+            geometryFactory,
+            nodeMaskRadius,
+            linkMaskRadius,
+            maxBufferedLinkLength);
+
+        if (territoryMask is null || territoryMask.IsEmpty || cancellationToken.IsCancellationRequested)
+        {
+            return result;
+        }
 
         var builder = new VoronoiDiagramBuilder();
         builder.SetSites(sites);
-        builder.ClipEnvelope = new NtsEnvelope(minX - padX, maxX + padX, minY - padY, maxY + padY);
-        var diagram = builder.GetDiagram(new NtsGeometryFactory()) as NtsGeometryCollection;
+        builder.ClipEnvelope = new NtsEnvelope(
+            minX - envelopePad,
+            maxX + envelopePad,
+            minY - envelopePad,
+            maxY + envelopePad);
+
+        var diagram = builder.GetDiagram(geometryFactory) as NtsGeometryCollection;
         if (diagram is null)
         {
-            return;
+            return result;
         }
 
         for (var i = 0; i < diagram.NumGeometries; i++)
         {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return result;
+            }
+
             if (diagram.GetGeometryN(i) is not NtsPolygon polygon ||
                 polygon.ExteriorRing is null ||
                 polygon.ExteriorRing.NumPoints < 4)
@@ -1075,71 +1399,362 @@ public sealed class MapControl : Control
                 continue;
             }
 
-            long nodeId;
-            if (polygon.UserData is NtsCoordinate site)
+            var nodeId = ResolveVoronoiOwnerNodeId(polygon, nodeKeyToId, graph);
+            if (nodeId is null)
             {
-                var key = $"{Math.Round(site.X, 8)}:{Math.Round(site.Y, 8)}";
-                if (!nodeKeyToId.TryGetValue(key, out nodeId))
-                {
-                    var centroid = polygon.Centroid;
-                    var nearest = Graph.Nodes
-                        .OrderBy(n => ((n.X - centroid.X) * (n.X - centroid.X)) + ((n.Y - centroid.Y) * (n.Y - centroid.Y)))
-                        .FirstOrDefault();
-                    if (nearest is null)
-                    {
-                        continue;
-                    }
-
-                    nodeId = nearest.Id;
-                }
-            }
-            else
-            {
-                var centroid = polygon.Centroid;
-                var nearest = Graph.Nodes
-                    .OrderBy(n => ((n.X - centroid.X) * (n.X - centroid.X)) + ((n.Y - centroid.Y) * (n.Y - centroid.Y)))
-                    .FirstOrDefault();
-                if (nearest is null)
-                {
-                    continue;
-                }
-
-                nodeId = nearest.Id;
+                continue;
             }
 
-            var points = polygon.ExteriorRing.Coordinates
-                .Take(polygon.ExteriorRing.Coordinates.Length - 1)
-                .Select(c => (c.X, c.Y))
-                .ToList();
-            _voronoiWorldPolygonsByNodeId[nodeId] = points;
+            var clipped = SafeIntersection(polygon, territoryMask);
+            if (clipped is null || clipped.IsEmpty)
+            {
+                continue;
+            }
+            var points = ExtractLargestPolygonCoordinates(clipped);
+
+            if (points.Count < 3)
+            {
+                continue;
+            }
+
+            result[nodeId.Value] = points;
+        }
+        return result;
+    }
+
+    private static NtsGeometry? SafeIntersection(NtsGeometry a, NtsGeometry b)
+    {
+        try
+        {
+            return a.Intersection(b);
+        }
+        catch
+        {
+            // Robust fallback for occasional non-noded intersections from Voronoi edges.
+            try
+            {
+                var precision = new NetTopologySuite.Geometries.PrecisionModel(1_000_000d);
+                var reducer = new GeometryPrecisionReducer(precision)
+                {
+                    ChangePrecisionModel = true,
+                    Pointwise = false,
+                    RemoveCollapsedComponents = true
+                };
+
+                var ra = NetTopologySuite.Geometries.Utilities.GeometryFixer.Fix(reducer.Reduce(a)).Buffer(0);
+                var rb = NetTopologySuite.Geometries.Utilities.GeometryFixer.Fix(reducer.Reduce(b)).Buffer(0);
+                return ra.Intersection(rb);
+            }
+            catch
+            {
+                return null;
+            }
         }
     }
 
-    private void DrawVoronoiCell(DrawingContext context, MapNode node, Point centerPoint)
+    private static string ComputeVoronoiCacheKey(MapGraph graph)
     {
-        if (!_voronoiWorldPolygonsByNodeId.TryGetValue(node.Id, out var polygon) || polygon.Count < 3)
+        var sb = new StringBuilder(graph.Nodes.Count * 48 + graph.Links.Count * 24);
+        sb.Append("v1|");
+        sb.Append(graph.Nodes.Count).Append('|').Append(graph.Links.Count).Append('|');
+        foreach (var node in graph.Nodes.OrderBy(n => n.Id))
+        {
+            sb.Append(node.Id).Append(':')
+                .Append(node.X.ToString("F8", CultureInfo.InvariantCulture)).Append(',')
+                .Append(node.Y.ToString("F8", CultureInfo.InvariantCulture)).Append('|');
+        }
+
+        foreach (var link in graph.Links)
+        {
+            var a = Math.Min(link.FromId, link.ToId);
+            var b = Math.Max(link.FromId, link.ToId);
+            sb.Append(a).Append('-').Append(b).Append('|');
+        }
+
+        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));
+        return Convert.ToHexString(hashBytes);
+    }
+
+    private static bool TryLoadVoronoiFromCache(string key, out Dictionary<long, IReadOnlyList<(double X, double Y)>> polygons)
+    {
+        if (VoronoiMemoryCache.TryGetValue(key, out polygons!))
+        {
+            return true;
+        }
+
+        polygons = [];
+        try
+        {
+            var path = Path.Combine(VoronoiCacheDirectory, $"{key}.json");
+            if (!File.Exists(path))
+            {
+                return false;
+            }
+
+            var json = File.ReadAllText(path);
+            var model = JsonSerializer.Deserialize<VoronoiCacheModel>(json, VoronoiJsonOptions);
+            if (model is null || model.Polygons.Count == 0)
+            {
+                return false;
+            }
+
+            foreach (var kvp in model.Polygons)
+            {
+                polygons[kvp.Key] = kvp.Value.Select(p => (p.X, p.Y)).ToList();
+            }
+
+            VoronoiMemoryCache[key] = polygons;
+            return polygons.Count > 0;
+        }
+        catch
+        {
+            polygons = [];
+            return false;
+        }
+    }
+
+    private static void SaveVoronoiToCache(string key, IReadOnlyDictionary<long, IReadOnlyList<(double X, double Y)>> polygons)
+    {
+        if (polygons.Count == 0)
         {
             return;
         }
 
+        var inMemory = new Dictionary<long, IReadOnlyList<(double X, double Y)>>(polygons.Count);
+        foreach (var kvp in polygons)
+        {
+            inMemory[kvp.Key] = kvp.Value.ToList();
+        }
+        VoronoiMemoryCache[key] = inMemory;
+
+        try
+        {
+            Directory.CreateDirectory(VoronoiCacheDirectory);
+            var model = new VoronoiCacheModel
+            {
+                Key = key,
+                Polygons = polygons.ToDictionary(
+                    kvp => kvp.Key,
+                    kvp => kvp.Value.Select(p => new PointDto { X = p.X, Y = p.Y }).ToList())
+            };
+
+            var json = JsonSerializer.Serialize(model, VoronoiJsonOptions);
+            var path = Path.Combine(VoronoiCacheDirectory, $"{key}.json");
+            File.WriteAllText(path, json);
+        }
+        catch
+        {
+            // Best-effort cache persistence only.
+        }
+    }
+
+    private static NtsGeometry? BuildVoronoiTerritoryMask(
+    IReadOnlyList<MapNode> nodes,
+    IReadOnlyList<MapLink> links,
+    NtsGeometryFactory geometryFactory,
+    double nodeMaskRadius,
+    double linkMaskRadius,
+    double maxBufferedLinkLength)
+    {
+        var byId = nodes.ToDictionary(n => n.Id);
+        var parts = new List<NtsGeometry>();
+
+        foreach (var node in nodes)
+        {
+            var point = geometryFactory.CreatePoint(new NtsCoordinate(node.X, node.Y));
+            parts.Add(point.Buffer(nodeMaskRadius, 8));
+        }
+
+        foreach (var link in links)
+        {
+            if (!byId.TryGetValue(link.FromId, out var from) ||
+                !byId.TryGetValue(link.ToId, out var to))
+            {
+                continue;
+            }
+
+            var dx = from.X - to.X;
+            var dy = from.Y - to.Y;
+            var linkLength = Math.Sqrt((dx * dx) + (dy * dy));
+
+            // Skip long map-spanning links so they don't create huge territory ribbons.
+            if (linkLength > maxBufferedLinkLength)
+            {
+                continue;
+            }
+
+            var line = geometryFactory.CreateLineString([
+                new NtsCoordinate(from.X, from.Y),
+    new NtsCoordinate(to.X, to.Y)
+            ]);
+
+            parts.Add(line.Buffer(linkMaskRadius, 6));
+        }
+
+        if (parts.Count == 0)
+        {
+            return null;
+        }
+
+        var union = NtsUnaryUnionOp.Union(parts);
+
+        // Small smoothing pass.
+        var smoothOut = nodeMaskRadius * 0.28;
+        var smoothIn = nodeMaskRadius * 0.07;
+
+        return union
+            .Buffer(smoothOut, 4)
+            .Buffer(-smoothIn, 4);
+    }
+
+    private static long? ResolveVoronoiOwnerNodeId(
+    NtsPolygon polygon,
+    IReadOnlyDictionary<string, long> nodeKeyToId,
+    MapGraph graph)
+    {
+        if (polygon.UserData is NtsCoordinate site)
+        {
+            var key = $"{Math.Round(site.X, 8)}:{Math.Round(site.Y, 8)}";
+            if (nodeKeyToId.TryGetValue(key, out var nodeId))
+            {
+                return nodeId;
+            }
+        }
+
+        var centroid = polygon.Centroid;
+
+        var nearest = graph.Nodes
+            .OrderBy(n =>
+            {
+                var dx = n.X - centroid.X;
+                var dy = n.Y - centroid.Y;
+                return (dx * dx) + (dy * dy);
+            })
+            .FirstOrDefault();
+
+        return nearest?.Id;
+    }
+
+    private static IReadOnlyList<(double X, double Y)> ExtractLargestPolygonCoordinates(NtsGeometry geometry)
+    {
+        if (geometry.IsEmpty)
+        {
+            return [];
+        }
+
+        NtsPolygon? bestPolygon = null;
+        var bestArea = 0.0;
+
+        void Consider(NtsGeometry candidate)
+        {
+            if (candidate is NtsPolygon polygon &&
+                polygon.ExteriorRing is not null &&
+                polygon.ExteriorRing.NumPoints >= 4 &&
+                polygon.Area > bestArea)
+            {
+                bestPolygon = polygon;
+                bestArea = polygon.Area;
+            }
+        }
+
+        if (geometry is NtsPolygon singlePolygon)
+        {
+            Consider(singlePolygon);
+        }
+        else if (geometry is NtsMultiPolygon multiPolygon)
+        {
+            for (var i = 0; i < multiPolygon.NumGeometries; i++)
+            {
+                Consider(multiPolygon.GetGeometryN(i));
+            }
+        }
+        else if (geometry is NtsGeometryCollection collection)
+        {
+            for (var i = 0; i < collection.NumGeometries; i++)
+            {
+                Consider(collection.GetGeometryN(i));
+            }
+        }
+
+        if (bestPolygon is null)
+        {
+            return [];
+        }
+
+        return bestPolygon.ExteriorRing.Coordinates
+            .Take(bestPolygon.ExteriorRing.Coordinates.Length - 1)
+            .Select(c => (c.X, c.Y))
+            .ToList();
+    }
+
+    private static double EstimateTypicalLinkSpacing(
+    IReadOnlyList<MapNode> nodes,
+    IReadOnlyList<MapLink> links)
+    {
+        var byId = nodes.ToDictionary(n => n.Id);
+        var lengths = new List<double>(links.Count);
+
+        foreach (var link in links)
+        {
+            if (!byId.TryGetValue(link.FromId, out var from) ||
+                !byId.TryGetValue(link.ToId, out var to))
+            {
+                continue;
+            }
+
+            var dx = from.X - to.X;
+            var dy = from.Y - to.Y;
+            var d = Math.Sqrt((dx * dx) + (dy * dy));
+
+            if (d > 0)
+            {
+                lengths.Add(d);
+            }
+        }
+
+        if (lengths.Count == 0)
+        {
+            var minX = nodes.Min(n => n.X);
+            var maxX = nodes.Max(n => n.X);
+            var minY = nodes.Min(n => n.Y);
+            var maxY = nodes.Max(n => n.Y);
+
+            return Math.Max((maxX - minX + maxY - minY) * 0.015, 0.01);
+        }
+
+        lengths.Sort();
+        return lengths[lengths.Count / 2];
+    }
+
+    private static StreamGeometry BuildWorldGeometry(IReadOnlyList<(double X, double Y)> polygon)
+    {
         var geometry = new StreamGeometry();
+
         using (var g = geometry.Open())
         {
-            var p0 = ToScreenPoint(polygon[0].X, polygon[0].Y);
-            g.BeginFigure(p0, true);
+            g.BeginFigure(new Point(polygon[0].X, polygon[0].Y), true);
             for (var i = 1; i < polygon.Count; i++)
             {
-                g.LineTo(ToScreenPoint(polygon[i].X, polygon[i].Y));
+                g.LineTo(new Point(polygon[i].X, polygon[i].Y));
             }
             g.EndFigure(true);
         }
 
-        var color = GetNodeBaseColor(node, NodeBackgroundColorMode);
-        var baseFill = new SolidColorBrush(WithAlpha(color, 0.28));
-        context.DrawGeometry(baseFill, new Pen(new SolidColorBrush(Color.Parse("#AA0D131D")), 0.8), geometry);
-
-        context.DrawEllipse(new SolidColorBrush(Color.Parse("#0D131D")), null, centerPoint, 7.2, 7.2);
+        return geometry;
     }
+
+    private void DrawVoronoiCellWorld(DrawingContext context, MapNode node, Pen borderPen)
+    {
+        if (!_voronoiWorldGeometriesByNodeId.TryGetValue(node.Id, out var geometry))
+        {
+            return;
+        }
+
+        var color = GetNodeBaseColor(node, NodeBackgroundColorMode);
+        var baseFill = GetCachedBrush(color, 0.28);
+        context.DrawGeometry(baseFill, borderPen, geometry);
+    }
+
 
     private Color GetNodeBaseColor(MapNode node, MapNodeColorMode mode)
     {
@@ -1236,7 +1851,7 @@ public sealed class MapControl : Control
             origin.Y - 2,
             label.Width + 6,
             label.Height + 4);
-        context.FillRectangle(new SolidColorBrush(Color.Parse("#8A000000")), rect, 3);
+        context.FillRectangle(NodeLabelBackgroundBrush, rect, 3);
         DrawLabelWithHalo(context, label, halo, origin);
     }
 
@@ -1248,7 +1863,7 @@ public sealed class MapControl : Control
             FlowDirection.LeftToRight,
             new Typeface("Inter"),
             14,
-            new SolidColorBrush(Color.Parse("#9FB4D2")));
+            EmptyTextBrush);
 
         var origin = new Point((bounds.Width - text.Width) / 2, (bounds.Height - text.Height) / 2);
         context.DrawText(text, origin);
@@ -1272,8 +1887,8 @@ public sealed class MapControl : Control
             content.Width + (padX * 2),
             content.Height + (padY * 2));
 
-        context.FillRectangle(new SolidColorBrush(Color.Parse("#1A2536")), rect, 4);
-        context.DrawRectangle(new Pen(new SolidColorBrush(Color.Parse("#3B5678")), 1), rect, 4);
+        context.FillRectangle(TooltipBackgroundBrush, rect, 4);
+        context.DrawRectangle(TooltipBorderPen, rect, 4);
         context.DrawText(content, new Point(rect.X + padX, rect.Y + padY));
     }
 
@@ -1317,8 +1932,8 @@ public sealed class MapControl : Control
             content.Width + (padX * 2),
             content.Height + (padY * 2));
 
-        context.FillRectangle(new SolidColorBrush(Color.Parse("#99000000")), rect, 4);
-        context.DrawRectangle(new Pen(new SolidColorBrush(Color.Parse("#4A617F")), 1), rect, 4);
+        context.FillRectangle(HoverOverlayBackgroundBrush, rect, 4);
+        context.DrawRectangle(HoverOverlayBorderPen, rect, 4);
         context.DrawText(content, new Point(rect.X + padX, rect.Y + padY));
     }
 
