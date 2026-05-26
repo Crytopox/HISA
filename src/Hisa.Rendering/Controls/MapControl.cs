@@ -4,6 +4,12 @@ using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Immutable;
 using Hisa.Core.Models;
+using NetTopologySuite.Triangulate;
+using NtsCoordinate = NetTopologySuite.Geometries.Coordinate;
+using NtsEnvelope = NetTopologySuite.Geometries.Envelope;
+using NtsGeometryCollection = NetTopologySuite.Geometries.GeometryCollection;
+using NtsGeometryFactory = NetTopologySuite.Geometries.GeometryFactory;
+using NtsPolygon = NetTopologySuite.Geometries.Polygon;
 
 namespace Hisa.Rendering.Controls;
 
@@ -48,6 +54,8 @@ public sealed class MapControl : Control
     private readonly Dictionary<int, FormattedText> _regionLabelCache = [];
     private readonly Dictionary<string, FormattedText> _nodeLabelHaloCache = [];
     private readonly Dictionary<int, FormattedText> _regionLabelHaloCache = [];
+    private readonly Dictionary<long, IReadOnlyList<(double X, double Y)>> _voronoiWorldPolygonsByNodeId = [];
+    private MapGraph? _lastGraphForVoronoi;
     private const double BasePadding = 0.0;
     private const double FitPadding = 30.0;
     public event EventHandler<int>? UniverseRegionNodeDoubleClicked;
@@ -189,6 +197,8 @@ public sealed class MapControl : Control
             _nodeLabelHaloCache.Clear();
             _regionLabelCache.Clear();
             _regionLabelHaloCache.Clear();
+            _voronoiWorldPolygonsByNodeId.Clear();
+            _lastGraphForVoronoi = null;
         }
 
         var bounds = Bounds;
@@ -219,9 +229,25 @@ public sealed class MapControl : Control
 
         var positions = Graph.Nodes.ToDictionary(n => n.Id, ToScreenPoint);
         var nodeById = Graph.Nodes.ToDictionary(n => n.Id);
-        var proximityRadiusByNodeId = NodeBackgroundColorMode != MapNodeColorMode.None
-            ? BuildNodeProximityRadiiFromLinks(Graph.Links, positions)
-            : null;
+        var renderVoronoiBackground = NodeBackgroundColorMode != MapNodeColorMode.None && _zoom >= GetVoronoiZoomThreshold();
+        if (renderVoronoiBackground)
+        {
+            EnsureVoronoiWorldPolygons();
+        }
+
+        if (renderVoronoiBackground)
+        {
+            const double margin = 220;
+            foreach (var node in Graph.Nodes)
+            {
+                if (!positions.TryGetValue(node.Id, out var centerPoint) || !IsPointVisible(centerPoint, bounds, margin))
+                {
+                    continue;
+                }
+
+                DrawVoronoiCell(context, node, centerPoint);
+            }
+        }
 
         foreach (var link in Graph.Links)
         {
@@ -301,16 +327,6 @@ public sealed class MapControl : Control
                     : isInActiveRegion
                         ? regionSelectedBrush
                     : new SolidColorBrush(GetNodeBaseColor(node, NodeColorMode));
-            if (NodeBackgroundColorMode != MapNodeColorMode.None)
-            {
-                var proximityRadius = proximityRadiusByNodeId is not null &&
-                                      proximityRadiusByNodeId.TryGetValue(node.Id, out var pr)
-                    ? pr
-                    : 10.0;
-                var nodeBackgroundBrush = new SolidColorBrush(WithAlpha(GetNodeBaseColor(node, NodeBackgroundColorMode), 0.88));
-                DrawHexCell(context, p, proximityRadius, nodeBackgroundBrush);
-                context.DrawEllipse(new SolidColorBrush(Color.Parse("#0D131D")), null, p, 7.5, 7.5);
-            }
             context.DrawEllipse(
                 brush,
                 new Pen(new SolidColorBrush(Color.Parse("#88000000")), 1.1),
@@ -376,6 +392,17 @@ public sealed class MapControl : Control
             MapViewMode.UniverseRegions => 180,
             MapViewMode.Region => 420,
             _ => 300
+        };
+    }
+
+    private double GetVoronoiZoomThreshold()
+    {
+        return ViewMode switch
+        {
+            MapViewMode.Universe => 0.4,
+            MapViewMode.UniverseRegions => 0.4,
+            MapViewMode.Region => 0.4,
+            _ => 0.4
         };
     }
 
@@ -764,6 +791,16 @@ public sealed class MapControl : Control
         return new Point(centeredX, centeredY);
     }
 
+    private Point ToScreenPoint(double worldX, double worldY)
+    {
+        var plot = GetPlotMetrics();
+        var x = plot.OriginX + (worldX * plot.Width);
+        var y = plot.OriginY + (worldY * plot.Height);
+        var centeredX = ((x - Bounds.Width / 2.0) * _zoom) + (Bounds.Width / 2.0) + _panOffset.X;
+        var centeredY = ((y - Bounds.Height / 2.0) * _zoom) + (Bounds.Height / 2.0) + _panOffset.Y;
+        return new Point(centeredX, centeredY);
+    }
+
     private double GetMaxZoom()
     {
         return ViewMode switch
@@ -986,72 +1023,122 @@ public sealed class MapControl : Control
         return text;
     }
 
-    private static Dictionary<long, double> BuildNodeProximityRadiiFromLinks(
-        IReadOnlyList<MapLink> links,
-        IReadOnlyDictionary<long, Point> positions)
+    private void EnsureVoronoiWorldPolygons()
     {
-        var minDistanceByNode = new Dictionary<long, double>(positions.Count);
-        foreach (var kv in positions)
+        if (Graph is null)
         {
-            minDistanceByNode[kv.Key] = double.MaxValue;
+            _voronoiWorldPolygonsByNodeId.Clear();
+            _lastGraphForVoronoi = null;
+            return;
         }
 
-        foreach (var link in links)
-        {
-            if (!positions.TryGetValue(link.FromId, out var from) || !positions.TryGetValue(link.ToId, out var to))
-            {
-                continue;
-            }
-
-            var d = Distance(from, to);
-            if (d < minDistanceByNode[link.FromId])
-            {
-                minDistanceByNode[link.FromId] = d;
-            }
-            if (d < minDistanceByNode[link.ToId])
-            {
-                minDistanceByNode[link.ToId] = d;
-            }
-        }
-
-        var result = new Dictionary<long, double>(minDistanceByNode.Count);
-        foreach (var kv in minDistanceByNode)
-        {
-            var min = kv.Value == double.MaxValue ? 24 : kv.Value;
-            result[kv.Key] = Math.Clamp(min * 0.45, 10, 30);
-        }
-
-        return result;
-    }
-
-    private static void DrawHexCell(DrawingContext context, Point center, double radius, IBrush brush)
-    {
-        if (radius <= 0)
+        if (ReferenceEquals(_lastGraphForVoronoi, Graph) && _voronoiWorldPolygonsByNodeId.Count > 0)
         {
             return;
         }
 
-        var points = new List<Point>(6);
-        for (var i = 0; i < 6; i++)
+        _voronoiWorldPolygonsByNodeId.Clear();
+        _lastGraphForVoronoi = Graph;
+
+        if (Graph.Nodes.Count < 2)
         {
-            var angle = (Math.PI / 180.0) * ((60.0 * i) - 30.0);
-            var x = center.X + (Math.Cos(angle) * radius);
-            var y = center.Y + (Math.Sin(angle) * radius);
-            points.Add(new Point(x, y));
+            return;
+        }
+
+        var minX = Graph.Nodes.Min(n => n.X);
+        var maxX = Graph.Nodes.Max(n => n.X);
+        var minY = Graph.Nodes.Min(n => n.Y);
+        var maxY = Graph.Nodes.Max(n => n.Y);
+        var padX = Math.Max((maxX - minX) * 0.15, 0.02);
+        var padY = Math.Max((maxY - minY) * 0.15, 0.02);
+
+        var nodeKeyToId = Graph.Nodes.ToDictionary(
+            n => $"{Math.Round(n.X, 8)}:{Math.Round(n.Y, 8)}",
+            n => n.Id);
+        var sites = Graph.Nodes.Select(n => new NtsCoordinate(n.X, n.Y)).ToList();
+
+        var builder = new VoronoiDiagramBuilder();
+        builder.SetSites(sites);
+        builder.ClipEnvelope = new NtsEnvelope(minX - padX, maxX + padX, minY - padY, maxY + padY);
+        var diagram = builder.GetDiagram(new NtsGeometryFactory()) as NtsGeometryCollection;
+        if (diagram is null)
+        {
+            return;
+        }
+
+        for (var i = 0; i < diagram.NumGeometries; i++)
+        {
+            if (diagram.GetGeometryN(i) is not NtsPolygon polygon ||
+                polygon.ExteriorRing is null ||
+                polygon.ExteriorRing.NumPoints < 4)
+            {
+                continue;
+            }
+
+            long nodeId;
+            if (polygon.UserData is NtsCoordinate site)
+            {
+                var key = $"{Math.Round(site.X, 8)}:{Math.Round(site.Y, 8)}";
+                if (!nodeKeyToId.TryGetValue(key, out nodeId))
+                {
+                    var centroid = polygon.Centroid;
+                    var nearest = Graph.Nodes
+                        .OrderBy(n => ((n.X - centroid.X) * (n.X - centroid.X)) + ((n.Y - centroid.Y) * (n.Y - centroid.Y)))
+                        .FirstOrDefault();
+                    if (nearest is null)
+                    {
+                        continue;
+                    }
+
+                    nodeId = nearest.Id;
+                }
+            }
+            else
+            {
+                var centroid = polygon.Centroid;
+                var nearest = Graph.Nodes
+                    .OrderBy(n => ((n.X - centroid.X) * (n.X - centroid.X)) + ((n.Y - centroid.Y) * (n.Y - centroid.Y)))
+                    .FirstOrDefault();
+                if (nearest is null)
+                {
+                    continue;
+                }
+
+                nodeId = nearest.Id;
+            }
+
+            var points = polygon.ExteriorRing.Coordinates
+                .Take(polygon.ExteriorRing.Coordinates.Length - 1)
+                .Select(c => (c.X, c.Y))
+                .ToList();
+            _voronoiWorldPolygonsByNodeId[nodeId] = points;
+        }
+    }
+
+    private void DrawVoronoiCell(DrawingContext context, MapNode node, Point centerPoint)
+    {
+        if (!_voronoiWorldPolygonsByNodeId.TryGetValue(node.Id, out var polygon) || polygon.Count < 3)
+        {
+            return;
         }
 
         var geometry = new StreamGeometry();
         using (var g = geometry.Open())
         {
-            g.BeginFigure(points[0], isFilled: true);
-            for (var i = 1; i < points.Count; i++)
+            var p0 = ToScreenPoint(polygon[0].X, polygon[0].Y);
+            g.BeginFigure(p0, true);
+            for (var i = 1; i < polygon.Count; i++)
             {
-                g.LineTo(points[i]);
+                g.LineTo(ToScreenPoint(polygon[i].X, polygon[i].Y));
             }
-            g.EndFigure(isClosed: true);
+            g.EndFigure(true);
         }
 
-        context.DrawGeometry(brush, null, geometry);
+        var color = GetNodeBaseColor(node, NodeBackgroundColorMode);
+        var baseFill = new SolidColorBrush(WithAlpha(color, 0.28));
+        context.DrawGeometry(baseFill, new Pen(new SolidColorBrush(Color.Parse("#AA0D131D")), 0.8), geometry);
+
+        context.DrawEllipse(new SolidColorBrush(Color.Parse("#0D131D")), null, centerPoint, 7.2, 7.2);
     }
 
     private Color GetNodeBaseColor(MapNode node, MapNodeColorMode mode)
