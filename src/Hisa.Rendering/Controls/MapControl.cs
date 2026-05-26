@@ -1058,8 +1058,9 @@ public sealed class MapControl : Control
         var spacing = EstimateTypicalLinkSpacing(Graph.Nodes, Graph.Links);
 
         // Main tuning values.
-        var nodeMaskRadius = Math.Clamp(spacing * 1.70, 0.010, 0.075);
-        var linkMaskRadius = Math.Clamp(spacing * 0.62, 0.005, 0.034);
+        var nodeMaskRadius = Math.Clamp(spacing * 1.95, 0.012, 0.095);
+        var linkMaskRadius = Math.Clamp(spacing * 0.72, 0.006, 0.044);
+        var maxBufferedLinkLength = spacing * 3.5;
 
         // The Voronoi envelope can be generous because the final shape is clipped by the mask.
         var envelopePad = Math.Clamp(spacing * 5.0, 0.04, 0.20);
@@ -1077,7 +1078,8 @@ public sealed class MapControl : Control
             Graph.Links,
             geometryFactory,
             nodeMaskRadius,
-            linkMaskRadius);
+            linkMaskRadius,
+            maxBufferedLinkLength);
 
         if (territoryMask is null || territoryMask.IsEmpty)
         {
@@ -1130,7 +1132,8 @@ public sealed class MapControl : Control
     IReadOnlyList<MapLink> links,
     NtsGeometryFactory geometryFactory,
     double nodeMaskRadius,
-    double linkMaskRadius)
+    double linkMaskRadius,
+    double maxBufferedLinkLength)
     {
         var byId = nodes.ToDictionary(n => n.Id);
         var parts = new List<NtsGeometry>();
@@ -1149,9 +1152,19 @@ public sealed class MapControl : Control
                 continue;
             }
 
+            var dx = from.X - to.X;
+            var dy = from.Y - to.Y;
+            var linkLength = Math.Sqrt((dx * dx) + (dy * dy));
+
+            // Skip long map-spanning links so they don't create huge territory ribbons.
+            if (linkLength > maxBufferedLinkLength)
+            {
+                continue;
+            }
+
             var line = geometryFactory.CreateLineString([
                 new NtsCoordinate(from.X, from.Y),
-            new NtsCoordinate(to.X, to.Y)
+    new NtsCoordinate(to.X, to.Y)
             ]);
 
             parts.Add(line.Buffer(linkMaskRadius, 6));
@@ -1165,8 +1178,8 @@ public sealed class MapControl : Control
         var union = NtsUnaryUnionOp.Union(parts);
 
         // Small smoothing pass.
-        var smoothOut = nodeMaskRadius * 0.15;
-        var smoothIn = nodeMaskRadius * 0.10;
+        var smoothOut = nodeMaskRadius * 0.28;
+        var smoothIn = nodeMaskRadius * 0.07;
 
         return union
             .Buffer(smoothOut, 4)
