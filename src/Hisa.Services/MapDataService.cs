@@ -78,7 +78,9 @@ public sealed class MapDataService : IMapDataService
                     Id = reader.GetInt32(0),
                     Name = reader.GetString(1),
                     X = reader.GetDouble(2),
-                    Y = reader.GetDouble(3)
+                    Y = reader.GetDouble(3),
+                    RegionId = reader.GetInt32(0),
+                    RegionName = reader.GetString(1)
                 });
             }
         }
@@ -122,13 +124,15 @@ public sealed class MapDataService : IMapDataService
         var command = connection.CreateCommand();
         command.CommandText = regionId is null
             ? $"""
-              SELECT solarSystemID, solarSystemName, {xColumn}, {yColumn}
-              FROM mapSolarSystems;
+              SELECT s.solarSystemID, s.solarSystemName, {xColumn}, {yColumn}, s.regionID, r.regionName
+              FROM mapSolarSystems s
+              LEFT JOIN mapRegions r ON r.regionID = s.regionID;
               """
             : $"""
-              SELECT solarSystemID, solarSystemName, {xColumn}, {yColumn}
-              FROM mapSolarSystems
-              WHERE regionID = $regionId;
+              SELECT s.solarSystemID, s.solarSystemName, {xColumn}, {yColumn}, s.regionID, r.regionName
+              FROM mapSolarSystems s
+              LEFT JOIN mapRegions r ON r.regionID = s.regionID
+              WHERE s.regionID = $regionId;
               """;
 
         if (regionId is not null)
@@ -150,7 +154,9 @@ public sealed class MapDataService : IMapDataService
                 Id = reader.GetInt32(0),
                 Name = reader.GetString(1),
                 X = reader.GetDouble(2),
-                Y = reader.GetDouble(3)
+                Y = reader.GetDouble(3),
+                RegionId = reader.IsDBNull(4) ? null : reader.GetInt32(4),
+                RegionName = reader.IsDBNull(5) ? null : reader.GetString(5)
             });
         }
 
@@ -216,7 +222,9 @@ public sealed class MapDataService : IMapDataService
                 Id = n.Id,
                 Name = n.Name,
                 X = (n.X - minX) / width,
-                Y = 1.0 - ((n.Y - minY) / height)
+                Y = 1.0 - ((n.Y - minY) / height),
+                RegionId = n.RegionId,
+                RegionName = n.RegionName
             })
             .ToList();
 

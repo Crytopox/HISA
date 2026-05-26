@@ -25,6 +25,8 @@ public sealed class MapNode
     public required string Name { get; init; }
     public required double X { get; init; }
     public required double Y { get; init; }
+    public int? RegionId { get; init; }
+    public string? RegionName { get; init; }
 }
 
 public sealed class MapLink

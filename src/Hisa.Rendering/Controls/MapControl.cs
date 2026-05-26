@@ -13,6 +13,8 @@ public sealed class MapControl : Control
 
     public static readonly StyledProperty<long?> SelectedNodeIdProperty =
         AvaloniaProperty.Register<MapControl, long?>(nameof(SelectedNodeId));
+    public static readonly StyledProperty<MapViewMode> ViewModeProperty =
+        AvaloniaProperty.Register<MapControl, MapViewMode>(nameof(ViewMode), MapViewMode.Universe);
 
     private Point? _lastPanPoint;
     private Point _panOffset = new(0, 0);
@@ -33,9 +35,15 @@ public sealed class MapControl : Control
         set => SetValue(SelectedNodeIdProperty, value);
     }
 
+    public MapViewMode ViewMode
+    {
+        get => GetValue(ViewModeProperty);
+        set => SetValue(ViewModeProperty, value);
+    }
+
     public MapControl()
     {
-        AffectsRender<MapControl>(GraphProperty, SelectedNodeIdProperty);
+        AffectsRender<MapControl>(GraphProperty, SelectedNodeIdProperty, ViewModeProperty);
         ClipToBounds = true;
     }
 
@@ -121,7 +129,7 @@ public sealed class MapControl : Control
             var brush = isSelected ? selectedBrush : isHovered ? hoveredBrush : nodeBrush;
             context.DrawEllipse(brush, null, p, radius, radius);
 
-            if (_zoom >= 1.0 || isSelected || isHovered)
+            if (_zoom >= GetLabelZoomThreshold() || isSelected || isHovered)
             {
                 var label = new FormattedText(
                     node.Name,
@@ -140,6 +148,66 @@ public sealed class MapControl : Control
             nodeById.TryGetValue(_hoveredNodeId.Value, out var hoverNode))
         {
             DrawTooltip(context, hoverPoint, hoverNode.Name);
+        }
+
+        if (ViewMode == MapViewMode.Universe && _zoom < GetLabelZoomThreshold())
+        {
+            DrawUniverseRegionLabels(context);
+        }
+    }
+
+    private double GetLabelZoomThreshold()
+    {
+        return ViewMode switch
+        {
+            MapViewMode.Universe => 6,
+            MapViewMode.UniverseRegions => 0.35,
+            MapViewMode.Region => 0.35,
+            _ => 1.0
+        };
+    }
+
+    private void DrawUniverseRegionLabels(DrawingContext context)
+    {
+        if (Graph is null || Graph.Nodes.Count == 0)
+        {
+            return;
+        }
+
+        var regionGroups = Graph.Nodes
+            .Where(n => n.RegionId is not null && !string.IsNullOrWhiteSpace(n.RegionName))
+            .GroupBy(n => n.RegionId!.Value);
+
+        foreach (var group in regionGroups)
+        {
+            var samples = group.Select(ToScreenPoint).ToList();
+            if (samples.Count == 0)
+            {
+                continue;
+            }
+
+            var center = new Point(samples.Average(p => p.X), samples.Average(p => p.Y));
+            var name = group.First().RegionName!;
+            var label = new FormattedText(
+                name,
+                System.Globalization.CultureInfo.InvariantCulture,
+                FlowDirection.LeftToRight,
+                new Typeface("Inter"),
+                15,
+                new SolidColorBrush(Color.Parse("#BFD9FF")));
+
+            var padX = 6.0;
+            var padY = 3.0;
+            var rect = new Rect(
+                center.X - (label.Width / 2.0) - padX,
+                center.Y - (label.Height / 2.0) - padY,
+                label.Width + (padX * 2),
+                label.Height + (padY * 2));
+
+            context.FillRectangle(new SolidColorBrush(Color.Parse("#1A2536")), rect, 4);
+            context.DrawRectangle(new Pen(new SolidColorBrush(Color.Parse("#3F5C83")), 1), rect, 4);
+
+            context.DrawText(label, new Point(center.X - (label.Width / 2.0), center.Y - (label.Height / 2.0)));
         }
     }
 

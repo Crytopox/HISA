@@ -37,6 +37,7 @@
     <rendering:MapControl Grid.Row="1"
                           x:Name="MainMapControl"
                           Graph="{Binding CurrentGraph}"
+                          ViewMode="{Binding SelectedViewMode}"
                           SelectedNodeId="{Binding SelectedNodeId, Mode=TwoWay}" />
 
     <Border Grid.Row="2" Padding="8" Background="#121A26" BorderThickness="0">
