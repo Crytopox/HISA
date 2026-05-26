@@ -19,7 +19,7 @@ public sealed class MapControl : Control
     private double _zoom = 1.0;
     private long? _hoveredNodeId;
     private const double BasePadding = 0.0;
-    private const double FitPadding = 8.0;
+    private const double FitPadding = 30.0;
 
     public MapGraph? Graph
     {
