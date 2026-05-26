@@ -99,7 +99,13 @@ public sealed class MapControl : Control
         }
 
         var linksPen = new Pen(new SolidColorBrush(Color.Parse("#304762")), 1);
-        var highlightedLinksPen = new Pen(new SolidColorBrush(Color.Parse("#6EA9E8")), 2);
+        var sameConstellationPen = new Pen(new SolidColorBrush(Color.Parse("#4D6FA2")), 1.1);
+        var sameRegionPen = new Pen(new SolidColorBrush(Color.Parse("#3E8A7E")), 1.1);
+        var crossRegionPen = new Pen(new SolidColorBrush(Color.Parse("#8E5C8A")), 1.1);
+        var highlightedDefaultPen = new Pen(new SolidColorBrush(Color.Parse("#8CB3DD")), 2.2);
+        var highlightedSameConstellationPen = new Pen(new SolidColorBrush(Color.Parse("#7FA7E3")), 2.2);
+        var highlightedSameRegionPen = new Pen(new SolidColorBrush(Color.Parse("#63C2B2")), 2.2);
+        var highlightedCrossRegionPen = new Pen(new SolidColorBrush(Color.Parse("#C28ABB")), 2.2);
         var nodeBrush = new SolidColorBrush(Color.Parse("#8FB0D9"));
         var selectedBrush = new SolidColorBrush(Color.Parse("#E8B75E"));
         var hoveredBrush = new SolidColorBrush(Color.Parse("#7CC8FF"));
@@ -119,7 +125,12 @@ public sealed class MapControl : Control
             var isHoveredLink = _hoveredNodeId is not null &&
                                 (link.FromId == _hoveredNodeId.Value || link.ToId == _hoveredNodeId.Value);
 
-            context.DrawLine(isSelectedLink || isHoveredLink ? highlightedLinksPen : linksPen, from, to);
+            var basePen = GetLinkPen(linksPen, sameConstellationPen, sameRegionPen, crossRegionPen, link, nodeById);
+            var pen = isSelectedLink || isHoveredLink
+                ? GetHighlightedPen(basePen, linksPen, sameConstellationPen, sameRegionPen, crossRegionPen, highlightedDefaultPen, highlightedSameConstellationPen, highlightedSameRegionPen, highlightedCrossRegionPen)
+                : basePen;
+
+            context.DrawLine(pen, from, to);
         }
 
         foreach (var node in Graph.Nodes)
@@ -356,6 +367,67 @@ public sealed class MapControl : Control
         var dx = a.X - b.X;
         var dy = a.Y - b.Y;
         return Math.Sqrt((dx * dx) + (dy * dy));
+    }
+
+    private Pen GetLinkPen(
+        Pen defaultPen,
+        Pen sameConstellationPen,
+        Pen sameRegionPen,
+        Pen crossRegionPen,
+        MapLink link,
+        IReadOnlyDictionary<long, MapNode> nodeById)
+    {
+        if (ViewMode == MapViewMode.UniverseRegions)
+        {
+            return defaultPen;
+        }
+
+        if (!nodeById.TryGetValue(link.FromId, out var fromNode) || !nodeById.TryGetValue(link.ToId, out var toNode))
+        {
+            return defaultPen;
+        }
+
+        var sameConstellation = fromNode.ConstellationId is not null &&
+                                toNode.ConstellationId is not null &&
+                                fromNode.ConstellationId == toNode.ConstellationId;
+        if (sameConstellation)
+        {
+            return sameConstellationPen;
+        }
+
+        var sameRegion = fromNode.RegionId is not null &&
+                         toNode.RegionId is not null &&
+                         fromNode.RegionId == toNode.RegionId;
+        return sameRegion ? sameRegionPen : crossRegionPen;
+    }
+
+    private static Pen GetHighlightedPen(
+        Pen basePen,
+        Pen defaultPen,
+        Pen sameConstellationPen,
+        Pen sameRegionPen,
+        Pen crossRegionPen,
+        Pen highlightedDefaultPen,
+        Pen highlightedSameConstellationPen,
+        Pen highlightedSameRegionPen,
+        Pen highlightedCrossRegionPen)
+    {
+        if (ReferenceEquals(basePen, sameConstellationPen))
+        {
+            return highlightedSameConstellationPen;
+        }
+
+        if (ReferenceEquals(basePen, sameRegionPen))
+        {
+            return highlightedSameRegionPen;
+        }
+
+        if (ReferenceEquals(basePen, crossRegionPen))
+        {
+            return highlightedCrossRegionPen;
+        }
+
+        return highlightedDefaultPen;
     }
 
     private static void DrawCenteredText(DrawingContext context, string message, Rect bounds)

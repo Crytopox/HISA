@@ -27,6 +27,7 @@ public sealed class MapNode
     public required double Y { get; init; }
     public int? RegionId { get; init; }
     public string? RegionName { get; init; }
+    public int? ConstellationId { get; init; }
 }
 
 public sealed class MapLink

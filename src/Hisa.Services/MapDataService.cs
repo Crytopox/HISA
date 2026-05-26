@@ -135,11 +135,13 @@ public sealed class MapDataService : IMapDataService
         command.CommandText = regionId is null
             ? $"""
               SELECT s.solarSystemID, s.solarSystemName, {xColumn}, {yColumn}, s.regionID, r.regionName
+                     , s.constellationID
               FROM mapSolarSystems s
               LEFT JOIN mapRegions r ON r.regionID = s.regionID;
               """
             : $"""
               SELECT s.solarSystemID, s.solarSystemName, {xColumn}, {yColumn}, s.regionID, r.regionName
+                     , s.constellationID
               FROM mapSolarSystems s
               LEFT JOIN mapRegions r ON r.regionID = s.regionID
               WHERE s.regionID = $regionId;
@@ -175,7 +177,8 @@ public sealed class MapDataService : IMapDataService
                 X = reader.GetDouble(2),
                 Y = reader.GetDouble(3),
                 RegionId = reader.IsDBNull(4) ? null : reader.GetInt32(4),
-                RegionName = reader.IsDBNull(5) ? null : reader.GetString(5)
+                RegionName = reader.IsDBNull(5) ? null : reader.GetString(5),
+                ConstellationId = reader.IsDBNull(6) ? null : reader.GetInt32(6)
             });
         }
 
@@ -265,7 +268,8 @@ public sealed class MapDataService : IMapDataService
                 X = (n.X - minX) / width,
                 Y = 1.0 - ((n.Y - minY) / height),
                 RegionId = n.RegionId,
-                RegionName = n.RegionName
+                RegionName = n.RegionName,
+                ConstellationId = n.ConstellationId
             })
             .ToList();
 
