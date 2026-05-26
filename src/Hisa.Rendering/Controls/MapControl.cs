@@ -236,7 +236,11 @@ public sealed class MapControl : Control
             context.DrawEllipse(brush, null, p, radius, radius);
 
             var labelVisibilityMargin = ViewMode == MapViewMode.Universe ? 180 : 96;
-            if ((_zoom >= GetLabelZoomThreshold() || isSelected || isHovered) &&
+            var suppressInlineLabel =
+                (SelectedNodeId is not null && node.Id == SelectedNodeId.Value) ||
+                (_hoveredNodeId is not null && node.Id == _hoveredNodeId.Value);
+            if (!suppressInlineLabel &&
+                (_zoom >= GetLabelZoomThreshold() || isSelected || isHovered) &&
                 labelsDrawn < labelBudget &&
                 IsPointVisible(p, bounds, labelVisibilityMargin))
             {
@@ -247,10 +251,17 @@ public sealed class MapControl : Control
             }
         }
 
-        var overlayNodeId = SelectedNodeId ?? _hoveredNodeId;
-        if (overlayNodeId is not null &&
-            positions.TryGetValue(overlayNodeId.Value, out var hoverPoint) &&
-            nodeById.TryGetValue(overlayNodeId.Value, out var hoverNode))
+        if (SelectedNodeId is not null &&
+            positions.TryGetValue(SelectedNodeId.Value, out var selectedPoint) &&
+            nodeById.TryGetValue(SelectedNodeId.Value, out var selectedNode))
+        {
+            DrawHoverOverlay(context, selectedPoint, selectedNode.Name);
+        }
+
+        if (_hoveredNodeId is not null &&
+            _hoveredNodeId != SelectedNodeId &&
+            positions.TryGetValue(_hoveredNodeId.Value, out var hoverPoint) &&
+            nodeById.TryGetValue(_hoveredNodeId.Value, out var hoverNode))
         {
             DrawHoverOverlay(context, hoverPoint, hoverNode.Name);
         }
