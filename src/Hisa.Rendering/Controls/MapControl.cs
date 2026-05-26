@@ -608,9 +608,9 @@ public sealed class MapControl : Control
     {
         return ViewMode switch
         {
-            MapViewMode.Universe => 3.5,
-            MapViewMode.UniverseRegions => 0.35,
-            MapViewMode.Region => 0.35,
+            MapViewMode.Universe => 5.4,
+            MapViewMode.UniverseRegions => 0.5,
+            MapViewMode.Region => 0.45,
             _ => 1.0
         };
     }
@@ -1052,8 +1052,8 @@ public sealed class MapControl : Control
     {
         return ViewMode switch
         {
-            MapViewMode.Universe => 24.0,
-            MapViewMode.Region => 18.0,
+            MapViewMode.Universe => 60.0,
+            MapViewMode.Region => 3.0,
             _ => 12.0
         };
     }
