@@ -3,6 +3,8 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Immutable;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using Avalonia.Threading;
 using Hisa.Core.Models;
 using System.Globalization;
@@ -42,6 +44,11 @@ public sealed class MapControl : Control
     private static readonly JsonSerializerOptions VoronoiJsonOptions = new() { WriteIndented = false };
 
     private static readonly Point NodeLabelOffset = new(9, 3);
+    private const double IconSize = 18.0;
+    private const double IndicatorIconLeftPadding = 4.0;
+    private const double IndicatorIconSlotGap = 3.0;
+    private const string A0BlueSmallName = "Sun A0 (Blue Small)";
+    private const int A0BlueSmallTypeId = 3801;
 
     private static readonly IBrush BackgroundBrush = new ImmutableSolidColorBrush(Color.Parse("#0D131D"));
 
@@ -73,6 +80,7 @@ public sealed class MapControl : Control
     private static readonly Pen TooltipBorderPen = new(new ImmutableSolidColorBrush(Color.Parse("#3B5678")), 1);
     private static readonly Pen HoverOverlayBorderPen = new(new ImmutableSolidColorBrush(Color.Parse("#4A617F")), 1);
     private static readonly IBrush EmptyTextBrush = new ImmutableSolidColorBrush(Color.Parse("#9FB4D2"));
+    private static readonly Lazy<Bitmap?> A0StarIcon = new(LoadA0StarIcon);
 
     public static readonly StyledProperty<MapGraph?> GraphProperty =
         AvaloniaProperty.Register<MapControl, MapGraph?>(nameof(Graph));
@@ -95,6 +103,8 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorSecurityStatus), false);
     public static readonly StyledProperty<bool> ShowIndicatorStarClassProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorStarClass), false);
+    public static readonly StyledProperty<bool> ShowIndicatorA0StarIconProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorA0StarIcon), true);
     public static readonly StyledProperty<bool> InfoBoxShowRegionProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowRegion), true);
     public static readonly StyledProperty<bool> InfoBoxShowConstellationProperty =
@@ -103,6 +113,8 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowSecurityStatus), true);
     public static readonly StyledProperty<bool> InfoBoxShowStarClassProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowStarClass), false);
+    public static readonly StyledProperty<bool> InfoBoxShowA0StarIconProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowA0StarIcon), true);
 
     private Point? _lastPanPoint;
     private Point _panOffset = new(0, 0);
@@ -200,6 +212,12 @@ public sealed class MapControl : Control
         set => SetValue(ShowIndicatorStarClassProperty, value);
     }
 
+    public bool ShowIndicatorA0StarIcon
+    {
+        get => GetValue(ShowIndicatorA0StarIconProperty);
+        set => SetValue(ShowIndicatorA0StarIconProperty, value);
+    }
+
     public bool InfoBoxShowRegion
     {
         get => GetValue(InfoBoxShowRegionProperty);
@@ -224,6 +242,12 @@ public sealed class MapControl : Control
         set => SetValue(InfoBoxShowStarClassProperty, value);
     }
 
+    public bool InfoBoxShowA0StarIcon
+    {
+        get => GetValue(InfoBoxShowA0StarIconProperty);
+        set => SetValue(InfoBoxShowA0StarIconProperty, value);
+    }
+
     public MapControl()
     {
         AffectsRender<MapControl>(GraphProperty, SelectedNodeIdProperty, ViewModeProperty, StretchToWindowProperty);
@@ -234,10 +258,12 @@ public sealed class MapControl : Control
             ShowIndicatorConstellationProperty,
             ShowIndicatorSecurityStatusProperty,
             ShowIndicatorStarClassProperty,
+            ShowIndicatorA0StarIconProperty,
             InfoBoxShowRegionProperty,
             InfoBoxShowConstellationProperty,
             InfoBoxShowSecurityStatusProperty,
-            InfoBoxShowStarClassProperty);
+            InfoBoxShowStarClassProperty,
+            InfoBoxShowA0StarIconProperty);
         ClipToBounds = true;
     }
 
@@ -2282,6 +2308,13 @@ public sealed class MapControl : Control
         {
             DrawLabelWithHalo(context, starClassText, starClassHalo, new Point(origin.X, y));
         }
+
+        if (ShowIndicatorA0StarIcon && IsA0BlueSmall(node))
+        {
+            var iconX = rect.X + IndicatorIconLeftPadding + (0 * (IconSize + IndicatorIconSlotGap));
+            var iconY = rect.Bottom;
+            DrawA0Icon(context, new Point(iconX, iconY), IconSize);
+        }
     }
 
     private static void DrawCenteredText(DrawingContext context, string message, Rect bounds)
@@ -2398,6 +2431,64 @@ public sealed class MapControl : Control
         {
             context.DrawText(detailsText, new Point(headerOrigin.X, headerOrigin.Y + headerText.Height + 2));
         }
+
+        if (InfoBoxShowA0StarIcon && IsA0BlueSmall(node))
+        {
+            var iconX = rect.X + IndicatorIconLeftPadding + (0 * (IconSize + IndicatorIconSlotGap));
+            var iconY = rect.Bottom + 3;
+            DrawA0Icon(context, new Point(iconX, iconY), IconSize);
+        }
+    }
+
+    private static Bitmap? LoadA0StarIcon()
+    {
+        try
+        {
+            var uri = new Uri("avares://Hisa.App/Assets/Icons/a0-star.png");
+            using var stream = AssetLoader.Open(uri);
+            return new Bitmap(stream);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static bool IsA0BlueSmall(MapNode node)
+    {
+        if (node.SunTypeId == A0BlueSmallTypeId)
+        {
+            return true;
+        }
+
+        var name = node.StarTypeName;
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return false;
+        }
+
+        if (string.Equals(name, A0BlueSmallName, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        // Fallback for minor naming differences in imported datasets.
+        return name.Contains("A0", StringComparison.OrdinalIgnoreCase)
+            && name.Contains("Blue", StringComparison.OrdinalIgnoreCase)
+            && name.Contains("Small", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void DrawA0Icon(DrawingContext context, Point topLeft, double size)
+    {
+        var icon = A0StarIcon.Value;
+        if (icon is null)
+        {
+            return;
+        }
+
+        var src = new Rect(0, 0, icon.Size.Width, icon.Size.Height);
+        var dst = new Rect(topLeft.X, topLeft.Y, size, size);
+        context.DrawImage(icon, src, dst);
     }
 
     private sealed record UniverseRegionLabelLayout(int RegionId, string RegionName, Point Center, Rect Rect, FormattedText Label);
