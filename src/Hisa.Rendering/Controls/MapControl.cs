@@ -20,6 +20,9 @@ public sealed class MapControl : Control
     private Point _panOffset = new(0, 0);
     private double _zoom = 1.0;
     private long? _hoveredNodeId;
+    private MapGraph? _lastGraphForCaches;
+    private readonly Dictionary<long, FormattedText> _nodeLabelCache = [];
+    private readonly Dictionary<int, FormattedText> _regionLabelCache = [];
     private const double BasePadding = 0.0;
     private const double FitPadding = 30.0;
 
@@ -73,7 +76,7 @@ public sealed class MapControl : Control
 
         var zoomX = availableWidth / graphWidthPx;
         var zoomY = availableHeight / graphHeightPx;
-        _zoom = Math.Clamp(Math.Min(zoomX, zoomY), 0.4, 12.0);
+        _zoom = Math.Clamp(Math.Min(zoomX, zoomY), 0.4, GetMaxZoom());
 
         var baseCenterX = BasePadding + (((minX + maxX) * 0.5) * plotWidth);
         var baseCenterY = BasePadding + (((minY + maxY) * 0.5) * plotHeight);
@@ -89,6 +92,13 @@ public sealed class MapControl : Control
 
     public override void Render(DrawingContext context)
     {
+        if (!ReferenceEquals(_lastGraphForCaches, Graph))
+        {
+            _lastGraphForCaches = Graph;
+            _nodeLabelCache.Clear();
+            _regionLabelCache.Clear();
+        }
+
         var bounds = Bounds;
         context.FillRectangle(new SolidColorBrush(Color.Parse("#0D131D")), bounds);
 
@@ -120,6 +130,11 @@ public sealed class MapControl : Control
                 continue;
             }
 
+            if (!IsSegmentPotentiallyVisible(from, to, bounds, 48))
+            {
+                continue;
+            }
+
             var isSelectedLink = SelectedNodeId is not null &&
                                  (link.FromId == SelectedNodeId.Value || link.ToId == SelectedNodeId.Value);
             var isHoveredLink = _hoveredNodeId is not null &&
@@ -133,9 +148,16 @@ public sealed class MapControl : Control
             context.DrawLine(pen, from, to);
         }
 
+        var labelBudget = GetLabelBudget();
+        var labelsDrawn = 0;
         foreach (var node in Graph.Nodes)
         {
             if (!positions.TryGetValue(node.Id, out var p))
+            {
+                continue;
+            }
+
+            if (!IsPointVisible(p, bounds, 24))
             {
                 continue;
             }
@@ -146,17 +168,15 @@ public sealed class MapControl : Control
             var brush = isSelected ? selectedBrush : isHovered ? hoveredBrush : nodeBrush;
             context.DrawEllipse(brush, null, p, radius, radius);
 
-            if (_zoom >= GetLabelZoomThreshold() || isSelected || isHovered)
+            var labelVisibilityMargin = ViewMode == MapViewMode.Universe ? 180 : 96;
+            if ((_zoom >= GetLabelZoomThreshold() || isSelected || isHovered) &&
+                labelsDrawn < labelBudget &&
+                IsPointVisible(p, bounds, labelVisibilityMargin))
             {
-                var label = new FormattedText(
-                    node.Name,
-                    System.Globalization.CultureInfo.InvariantCulture,
-                    FlowDirection.LeftToRight,
-                    new Typeface("Inter"),
-                    11,
-                    new SolidColorBrush(Color.Parse("#BFD1E8")));
+                var label = GetNodeLabel(node.Id, node.Name);
 
                 context.DrawText(label, new Point(p.X + 6, p.Y - 7));
+                labelsDrawn++;
             }
         }
 
@@ -177,10 +197,21 @@ public sealed class MapControl : Control
     {
         return ViewMode switch
         {
-            MapViewMode.Universe => 6,
+            MapViewMode.Universe => 3.5,
             MapViewMode.UniverseRegions => 0.35,
             MapViewMode.Region => 0.35,
             _ => 1.0
+        };
+    }
+
+    private int GetLabelBudget()
+    {
+        return ViewMode switch
+        {
+            MapViewMode.Universe => 420,
+            MapViewMode.UniverseRegions => 180,
+            MapViewMode.Region => 420,
+            _ => 300
         };
     }
 
@@ -205,13 +236,7 @@ public sealed class MapControl : Control
 
             var center = new Point(samples.Average(p => p.X), samples.Average(p => p.Y));
             var name = group.First().RegionName!;
-            var label = new FormattedText(
-                name,
-                System.Globalization.CultureInfo.InvariantCulture,
-                FlowDirection.LeftToRight,
-                new Typeface("Inter"),
-                15,
-                new SolidColorBrush(Color.Parse("#BFD9FF")));
+            var label = GetRegionLabel(group.Key, name);
 
             var padX = 6.0;
             var padY = 3.0;
@@ -281,7 +306,7 @@ public sealed class MapControl : Control
         var factor = delta > 0 ? 1.1 : 0.9;
         var mouse = e.GetPosition(this);
         var oldZoom = _zoom;
-        var newZoom = Math.Clamp(_zoom * factor, 0.4, 12.0);
+        var newZoom = Math.Clamp(_zoom * factor, 0.4, GetMaxZoom());
         if (Math.Abs(newZoom - oldZoom) < 1e-9)
         {
             return;
@@ -362,11 +387,38 @@ public sealed class MapControl : Control
         return new Point(centeredX, centeredY);
     }
 
+    private double GetMaxZoom()
+    {
+        return ViewMode switch
+        {
+            MapViewMode.Universe => 24.0,
+            MapViewMode.Region => 18.0,
+            _ => 12.0
+        };
+    }
+
     private static double Distance(Point a, Point b)
     {
         var dx = a.X - b.X;
         var dy = a.Y - b.Y;
         return Math.Sqrt((dx * dx) + (dy * dy));
+    }
+
+    private static bool IsPointVisible(Point p, Rect bounds, double margin)
+    {
+        return p.X >= -margin &&
+               p.Y >= -margin &&
+               p.X <= bounds.Width + margin &&
+               p.Y <= bounds.Height + margin;
+    }
+
+    private static bool IsSegmentPotentiallyVisible(Point a, Point b, Rect bounds, double margin)
+    {
+        if (a.X < -margin && b.X < -margin) return false;
+        if (a.Y < -margin && b.Y < -margin) return false;
+        if (a.X > bounds.Width + margin && b.X > bounds.Width + margin) return false;
+        if (a.Y > bounds.Height + margin && b.Y > bounds.Height + margin) return false;
+        return true;
     }
 
     private Pen GetLinkPen(
@@ -428,6 +480,42 @@ public sealed class MapControl : Control
         }
 
         return highlightedDefaultPen;
+    }
+
+    private FormattedText GetNodeLabel(long nodeId, string name)
+    {
+        if (_nodeLabelCache.TryGetValue(nodeId, out var text))
+        {
+            return text;
+        }
+
+        text = new FormattedText(
+            name,
+            System.Globalization.CultureInfo.InvariantCulture,
+            FlowDirection.LeftToRight,
+            new Typeface("Inter"),
+            11,
+            new SolidColorBrush(Color.Parse("#BFD1E8")));
+        _nodeLabelCache[nodeId] = text;
+        return text;
+    }
+
+    private FormattedText GetRegionLabel(int regionId, string name)
+    {
+        if (_regionLabelCache.TryGetValue(regionId, out var text))
+        {
+            return text;
+        }
+
+        text = new FormattedText(
+            name,
+            System.Globalization.CultureInfo.InvariantCulture,
+            FlowDirection.LeftToRight,
+            new Typeface("Inter"),
+            15,
+            new SolidColorBrush(Color.Parse("#BFD9FF")));
+        _regionLabelCache[regionId] = text;
+        return text;
     }
 
     private static void DrawCenteredText(DrawingContext context, string message, Rect bounds)
