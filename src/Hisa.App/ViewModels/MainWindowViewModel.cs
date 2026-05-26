@@ -46,8 +46,47 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         {
             if (SetProperty(ref _selectedViewMode, value))
             {
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsUniverseMode)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsUniverseRegionsMode)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsRegionMode)));
                 _ = _settingsService.SetAsync(ViewModeKey, value);
                 _ = ReloadGraphAsync();
+            }
+        }
+    }
+
+    public bool IsUniverseMode
+    {
+        get => SelectedViewMode == MapViewMode.Universe;
+        set
+        {
+            if (value)
+            {
+                SelectedViewMode = MapViewMode.Universe;
+            }
+        }
+    }
+
+    public bool IsUniverseRegionsMode
+    {
+        get => SelectedViewMode == MapViewMode.UniverseRegions;
+        set
+        {
+            if (value)
+            {
+                SelectedViewMode = MapViewMode.UniverseRegions;
+            }
+        }
+    }
+
+    public bool IsRegionMode
+    {
+        get => SelectedViewMode == MapViewMode.Region;
+        set
+        {
+            if (value)
+            {
+                SelectedViewMode = MapViewMode.Region;
             }
         }
     }
