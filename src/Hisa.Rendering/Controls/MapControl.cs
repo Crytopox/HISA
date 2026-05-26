@@ -2,12 +2,14 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.Media.Immutable;
 using Hisa.Core.Models;
 
 namespace Hisa.Rendering.Controls;
 
 public sealed class MapControl : Control
 {
+    private static readonly Point NodeLabelOffset = new(9, 3);
     public static readonly StyledProperty<MapGraph?> GraphProperty =
         AvaloniaProperty.Register<MapControl, MapGraph?>(nameof(Graph));
 
@@ -28,6 +30,8 @@ public sealed class MapControl : Control
     private MapGraph? _lastGraphForCaches;
     private readonly Dictionary<long, FormattedText> _nodeLabelCache = [];
     private readonly Dictionary<int, FormattedText> _regionLabelCache = [];
+    private readonly Dictionary<long, FormattedText> _nodeLabelHaloCache = [];
+    private readonly Dictionary<int, FormattedText> _regionLabelHaloCache = [];
     private const double BasePadding = 0.0;
     private const double FitPadding = 30.0;
     public event EventHandler<int>? UniverseRegionNodeDoubleClicked;
@@ -116,7 +120,9 @@ public sealed class MapControl : Control
         {
             _lastGraphForCaches = Graph;
             _nodeLabelCache.Clear();
+            _nodeLabelHaloCache.Clear();
             _regionLabelCache.Clear();
+            _regionLabelHaloCache.Clear();
         }
 
         var bounds = Bounds;
@@ -235,17 +241,18 @@ public sealed class MapControl : Control
                 IsPointVisible(p, bounds, labelVisibilityMargin))
             {
                 var label = GetNodeLabel(node.Id, node.Name);
-
-                context.DrawText(label, new Point(p.X + 6, p.Y - 7));
+                var labelOrigin = GetNodeLabelOrigin(p);
+                DrawNodeLabel(context, label, GetNodeLabelHalo(node.Id, node.Name), labelOrigin);
                 labelsDrawn++;
             }
         }
 
-        if (_hoveredNodeId is not null &&
-            positions.TryGetValue(_hoveredNodeId.Value, out var hoverPoint) &&
-            nodeById.TryGetValue(_hoveredNodeId.Value, out var hoverNode))
+        var overlayNodeId = SelectedNodeId ?? _hoveredNodeId;
+        if (overlayNodeId is not null &&
+            positions.TryGetValue(overlayNodeId.Value, out var hoverPoint) &&
+            nodeById.TryGetValue(overlayNodeId.Value, out var hoverNode))
         {
-            DrawTooltip(context, hoverPoint, hoverNode.Name);
+            DrawHoverOverlay(context, hoverPoint, hoverNode.Name);
         }
 
         if (ViewMode == MapViewMode.Universe && _zoom < GetLabelZoomThreshold())
@@ -296,7 +303,8 @@ public sealed class MapControl : Control
                 layout.Rect,
                 4);
 
-            context.DrawText(layout.Label, new Point(layout.Center.X - (layout.Label.Width / 2.0), layout.Center.Y - (layout.Label.Height / 2.0)));
+            var origin = new Point(layout.Center.X - (layout.Label.Width / 2.0), layout.Center.Y - (layout.Label.Height / 2.0));
+            DrawLabelWithHalo(context, layout.Label, GetRegionLabelHalo(layout.RegionId, layout.RegionName), origin);
         }
     }
 
@@ -757,7 +765,7 @@ public sealed class MapControl : Control
                 label.Width + (padX * 2),
                 label.Height + (padY * 2));
 
-            result.Add(new UniverseRegionLabelLayout(group.Key, center, rect, label));
+            result.Add(new UniverseRegionLabelLayout(group.Key, group.First().RegionName!, center, rect, label));
         }
 
         return result;
@@ -836,9 +844,27 @@ public sealed class MapControl : Control
             System.Globalization.CultureInfo.InvariantCulture,
             FlowDirection.LeftToRight,
             new Typeface("Inter"),
-            11,
-            new SolidColorBrush(Color.Parse("#BFD1E8")));
+            11.5,
+            new SolidColorBrush(Color.Parse("#D8E6F8")));
         _nodeLabelCache[nodeId] = text;
+        return text;
+    }
+
+    private FormattedText GetNodeLabelHalo(long nodeId, string name)
+    {
+        if (_nodeLabelHaloCache.TryGetValue(nodeId, out var text))
+        {
+            return text;
+        }
+
+        text = new FormattedText(
+            name,
+            System.Globalization.CultureInfo.InvariantCulture,
+            FlowDirection.LeftToRight,
+            new Typeface("Inter"),
+            11.5,
+            new ImmutableSolidColorBrush(Color.Parse("#AA0A111A")));
+        _nodeLabelHaloCache[nodeId] = text;
         return text;
     }
 
@@ -858,6 +884,44 @@ public sealed class MapControl : Control
             new SolidColorBrush(Color.Parse("#BFD9FF")));
         _regionLabelCache[regionId] = text;
         return text;
+    }
+
+    private FormattedText GetRegionLabelHalo(int regionId, string name)
+    {
+        if (_regionLabelHaloCache.TryGetValue(regionId, out var text))
+        {
+            return text;
+        }
+
+        text = new FormattedText(
+            name,
+            System.Globalization.CultureInfo.InvariantCulture,
+            FlowDirection.LeftToRight,
+            new Typeface("Inter"),
+            15,
+            new ImmutableSolidColorBrush(Color.Parse("#CC071018")));
+        _regionLabelHaloCache[regionId] = text;
+        return text;
+    }
+
+    private static void DrawLabelWithHalo(DrawingContext context, FormattedText label, FormattedText halo, Point origin)
+    {
+        context.DrawText(halo, new Point(origin.X - 1, origin.Y));
+        context.DrawText(halo, new Point(origin.X + 1, origin.Y));
+        context.DrawText(halo, new Point(origin.X, origin.Y - 1));
+        context.DrawText(halo, new Point(origin.X, origin.Y + 1));
+        context.DrawText(label, origin);
+    }
+
+    private static void DrawNodeLabel(DrawingContext context, FormattedText label, FormattedText halo, Point origin)
+    {
+        var rect = new Rect(
+            origin.X - 3,
+            origin.Y - 2,
+            label.Width + 6,
+            label.Height + 4);
+        context.FillRectangle(new SolidColorBrush(Color.Parse("#8A000000")), rect, 3);
+        DrawLabelWithHalo(context, label, halo, origin);
     }
 
     private static void DrawCenteredText(DrawingContext context, string message, Rect bounds)
@@ -897,5 +961,34 @@ public sealed class MapControl : Control
         context.DrawText(content, new Point(rect.X + padX, rect.Y + padY));
     }
 
-    private sealed record UniverseRegionLabelLayout(int RegionId, Point Center, Rect Rect, FormattedText Label);
+    private static Point GetNodeLabelOrigin(Point nodePoint)
+    {
+        return new Point(nodePoint.X + NodeLabelOffset.X, nodePoint.Y + NodeLabelOffset.Y);
+    }
+
+    private void DrawHoverOverlay(DrawingContext context, Point anchor, string text)
+    {
+        var content = new FormattedText(
+            text,
+            System.Globalization.CultureInfo.InvariantCulture,
+            FlowDirection.LeftToRight,
+            new Typeface("Inter"),
+            12,
+            Brushes.White);
+
+        var start = GetNodeLabelOrigin(anchor);
+        var padX = 8.0;
+        var padY = 6.0;
+        var rect = new Rect(
+            start.X - 2,
+            start.Y - 2,
+            content.Width + (padX * 2),
+            content.Height + (padY * 2));
+
+        context.FillRectangle(new SolidColorBrush(Color.Parse("#99000000")), rect, 4);
+        context.DrawRectangle(new Pen(new SolidColorBrush(Color.Parse("#4A617F")), 1), rect, 4);
+        context.DrawText(content, new Point(rect.X + padX, rect.Y + padY));
+    }
+
+    private sealed record UniverseRegionLabelLayout(int RegionId, string RegionName, Point Center, Rect Rect, FormattedText Label);
 }
