@@ -20,6 +20,8 @@ public sealed class MapControl : Control
     private Point _panOffset = new(0, 0);
     private double _zoom = 1.0;
     private long? _hoveredNodeId;
+    private int? _hoveredRegionId;
+    private int? _selectedRegionId;
     private MapGraph? _lastGraphForCaches;
     private readonly Dictionary<long, FormattedText> _nodeLabelCache = [];
     private readonly Dictionary<int, FormattedText> _regionLabelCache = [];
@@ -116,9 +118,14 @@ public sealed class MapControl : Control
         var highlightedSameConstellationPen = new Pen(new SolidColorBrush(Color.Parse("#7FA7E3")), 2.2);
         var highlightedSameRegionPen = new Pen(new SolidColorBrush(Color.Parse("#63C2B2")), 2.2);
         var highlightedCrossRegionPen = new Pen(new SolidColorBrush(Color.Parse("#C28ABB")), 2.2);
+        var regionEmphasisDefaultPen = new Pen(new SolidColorBrush(Color.Parse("#6F8FB6")), 1.8);
+        var regionEmphasisSameConstellationPen = new Pen(new SolidColorBrush(Color.Parse("#6F97D2")), 1.8);
+        var regionEmphasisSameRegionPen = new Pen(new SolidColorBrush(Color.Parse("#57AEA1")), 1.8);
+        var regionEmphasisCrossRegionPen = new Pen(new SolidColorBrush(Color.Parse("#A2749E")), 1.8);
         var nodeBrush = new SolidColorBrush(Color.Parse("#8FB0D9"));
         var selectedBrush = new SolidColorBrush(Color.Parse("#E8B75E"));
         var hoveredBrush = new SolidColorBrush(Color.Parse("#7CC8FF"));
+        var regionSelectedBrush = new SolidColorBrush(Color.Parse("#6BC1B5"));
 
         var positions = Graph.Nodes.ToDictionary(n => n.Id, ToScreenPoint);
         var nodeById = Graph.Nodes.ToDictionary(n => n.Id);
@@ -139,10 +146,17 @@ public sealed class MapControl : Control
                                  (link.FromId == SelectedNodeId.Value || link.ToId == SelectedNodeId.Value);
             var isHoveredLink = _hoveredNodeId is not null &&
                                 (link.FromId == _hoveredNodeId.Value || link.ToId == _hoveredNodeId.Value);
+            var activeRegionId = _selectedRegionId ?? _hoveredRegionId;
+            var isRegionLink = activeRegionId is not null &&
+                               nodeById.TryGetValue(link.FromId, out var fromNodeForRegion) &&
+                               nodeById.TryGetValue(link.ToId, out var toNodeForRegion) &&
+                               (fromNodeForRegion.RegionId == activeRegionId.Value || toNodeForRegion.RegionId == activeRegionId.Value);
 
             var basePen = GetLinkPen(linksPen, sameConstellationPen, sameRegionPen, crossRegionPen, link, nodeById);
             var pen = isSelectedLink || isHoveredLink
                 ? GetHighlightedPen(basePen, linksPen, sameConstellationPen, sameRegionPen, crossRegionPen, highlightedDefaultPen, highlightedSameConstellationPen, highlightedSameRegionPen, highlightedCrossRegionPen)
+                : isRegionLink
+                    ? GetHighlightedPen(basePen, linksPen, sameConstellationPen, sameRegionPen, crossRegionPen, regionEmphasisDefaultPen, regionEmphasisSameConstellationPen, regionEmphasisSameRegionPen, regionEmphasisCrossRegionPen)
                 : basePen;
 
             context.DrawLine(pen, from, to);
@@ -164,8 +178,16 @@ public sealed class MapControl : Control
 
             var isSelected = SelectedNodeId == node.Id;
             var isHovered = _hoveredNodeId == node.Id;
+            var activeRegionId = _selectedRegionId ?? _hoveredRegionId;
+            var isInActiveRegion = activeRegionId is not null && node.RegionId == activeRegionId.Value;
             var radius = isSelected ? 4.8 : isHovered ? 4.2 : 3.2;
-            var brush = isSelected ? selectedBrush : isHovered ? hoveredBrush : nodeBrush;
+            var brush = isSelected
+                ? selectedBrush
+                : isHovered
+                    ? hoveredBrush
+                    : isInActiveRegion
+                        ? regionSelectedBrush
+                    : nodeBrush;
             context.DrawEllipse(brush, null, p, radius, radius);
 
             var labelVisibilityMargin = ViewMode == MapViewMode.Universe ? 180 : 96;
@@ -222,34 +244,20 @@ public sealed class MapControl : Control
             return;
         }
 
-        var regionGroups = Graph.Nodes
-            .Where(n => n.RegionId is not null && !string.IsNullOrWhiteSpace(n.RegionName))
-            .GroupBy(n => n.RegionId!.Value);
-
-        foreach (var group in regionGroups)
+        foreach (var layout in BuildUniverseRegionLabelLayouts())
         {
-            var samples = group.Select(ToScreenPoint).ToList();
-            if (samples.Count == 0)
-            {
-                continue;
-            }
+            var isSelected = _selectedRegionId == layout.RegionId;
+            var isHovered = _hoveredRegionId == layout.RegionId;
+            context.FillRectangle(
+                new SolidColorBrush(Color.Parse(isSelected ? "#2B3F58" : isHovered ? "#243750" : "#1A2536")),
+                layout.Rect,
+                4);
+            context.DrawRectangle(
+                new Pen(new SolidColorBrush(Color.Parse(isSelected ? "#8AC8FF" : isHovered ? "#78AEE6" : "#3F5C83")), 1),
+                layout.Rect,
+                4);
 
-            var center = new Point(samples.Average(p => p.X), samples.Average(p => p.Y));
-            var name = group.First().RegionName!;
-            var label = GetRegionLabel(group.Key, name);
-
-            var padX = 6.0;
-            var padY = 3.0;
-            var rect = new Rect(
-                center.X - (label.Width / 2.0) - padX,
-                center.Y - (label.Height / 2.0) - padY,
-                label.Width + (padX * 2),
-                label.Height + (padY * 2));
-
-            context.FillRectangle(new SolidColorBrush(Color.Parse("#1A2536")), rect, 4);
-            context.DrawRectangle(new Pen(new SolidColorBrush(Color.Parse("#3F5C83")), 1), rect, 4);
-
-            context.DrawText(label, new Point(center.X - (label.Width / 2.0), center.Y - (label.Height / 2.0)));
+            context.DrawText(layout.Label, new Point(layout.Center.X - (layout.Label.Width / 2.0), layout.Center.Y - (layout.Label.Height / 2.0)));
         }
     }
 
@@ -263,7 +271,23 @@ public sealed class MapControl : Control
 
         if (props.IsLeftButtonPressed)
         {
-            SelectNodeAt(point);
+            if (TryToggleRegionSelectionFromLabel(point))
+            {
+                SelectedNodeId = null;
+                InvalidateVisual();
+                return;
+            }
+
+            if (TrySelectNodeAt(point))
+            {
+                _selectedRegionId = null;
+                InvalidateVisual();
+                return;
+            }
+
+            SelectedNodeId = null;
+            _selectedRegionId = null;
+            InvalidateVisual();
             return;
         }
 
@@ -324,11 +348,11 @@ public sealed class MapControl : Control
         InvalidateVisual();
     }
 
-    private void SelectNodeAt(Point point)
+    private bool TrySelectNodeAt(Point point)
     {
         if (Graph is null || Graph.Nodes.Count == 0)
         {
-            return;
+            return false;
         }
 
         const double threshold = 8.0;
@@ -341,7 +365,10 @@ public sealed class MapControl : Control
         if (closest is not null)
         {
             SelectedNodeId = closest.Id;
+            return true;
         }
+
+        return false;
     }
 
     private void UpdateHover(Point point)
@@ -351,6 +378,11 @@ public sealed class MapControl : Control
             if (_hoveredNodeId is not null)
             {
                 _hoveredNodeId = null;
+                InvalidateVisual();
+            }
+            if (_hoveredRegionId is not null)
+            {
+                _hoveredRegionId = null;
                 InvalidateVisual();
             }
 
@@ -365,9 +397,29 @@ public sealed class MapControl : Control
             .FirstOrDefault();
 
         var hoverId = closest?.Id;
+        int? hoveredRegionId = null;
+        if (hoverId is null &&
+            ViewMode == MapViewMode.Universe &&
+            _zoom < GetLabelZoomThreshold())
+        {
+            hoveredRegionId = TryGetHoveredRegionFromRegionLabel(point);
+        }
+
+        var changed = false;
         if (_hoveredNodeId != hoverId)
         {
             _hoveredNodeId = hoverId;
+            changed = true;
+        }
+
+        if (_hoveredRegionId != hoveredRegionId)
+        {
+            _hoveredRegionId = hoveredRegionId;
+            changed = true;
+        }
+
+        if (changed)
+        {
             InvalidateVisual();
         }
     }
@@ -419,6 +471,72 @@ public sealed class MapControl : Control
         if (a.X > bounds.Width + margin && b.X > bounds.Width + margin) return false;
         if (a.Y > bounds.Height + margin && b.Y > bounds.Height + margin) return false;
         return true;
+    }
+
+    private int? TryGetHoveredRegionFromRegionLabel(Point point)
+    {
+        foreach (var layout in BuildUniverseRegionLabelLayouts())
+        {
+            if (layout.Rect.Contains(point))
+            {
+                return layout.RegionId;
+            }
+        }
+
+        return null;
+    }
+
+    private bool TryToggleRegionSelectionFromLabel(Point point)
+    {
+        if (ViewMode != MapViewMode.Universe || _zoom >= GetLabelZoomThreshold())
+        {
+            return false;
+        }
+
+        var regionId = TryGetHoveredRegionFromRegionLabel(point);
+        if (regionId is null)
+        {
+            return false;
+        }
+
+        _selectedRegionId = _selectedRegionId == regionId ? null : regionId;
+        return true;
+    }
+
+    private IReadOnlyList<UniverseRegionLabelLayout> BuildUniverseRegionLabelLayouts()
+    {
+        if (Graph is null || Graph.Nodes.Count == 0)
+        {
+            return [];
+        }
+
+        var result = new List<UniverseRegionLabelLayout>();
+        var regionGroups = Graph.Nodes
+            .Where(n => n.RegionId is not null && !string.IsNullOrWhiteSpace(n.RegionName))
+            .GroupBy(n => n.RegionId!.Value);
+
+        foreach (var group in regionGroups)
+        {
+            var samples = group.Select(ToScreenPoint).ToList();
+            if (samples.Count == 0)
+            {
+                continue;
+            }
+
+            var center = new Point(samples.Average(p => p.X), samples.Average(p => p.Y));
+            var label = GetRegionLabel(group.Key, group.First().RegionName!);
+            var padX = 6.0;
+            var padY = 3.0;
+            var rect = new Rect(
+                center.X - (label.Width / 2.0) - padX,
+                center.Y - (label.Height / 2.0) - padY,
+                label.Width + (padX * 2),
+                label.Height + (padY * 2));
+
+            result.Add(new UniverseRegionLabelLayout(group.Key, center, rect, label));
+        }
+
+        return result;
     }
 
     private Pen GetLinkPen(
@@ -554,4 +672,6 @@ public sealed class MapControl : Control
         context.DrawRectangle(new Pen(new SolidColorBrush(Color.Parse("#3B5678")), 1), rect, 4);
         context.DrawText(content, new Point(rect.X + padX, rect.Y + padY));
     }
+
+    private sealed record UniverseRegionLabelLayout(int RegionId, Point Center, Rect Rect, FormattedText Label);
 }
