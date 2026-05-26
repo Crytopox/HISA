@@ -8,6 +8,7 @@ namespace Hisa.Services;
 
 public sealed class MapDataService : IMapDataService
 {
+    private static readonly Lazy<HashSet<string>> JoveObservatorySystemNames = new(LoadJoveObservatorySystemNames);
     private readonly ISdeDatabase _sdeDatabase;
 
     public MapDataService(ISdeDatabase sdeDatabase)
@@ -254,6 +255,7 @@ public sealed class MapDataService : IMapDataService
                 SunTypeId = reader.IsDBNull(5) ? null : reader.GetInt32(5),
                 StarTypeName = reader.IsDBNull(6) ? null : reader.GetString(6),
                 SpectralClass = reader.IsDBNull(7) ? null : reader.GetString(7),
+                HasJoveObservatory = JoveObservatorySystemNames.Value.Contains(reader.GetString(1)),
                 RegionId = reader.IsDBNull(8) ? null : reader.GetInt32(8),
                 RegionName = reader.IsDBNull(9) ? null : reader.GetString(9),
                 ConstellationId = reader.IsDBNull(10) ? null : reader.GetInt32(10),
@@ -350,6 +352,7 @@ public sealed class MapDataService : IMapDataService
                 SunTypeId = n.SunTypeId,
                 StarTypeName = n.StarTypeName,
                 SpectralClass = n.SpectralClass,
+                HasJoveObservatory = n.HasJoveObservatory,
                 RegionId = n.RegionId,
                 RegionName = n.RegionName,
                 ConstellationId = n.ConstellationId,
@@ -367,6 +370,45 @@ public sealed class MapDataService : IMapDataService
             Nodes = nodes,
             Links = links
         };
+    }
+
+    private static HashSet<string> LoadJoveObservatorySystemNames()
+    {
+        var candidates = new[]
+        {
+            Path.Combine(AppContext.BaseDirectory, "Data", "JoveObservatory Systems.txt"),
+            Path.Combine(Directory.GetCurrentDirectory(), "src", "Hisa.App", "Data", "JoveObservatory Systems.txt"),
+            Path.Combine(Directory.GetCurrentDirectory(), "Data", "JoveObservatory Systems.txt")
+        };
+
+        var path = candidates.FirstOrDefault(File.Exists);
+        if (path is null)
+        {
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var line in File.ReadLines(path))
+        {
+            if (string.IsNullOrWhiteSpace(line) || line.StartsWith("Region,", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var commaIndex = line.IndexOf(',');
+            if (commaIndex < 0 || commaIndex >= line.Length - 1)
+            {
+                continue;
+            }
+
+            var systemName = line[(commaIndex + 1)..].Trim();
+            if (!string.IsNullOrWhiteSpace(systemName))
+            {
+                set.Add(systemName);
+            }
+        }
+
+        return set;
     }
 }
 

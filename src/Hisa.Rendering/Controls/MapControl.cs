@@ -81,6 +81,7 @@ public sealed class MapControl : Control
     private static readonly Pen HoverOverlayBorderPen = new(new ImmutableSolidColorBrush(Color.Parse("#4A617F")), 1);
     private static readonly IBrush EmptyTextBrush = new ImmutableSolidColorBrush(Color.Parse("#9FB4D2"));
     private static readonly Lazy<Bitmap?> A0StarIcon = new(LoadA0StarIcon);
+    private static readonly Lazy<Bitmap?> JoveObservatoryIcon = new(LoadJoveObservatoryIcon);
 
     public static readonly StyledProperty<MapGraph?> GraphProperty =
         AvaloniaProperty.Register<MapControl, MapGraph?>(nameof(Graph));
@@ -105,6 +106,8 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorStarClass), false);
     public static readonly StyledProperty<bool> ShowIndicatorA0StarIconProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorA0StarIcon), true);
+    public static readonly StyledProperty<bool> ShowIndicatorJoveObservatoryIconProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorJoveObservatoryIcon), true);
     public static readonly StyledProperty<bool> InfoBoxShowRegionProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowRegion), true);
     public static readonly StyledProperty<bool> InfoBoxShowConstellationProperty =
@@ -115,6 +118,8 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowStarClass), false);
     public static readonly StyledProperty<bool> InfoBoxShowA0StarIconProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowA0StarIcon), true);
+    public static readonly StyledProperty<bool> InfoBoxShowJoveObservatoryIconProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowJoveObservatoryIcon), true);
 
     private Point? _lastPanPoint;
     private Point _panOffset = new(0, 0);
@@ -218,6 +223,12 @@ public sealed class MapControl : Control
         set => SetValue(ShowIndicatorA0StarIconProperty, value);
     }
 
+    public bool ShowIndicatorJoveObservatoryIcon
+    {
+        get => GetValue(ShowIndicatorJoveObservatoryIconProperty);
+        set => SetValue(ShowIndicatorJoveObservatoryIconProperty, value);
+    }
+
     public bool InfoBoxShowRegion
     {
         get => GetValue(InfoBoxShowRegionProperty);
@@ -248,6 +259,12 @@ public sealed class MapControl : Control
         set => SetValue(InfoBoxShowA0StarIconProperty, value);
     }
 
+    public bool InfoBoxShowJoveObservatoryIcon
+    {
+        get => GetValue(InfoBoxShowJoveObservatoryIconProperty);
+        set => SetValue(InfoBoxShowJoveObservatoryIconProperty, value);
+    }
+
     public MapControl()
     {
         AffectsRender<MapControl>(GraphProperty, SelectedNodeIdProperty, ViewModeProperty, StretchToWindowProperty);
@@ -259,11 +276,13 @@ public sealed class MapControl : Control
             ShowIndicatorSecurityStatusProperty,
             ShowIndicatorStarClassProperty,
             ShowIndicatorA0StarIconProperty,
+            ShowIndicatorJoveObservatoryIconProperty,
             InfoBoxShowRegionProperty,
             InfoBoxShowConstellationProperty,
             InfoBoxShowSecurityStatusProperty,
             InfoBoxShowStarClassProperty,
-            InfoBoxShowA0StarIconProperty);
+            InfoBoxShowA0StarIconProperty,
+            InfoBoxShowJoveObservatoryIconProperty);
         ClipToBounds = true;
     }
 
@@ -1849,6 +1868,11 @@ public sealed class MapControl : Control
             return;
         }
 
+        if (NodeBackgroundColorMode == MapNodeColorMode.JoveObservatory && !node.HasJoveObservatory)
+        {
+            return;
+        }
+
         var color = GetNodeBaseColor(node, NodeBackgroundColorMode);
         var tuned = BrightenForBackground(color);
         var baseFill = GetCachedBrush(tuned, 0.40);
@@ -1864,7 +1888,8 @@ public sealed class MapControl : Control
             MapNodeColorMode.Region => GetRegionColor(node.RegionId),
             MapNodeColorMode.Star => GetStarColor(node),
             MapNodeColorMode.NullsecTrueSec => GetNullsecTrueSecColor(node),
-            _ => Color.Parse("#8FB0D9")
+            MapNodeColorMode.JoveObservatory => node.HasJoveObservatory ? Color.Parse("#2ed436") : Color.Parse("#98A6B8"),
+            _ => Color.Parse("#98A6B8")
         };
     }
 
@@ -2309,11 +2334,19 @@ public sealed class MapControl : Control
             DrawLabelWithHalo(context, starClassText, starClassHalo, new Point(origin.X, y));
         }
 
+        var indicatorIconSlot = 0;
         if (ShowIndicatorA0StarIcon && IsA0BlueSmall(node))
         {
-            var iconX = rect.X + IndicatorIconLeftPadding + (0 * (IconSize + IndicatorIconSlotGap));
+            var iconX = rect.X + IndicatorIconLeftPadding + (indicatorIconSlot * (IconSize + IndicatorIconSlotGap));
             var iconY = rect.Bottom;
             DrawA0Icon(context, new Point(iconX, iconY), IconSize);
+            indicatorIconSlot++;
+        }
+        if (ShowIndicatorJoveObservatoryIcon && node.HasJoveObservatory)
+        {
+            var iconX = rect.X + IndicatorIconLeftPadding + (indicatorIconSlot * (IconSize + IndicatorIconSlotGap));
+            var iconY = rect.Bottom;
+            DrawJoveObservatoryIcon(context, new Point(iconX, iconY), IconSize);
         }
     }
 
@@ -2432,11 +2465,19 @@ public sealed class MapControl : Control
             context.DrawText(detailsText, new Point(headerOrigin.X, headerOrigin.Y + headerText.Height + 2));
         }
 
+        var overlayIconSlot = 0;
         if (InfoBoxShowA0StarIcon && IsA0BlueSmall(node))
         {
-            var iconX = rect.X + IndicatorIconLeftPadding + (0 * (IconSize + IndicatorIconSlotGap));
+            var iconX = rect.X + IndicatorIconLeftPadding + (overlayIconSlot * (IconSize + IndicatorIconSlotGap));
             var iconY = rect.Bottom + 3;
             DrawA0Icon(context, new Point(iconX, iconY), IconSize);
+            overlayIconSlot++;
+        }
+        if (InfoBoxShowJoveObservatoryIcon && node.HasJoveObservatory)
+        {
+            var iconX = rect.X + IndicatorIconLeftPadding + (overlayIconSlot * (IconSize + IndicatorIconSlotGap));
+            var iconY = rect.Bottom + 3;
+            DrawJoveObservatoryIcon(context, new Point(iconX, iconY), IconSize);
         }
     }
 
@@ -2445,6 +2486,20 @@ public sealed class MapControl : Control
         try
         {
             var uri = new Uri("avares://Hisa.App/Assets/Icons/a0-star.png");
+            using var stream = AssetLoader.Open(uri);
+            return new Bitmap(stream);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static Bitmap? LoadJoveObservatoryIcon()
+    {
+        try
+        {
+            var uri = new Uri("avares://Hisa.App/Assets/Icons/jove_observatory.png");
             using var stream = AssetLoader.Open(uri);
             return new Bitmap(stream);
         }
@@ -2481,6 +2536,19 @@ public sealed class MapControl : Control
     private static void DrawA0Icon(DrawingContext context, Point topLeft, double size)
     {
         var icon = A0StarIcon.Value;
+        if (icon is null)
+        {
+            return;
+        }
+
+        var src = new Rect(0, 0, icon.Size.Width, icon.Size.Height);
+        var dst = new Rect(topLeft.X, topLeft.Y, size, size);
+        context.DrawImage(icon, src, dst);
+    }
+
+    private static void DrawJoveObservatoryIcon(DrawingContext context, Point topLeft, double size)
+    {
+        var icon = JoveObservatoryIcon.Value;
         if (icon is null)
         {
             return;

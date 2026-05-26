@@ -100,11 +100,13 @@
                             ShowIndicatorSecurityStatus="{Binding ShowIndicatorSecurityStatus}"
                             ShowIndicatorStarClass="{Binding ShowIndicatorStarClass}"
                             ShowIndicatorA0StarIcon="{Binding ShowIndicatorA0StarIcon}"
+                            ShowIndicatorJoveObservatoryIcon="{Binding ShowIndicatorJoveObservatoryIcon}"
                             InfoBoxShowRegion="{Binding InfoBoxShowRegion}"
                             InfoBoxShowConstellation="{Binding InfoBoxShowConstellation}"
                             InfoBoxShowSecurityStatus="{Binding InfoBoxShowSecurityStatus}"
                             InfoBoxShowStarClass="{Binding InfoBoxShowStarClass}"
                             InfoBoxShowA0StarIcon="{Binding InfoBoxShowA0StarIcon}"
+                            InfoBoxShowJoveObservatoryIcon="{Binding InfoBoxShowJoveObservatoryIcon}"
                             SelectedNodeId="{Binding SelectedNodeId, Mode=TwoWay}" />
 
       <Border Grid.Column="1"
@@ -142,6 +144,7 @@
             <CheckBox IsChecked="{Binding ShowIndicatorConstellation}" Content="Constellation" />
             <CheckBox IsChecked="{Binding ShowIndicatorStarClass}" Content="Star Class" />
             <CheckBox IsChecked="{Binding ShowIndicatorA0StarIcon}" Content="A0 Stars Icon" />
+            <CheckBox IsChecked="{Binding ShowIndicatorJoveObservatoryIcon}" Content="Jove Observatory Icon" />
 
             <Separator />
 
@@ -151,6 +154,7 @@
             <CheckBox IsChecked="{Binding InfoBoxShowConstellation}" Content="Constellation" />
             <CheckBox IsChecked="{Binding InfoBoxShowStarClass}" Content="Star Class" />
             <CheckBox IsChecked="{Binding InfoBoxShowA0StarIcon}" Content="A0 Stars Icon" />
+            <CheckBox IsChecked="{Binding InfoBoxShowJoveObservatoryIcon}" Content="Jove Observatory Icon" />
           </StackPanel>
         </ScrollViewer>
       </Border>

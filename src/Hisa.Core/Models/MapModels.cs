@@ -19,7 +19,8 @@ public enum MapNodeColorMode
     Security = 1,
     Region = 2,
     Star = 3,
-    NullsecTrueSec = 4
+    NullsecTrueSec = 4,
+    JoveObservatory = 5
 }
 
 public sealed class MapGraph
@@ -38,6 +39,7 @@ public sealed class MapNode
     public int? SunTypeId { get; init; }
     public string? StarTypeName { get; init; }
     public string? SpectralClass { get; init; }
+    public bool HasJoveObservatory { get; init; }
     public int? RegionId { get; init; }
     public string? RegionName { get; init; }
     public int? ConstellationId { get; init; }

@@ -19,6 +19,7 @@ public sealed class MapNodeColorModeDisplayConverter : IValueConverter
             MapNodeColorMode.Security => "Security Status",
             MapNodeColorMode.Star => "Star Color",
             MapNodeColorMode.NullsecTrueSec => "Nullsec TrueSec",
+            MapNodeColorMode.JoveObservatory => "Jove Observatory",
             _ => mode.ToString()
         };
     }
