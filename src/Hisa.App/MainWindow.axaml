@@ -95,12 +95,11 @@
                             StretchToWindow="{Binding StretchMapToWindow}"
                             NodeColorMode="{Binding NodeColorMode}"
                             NodeBackgroundColorMode="{Binding NodeBackgroundColorMode}"
-                            ShowIndicatorLabelText="{Binding ShowIndicatorLabelText}"
-                            ShowIndicatorGlyph="{Binding ShowIndicatorGlyph}"
+                            ShowIndicatorRegion="{Binding ShowIndicatorRegion}"
+                            ShowIndicatorConstellation="{Binding ShowIndicatorConstellation}"
                             ShowIndicatorSecurityStatus="{Binding ShowIndicatorSecurityStatus}"
                             InfoBoxShowRegion="{Binding InfoBoxShowRegion}"
                             InfoBoxShowConstellation="{Binding InfoBoxShowConstellation}"
-                            InfoBoxShowSystemId="{Binding InfoBoxShowSystemId}"
                             InfoBoxShowSecurityStatus="{Binding InfoBoxShowSecurityStatus}"
                             SelectedNodeId="{Binding SelectedNodeId, Mode=TwoWay}" />
 
@@ -134,17 +133,16 @@
             </ComboBox>
 
             <TextBlock Text="Indicators" Foreground="#8A96A8" />
-            <CheckBox IsChecked="{Binding ShowIndicatorLabelText}" Content="Name" />
-            <CheckBox IsChecked="{Binding ShowIndicatorGlyph}" Content="Show Glyph Marker" />
             <CheckBox IsChecked="{Binding ShowIndicatorSecurityStatus}" Content="Security Status" />
+            <CheckBox IsChecked="{Binding ShowIndicatorRegion}" Content="Region" />
+            <CheckBox IsChecked="{Binding ShowIndicatorConstellation}" Content="Constellation" />
 
             <Separator />
 
             <TextBlock Text="Overlay Fields" Foreground="#8A96A8" />
             <CheckBox IsChecked="{Binding InfoBoxShowSecurityStatus}" Content="Security Status" />
-            <CheckBox IsChecked="{Binding InfoBoxShowRegion}" Content="Show Region" />
-            <CheckBox IsChecked="{Binding InfoBoxShowConstellation}" Content="Show Constellation" />
-            <CheckBox IsChecked="{Binding InfoBoxShowSystemId}" Content="Show System ID" />
+            <CheckBox IsChecked="{Binding InfoBoxShowRegion}" Content="Region" />
+            <CheckBox IsChecked="{Binding InfoBoxShowConstellation}" Content="Constellation" />
           </StackPanel>
         </ScrollViewer>
       </Border>

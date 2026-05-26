@@ -26,12 +26,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _isDisplaySettingsOpen;
     private MapNodeColorMode _nodeColorMode = MapNodeColorMode.None;
     private MapNodeColorMode _nodeBackgroundColorMode = MapNodeColorMode.None;
-    private bool _showIndicatorLabelText = true;
-    private bool _showIndicatorGlyph = true;
+    private bool _showIndicatorRegion;
+    private bool _showIndicatorConstellation;
     private bool _showIndicatorSecurityStatus;
     private bool _infoBoxShowRegion = true;
     private bool _infoBoxShowConstellation = true;
-    private bool _infoBoxShowSystemId;
     private bool _infoBoxShowSecurityStatus = true;
     private CancellationTokenSource? _searchSuggestionsCts;
     private bool _isInitializing = true;
@@ -41,12 +40,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string StretchMapToWindowKey = "Map.StretchToWindow";
     private const string NodeColorModeKey = "Map.NodeColorMode";
     private const string NodeBackgroundColorModeKey = "Map.NodeBackgroundColorMode";
-    private const string ShowIndicatorLabelTextKey = "Map.ShowIndicatorLabelText";
-    private const string ShowIndicatorGlyphKey = "Map.ShowIndicatorGlyph";
+    private const string ShowIndicatorRegionKey = "Map.ShowIndicatorRegion";
+    private const string ShowIndicatorConstellationKey = "Map.ShowIndicatorConstellation";
     private const string ShowIndicatorSecurityStatusKey = "Map.ShowIndicatorSecurityStatus";
     private const string InfoBoxShowRegionKey = "Map.InfoBoxShowRegion";
     private const string InfoBoxShowConstellationKey = "Map.InfoBoxShowConstellation";
-    private const string InfoBoxShowSystemIdKey = "Map.InfoBoxShowSystemId";
     private const string InfoBoxShowSecurityStatusKey = "Map.InfoBoxShowSecurityStatus";
     private const string WindowPlacementKey = "Window.Main.Placement";
     private const string MapViewportPrefixKey = "Map.Viewport";
@@ -179,26 +177,26 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
-    public bool ShowIndicatorLabelText
+    public bool ShowIndicatorRegion
     {
-        get => _showIndicatorLabelText;
+        get => _showIndicatorRegion;
         set
         {
-            if (SetProperty(ref _showIndicatorLabelText, value) && !_isInitializing)
+            if (SetProperty(ref _showIndicatorRegion, value) && !_isInitializing)
             {
-                _ = _settingsService.SetAsync(ShowIndicatorLabelTextKey, value);
+                _ = _settingsService.SetAsync(ShowIndicatorRegionKey, value);
             }
         }
     }
 
-    public bool ShowIndicatorGlyph
+    public bool ShowIndicatorConstellation
     {
-        get => _showIndicatorGlyph;
+        get => _showIndicatorConstellation;
         set
         {
-            if (SetProperty(ref _showIndicatorGlyph, value) && !_isInitializing)
+            if (SetProperty(ref _showIndicatorConstellation, value) && !_isInitializing)
             {
-                _ = _settingsService.SetAsync(ShowIndicatorGlyphKey, value);
+                _ = _settingsService.SetAsync(ShowIndicatorConstellationKey, value);
             }
         }
     }
@@ -235,18 +233,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             if (SetProperty(ref _infoBoxShowConstellation, value) && !_isInitializing)
             {
                 _ = _settingsService.SetAsync(InfoBoxShowConstellationKey, value);
-            }
-        }
-    }
-
-    public bool InfoBoxShowSystemId
-    {
-        get => _infoBoxShowSystemId;
-        set
-        {
-            if (SetProperty(ref _infoBoxShowSystemId, value) && !_isInitializing)
-            {
-                _ = _settingsService.SetAsync(InfoBoxShowSystemIdKey, value);
             }
         }
     }
@@ -394,12 +380,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         StretchMapToWindow = await _settingsService.GetAsync<bool?>(StretchMapToWindowKey) ?? true;
         NodeColorMode = await _settingsService.GetAsync<MapNodeColorMode?>(NodeColorModeKey) ?? MapNodeColorMode.None;
         NodeBackgroundColorMode = await _settingsService.GetAsync<MapNodeColorMode?>(NodeBackgroundColorModeKey) ?? MapNodeColorMode.None;
-        ShowIndicatorLabelText = await _settingsService.GetAsync<bool?>(ShowIndicatorLabelTextKey) ?? true;
-        ShowIndicatorGlyph = await _settingsService.GetAsync<bool?>(ShowIndicatorGlyphKey) ?? true;
+        ShowIndicatorRegion = await _settingsService.GetAsync<bool?>(ShowIndicatorRegionKey) ?? false;
+        ShowIndicatorConstellation = await _settingsService.GetAsync<bool?>(ShowIndicatorConstellationKey) ?? false;
         ShowIndicatorSecurityStatus = await _settingsService.GetAsync<bool?>(ShowIndicatorSecurityStatusKey) ?? false;
         InfoBoxShowRegion = await _settingsService.GetAsync<bool?>(InfoBoxShowRegionKey) ?? true;
         InfoBoxShowConstellation = await _settingsService.GetAsync<bool?>(InfoBoxShowConstellationKey) ?? true;
-        InfoBoxShowSystemId = await _settingsService.GetAsync<bool?>(InfoBoxShowSystemIdKey) ?? false;
         InfoBoxShowSecurityStatus = await _settingsService.GetAsync<bool?>(InfoBoxShowSecurityStatusKey) ?? true;
         SelectedViewMode = await _settingsService.GetAsync<MapViewMode?>(ViewModeKey) ?? MapViewMode.Universe;
         EnforceCoordinateModeForView();
