@@ -198,18 +198,24 @@ public sealed class MapDataService : IMapDataService
         var command = connection.CreateCommand();
         command.CommandText = regionId is null
             ? $"""
-              SELECT s.solarSystemID, s.solarSystemName, {xColumn}, {yColumn}, s.security, s.regionID, r.regionName
+              SELECT s.solarSystemID, s.solarSystemName, {xColumn}, {yColumn}, s.security, star.typeID, st.typeName, cs.spectralClass, s.regionID, r.regionName
                      , s.constellationID
                      , c.constellationName
               FROM mapSolarSystems s
+              LEFT JOIN mapDenormalize star ON star.solarSystemID = s.solarSystemID AND star.groupID = 6
+              LEFT JOIN mapCelestialStatistics cs ON cs.celestialID = star.itemID
+              LEFT JOIN invTypes st ON st.typeID = star.typeID
               LEFT JOIN mapRegions r ON r.regionID = s.regionID
               LEFT JOIN mapConstellations c ON c.constellationID = s.constellationID;
               """
             : $"""
-              SELECT s.solarSystemID, s.solarSystemName, {xColumn}, {yColumn}, s.security, s.regionID, r.regionName
+              SELECT s.solarSystemID, s.solarSystemName, {xColumn}, {yColumn}, s.security, star.typeID, st.typeName, cs.spectralClass, s.regionID, r.regionName
                      , s.constellationID
                      , c.constellationName
               FROM mapSolarSystems s
+              LEFT JOIN mapDenormalize star ON star.solarSystemID = s.solarSystemID AND star.groupID = 6
+              LEFT JOIN mapCelestialStatistics cs ON cs.celestialID = star.itemID
+              LEFT JOIN invTypes st ON st.typeID = star.typeID
               LEFT JOIN mapRegions r ON r.regionID = s.regionID
               LEFT JOIN mapConstellations c ON c.constellationID = s.constellationID
               WHERE s.regionID = $regionId;
@@ -245,10 +251,13 @@ public sealed class MapDataService : IMapDataService
                 X = reader.GetDouble(2),
                 Y = reader.GetDouble(3),
                 Security = reader.IsDBNull(4) ? null : reader.GetDouble(4),
-                RegionId = reader.IsDBNull(5) ? null : reader.GetInt32(5),
-                RegionName = reader.IsDBNull(6) ? null : reader.GetString(6),
-                ConstellationId = reader.IsDBNull(7) ? null : reader.GetInt32(7),
-                ConstellationName = reader.IsDBNull(8) ? null : reader.GetString(8)
+                SunTypeId = reader.IsDBNull(5) ? null : reader.GetInt32(5),
+                StarTypeName = reader.IsDBNull(6) ? null : reader.GetString(6),
+                SpectralClass = reader.IsDBNull(7) ? null : reader.GetString(7),
+                RegionId = reader.IsDBNull(8) ? null : reader.GetInt32(8),
+                RegionName = reader.IsDBNull(9) ? null : reader.GetString(9),
+                ConstellationId = reader.IsDBNull(10) ? null : reader.GetInt32(10),
+                ConstellationName = reader.IsDBNull(11) ? null : reader.GetString(11)
             });
         }
 
@@ -338,6 +347,9 @@ public sealed class MapDataService : IMapDataService
                 X = (n.X - minX) / width,
                 Y = 1.0 - ((n.Y - minY) / height),
                 Security = n.Security,
+                SunTypeId = n.SunTypeId,
+                StarTypeName = n.StarTypeName,
+                SpectralClass = n.SpectralClass,
                 RegionId = n.RegionId,
                 RegionName = n.RegionName,
                 ConstellationId = n.ConstellationId,

@@ -17,7 +17,8 @@ public enum MapNodeColorMode
 {
     None = 0,
     Security = 1,
-    Region = 2
+    Region = 2,
+    Star = 3
 }
 
 public sealed class MapGraph
@@ -33,6 +34,9 @@ public sealed class MapNode
     public required double X { get; init; }
     public required double Y { get; init; }
     public double? Security { get; init; }
+    public int? SunTypeId { get; init; }
+    public string? StarTypeName { get; init; }
+    public string? SpectralClass { get; init; }
     public int? RegionId { get; init; }
     public string? RegionName { get; init; }
     public int? ConstellationId { get; init; }

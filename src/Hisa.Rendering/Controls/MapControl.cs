@@ -93,12 +93,16 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorConstellation), false);
     public static readonly StyledProperty<bool> ShowIndicatorSecurityStatusProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorSecurityStatus), false);
+    public static readonly StyledProperty<bool> ShowIndicatorStarClassProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorStarClass), false);
     public static readonly StyledProperty<bool> InfoBoxShowRegionProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowRegion), true);
     public static readonly StyledProperty<bool> InfoBoxShowConstellationProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowConstellation), true);
     public static readonly StyledProperty<bool> InfoBoxShowSecurityStatusProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowSecurityStatus), true);
+    public static readonly StyledProperty<bool> InfoBoxShowStarClassProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowStarClass), false);
 
     private Point? _lastPanPoint;
     private Point _panOffset = new(0, 0);
@@ -190,6 +194,12 @@ public sealed class MapControl : Control
         set => SetValue(ShowIndicatorSecurityStatusProperty, value);
     }
 
+    public bool ShowIndicatorStarClass
+    {
+        get => GetValue(ShowIndicatorStarClassProperty);
+        set => SetValue(ShowIndicatorStarClassProperty, value);
+    }
+
     public bool InfoBoxShowRegion
     {
         get => GetValue(InfoBoxShowRegionProperty);
@@ -208,6 +218,12 @@ public sealed class MapControl : Control
         set => SetValue(InfoBoxShowSecurityStatusProperty, value);
     }
 
+    public bool InfoBoxShowStarClass
+    {
+        get => GetValue(InfoBoxShowStarClassProperty);
+        set => SetValue(InfoBoxShowStarClassProperty, value);
+    }
+
     public MapControl()
     {
         AffectsRender<MapControl>(GraphProperty, SelectedNodeIdProperty, ViewModeProperty, StretchToWindowProperty);
@@ -217,9 +233,11 @@ public sealed class MapControl : Control
             ShowIndicatorRegionProperty,
             ShowIndicatorConstellationProperty,
             ShowIndicatorSecurityStatusProperty,
+            ShowIndicatorStarClassProperty,
             InfoBoxShowRegionProperty,
             InfoBoxShowConstellationProperty,
-            InfoBoxShowSecurityStatusProperty);
+            InfoBoxShowSecurityStatusProperty,
+            InfoBoxShowStarClassProperty);
         ClipToBounds = true;
     }
 
@@ -1806,7 +1824,8 @@ public sealed class MapControl : Control
         }
 
         var color = GetNodeBaseColor(node, NodeBackgroundColorMode);
-        var baseFill = GetCachedBrush(color, 0.28);
+        var tuned = BrightenForBackground(color);
+        var baseFill = GetCachedBrush(tuned, 0.40);
         context.DrawGeometry(baseFill, borderPen, geometry);
     }
 
@@ -1817,6 +1836,7 @@ public sealed class MapControl : Control
         {
             MapNodeColorMode.Security => GetSecurityColor(node),
             MapNodeColorMode.Region => GetRegionColor(node.RegionId),
+            MapNodeColorMode.Star => GetStarColor(node),
             _ => Color.Parse("#8FB0D9")
         };
     }
@@ -1875,6 +1895,191 @@ public sealed class MapControl : Control
         var g = 96 + (v * 53 % 120);
         var b = 96 + (v * 71 % 120);
         return Color.FromRgb((byte)r, (byte)g, (byte)b);
+    }
+
+    private static Color GetStarColor(MapNode node)
+    {
+        var raw = (node.StarTypeName ?? node.SpectralClass ?? string.Empty).Trim();
+        var type = raw.ToUpperInvariant();
+
+        if (type.Length > 0)
+        {
+            // Explicit in-game type-name mapping first.
+            // A0 Blue Small is intentionally the most visible blue.
+            if (type == "SUN A0 (BLUE SMALL)")
+            {
+                return Color.Parse("#4AA3FF");
+            }
+            if (type == "SUN A0 (CAPTURED BLUE SMALL)")
+            {
+                return Color.Parse("#63AEFF");
+            }
+            if (type == "SUN A0 (DISRUPTED BLUE SMALL)")
+            {
+                return Color.Parse("#6DB6FF");
+            }
+            if (type == "SUN A0 (GLORY IMMANENCE)")
+            {
+                return Color.Parse("#5AA9FF");
+            }
+            if (type == "SUN A0IV (TURBULENT BLUE SUBGIANT)")
+            {
+                return Color.Parse("#7CC0FF");
+            }
+            if (type == "SUN B0 (BLUE)")
+            {
+                return Color.Parse("#79BCFF");
+            }
+            if (type == "SUN B0 (FRUITFUL IMMANENCE)")
+            {
+                return Color.Parse("#84C4FF");
+            }
+            if (type == "SUN B5 (WHITE DWARF)")
+            {
+                return Color.Parse("#EAF4FF");
+            }
+            if (type == "SUN F0 (WHITE)")
+            {
+                return Color.Parse("#F4F8FF");
+            }
+            if (type == "SUN G3 (PINK SMALL)")
+            {
+                return Color.Parse("#FFC6DA");
+            }
+            if (type == "SUN G5 (GOLD IMMANENCE)")
+            {
+                return Color.Parse("#FFD76B");
+            }
+            if (type == "SUN G5 (PINK)")
+            {
+                return Color.Parse("#FFB7D3");
+            }
+            if (type == "SUN G5 (YELLOW)")
+            {
+                return Color.Parse("#FFE08A");
+            }
+            if (type == "SUN K3 (YELLOW SMALL)")
+            {
+                return Color.Parse("#FFD98A");
+            }
+            if (type == "SUN K5 (ORANGE BRIGHT)")
+            {
+                return Color.Parse("#FFB35A");
+            }
+            if (type == "SUN K5 (RED GIANT)")
+            {
+                return Color.Parse("#FF8066");
+            }
+            if (type == "SUN K7 (ORANGE)")
+            {
+                return Color.Parse("#FFA55E");
+            }
+            if (type == "SUN M0 (ORANGE RADIANT)")
+            {
+                return Color.Parse("#FF9560");
+            }
+            if (type == "SUN O1 (BRIGHT BLUE)")
+            {
+                return Color.Parse("#66B7FF");
+            }
+            if (type == "SUN O1 (DIVINE IMMANENCE)")
+            {
+                return Color.Parse("#73BEFF");
+            }
+
+            // Fallback for compact type labels / spectral-like formats.
+            var firstClassLetter = type.FirstOrDefault(c => c is >= 'A' and <= 'Z');
+            switch (firstClassLetter)
+            {
+                case 'O': return Color.Parse("#6FA8FF");
+                case 'B': return Color.Parse("#9CC4FF");
+                case 'A': return Color.Parse("#E9F1FF");
+                case 'F': return Color.Parse("#FFF4D6");
+                case 'G': return Color.Parse("#FFE08A");
+                case 'K': return Color.Parse("#FFB05A");
+                case 'M': return Color.Parse("#FF6B5C");
+                case 'L': return Color.Parse("#F45A46");
+                case 'T': return Color.Parse("#C84B3A");
+                case 'Y': return Color.Parse("#A74135");
+            }
+        }
+
+        if (type.Contains("BLUE") || type.Contains("TYPE O"))
+        {
+            return Color.Parse("#8FB8FF");
+        }
+        if (type.Contains("TYPE B"))
+        {
+            return Color.Parse("#A5C7FF");
+        }
+        if (type.Contains("WHITE") || type.Contains("TYPE A"))
+        {
+            return Color.Parse("#EAF2FF");
+        }
+        if (type.Contains("TYPE F"))
+        {
+            return Color.Parse("#FFF6D1");
+        }
+        if (type.Contains("YELLOW") || type.Contains("TYPE G"))
+        {
+            return Color.Parse("#FFE08A");
+        }
+        if (type.Contains("ORANGE") || type.Contains("TYPE K"))
+        {
+            return Color.Parse("#FFB869");
+        }
+        if (type.Contains("RED") || type.Contains("TYPE M"))
+        {
+            return Color.Parse("#FF7E6B");
+        }
+        if (type.Contains("TYPE L"))
+        {
+            return Color.Parse("#FF985E");
+        }
+        if (type.Contains("TYPE T"))
+        {
+            return Color.Parse("#D45B4A");
+        }
+        if (type.Contains("TYPE Y"))
+        {
+            return Color.Parse("#B3433A");
+        }
+        if (type.Contains("DWARF"))
+        {
+            return Color.Parse("#E7F0FF");
+        }
+        if (type.Contains("CARBON"))
+        {
+            return Color.Parse("#FF9A87");
+        }
+
+        return Color.Parse("#C9D8EE");
+    }
+
+    private static Color BrightenForBackground(Color color)
+    {
+        static byte Lift(byte c)
+        {
+            // Lift 16% toward white to make Voronoi/background fills read clearer.
+            return (byte)Math.Clamp(c + ((255 - c) * 0.16), 0, 255);
+        }
+
+        return Color.FromRgb(Lift(color.R), Lift(color.G), Lift(color.B));
+    }
+
+    private static string? GetStarClassDisplayValue(MapNode node)
+    {
+        if (!string.IsNullOrWhiteSpace(node.StarTypeName))
+        {
+            return node.StarTypeName;
+        }
+
+        if (!string.IsNullOrWhiteSpace(node.SpectralClass))
+        {
+            return node.SpectralClass;
+        }
+
+        return null;
     }
 
     private FormattedText GetRegionLabel(int regionId, string name)
@@ -1979,6 +2184,15 @@ public sealed class MapControl : Control
             constellationHalo = GetNodeSecondaryLabelHalo(node.Id, node.ConstellationName);
         }
 
+        var starClass = GetStarClassDisplayValue(node);
+        FormattedText? starClassText = null;
+        FormattedText? starClassHalo = null;
+        if (ShowIndicatorStarClass && !string.IsNullOrWhiteSpace(starClass))
+        {
+            starClassText = GetNodeSecondaryLabel(node.Id, starClass);
+            starClassHalo = GetNodeSecondaryLabelHalo(node.Id, starClass);
+        }
+
         var firstLineWidth = name.Width + (sec is null ? 0 : gap + sec.Width);
         var width = firstLineWidth;
         if (region is not null)
@@ -1989,6 +2203,10 @@ public sealed class MapControl : Control
         {
             width = Math.Max(width, constellation.Width);
         }
+        if (starClassText is not null)
+        {
+            width = Math.Max(width, starClassText.Width);
+        }
 
         var height = name.Height;
         if (region is not null)
@@ -1998,6 +2216,10 @@ public sealed class MapControl : Control
         if (constellation is not null)
         {
             height += lineGap + constellation.Height;
+        }
+        if (starClassText is not null)
+        {
+            height += lineGap + starClassText.Height;
         }
 
         var rect = new Rect(origin.X - 3, origin.Y - 2, width + 6, height + 4);
@@ -2020,6 +2242,12 @@ public sealed class MapControl : Control
         if (constellation is not null && constellationHalo is not null)
         {
             DrawLabelWithHalo(context, constellation, constellationHalo, new Point(origin.X, y));
+            y += constellation.Height + lineGap;
+        }
+
+        if (starClassText is not null && starClassHalo is not null)
+        {
+            DrawLabelWithHalo(context, starClassText, starClassHalo, new Point(origin.X, y));
         }
     }
 
@@ -2076,6 +2304,11 @@ public sealed class MapControl : Control
         if (InfoBoxShowConstellation && !string.IsNullOrWhiteSpace(node.ConstellationName))
         {
             detailLines.Add($"Constellation: {node.ConstellationName}");
+        }
+        var starClass = GetStarClassDisplayValue(node);
+        if (InfoBoxShowStarClass && !string.IsNullOrWhiteSpace(starClass))
+        {
+            detailLines.Add(starClass);
         }
         var headerText = new FormattedText(
             header,
