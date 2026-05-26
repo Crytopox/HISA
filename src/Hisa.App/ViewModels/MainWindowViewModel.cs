@@ -22,11 +22,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private MapSearchCandidate? _selectedSearchSuggestion;
     private string _regionSearchText = string.Empty;
     private string _statusText = "Loading map...";
+    private bool _stretchMapToWindow = true;
     private CancellationTokenSource? _searchSuggestionsCts;
     private bool _isInitializing = true;
     private const string ViewModeKey = "Map.SelectedViewMode";
     private const string RegionIdKey = "Map.SelectedRegionId";
     private const string CoordinateModeKey = "Map.SelectedCoordinateMode";
+    private const string StretchMapToWindowKey = "Map.StretchToWindow";
     private const string WindowPlacementKey = "Window.Main.Placement";
     private const string MapViewportPrefixKey = "Map.Viewport";
     private readonly Task _initialLoadTask;
@@ -113,6 +115,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public string SearchWatermark => SelectedViewMode == MapViewMode.UniverseRegions
         ? "Search region"
         : "Search region, constellation, system...";
+
+    public bool StretchMapToWindow
+    {
+        get => _stretchMapToWindow;
+        set
+        {
+            if (SetProperty(ref _stretchMapToWindow, value) && !_isInitializing)
+            {
+                _ = _settingsService.SetAsync(StretchMapToWindowKey, value);
+            }
+        }
+    }
 
     public RegionOption? SelectedRegion
     {
@@ -242,6 +256,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         ApplyRegionFilter();
 
         SelectedCoordinateMode = await _settingsService.GetAsync<MapCoordinateMode?>(CoordinateModeKey) ?? MapCoordinateMode.SdePlanarXY;
+        StretchMapToWindow = await _settingsService.GetAsync<bool?>(StretchMapToWindowKey) ?? true;
         SelectedViewMode = await _settingsService.GetAsync<MapViewMode?>(ViewModeKey) ?? MapViewMode.Universe;
         EnforceCoordinateModeForView();
 

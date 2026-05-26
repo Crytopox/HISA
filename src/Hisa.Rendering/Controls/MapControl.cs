@@ -17,6 +17,8 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, long?>(nameof(SelectedNodeId));
     public static readonly StyledProperty<MapViewMode> ViewModeProperty =
         AvaloniaProperty.Register<MapControl, MapViewMode>(nameof(ViewMode), MapViewMode.Universe);
+    public static readonly StyledProperty<bool> StretchToWindowProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(StretchToWindow), true);
 
     private Point? _lastPanPoint;
     private Point _panOffset = new(0, 0);
@@ -54,9 +56,15 @@ public sealed class MapControl : Control
         set => SetValue(ViewModeProperty, value);
     }
 
+    public bool StretchToWindow
+    {
+        get => GetValue(StretchToWindowProperty);
+        set => SetValue(StretchToWindowProperty, value);
+    }
+
     public MapControl()
     {
-        AffectsRender<MapControl>(GraphProperty, SelectedNodeIdProperty, ViewModeProperty);
+        AffectsRender<MapControl>(GraphProperty, SelectedNodeIdProperty, ViewModeProperty, StretchToWindowProperty);
         ClipToBounds = true;
     }
 
@@ -70,8 +78,9 @@ public sealed class MapControl : Control
             return;
         }
 
-        var plotWidth = Math.Max(1.0, Bounds.Width - (BasePadding * 2));
-        var plotHeight = Math.Max(1.0, Bounds.Height - (BasePadding * 2));
+        var plot = GetPlotMetrics();
+        var plotWidth = plot.Width;
+        var plotHeight = plot.Height;
 
         var minX = Graph.Nodes.Min(n => n.X);
         var maxX = Graph.Nodes.Max(n => n.X);
@@ -88,8 +97,8 @@ public sealed class MapControl : Control
         var zoomY = availableHeight / graphHeightPx;
         _zoom = Math.Clamp(Math.Min(zoomX, zoomY), 0.4, GetMaxZoom());
 
-        var baseCenterX = BasePadding + (((minX + maxX) * 0.5) * plotWidth);
-        var baseCenterY = BasePadding + (((minY + maxY) * 0.5) * plotHeight);
+        var baseCenterX = plot.OriginX + (((minX + maxX) * 0.5) * plotWidth);
+        var baseCenterY = plot.OriginY + (((minY + maxY) * 0.5) * plotHeight);
         var viewCenterX = Bounds.Width * 0.5;
         var viewCenterY = Bounds.Height * 0.5;
 
@@ -408,13 +417,20 @@ public sealed class MapControl : Control
         }
 
         // Keep the world point under the cursor stable while zooming.
-        var worldX = ((mouse.X - (Bounds.Width / 2.0) - _panOffset.X) / oldZoom) + (Bounds.Width / 2.0);
-        var worldY = ((mouse.Y - (Bounds.Height / 2.0) - _panOffset.Y) / oldZoom) + (Bounds.Height / 2.0);
+        var plot = GetPlotMetrics();
+        var viewCenterX = Bounds.Width / 2.0;
+        var viewCenterY = Bounds.Height / 2.0;
+        var baseX = ((mouse.X - viewCenterX - _panOffset.X) / oldZoom) + viewCenterX;
+        var baseY = ((mouse.Y - viewCenterY - _panOffset.Y) / oldZoom) + viewCenterY;
+        var worldX = (baseX - plot.OriginX) / plot.Width;
+        var worldY = (baseY - plot.OriginY) / plot.Height;
+        var newBaseX = plot.OriginX + (worldX * plot.Width);
+        var newBaseY = plot.OriginY + (worldY * plot.Height);
 
         _zoom = newZoom;
         _panOffset = new Point(
-            mouse.X - (((worldX - (Bounds.Width / 2.0)) * _zoom) + (Bounds.Width / 2.0)),
-            mouse.Y - (((worldY - (Bounds.Height / 2.0)) * _zoom) + (Bounds.Height / 2.0)));
+            mouse.X - (((newBaseX - viewCenterX) * _zoom) + viewCenterX),
+            mouse.Y - (((newBaseY - viewCenterY) * _zoom) + viewCenterY));
 
         InvalidateVisual();
     }
@@ -621,8 +637,9 @@ public sealed class MapControl : Control
             return;
         }
 
-        var plotWidth = Math.Max(1.0, Bounds.Width - (BasePadding * 2));
-        var plotHeight = Math.Max(1.0, Bounds.Height - (BasePadding * 2));
+        var plot = GetPlotMetrics();
+        var plotWidth = plot.Width;
+        var plotHeight = plot.Height;
 
         var minX = nodes.Min(n => n.X);
         var maxX = nodes.Max(n => n.X);
@@ -647,11 +664,9 @@ public sealed class MapControl : Control
     private void CenterOnWorld(double worldX, double worldY, double zoom)
     {
         _zoom = Math.Clamp(zoom, 0.4, GetMaxZoom());
-        var padding = BasePadding;
-        var w = Math.Max(1.0, Bounds.Width - (padding * 2));
-        var h = Math.Max(1.0, Bounds.Height - (padding * 2));
-        var baseX = padding + (worldX * w);
-        var baseY = padding + (worldY * h);
+        var plot = GetPlotMetrics();
+        var baseX = plot.OriginX + (worldX * plot.Width);
+        var baseY = plot.OriginY + (worldY * plot.Height);
         var cx = Bounds.Width * 0.5;
         var cy = Bounds.Height * 0.5;
         _panOffset = new Point(
@@ -662,12 +677,10 @@ public sealed class MapControl : Control
 
     private Point ToScreenPoint(MapNode node)
     {
-        var padding = BasePadding;
-        var w = Math.Max(1.0, Bounds.Width - (padding * 2));
-        var h = Math.Max(1.0, Bounds.Height - (padding * 2));
+        var plot = GetPlotMetrics();
 
-        var x = padding + (node.X * w);
-        var y = padding + (node.Y * h);
+        var x = plot.OriginX + (node.X * plot.Width);
+        var y = plot.OriginY + (node.Y * plot.Height);
 
         var centeredX = ((x - Bounds.Width / 2.0) * _zoom) + (Bounds.Width / 2.0) + _panOffset.X;
         var centeredY = ((y - Bounds.Height / 2.0) * _zoom) + (Bounds.Height / 2.0) + _panOffset.Y;
@@ -683,6 +696,22 @@ public sealed class MapControl : Control
             MapViewMode.Region => 18.0,
             _ => 12.0
         };
+    }
+
+    private PlotMetrics GetPlotMetrics()
+    {
+        var baseWidth = Math.Max(1.0, Bounds.Width - (BasePadding * 2));
+        var baseHeight = Math.Max(1.0, Bounds.Height - (BasePadding * 2));
+
+        if (StretchToWindow)
+        {
+            return new PlotMetrics(BasePadding, BasePadding, baseWidth, baseHeight);
+        }
+
+        var side = Math.Max(1.0, Math.Min(baseWidth, baseHeight));
+        var originX = BasePadding + ((baseWidth - side) * 0.5);
+        var originY = BasePadding + ((baseHeight - side) * 0.5);
+        return new PlotMetrics(originX, originY, side, side);
     }
 
     private static double Distance(Point a, Point b)
@@ -1002,4 +1031,5 @@ public sealed class MapControl : Control
     }
 
     private sealed record UniverseRegionLabelLayout(int RegionId, string RegionName, Point Center, Rect Rect, FormattedText Label);
+    private readonly record struct PlotMetrics(double OriginX, double OriginY, double Width, double Height);
 }
