@@ -154,8 +154,8 @@ public sealed class MapControl : Control
             var isSearchConstellationLink = _searchHighlightedConstellationId is not null &&
                                             nodeById.TryGetValue(link.FromId, out var fromNodeForSearchConstellation) &&
                                             nodeById.TryGetValue(link.ToId, out var toNodeForSearchConstellation) &&
-                                            (fromNodeForSearchConstellation.ConstellationId == _searchHighlightedConstellationId.Value ||
-                                             toNodeForSearchConstellation.ConstellationId == _searchHighlightedConstellationId.Value);
+                                            fromNodeForSearchConstellation.ConstellationId == _searchHighlightedConstellationId.Value &&
+                                            toNodeForSearchConstellation.ConstellationId == _searchHighlightedConstellationId.Value;
             var isSearchRegionLink = _searchHighlightedRegionId is not null &&
                                      nodeById.TryGetValue(link.FromId, out var fromNodeForSearchRegion) &&
                                      nodeById.TryGetValue(link.ToId, out var toNodeForSearchRegion) &&
@@ -195,21 +195,21 @@ public sealed class MapControl : Control
 
             var isSelected = SelectedNodeId == node.Id;
             var isHovered = _hoveredNodeId == node.Id;
-            var isSearchHighlightedConstellation = _searchHighlightedConstellationId is not null && node.ConstellationId == _searchHighlightedConstellationId.Value;
             var isSearchHighlighted = _searchHighlightedNodeId == node.Id ||
-                                      isSearchHighlightedConstellation ||
+                                      (_searchHighlightedConstellationId is not null && node.ConstellationId == _searchHighlightedConstellationId.Value) ||
                                       (_searchHighlightedRegionId is not null && node.RegionId == _searchHighlightedRegionId.Value);
             var activeRegionId = _selectedRegionId ?? _hoveredRegionId;
             var isInActiveRegion = activeRegionId is not null && node.RegionId == activeRegionId.Value;
+            var isSelectedRegionNode = _selectedRegionId is not null && node.RegionId == _selectedRegionId.Value;
             var radius = isSelected ? 4.8 : isHovered ? 4.2 : isSearchHighlighted ? 4.0 : 3.2;
             var brush = isSelected
                 ? selectedBrush
                 : isHovered
                     ? hoveredBrush
-                    : isSearchHighlightedConstellation
-                        ? selectedBrush
                     : isSearchHighlighted
-                        ? regionSelectedBrush
+                        ? selectedBrush
+                    : isSelectedRegionNode
+                        ? selectedBrush
                     : isInActiveRegion
                         ? regionSelectedBrush
                     : nodeBrush;
@@ -490,6 +490,18 @@ public sealed class MapControl : Control
 
             FitToView();
             InvalidateVisual();
+            return;
+        }
+
+        if (ViewMode == MapViewMode.UniverseRegions)
+        {
+            if (focus.Kind == MapSearchKind.Region && focus.RegionId is not null)
+            {
+                _searchHighlightedRegionId = focus.RegionId.Value;
+                SelectedNodeId = null;
+                InvalidateVisual();
+            }
+
             return;
         }
 

@@ -56,6 +56,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsRegionMode)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsCoordinateSelectorVisible)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsRegionSelectorVisible)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SearchWatermark)));
                 EnforceCoordinateModeForView();
                 _ = _settingsService.SetAsync(ViewModeKey, value);
                 _ = UpdateSearchSuggestionsAsync(MapSearchText);
@@ -102,6 +103,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public bool IsCoordinateSelectorVisible => SelectedViewMode != MapViewMode.UniverseRegions;
     public bool IsRegionSelectorVisible => SelectedViewMode == MapViewMode.Region;
+    public string SearchWatermark => SelectedViewMode == MapViewMode.UniverseRegions
+        ? "Search region"
+        : "Search region, constellation, system...";
 
     public RegionOption? SelectedRegion
     {

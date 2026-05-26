@@ -58,7 +58,7 @@
           <TextBox Width="280"
                    x:Name="MapSearchBox"
                    Text="{Binding MapSearchText}"
-                   Watermark="Search region, constellation, system..."
+                   Watermark="{Binding SearchWatermark}"
                    GotFocus="OnSearchBoxGotFocus"
                    KeyDown="OnSearchKeyDown" />
         </StackPanel>
