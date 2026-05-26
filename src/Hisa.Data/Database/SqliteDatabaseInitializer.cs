@@ -106,10 +106,11 @@ public static class ServiceCollectionExtensions
     {
         var fileName = configuration["Hisa:DatabaseFileName"] ?? "hisa.db";
         var sdeFileName = configuration["Hisa:SdeDatabaseFileName"] ?? "eve-hk-sde.db";
+        var explicitSdePath = configuration["Hisa:SdeDatabasePath"];
         var dbDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HISA");
         Directory.CreateDirectory(dbDirectory);
         var dbPath = Path.Combine(dbDirectory, fileName);
-        var sdeDbPath = Path.Combine(dbDirectory, sdeFileName);
+        var sdeDbPath = ResolveSdeDatabasePath(dbDirectory, sdeFileName, explicitSdePath);
         var connectionString = new SqliteConnectionStringBuilder { DataSource = dbPath }.ToString();
         var sdeConnectionString = new SqliteConnectionStringBuilder
         {
@@ -122,5 +123,27 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ISdeDatabase>(_ => new SdeSqliteDatabase(sdeConnectionString));
 
         return services;
+    }
+
+    private static string ResolveSdeDatabasePath(string localDataDirectory, string sdeFileName, string? explicitSdePath)
+    {
+        if (!string.IsNullOrWhiteSpace(explicitSdePath) && File.Exists(explicitSdePath))
+        {
+            return explicitSdePath;
+        }
+
+        var localDataPath = Path.Combine(localDataDirectory, sdeFileName);
+        if (File.Exists(localDataPath))
+        {
+            return localDataPath;
+        }
+
+        var appBasePath = Path.Combine(AppContext.BaseDirectory, "Data", sdeFileName);
+        if (File.Exists(appBasePath))
+        {
+            return appBasePath;
+        }
+
+        return localDataPath;
     }
 }

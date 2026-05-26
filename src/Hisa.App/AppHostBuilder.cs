@@ -1,5 +1,6 @@
 using System.IO;
 using Hisa.Data.Database;
+using Hisa.Services;
 using Hisa.Services.Background;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -27,6 +28,7 @@ internal static class AppHostBuilder
 
         builder.Services.AddHisaData(builder.Configuration);
         builder.Services.AddHisaServices();
+        builder.Services.AddHisaMapServices();
 
         return builder.Build();
     }
