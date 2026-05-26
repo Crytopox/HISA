@@ -49,6 +49,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsUniverseMode)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsUniverseRegionsMode)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsRegionMode)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsCoordinateSelectorVisible)));
+                EnforceCoordinateModeForView();
                 _ = _settingsService.SetAsync(ViewModeKey, value);
                 _ = ReloadGraphAsync();
             }
@@ -91,6 +93,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
+    public bool IsCoordinateSelectorVisible => SelectedViewMode != MapViewMode.UniverseRegions;
+
     public RegionOption? SelectedRegion
     {
         get => _selectedRegion;
@@ -109,6 +113,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         get => _selectedCoordinateMode;
         set
         {
+            if (SelectedViewMode == MapViewMode.UniverseRegions && value != MapCoordinateMode.SdePlanarXY)
+            {
+                value = MapCoordinateMode.SdePlanarXY;
+            }
+
             if (SetProperty(ref _selectedCoordinateMode, value))
             {
                 _ = _settingsService.SetAsync(CoordinateModeKey, value);
@@ -152,8 +161,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _allRegions = (await _mapDataService.GetRegionsAsync()).ToList();
         ApplyRegionFilter();
 
-        SelectedCoordinateMode = await _settingsService.GetAsync<MapCoordinateMode?>(CoordinateModeKey) ?? MapCoordinateMode.ThreeDProjectedXZ;
+        SelectedCoordinateMode = await _settingsService.GetAsync<MapCoordinateMode?>(CoordinateModeKey) ?? MapCoordinateMode.SdePlanarXY;
         SelectedViewMode = await _settingsService.GetAsync<MapViewMode?>(ViewModeKey) ?? MapViewMode.Universe;
+        EnforceCoordinateModeForView();
 
         var savedRegionId = await _settingsService.GetAsync<int?>(RegionIdKey);
         SelectedRegion = _allRegions.FirstOrDefault(r => r.RegionId == savedRegionId) ?? Regions.FirstOrDefault();
@@ -231,5 +241,15 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         field = value;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         return true;
+    }
+
+    private void EnforceCoordinateModeForView()
+    {
+        if (SelectedViewMode == MapViewMode.UniverseRegions && SelectedCoordinateMode != MapCoordinateMode.SdePlanarXY)
+        {
+            _selectedCoordinateMode = MapCoordinateMode.SdePlanarXY;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedCoordinateMode)));
+            _ = _settingsService.SetAsync(CoordinateModeKey, MapCoordinateMode.SdePlanarXY);
+        }
     }
 }

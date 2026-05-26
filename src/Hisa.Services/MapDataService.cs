@@ -24,6 +24,11 @@ public sealed class MapDataService : IMapDataService
         command.CommandText = """
             SELECT regionID, regionName
             FROM mapRegions
+            WHERE regionID IN (
+                SELECT fromRegionID FROM mapRegionJumps
+                UNION
+                SELECT toRegionID FROM mapRegionJumps
+            )
             ORDER BY regionName;
             """;
 
@@ -65,6 +70,11 @@ public sealed class MapDataService : IMapDataService
             FROM mapRegions r
             INNER JOIN mapSolarSystems s ON s.regionID = r.regionID
             WHERE {xColumn} IS NOT NULL AND {yColumn} IS NOT NULL
+              AND r.regionID IN (
+                    SELECT fromRegionID FROM mapRegionJumps
+                    UNION
+                    SELECT toRegionID FROM mapRegionJumps
+              )
             GROUP BY r.regionID, r.regionName;
             """;
 
@@ -119,8 +129,8 @@ public sealed class MapDataService : IMapDataService
         await using var connection = _sdeDatabase.CreateConnection();
         await connection.OpenAsync(cancellationToken);
 
-        var xColumn = coordinateMode == MapCoordinateMode.SdePlanarXY ? "x2D" : "x";
-        var yColumn = coordinateMode == MapCoordinateMode.SdePlanarXY ? "y2D" : "z";
+        var xColumn = coordinateMode == MapCoordinateMode.SdePlanarXY ? "s.x2D" : "s.x";
+        var yColumn = coordinateMode == MapCoordinateMode.SdePlanarXY ? "s.y2D" : "s.z";
         var command = connection.CreateCommand();
         command.CommandText = regionId is null
             ? $"""
@@ -142,9 +152,18 @@ public sealed class MapDataService : IMapDataService
 
         var nodes = new List<MapNode>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var connectedSystemIds = regionId is null
+            ? await LoadConnectedSystemIdsAsync(cancellationToken)
+            : null;
+
         while (await reader.ReadAsync(cancellationToken))
         {
             if (reader.IsDBNull(2) || reader.IsDBNull(3))
+            {
+                continue;
+            }
+
+            if (connectedSystemIds is not null && !connectedSystemIds.Contains(reader.GetInt32(0)))
             {
                 continue;
             }
@@ -161,6 +180,28 @@ public sealed class MapDataService : IMapDataService
         }
 
         return nodes;
+    }
+
+    private async Task<HashSet<int>> LoadConnectedSystemIdsAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = _sdeDatabase.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT fromSolarSystemID AS solarSystemID FROM mapSolarSystemJumps
+            UNION
+            SELECT toSolarSystemID AS solarSystemID FROM mapSolarSystemJumps;
+            """;
+
+        var ids = new HashSet<int>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            ids.Add(reader.GetInt32(0));
+        }
+
+        return ids;
     }
 
     private async Task<List<MapLink>> QuerySystemLinksAsync(int? regionId, CancellationToken cancellationToken)

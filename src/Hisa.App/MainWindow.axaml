@@ -37,8 +37,8 @@
             <ToggleButton Classes="view-mode" Content="Regions" IsChecked="{Binding IsUniverseRegionsMode, Mode=TwoWay}" />
             <ToggleButton Classes="view-mode" Content="Region" IsChecked="{Binding IsRegionMode, Mode=TwoWay}" />
         </StackPanel>
-        <TextBlock Grid.Column="1" VerticalAlignment="Center" Text="Mode" Foreground="#8A96A8" />
-        <ComboBox Grid.Column="2" ItemsSource="{Binding CoordinateModes}" SelectedItem="{Binding SelectedCoordinateMode}">
+        <TextBlock Grid.Column="1" VerticalAlignment="Center" Text="Coordinates" Foreground="#8A96A8" IsVisible="{Binding IsCoordinateSelectorVisible}" />
+        <ComboBox Grid.Column="2" ItemsSource="{Binding CoordinateModes}" SelectedItem="{Binding SelectedCoordinateMode}" IsVisible="{Binding IsCoordinateSelectorVisible}">
           <ComboBox.ItemTemplate>
             <DataTemplate>
               <TextBlock Text="{Binding Converter={StaticResource MapCoordinateModeDisplayConverter}}" />
