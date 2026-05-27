@@ -247,6 +247,108 @@ public sealed class SqliteMapLayoutEditorService : IMapLayoutEditorService
         return links;
     }
 
+    public async Task<IReadOnlyList<MapNode>> GetMissingConnectedSystemsAsync(
+        IReadOnlyCollection<long> selectedSystemIds,
+        IReadOnlyCollection<long> existingSystemIds,
+        CancellationToken cancellationToken = default)
+    {
+        var selectedList = selectedSystemIds.Where(x => x > 0).Select(x => (int)x).Distinct().ToList();
+        if (selectedList.Count == 0)
+        {
+            return [];
+        }
+
+        var selectedSet = selectedList.ToHashSet();
+        var existing = existingSystemIds.Where(x => x > 0).Select(x => (int)x).ToHashSet();
+        await using var connection = _sdeDatabase.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        var selectedParams = new List<string>(selectedList.Count);
+        var jumpsCommand = connection.CreateCommand();
+        for (var i = 0; i < selectedList.Count; i++)
+        {
+            var name = $"$sel{i}";
+            selectedParams.Add(name);
+            jumpsCommand.Parameters.AddWithValue(name, selectedList[i]);
+        }
+
+        jumpsCommand.CommandText = $"""
+            SELECT fromSolarSystemID, toSolarSystemID
+            FROM mapSolarSystemJumps
+            WHERE fromSolarSystemID IN ({string.Join(", ", selectedParams)})
+               OR toSolarSystemID IN ({string.Join(", ", selectedParams)});
+            """;
+
+        var missingNeighborIds = new HashSet<int>();
+        await using (var reader = await jumpsCommand.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var from = reader.GetInt32(0);
+                var to = reader.GetInt32(1);
+                if (selectedSet.Contains(from) && !existing.Contains(to))
+                {
+                    missingNeighborIds.Add(to);
+                }
+
+                if (selectedSet.Contains(to) && !existing.Contains(from))
+                {
+                    missingNeighborIds.Add(from);
+                }
+            }
+        }
+
+        if (missingNeighborIds.Count == 0)
+        {
+            return [];
+        }
+
+        var missingList = missingNeighborIds.ToList();
+        var nodeParams = new List<string>(missingList.Count);
+        var nodesCommand = connection.CreateCommand();
+        for (var i = 0; i < missingList.Count; i++)
+        {
+            var name = $"$node{i}";
+            nodeParams.Add(name);
+            nodesCommand.Parameters.AddWithValue(name, missingList[i]);
+        }
+
+        nodesCommand.CommandText = $"""
+            SELECT solarSystemID, solarSystemName, x2D, y2D
+            FROM mapSolarSystems
+            WHERE solarSystemID IN ({string.Join(", ", nodeParams)})
+              AND x2D IS NOT NULL
+              AND y2D IS NOT NULL;
+            """;
+
+        var result = new List<MapNode>(missingList.Count);
+        await using var nodeReader = await nodesCommand.ExecuteReaderAsync(cancellationToken);
+        while (await nodeReader.ReadAsync(cancellationToken))
+        {
+            result.Add(new MapNode
+            {
+                Id = nodeReader.GetInt32(0),
+                Name = nodeReader.GetString(1),
+                X = nodeReader.GetDouble(2),
+                Y = nodeReader.GetDouble(3),
+                Security = null,
+                SunTypeId = null,
+                StarTypeName = null,
+                SpectralClass = null,
+                HasJoveObservatory = false,
+                IceFieldCount = 0,
+                RegionId = null,
+                RegionName = null,
+                ConstellationId = null,
+                ConstellationName = null,
+                StormEffects = [],
+                HubWormholeConnections = []
+            });
+        }
+
+        return result;
+    }
+
     private async Task<MapGraph?> LoadLayoutGraphAsync(SqliteConnection connection, long layoutRegionId, CancellationToken cancellationToken)
     {
         var nodes = new List<MapNode>();

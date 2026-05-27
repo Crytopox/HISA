@@ -10,4 +10,8 @@ public interface IMapLayoutEditorService
     Task AddGameRegionsToLayoutAsync(long layoutRegionId, IReadOnlyList<int> sourceRegionIds, CancellationToken cancellationToken = default);
     Task SaveLayoutRegionGraphAsync(long layoutRegionId, MapGraph graph, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<MapLink>> BuildAutoLinksForSystemsAsync(IReadOnlyCollection<long> solarSystemIds, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<MapNode>> GetMissingConnectedSystemsAsync(
+        IReadOnlyCollection<long> selectedSystemIds,
+        IReadOnlyCollection<long> existingSystemIds,
+        CancellationToken cancellationToken = default);
 }

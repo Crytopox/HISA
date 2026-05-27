@@ -160,6 +160,10 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowEditorGrid), false);
     public static readonly StyledProperty<double> EditorGridStepProperty =
         AvaloniaProperty.Register<MapControl, double>(nameof(EditorGridStep), 0.01);
+    public static readonly StyledProperty<double> MinZoomProperty =
+        AvaloniaProperty.Register<MapControl, double>(nameof(MinZoom), 0.4);
+    public static readonly StyledProperty<double> MaxZoomOverrideProperty =
+        AvaloniaProperty.Register<MapControl, double>(nameof(MaxZoomOverride), 0.0);
     public static readonly StyledProperty<bool> UseBuiltInSelectionProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(UseBuiltInSelection), true);
     public static readonly StyledProperty<IEnumerable<long>?> AdditionalSelectedNodeIdsProperty =
@@ -375,6 +379,18 @@ public sealed class MapControl : Control
         set => SetValue(UseBuiltInSelectionProperty, value);
     }
 
+    public double MinZoom
+    {
+        get => GetValue(MinZoomProperty);
+        set => SetValue(MinZoomProperty, value);
+    }
+
+    public double MaxZoomOverride
+    {
+        get => GetValue(MaxZoomOverrideProperty);
+        set => SetValue(MaxZoomOverrideProperty, value);
+    }
+
     public IEnumerable<long>? AdditionalSelectedNodeIds
     {
         get => GetValue(AdditionalSelectedNodeIdsProperty);
@@ -409,6 +425,8 @@ public sealed class MapControl : Control
             HubWormholeMarkerModeProperty,
             ShowEditorGridProperty,
             EditorGridStepProperty,
+            MinZoomProperty,
+            MaxZoomOverrideProperty,
             UseBuiltInSelectionProperty,
             AdditionalSelectedNodeIdsProperty);
         ClipToBounds = true;
@@ -441,7 +459,7 @@ public sealed class MapControl : Control
 
         var zoomX = availableWidth / graphWidthPx;
         var zoomY = availableHeight / graphHeightPx;
-        _zoom = Math.Clamp(Math.Min(zoomX, zoomY), 0.4, GetMaxZoom());
+        _zoom = Math.Clamp(Math.Min(zoomX, zoomY), GetMinZoom(), GetMaxZoom());
 
         var baseCenterX = plot.OriginX + (((_graphMinX + _graphMaxX) * 0.5) * plotWidth);
         var baseCenterY = plot.OriginY + (((_graphMinY + _graphMaxY) * 0.5) * plotHeight);
@@ -465,7 +483,7 @@ public sealed class MapControl : Control
 
     public void SetViewportState(MapViewportState state)
     {
-        _zoom = Math.Clamp(state.Zoom, 0.4, GetMaxZoom());
+        _zoom = Math.Clamp(state.Zoom, GetMinZoom(), GetMaxZoom());
         _panOffset = new Point(state.PanOffsetX, state.PanOffsetY);
         InvalidateVisual();
     }
@@ -649,7 +667,7 @@ public sealed class MapControl : Control
         }
 
         var oldZoom = _zoom;
-        var newZoom = Math.Clamp(_zoom * factor, 0.4, GetMaxZoom());
+        var newZoom = Math.Clamp(_zoom * factor, GetMinZoom(), GetMaxZoom());
         if (Math.Abs(newZoom - oldZoom) < 1e-9)
         {
             return;
@@ -1101,7 +1119,7 @@ public sealed class MapControl : Control
         var factor = delta > 0 ? 1.1 : 0.9;
         var mouse = e.GetPosition(this);
         var oldZoom = _zoom;
-        var newZoom = Math.Clamp(_zoom * factor, 0.4, GetMaxZoom());
+        var newZoom = Math.Clamp(_zoom * factor, GetMinZoom(), GetMaxZoom());
         if (Math.Abs(newZoom - oldZoom) < 1e-9)
         {
             return;
@@ -1327,7 +1345,7 @@ public sealed class MapControl : Control
 
         var zoomX = availableWidth / graphWidthPx;
         var zoomY = availableHeight / graphHeightPx;
-        _zoom = Math.Clamp(Math.Min(zoomX, zoomY), 0.4, GetMaxZoom());
+        _zoom = Math.Clamp(Math.Min(zoomX, zoomY), GetMinZoom(), GetMaxZoom());
 
         var centerX = (minX + maxX) * 0.5;
         var centerY = (minY + maxY) * 0.5;
@@ -1336,7 +1354,7 @@ public sealed class MapControl : Control
 
     private void CenterOnWorld(double worldX, double worldY, double zoom)
     {
-        _zoom = Math.Clamp(zoom, 0.4, GetMaxZoom());
+        _zoom = Math.Clamp(zoom, GetMinZoom(), GetMaxZoom());
         var plot = GetPlotMetrics();
         var baseX = plot.OriginX + (worldX * plot.Width);
         var baseY = plot.OriginY + (worldY * plot.Height);
@@ -1446,12 +1464,22 @@ public sealed class MapControl : Control
 
     private double GetMaxZoom()
     {
+        if (MaxZoomOverride > 0)
+        {
+            return Math.Max(GetMinZoom() + 0.01, MaxZoomOverride);
+        }
+
         return ViewMode switch
         {
             MapViewMode.Universe => 60.0,
             MapViewMode.Region => 3.0,
             _ => 12.0
         };
+    }
+
+    private double GetMinZoom()
+    {
+        return Math.Clamp(MinZoom, 0.01, 1000.0);
     }
 
     private PlotMetrics GetPlotMetrics()

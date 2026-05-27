@@ -244,6 +244,45 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
         }
     }
 
+    public async Task AddMissingConnectedNodesForSelectionAsync()
+    {
+        var selectedSystemIds = _selectedNodeIds.Where(id => id > 0).ToList();
+        if (selectedSystemIds.Count == 0)
+        {
+            StatusText = "Select one or more system nodes first.";
+            return;
+        }
+
+        var existingSystemIds = _editableNodesById.Keys.Where(id => id > 0).ToList();
+        var missingNodes = await _mapLayoutEditorService.GetMissingConnectedSystemsAsync(selectedSystemIds, existingSystemIds);
+        var added = 0;
+        foreach (var node in missingNodes)
+        {
+            if (_editableNodesById.ContainsKey(node.Id))
+            {
+                continue;
+            }
+
+            _editableNodesById[node.Id] = new EditableNode
+            {
+                Id = node.Id,
+                Name = node.Name,
+                X = node.X,
+                Y = node.Y
+            };
+            added++;
+        }
+
+        if (added == 0)
+        {
+            StatusText = "No missing connected nodes found.";
+            return;
+        }
+
+        await RebuildGraphAsync(keepSelection: true);
+        StatusText = $"Added {added} connected node(s).";
+    }
+
     private async Task LoadAsync(CancellationToken cancellationToken = default)
     {
         try

@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia;
+using Avalonia.Controls.Primitives;
 using Hisa.Core.Models;
 using System;
 using System.Linq;
@@ -17,10 +18,16 @@ public partial class MapEditorWindow : Window
     private bool _boxSelectionAdditive;
     private double _snapResidualDx;
     private double _snapResidualDy;
+    private bool _isRightPanning;
+    private Point _rightPanLastPoint;
+    private Point _rightPanStartPoint;
+    private bool _rightPanMoved;
+    private readonly ContextMenu _mapContextMenu;
 
     public MapEditorWindow()
     {
         InitializeComponent();
+        _mapContextMenu = BuildMapContextMenu();
     }
 
     public MapEditorWindow(MapEditorViewModel vm) : this()
@@ -103,12 +110,34 @@ public partial class MapEditorWindow : Window
         }
 
         var props = e.GetCurrentPoint(EditorMapControl).Properties;
+        var point = e.GetPosition(EditorMapControl);
+        if (props.IsRightButtonPressed)
+        {
+            _isRightPanning = true;
+            _rightPanMoved = false;
+            _rightPanStartPoint = point;
+            _rightPanLastPoint = point;
+            _isDraggingNode = false;
+            _isBoxSelecting = false;
+            SelectionRect.IsVisible = false;
+
+            var hitNodeIdForMenu = EditorMapControl.HitTestNode(point, 10.0);
+            if (hitNodeIdForMenu is not null && !vm.IsNodeSelected(hitNodeIdForMenu.Value))
+            {
+                vm.SetSelectedNodes([hitNodeIdForMenu.Value]);
+                EditorMapControl.InvalidateVisual();
+            }
+
+            e.Pointer.Capture(EditorMapControl);
+            e.Handled = true;
+            return;
+        }
+
         if (!props.IsLeftButtonPressed)
         {
             return;
         }
 
-        var point = e.GetPosition(EditorMapControl);
         var hitNodeId = EditorMapControl.HitTestNode(point, 10.0);
         if (hitNodeId is null)
         {
@@ -156,6 +185,22 @@ public partial class MapEditorWindow : Window
 
     private async void OnEditorMapPointerMoved(object? sender, PointerEventArgs e)
     {
+        if (_isRightPanning)
+        {
+            var point = e.GetPosition(EditorMapControl);
+            var delta = point - _rightPanLastPoint;
+            if ((delta.X * delta.X) + (delta.Y * delta.Y) >= 0.25)
+            {
+                _rightPanMoved = _rightPanMoved ||
+                    Math.Abs(point.X - _rightPanStartPoint.X) > 2.0 ||
+                    Math.Abs(point.Y - _rightPanStartPoint.Y) > 2.0;
+                EditorMapControl.PanBy(delta.X, delta.Y);
+                _rightPanLastPoint = point;
+            }
+
+            return;
+        }
+
         if (_isBoxSelecting)
         {
             UpdateSelectionRectVisual(_boxSelectionStartPoint, e.GetPosition(EditorMapControl));
@@ -167,8 +212,8 @@ public partial class MapEditorWindow : Window
             return;
         }
 
-        var point = e.GetPosition(EditorMapControl);
-        if (!EditorMapControl.TryScreenToWorld(point, out var worldPoint))
+        var currentPoint = e.GetPosition(EditorMapControl);
+        if (!EditorMapControl.TryScreenToWorld(currentPoint, out var worldPoint))
         {
             return;
         }
@@ -205,6 +250,22 @@ public partial class MapEditorWindow : Window
 
     private void OnEditorMapPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
+        if (_isRightPanning)
+        {
+            _isRightPanning = false;
+            e.Pointer.Capture(null);
+            if (!_rightPanMoved)
+            {
+                _mapContextMenu.Placement = PlacementMode.AnchorAndGravity;
+                _mapContextMenu.PlacementRect = new Rect(_rightPanStartPoint, new Size(1, 1));
+                _mapContextMenu.HorizontalOffset = 2;
+                _mapContextMenu.VerticalOffset = 2;
+                _mapContextMenu.Open(EditorMapControl);
+            }
+            e.Handled = true;
+            return;
+        }
+
         if (_isBoxSelecting)
         {
             if (DataContext is MapEditorViewModel vm)
@@ -281,6 +342,39 @@ public partial class MapEditorWindow : Window
 
     private void OnEditorMapSizeChanged(object? sender, SizeChangedEventArgs e)
     {
+    }
+
+    private async void OnMapContextDeleteSelectedClicked(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MapEditorViewModel vm)
+        {
+            await vm.DeleteSelectedNodeAsync();
+            EditorMapControl.InvalidateVisual();
+        }
+    }
+
+    private async void OnMapContextAddMissingConnectedClicked(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MapEditorViewModel vm)
+        {
+            await vm.AddMissingConnectedNodesForSelectionAsync();
+            EditorMapControl.InvalidateVisual();
+        }
+    }
+
+    private ContextMenu BuildMapContextMenu()
+    {
+        var menu = new ContextMenu
+        {
+            MinWidth = 0
+        };
+        var itemPadding = new Thickness(8, 4);
+        var addConnected = new MenuItem { Header = "Add Missing Connected", Padding = itemPadding };
+        addConnected.Click += OnMapContextAddMissingConnectedClicked;
+        var deleteSelected = new MenuItem { Header = "Delete Selected", Padding = itemPadding };
+        deleteSelected.Click += OnMapContextDeleteSelectedClicked;
+        menu.ItemsSource = new object[] { addConnected, deleteSelected };
+        return menu;
     }
 
     private void UpdateSelectionRectVisual(Point from, Point to)

@@ -63,6 +63,8 @@
                               StretchToWindow="False"
                               ShowEditorGrid="True"
                               EditorGridStep="0.01"
+                              MinZoom="0.30"
+                              MaxZoomOverride="12.0"
                               UseBuiltInSelection="False"
                               SelectedNodeId="{Binding SelectedNodeId, Mode=TwoWay}"
                               AdditionalSelectedNodeIds="{Binding SelectedNodeIdsForView}"
