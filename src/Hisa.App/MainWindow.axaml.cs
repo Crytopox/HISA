@@ -12,6 +12,8 @@ public partial class MainWindow : Window
     private bool _isApplyingViewport;
     private MainWindowViewModel? _boundVm;
     private Hisa.Core.Models.MapViewMode _lastKnownViewMode;
+    private readonly DebugWindowViewModel? _debugWindowViewModel;
+    private DebugWindow? _debugWindow;
 
     public MainWindow()
     {
@@ -26,12 +28,29 @@ public partial class MainWindow : Window
         };
     }
 
-    public MainWindow(MainWindowViewModel vm) : this()
+    public MainWindow(MainWindowViewModel vm, DebugWindowViewModel debugWindowViewModel) : this()
     {
         DataContext = vm;
         _boundVm = vm;
+        _debugWindowViewModel = debugWindowViewModel;
         _lastKnownViewMode = vm.SelectedViewMode;
         vm.PropertyChanged += OnViewModelPropertyChanged;
+    }
+
+    private void OnOpenDebugConsoleClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_debugWindow is null)
+        {
+            if (_debugWindowViewModel is null)
+            {
+                return;
+            }
+            _debugWindow = new DebugWindow(_debugWindowViewModel);
+            _debugWindow.Closed += (_, _) => _debugWindow = null;
+        }
+
+        _debugWindow.Show();
+        _debugWindow.Activate();
     }
 
     private void OnFitCenterClicked(object? sender, RoutedEventArgs e)

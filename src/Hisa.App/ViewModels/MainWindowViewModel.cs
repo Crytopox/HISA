@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using Avalonia.Threading;
 using Hisa.Core.Abstractions;
 using Hisa.Core.Models;
 
@@ -11,6 +12,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 {
     private readonly IMapDataService _mapDataService;
     private readonly ISettingsService _settingsService;
+    private readonly IStormStateService _stormStateService;
     private List<RegionOption> _allRegions = [];
     private bool _isBusy;
     private MapViewMode _selectedViewMode;
@@ -70,14 +72,19 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string MapViewportPrefixKey = "Map.Viewport";
     private readonly Task _initialLoadTask;
 
-    public MainWindowViewModel(IMapDataService mapDataService, ISettingsService settingsService)
+    public MainWindowViewModel(
+        IMapDataService mapDataService,
+        ISettingsService settingsService,
+        IStormStateService stormStateService)
     {
         _mapDataService = mapDataService;
         _settingsService = settingsService;
+        _stormStateService = stormStateService;
         ViewModes = new ObservableCollection<MapViewMode>(Enum.GetValues<MapViewMode>());
         CoordinateModes = new ObservableCollection<MapCoordinateMode>(Enum.GetValues<MapCoordinateMode>());
         NodeColorModes = new ObservableCollection<MapNodeColorMode>(Enum.GetValues<MapNodeColorMode>());
         Regions = [];
+        _stormStateService.StormSnapshotUpdated += OnStormSnapshotUpdated;
         _initialLoadTask = LoadAsync();
     }
 
@@ -580,6 +587,19 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         {
             _isBusy = false;
         }
+    }
+
+    private void OnStormSnapshotUpdated(object? sender, StormSnapshot snapshot)
+    {
+        if (_isInitializing)
+        {
+            return;
+        }
+
+        Dispatcher.UIThread.Post(async () =>
+        {
+            await ReloadGraphAsync();
+        });
     }
 
     public async Task<MapSearchFocus?> ExecuteSearchAsync(MapSearchCandidate? explicitCandidate = null)

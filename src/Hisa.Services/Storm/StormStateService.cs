@@ -24,6 +24,7 @@ public sealed class StormStateService : IStormStateService
     }
 
     public StormSnapshot Current { get; private set; } = StormSnapshot.Empty;
+    public event EventHandler<StormSnapshot>? StormSnapshotUpdated;
 
     public async Task RefreshAsync(CancellationToken cancellationToken = default)
     {
@@ -41,6 +42,7 @@ public sealed class StormStateService : IStormStateService
                 Centers = centers,
                 EffectsBySystemId = effectsBySystemId
             };
+            StormSnapshotUpdated?.Invoke(this, Current);
 
             _logger.LogInformation(
                 "Storm snapshot updated. Centers: {CenterCount}, affected systems: {AffectedSystems}.",

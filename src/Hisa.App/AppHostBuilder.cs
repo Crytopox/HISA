@@ -1,4 +1,5 @@
 using System.IO;
+using Hisa.App.Diagnostics;
 using Hisa.Data.Database;
 using Hisa.Services;
 using Hisa.Services.Background;
@@ -22,9 +23,14 @@ internal static class AppHostBuilder
 
         builder.Logging.ClearProviders();
         builder.Logging.AddConsole();
+        var appLogStore = new AppLogStore();
+        builder.Logging.AddProvider(new InMemoryLoggerProvider(appLogStore));
 
+        builder.Services.AddSingleton(appLogStore);
         builder.Services.AddSingleton<MainWindowViewModel>();
         builder.Services.AddSingleton<MainWindow>();
+        builder.Services.AddSingleton<DebugWindowViewModel>();
+        builder.Services.AddSingleton<DebugWindow>();
 
         builder.Services.AddHisaData(builder.Configuration);
         builder.Services.AddHisaServices(builder.Configuration);

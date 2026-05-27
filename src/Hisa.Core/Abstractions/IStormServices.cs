@@ -10,5 +10,6 @@ public interface IStormCenterSource
 public interface IStormStateService
 {
     StormSnapshot Current { get; }
+    event EventHandler<StormSnapshot>? StormSnapshotUpdated;
     Task RefreshAsync(CancellationToken cancellationToken = default);
 }
