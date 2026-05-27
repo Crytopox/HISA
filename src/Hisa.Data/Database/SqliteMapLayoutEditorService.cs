@@ -116,27 +116,32 @@ public sealed class SqliteMapLayoutEditorService : IMapLayoutEditorService
             }
         }
 
-        var systemsToAdd = await LoadSdeSystemsForRegionsAsync(sourceRegionIds, cancellationToken);
-        var chunkToInsert = BuildImportedChunkCoordinates(existingNodes, systemsToAdd);
-        foreach (var system in chunkToInsert)
+        foreach (var sourceRegionId in sourceRegionIds.Distinct())
         {
-            if (existingNodes.ContainsKey(system.Id))
+            var systemsToAdd = await LoadSdeSystemsForRegionAsync(sourceRegionId, cancellationToken);
+            var chunkToInsert = BuildImportedChunkCoordinates(existingNodes, systemsToAdd);
+            foreach (var system in chunkToInsert)
             {
-                continue;
-            }
+                if (existingNodes.ContainsKey(system.Id))
+                {
+                    continue;
+                }
 
-            var insertNode = connection.CreateCommand();
-            insertNode.Transaction = tx;
-            insertNode.CommandText = """
-                INSERT INTO MapLayoutNode(RegionLayoutId, SolarSystemId, Name, X, Y)
-                VALUES ($layoutRegionId, $solarSystemId, $name, $x, $y);
-                """;
-            insertNode.Parameters.AddWithValue("$layoutRegionId", layoutRegionId);
-            insertNode.Parameters.AddWithValue("$solarSystemId", system.Id);
-            insertNode.Parameters.AddWithValue("$name", system.Name);
-            insertNode.Parameters.AddWithValue("$x", system.X);
-            insertNode.Parameters.AddWithValue("$y", system.Y);
-            await insertNode.ExecuteNonQueryAsync(cancellationToken);
+                var insertNode = connection.CreateCommand();
+                insertNode.Transaction = tx;
+                insertNode.CommandText = """
+                    INSERT INTO MapLayoutNode(RegionLayoutId, SolarSystemId, Name, X, Y)
+                    VALUES ($layoutRegionId, $solarSystemId, $name, $x, $y);
+                    """;
+                insertNode.Parameters.AddWithValue("$layoutRegionId", layoutRegionId);
+                insertNode.Parameters.AddWithValue("$solarSystemId", system.Id);
+                insertNode.Parameters.AddWithValue("$name", system.Name);
+                insertNode.Parameters.AddWithValue("$x", system.X);
+                insertNode.Parameters.AddWithValue("$y", system.Y);
+                await insertNode.ExecuteNonQueryAsync(cancellationToken);
+
+                existingNodes[system.Id] = (system.Name, system.X, system.Y);
+            }
         }
 
         await RebuildLinksForLayoutRegionAsync(connection, tx, layoutRegionId, cancellationToken);
@@ -614,6 +619,31 @@ public sealed class SqliteMapLayoutEditorService : IMapLayoutEditorService
               AND x2D IS NOT NULL
               AND y2D IS NOT NULL;
             """;
+
+        var result = new List<(long Id, string Name, double X, double Y)>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            result.Add((reader.GetInt32(0), reader.GetString(1), reader.GetDouble(2), reader.GetDouble(3)));
+        }
+
+        return result;
+    }
+
+    private async Task<List<(long Id, string Name, double X, double Y)>> LoadSdeSystemsForRegionAsync(int sourceRegionId, CancellationToken cancellationToken)
+    {
+        await using var connection = _sdeDatabase.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT solarSystemID, solarSystemName, x2D, y2D
+            FROM mapSolarSystems
+            WHERE regionID = $regionId
+              AND x2D IS NOT NULL
+              AND y2D IS NOT NULL;
+            """;
+        command.Parameters.AddWithValue("$regionId", sourceRegionId);
 
         var result = new List<(long Id, string Name, double X, double Y)>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
