@@ -164,6 +164,8 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, double>(nameof(MinZoom), 0.4);
     public static readonly StyledProperty<double> MaxZoomOverrideProperty =
         AvaloniaProperty.Register<MapControl, double>(nameof(MaxZoomOverride), 0.0);
+    public static readonly StyledProperty<bool> AllowFitBeyondMinZoomProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(AllowFitBeyondMinZoom), false);
     public static readonly StyledProperty<bool> UseBuiltInSelectionProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(UseBuiltInSelection), true);
     public static readonly StyledProperty<IEnumerable<long>?> AdditionalSelectedNodeIdsProperty =
@@ -391,6 +393,12 @@ public sealed class MapControl : Control
         set => SetValue(MaxZoomOverrideProperty, value);
     }
 
+    public bool AllowFitBeyondMinZoom
+    {
+        get => GetValue(AllowFitBeyondMinZoomProperty);
+        set => SetValue(AllowFitBeyondMinZoomProperty, value);
+    }
+
     public IEnumerable<long>? AdditionalSelectedNodeIds
     {
         get => GetValue(AdditionalSelectedNodeIdsProperty);
@@ -427,6 +435,7 @@ public sealed class MapControl : Control
             EditorGridStepProperty,
             MinZoomProperty,
             MaxZoomOverrideProperty,
+            AllowFitBeyondMinZoomProperty,
             UseBuiltInSelectionProperty,
             AdditionalSelectedNodeIdsProperty);
         ClipToBounds = true;
@@ -458,7 +467,10 @@ public sealed class MapControl : Control
 
         var zoomX = availableWidth / graphWidthPx;
         var zoomY = availableHeight / graphHeightPx;
-        _zoom = Math.Clamp(Math.Min(zoomX, zoomY), GetMinZoom(), GetMaxZoom());
+        var targetZoom = Math.Min(zoomX, zoomY);
+        _zoom = AllowFitBeyondMinZoom
+            ? Math.Min(targetZoom, GetMaxZoom())
+            : Math.Clamp(targetZoom, GetMinZoom(), GetMaxZoom());
 
         var baseCenterX = plot.OriginX + (((_graphMinX + _graphMaxX) * 0.5) * plotWidth);
         var baseCenterY = plot.OriginY + (((_graphMinY + _graphMaxY) * 0.5) * plotHeight);
