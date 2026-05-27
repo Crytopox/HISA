@@ -44,6 +44,8 @@ public sealed class MapControl : Control
     private static readonly JsonSerializerOptions VoronoiJsonOptions = new() { WriteIndented = false };
 
     private static readonly Point NodeLabelOffset = new(9, 3);
+    private static readonly Typeface NodeLabelTypeface = new("Inter", FontStyle.Normal, FontWeight.Medium);
+    private const double NodeLabelFontSize = 11.5;
     private const double IconSize = 18.0;
     private const double IndicatorIconLeftPadding = 4.0;
     private const double IndicatorIconSlotGap = 3.0;
@@ -613,7 +615,7 @@ public sealed class MapControl : Control
 
             foreach (var index in visibleVoronoiNodeIndexes)
             {
-                context.DrawEllipse(NodeHoleBrush, null, _screenPositions[index], 7.2, 7.2);
+                context.DrawEllipse(NodeHoleBrush, null, _screenPositions[index], 10.8, 10.8);
             }
         }
 
@@ -685,7 +687,7 @@ public sealed class MapControl : Control
             var activeRegionId = _selectedRegionId ?? _hoveredRegionId;
             var isInActiveRegion = activeRegionId is not null && node.RegionId == activeRegionId.Value;
             var isSelectedRegionNode = _selectedRegionId is not null && node.RegionId == _selectedRegionId.Value;
-            var radius = isSelected ? 6.2 : isHovered ? 5.6 : isSearchHighlighted ? 5.2 : 4.5;
+            var radius = isSelected ? 9.3 : isHovered ? 8.4 : isSearchHighlighted ? 7.8 : 6.75;
             var brush = isSelected
                 ? SelectedBrush
                 : isHovered
@@ -1391,8 +1393,8 @@ public sealed class MapControl : Control
             name,
             System.Globalization.CultureInfo.InvariantCulture,
             FlowDirection.LeftToRight,
-            new Typeface("Inter"),
-            10,
+            NodeLabelTypeface,
+            NodeLabelFontSize,
             new SolidColorBrush(Color.Parse("#EEF6FF")));
         _nodeLabelCache[key] = text;
         return text;
@@ -1410,8 +1412,8 @@ public sealed class MapControl : Control
             name,
             System.Globalization.CultureInfo.InvariantCulture,
             FlowDirection.LeftToRight,
-            new Typeface("Inter"),
-            10,
+            NodeLabelTypeface,
+            NodeLabelFontSize,
             new ImmutableSolidColorBrush(Color.Parse("#AA0A111A")));
         _nodeLabelHaloCache[key] = text;
         return text;
@@ -1429,8 +1431,8 @@ public sealed class MapControl : Control
             name,
             CultureInfo.InvariantCulture,
             FlowDirection.LeftToRight,
-            new Typeface("Inter"),
-            10.0,
+            NodeLabelTypeface,
+            NodeLabelFontSize,
             new SolidColorBrush(Color.Parse("#E6F0FF")));
         _nodeSecondaryLabelCache[key] = text;
         return text;
@@ -1448,8 +1450,8 @@ public sealed class MapControl : Control
             name,
             CultureInfo.InvariantCulture,
             FlowDirection.LeftToRight,
-            new Typeface("Inter"),
-            10.0,
+            NodeLabelTypeface,
+            NodeLabelFontSize,
             new ImmutableSolidColorBrush(Color.Parse("#AA0A111A")));
         _nodeSecondaryLabelHaloCache[key] = text;
         return text;
@@ -2417,15 +2419,15 @@ public sealed class MapControl : Control
                 securityLabel,
                 CultureInfo.InvariantCulture,
                 FlowDirection.LeftToRight,
-                new Typeface("Inter"),
-                10,
+                NodeLabelTypeface,
+                NodeLabelFontSize,
                 GetCachedBrush(GetSecurityColor(node)));
             secHalo = new FormattedText(
                 securityLabel,
                 CultureInfo.InvariantCulture,
                 FlowDirection.LeftToRight,
-                new Typeface("Inter"),
-                10,
+                NodeLabelTypeface,
+                NodeLabelFontSize,
                 new ImmutableSolidColorBrush(Color.Parse("#AA0A111A")));
         }
 
