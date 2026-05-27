@@ -11,6 +11,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Collections.Generic;
 using NetTopologySuite.Triangulate;
 using NetTopologySuite.Precision;
 using NtsCoordinate = NetTopologySuite.Geometries.Coordinate;
@@ -159,6 +160,10 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowEditorGrid), false);
     public static readonly StyledProperty<double> EditorGridStepProperty =
         AvaloniaProperty.Register<MapControl, double>(nameof(EditorGridStep), 0.01);
+    public static readonly StyledProperty<bool> UseBuiltInSelectionProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(UseBuiltInSelection), true);
+    public static readonly StyledProperty<IEnumerable<long>?> AdditionalSelectedNodeIdsProperty =
+        AvaloniaProperty.Register<MapControl, IEnumerable<long>?>(nameof(AdditionalSelectedNodeIds));
 
     private Point? _lastPanPoint;
     private Point _panOffset = new(0, 0);
@@ -364,6 +369,18 @@ public sealed class MapControl : Control
         set => SetValue(EditorGridStepProperty, value);
     }
 
+    public bool UseBuiltInSelection
+    {
+        get => GetValue(UseBuiltInSelectionProperty);
+        set => SetValue(UseBuiltInSelectionProperty, value);
+    }
+
+    public IEnumerable<long>? AdditionalSelectedNodeIds
+    {
+        get => GetValue(AdditionalSelectedNodeIdsProperty);
+        set => SetValue(AdditionalSelectedNodeIdsProperty, value);
+    }
+
     public MapControl()
     {
         AffectsRender<MapControl>(GraphProperty, SelectedNodeIdProperty, ViewModeProperty, StretchToWindowProperty);
@@ -391,7 +408,9 @@ public sealed class MapControl : Control
             AlwaysShowHubWormholesProperty,
             HubWormholeMarkerModeProperty,
             ShowEditorGridProperty,
-            EditorGridStepProperty);
+            EditorGridStepProperty,
+            UseBuiltInSelectionProperty,
+            AdditionalSelectedNodeIdsProperty);
         ClipToBounds = true;
     }
 
@@ -796,6 +815,9 @@ public sealed class MapControl : Control
 
         var labelBudget = GetLabelBudget();
         var labelsDrawn = 0;
+        var additionalSelectedSet = AdditionalSelectedNodeIds is not null
+            ? new HashSet<long>(AdditionalSelectedNodeIds)
+            : null;
         for (var i = 0; i < Graph.Nodes.Count; i++)
         {
             var node = Graph.Nodes[i];
@@ -806,7 +828,7 @@ public sealed class MapControl : Control
                 continue;
             }
 
-            var isSelected = SelectedNodeId == node.Id;
+            var isSelected = SelectedNodeId == node.Id || (additionalSelectedSet?.Contains(node.Id) ?? false);
             var isHovered = _hoveredNodeId == node.Id;
             var isSearchHighlighted = _searchHighlightedNodeId == node.Id ||
                                       (_searchHighlightedConstellationId is not null && node.ConstellationId == _searchHighlightedConstellationId.Value) ||
@@ -992,6 +1014,11 @@ public sealed class MapControl : Control
         base.OnPointerPressed(e);
 
         Focus();
+        if (!UseBuiltInSelection)
+        {
+            return;
+        }
+
         var point = e.GetPosition(this);
         var props = e.GetCurrentPoint(this).Properties;
 

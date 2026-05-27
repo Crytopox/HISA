@@ -116,16 +116,29 @@ public partial class MapEditorWindow : Window
             _boxSelectionAdditive = e.KeyModifiers.HasFlag(KeyModifiers.Control);
             _boxSelectionStartPoint = point;
             UpdateSelectionRectVisual(_boxSelectionStartPoint, point);
+            e.Pointer.Capture(EditorMapControl);
+            e.Handled = true;
+            if (!_boxSelectionAdditive)
+            {
+                vm.SetSelectedNodes([]);
+                EditorMapControl.InvalidateVisual();
+            }
             return;
         }
 
         if (e.KeyModifiers.HasFlag(KeyModifiers.Control))
         {
             vm.ToggleSelection(hitNodeId.Value);
+            EditorMapControl.InvalidateVisual();
+            return;
         }
-        else
+        
+        // Clicking a non-selected node replaces selection with only that node.
+        // Clicking an already selected node keeps the full selection for drag-move.
+        if (!vm.IsNodeSelected(hitNodeId.Value))
         {
             vm.SetSelectedNodes([hitNodeId.Value]);
+            EditorMapControl.InvalidateVisual();
         }
 
         if (!EditorMapControl.TryScreenToWorld(point, out var worldPoint))
@@ -207,6 +220,7 @@ public partial class MapEditorWindow : Window
                 {
                     vm.SetSelectedNodes(nodeIds);
                 }
+                EditorMapControl.InvalidateVisual();
             }
 
             _isBoxSelecting = false;

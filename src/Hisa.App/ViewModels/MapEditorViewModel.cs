@@ -43,6 +43,7 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
 
     public ObservableCollection<RegionOption> GameRegions { get; } = [];
     public ObservableCollection<MapLayoutRegionSummary> LayoutRegions { get; } = [];
+    public IEnumerable<long> SelectedNodeIdsForView { get; private set; } = [];
     public Task InitialLoadTask { get; }
 
     public string NewRegionName
@@ -81,6 +82,7 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
                 }
 
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectionStatus)));
+                RefreshSelectedNodeIdsForView();
             }
         }
     }
@@ -236,6 +238,7 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
         {
             SelectedNodeId = null;
             _selectedNodeIds.Clear();
+            RefreshSelectedNodeIdsForView();
             await RebuildGraphAsync(keepSelection: false);
             StatusText = "Node deleted.";
         }
@@ -301,6 +304,7 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
 
         SelectedNodeId = null;
         _selectedNodeIds.Clear();
+        RefreshSelectedNodeIdsForView();
         CurrentGraph = graph;
         StatusText = $"Loaded: {SelectedLayoutRegion.Name} | Nodes: {graph.Nodes.Count} | Links: {graph.Links.Count}";
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectionStatus)));
@@ -446,6 +450,7 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
         _selectedNodeId = _selectedNodeIds.Count > 0 ? _selectedNodeIds.First() : null;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedNodeId)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectionStatus)));
+        RefreshSelectedNodeIdsForView();
     }
 
     public void AddToSelection(long nodeId)
@@ -459,6 +464,7 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
         _selectedNodeId = nodeId;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedNodeId)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectionStatus)));
+        RefreshSelectedNodeIdsForView();
     }
 
     public void ToggleSelection(long nodeId)
@@ -480,6 +486,7 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
         _selectedNodeId = _selectedNodeIds.Count > 0 ? _selectedNodeIds.First() : null;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedNodeId)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectionStatus)));
+        RefreshSelectedNodeIdsForView();
     }
 
     public void AddToSelection(IReadOnlyCollection<long> nodeIds)
@@ -495,9 +502,17 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
         _selectedNodeId = _selectedNodeIds.Count > 0 ? _selectedNodeIds.First() : null;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedNodeId)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectionStatus)));
+        RefreshSelectedNodeIdsForView();
     }
 
     public IReadOnlyCollection<long> GetSelectedNodeIds() => _selectedNodeIds;
+    public bool IsNodeSelected(long nodeId) => _selectedNodeIds.Contains(nodeId);
 
     public double GetSnapGridStep() => SnapGridStep;
+
+    private void RefreshSelectedNodeIdsForView()
+    {
+        SelectedNodeIdsForView = _selectedNodeIds.ToArray();
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedNodeIdsForView)));
+    }
 }
