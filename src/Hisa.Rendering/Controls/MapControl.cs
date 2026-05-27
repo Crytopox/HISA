@@ -47,6 +47,7 @@ public sealed class MapControl : Control
     private static readonly Typeface NodeLabelTypeface = new("Inter", FontStyle.Normal, FontWeight.Medium);
     private const double NodeLabelFontSize = 11.5;
     private const double NodeRegionConstellationFontSize = 10.5;
+    private const double UniverseMinNodeScale = 0.55;
     private const double IconSize = 18.0;
     private const double IndicatorIconLeftPadding = 4.0;
     private const double IndicatorIconSlotGap = 3.0;
@@ -616,7 +617,8 @@ public sealed class MapControl : Control
 
             foreach (var index in visibleVoronoiNodeIndexes)
             {
-                context.DrawEllipse(NodeHoleBrush, null, _screenPositions[index], 10.8, 10.8);
+                var holeRadius = 10.8 * GetUniverseNodeZoomScale();
+                context.DrawEllipse(NodeHoleBrush, null, _screenPositions[index], holeRadius, holeRadius);
             }
         }
 
@@ -688,7 +690,8 @@ public sealed class MapControl : Control
             var activeRegionId = _selectedRegionId ?? _hoveredRegionId;
             var isInActiveRegion = activeRegionId is not null && node.RegionId == activeRegionId.Value;
             var isSelectedRegionNode = _selectedRegionId is not null && node.RegionId == _selectedRegionId.Value;
-            var radius = isSelected ? 9.3 : isHovered ? 8.4 : isSearchHighlighted ? 7.8 : 6.75;
+            var universeNodeScale = GetUniverseNodeZoomScale();
+            var radius = (isSelected ? 9.3 : isHovered ? 8.4 : isSearchHighlighted ? 7.8 : 6.75) * universeNodeScale;
             var brush = isSelected
                 ? SelectedBrush
                 : isHovered
@@ -774,6 +777,25 @@ public sealed class MapControl : Control
             MapViewMode.Region => 420,
             _ => 300
         };
+    }
+
+    private double GetUniverseNodeZoomScale()
+    {
+        if (ViewMode != MapViewMode.Universe)
+        {
+            return 1.0;
+        }
+
+        var threshold = GetLabelZoomThreshold();
+        if (_zoom >= threshold)
+        {
+            return 1.0;
+        }
+
+        const double minZoom = 0.4;
+        var progress = (_zoom - minZoom) / (threshold - minZoom);
+        progress = Math.Clamp(progress, 0.0, 1.0);
+        return UniverseMinNodeScale + ((1.0 - UniverseMinNodeScale) * progress);
     }
 
     private double GetVoronoiZoomThreshold()
