@@ -46,6 +46,7 @@ public sealed class MapControl : Control
     private static readonly Point NodeLabelOffset = new(9, 3);
     private static readonly Typeface NodeLabelTypeface = new("Inter", FontStyle.Normal, FontWeight.Medium);
     private const double NodeLabelFontSize = 11.5;
+    private const double NodeRegionConstellationFontSize = 10.5;
     private const double IconSize = 18.0;
     private const double IndicatorIconLeftPadding = 4.0;
     private const double IndicatorIconSlotGap = 3.0;
@@ -2435,16 +2436,40 @@ public sealed class MapControl : Control
         FormattedText? regionHalo = null;
         if (ShowIndicatorRegion && !string.IsNullOrWhiteSpace(node.RegionName))
         {
-            region = GetNodeSecondaryLabel(node.Id, node.RegionName);
-            regionHalo = GetNodeSecondaryLabelHalo(node.Id, node.RegionName);
+            region = new FormattedText(
+                node.RegionName,
+                CultureInfo.InvariantCulture,
+                FlowDirection.LeftToRight,
+                NodeLabelTypeface,
+                NodeRegionConstellationFontSize-1,
+                new SolidColorBrush(Color.Parse("#E6F0FF")));
+            regionHalo = new FormattedText(
+                node.RegionName,
+                CultureInfo.InvariantCulture,
+                FlowDirection.LeftToRight,
+                NodeLabelTypeface,
+                NodeRegionConstellationFontSize-1,
+                new ImmutableSolidColorBrush(Color.Parse("#AA0A111A")));
         }
 
         FormattedText? constellation = null;
         FormattedText? constellationHalo = null;
         if (ShowIndicatorConstellation && !string.IsNullOrWhiteSpace(node.ConstellationName))
         {
-            constellation = GetNodeSecondaryLabel(node.Id, node.ConstellationName);
-            constellationHalo = GetNodeSecondaryLabelHalo(node.Id, node.ConstellationName);
+            constellation = new FormattedText(
+                node.ConstellationName,
+                CultureInfo.InvariantCulture,
+                FlowDirection.LeftToRight,
+                NodeLabelTypeface,
+                NodeRegionConstellationFontSize-1,
+                new SolidColorBrush(Color.Parse("#E6F0FF")));
+            constellationHalo = new FormattedText(
+                node.ConstellationName,
+                CultureInfo.InvariantCulture,
+                FlowDirection.LeftToRight,
+                NodeLabelTypeface,
+                NodeRegionConstellationFontSize-1,
+                new ImmutableSolidColorBrush(Color.Parse("#AA0A111A")));
         }
 
         var starClass = GetStarClassDisplayValue(node);
@@ -2602,12 +2627,11 @@ public sealed class MapControl : Control
         var constellationText = (InfoBoxShowConstellation && !string.IsNullOrWhiteSpace(node.ConstellationName))
             ? $"{node.ConstellationName}"
             : null;
-        if (regionText is not null || constellationText is not null)
-        {
-            detailLines.Add(regionText is not null && constellationText is not null
+        var regionConstellationLine = regionText is not null || constellationText is not null
+            ? (regionText is not null && constellationText is not null
                 ? $"{regionText} | {constellationText}"
-                : regionText ?? constellationText!);
-        }
+                : regionText ?? constellationText!)
+            : null;
         var starClass = GetStarClassDisplayValue(node);
         if (InfoBoxShowStarClass && !string.IsNullOrWhiteSpace(starClass))
         {
@@ -2651,6 +2675,15 @@ public sealed class MapControl : Control
                 new Typeface("Inter"),
                 12,
                 Brushes.White);
+        var regionConstellationText = regionConstellationLine is null
+            ? null
+            : new FormattedText(
+                regionConstellationLine,
+                CultureInfo.InvariantCulture,
+                FlowDirection.LeftToRight,
+                NodeLabelTypeface,
+                NodeRegionConstellationFontSize,
+                Brushes.White);
 
         var wormholeLineHeight = 0.0;
         var wormholeMaxWidth = 0.0;
@@ -2670,9 +2703,10 @@ public sealed class MapControl : Control
         var padX = 8.0;
         var padY = 6.0;
         var headerWidth = headerText.Width + (securityText is null ? 0 : (8 + securityText.Width));
-        var bodyWidth = Math.Max(detailsText?.Width ?? 0, wormholeMaxWidth);
+        var bodyWidth = Math.Max(Math.Max(regionConstellationText?.Width ?? 0, detailsText?.Width ?? 0), wormholeMaxWidth);
         var contentWidth = Math.Max(headerWidth, bodyWidth);
         var contentHeight = headerText.Height
+            + (regionConstellationText is null ? 0 : regionConstellationText.Height + 2)
             + (detailsText is null ? 0 : detailsText.Height + 2)
             + (wormholes.Count == 0 ? 0 : (wormholes.Count * (wormholeLineHeight + 1)));
         var rect = new Rect(
@@ -2690,12 +2724,19 @@ public sealed class MapControl : Control
             var secOrigin = new Point(headerOrigin.X + headerText.Width + 8, headerOrigin.Y);
             context.DrawText(securityText, secOrigin);
         }
+        var detailsStartY = headerOrigin.Y + headerText.Height + 2;
+        if (regionConstellationText is not null)
+        {
+            context.DrawText(regionConstellationText, new Point(headerOrigin.X, detailsStartY));
+            detailsStartY += regionConstellationText.Height + 2;
+        }
         if (detailsText is not null)
         {
-            context.DrawText(detailsText, new Point(headerOrigin.X, headerOrigin.Y + headerText.Height + 2));
+            context.DrawText(detailsText, new Point(headerOrigin.X, detailsStartY));
+            detailsStartY += detailsText.Height;
         }
 
-        var wormholeStartY = headerOrigin.Y + headerText.Height + 2 + (detailsText?.Height ?? 0);
+        var wormholeStartY = detailsStartY;
         foreach (var wh in wormholes)
         {
             var hub = new FormattedText($"{wh.HubType}", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Inter"), 12, Brushes.White);
