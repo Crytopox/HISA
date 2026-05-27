@@ -42,7 +42,6 @@
             <ToggleButton Classes="view-mode" Content="Region" IsChecked="{Binding IsRegionMode, Mode=TwoWay}" />
         </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" IsVisible="{Binding IsCoordinateSelectorVisible}">
-          <TextBlock VerticalAlignment="Center" Text="ViewMode" Foreground="#8A96A8" />
           <ComboBox Width="190" ItemsSource="{Binding CoordinateModes}" SelectedItem="{Binding SelectedCoordinateMode}">
             <ComboBox.ItemTemplate>
               <DataTemplate>
@@ -56,7 +55,6 @@
           <ComboBox Width="220" ItemsSource="{Binding Regions}" SelectedItem="{Binding SelectedRegion}" />
         </StackPanel>
         <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-          <TextBlock VerticalAlignment="Center" Text="Search" Foreground="#8A96A8" />
           <TextBox Width="280"
                    x:Name="MapSearchBox"
                    Text="{Binding MapSearchText}"
