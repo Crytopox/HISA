@@ -1397,7 +1397,7 @@ public sealed class MapControl : Control
             for (var wx = firstX; wx <= maxX + (step * 0.5); wx += step)
             {
                 var ix = (long)Math.Round(wx / step, MidpointRounding.AwayFromZero);
-                var isMajor = Math.Abs(ix % 5) == 0;
+                var isMajor = Math.Abs(ix % 6) == 0;
                 context.DrawLine(
                     isMajor ? majorPen : minorPen,
                     new Point(wx, minY),
@@ -1407,7 +1407,7 @@ public sealed class MapControl : Control
             for (var wy = firstY; wy <= maxY + (step * 0.5); wy += step)
             {
                 var iy = (long)Math.Round(wy / step, MidpointRounding.AwayFromZero);
-                var isMajor = Math.Abs(iy % 5) == 0;
+                var isMajor = Math.Abs(iy % 6) == 0;
                 context.DrawLine(
                     isMajor ? majorPen : minorPen,
                     new Point(minX, wy),
