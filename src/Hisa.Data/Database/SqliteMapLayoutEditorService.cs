@@ -431,6 +431,7 @@ public sealed class SqliteMapLayoutEditorService : IMapLayoutEditorService
     {
         var nodes = new List<MapNode>();
         var nodeByRowId = new Dictionary<long, MapNode>();
+        var loadedSystemIds = new HashSet<int>();
         var nodeCommand = connection.CreateCommand();
         nodeCommand.CommandText = """
             SELECT Id, SolarSystemId, Name, X, Y
@@ -445,6 +446,11 @@ public sealed class SqliteMapLayoutEditorService : IMapLayoutEditorService
                 var rowId = reader.GetInt64(0);
                 var solarSystemId = reader.IsDBNull(1) ? (long?)null : reader.GetInt64(1);
                 var mapId = solarSystemId is > 0 ? solarSystemId.Value : -rowId;
+                if (solarSystemId is > 0)
+                {
+                    loadedSystemIds.Add((int)solarSystemId.Value);
+                }
+
                 var node = new MapNode
                 {
                     Id = mapId,
@@ -474,6 +480,40 @@ public sealed class SqliteMapLayoutEditorService : IMapLayoutEditorService
             return new MapGraph { Nodes = [], Links = [] };
         }
 
+        if (loadedSystemIds.Count > 0)
+        {
+            var metadataBySystemId = await LoadSdeNodeMetadataByIdAsync(loadedSystemIds, cancellationToken);
+            nodes = nodes
+                .Select(node =>
+                {
+                    if (node.Id <= 0 || !metadataBySystemId.TryGetValue((int)node.Id, out var meta))
+                    {
+                        return node;
+                    }
+
+                    return new MapNode
+                    {
+                        Id = node.Id,
+                        Name = node.Name,
+                        X = node.X,
+                        Y = node.Y,
+                        Security = meta.Security,
+                        SunTypeId = node.SunTypeId,
+                        StarTypeName = node.StarTypeName,
+                        SpectralClass = node.SpectralClass,
+                        HasJoveObservatory = node.HasJoveObservatory,
+                        IceFieldCount = node.IceFieldCount,
+                        RegionId = meta.RegionId,
+                        RegionName = meta.RegionName,
+                        ConstellationId = meta.ConstellationId,
+                        ConstellationName = meta.ConstellationName,
+                        StormEffects = node.StormEffects,
+                        HubWormholeConnections = node.HubWormholeConnections
+                    };
+                })
+                .ToList();
+        }
+
         var links = new List<MapLink>();
         var linkCommand = connection.CreateCommand();
         linkCommand.CommandText = """
@@ -498,6 +538,52 @@ public sealed class SqliteMapLayoutEditorService : IMapLayoutEditorService
         }
 
         return new MapGraph { Nodes = nodes, Links = links };
+    }
+
+    private async Task<Dictionary<int, (int? RegionId, string? RegionName, int? ConstellationId, string? ConstellationName, double? Security)>> LoadSdeNodeMetadataByIdAsync(
+        IReadOnlyCollection<int> systemIds,
+        CancellationToken cancellationToken)
+    {
+        if (systemIds.Count == 0)
+        {
+            return [];
+        }
+
+        await using var sdeConnection = _sdeDatabase.CreateConnection();
+        await sdeConnection.OpenAsync(cancellationToken);
+
+        var idList = systemIds.Distinct().ToList();
+        var parameters = new List<string>(idList.Count);
+        var command = sdeConnection.CreateCommand();
+        for (var i = 0; i < idList.Count; i++)
+        {
+            var param = $"$id{i}";
+            parameters.Add(param);
+            command.Parameters.AddWithValue(param, idList[i]);
+        }
+
+        command.CommandText = $"""
+            SELECT s.solarSystemID, s.regionID, r.regionName, s.constellationID, c.constellationName, s.security
+            FROM mapSolarSystems s
+            LEFT JOIN mapRegions r ON r.regionID = s.regionID
+            LEFT JOIN mapConstellations c ON c.constellationID = s.constellationID
+            WHERE s.solarSystemID IN ({string.Join(", ", parameters)});
+            """;
+
+        var result = new Dictionary<int, (int? RegionId, string? RegionName, int? ConstellationId, string? ConstellationName, double? Security)>(idList.Count);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var systemId = reader.GetInt32(0);
+            var regionId = reader.IsDBNull(1) ? (int?)null : reader.GetInt32(1);
+            var regionName = reader.IsDBNull(2) ? null : reader.GetString(2);
+            var constellationId = reader.IsDBNull(3) ? (int?)null : reader.GetInt32(3);
+            var constellationName = reader.IsDBNull(4) ? null : reader.GetString(4);
+            var security = reader.IsDBNull(5) ? (double?)null : reader.GetDouble(5);
+            result[systemId] = (regionId, regionName, constellationId, constellationName, security);
+        }
+
+        return result;
     }
 
     private async Task RebuildLinksForLayoutRegionAsync(SqliteConnection connection, SqliteTransaction tx, long layoutRegionId, CancellationToken cancellationToken)
