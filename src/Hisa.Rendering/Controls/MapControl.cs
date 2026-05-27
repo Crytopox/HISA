@@ -96,6 +96,7 @@ public sealed class MapControl : Control
     private static readonly Lazy<Bitmap?> StormPlasmaStrongIcon = new(() => LoadIcon("storm_plasma_strong.png"));
     private static readonly Lazy<Bitmap?> StormPlasmaWeakIcon = new(() => LoadIcon("storm_plasma_weak.png"));
     private static readonly Lazy<Bitmap?> StormUnknownIcon = new(() => LoadIcon("storm_unknown.png"));
+    private static readonly Lazy<Bitmap?> WormholeIcon = new(() => LoadIcon("wormhole.png"));
 
     public static readonly StyledProperty<MapGraph?> GraphProperty =
         AvaloniaProperty.Register<MapControl, MapGraph?>(nameof(Graph));
@@ -126,6 +127,8 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorIceBeltsIcon), true);
     public static readonly StyledProperty<bool> ShowIndicatorStormIconProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorStormIcon), true);
+    public static readonly StyledProperty<bool> ShowIndicatorWormholeIconProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorWormholeIcon), true);
     public static readonly StyledProperty<bool> InfoBoxShowRegionProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowRegion), true);
     public static readonly StyledProperty<bool> InfoBoxShowConstellationProperty =
@@ -142,6 +145,12 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowIceBeltsIcon), true);
     public static readonly StyledProperty<bool> InfoBoxShowStormIconProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowStormIcon), true);
+    public static readonly StyledProperty<bool> InfoBoxShowWormholeIconProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowWormholeIcon), true);
+    public static readonly StyledProperty<bool> AlwaysShowHubWormholesProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(AlwaysShowHubWormholes), false);
+    public static readonly StyledProperty<HubWormholeMarkerMode> HubWormholeMarkerModeProperty =
+        AvaloniaProperty.Register<MapControl, HubWormholeMarkerMode>(nameof(HubWormholeMarkerMode), HubWormholeMarkerMode.Badge);
 
     private Point? _lastPanPoint;
     private Point _panOffset = new(0, 0);
@@ -263,6 +272,12 @@ public sealed class MapControl : Control
         set => SetValue(ShowIndicatorStormIconProperty, value);
     }
 
+    public bool ShowIndicatorWormholeIcon
+    {
+        get => GetValue(ShowIndicatorWormholeIconProperty);
+        set => SetValue(ShowIndicatorWormholeIconProperty, value);
+    }
+
     public bool InfoBoxShowRegion
     {
         get => GetValue(InfoBoxShowRegionProperty);
@@ -311,6 +326,24 @@ public sealed class MapControl : Control
         set => SetValue(InfoBoxShowStormIconProperty, value);
     }
 
+    public bool InfoBoxShowWormholeIcon
+    {
+        get => GetValue(InfoBoxShowWormholeIconProperty);
+        set => SetValue(InfoBoxShowWormholeIconProperty, value);
+    }
+
+    public bool AlwaysShowHubWormholes
+    {
+        get => GetValue(AlwaysShowHubWormholesProperty);
+        set => SetValue(AlwaysShowHubWormholesProperty, value);
+    }
+
+    public HubWormholeMarkerMode HubWormholeMarkerMode
+    {
+        get => GetValue(HubWormholeMarkerModeProperty);
+        set => SetValue(HubWormholeMarkerModeProperty, value);
+    }
+
     public MapControl()
     {
         AffectsRender<MapControl>(GraphProperty, SelectedNodeIdProperty, ViewModeProperty, StretchToWindowProperty);
@@ -325,6 +358,7 @@ public sealed class MapControl : Control
             ShowIndicatorJoveObservatoryIconProperty,
             ShowIndicatorIceBeltsIconProperty,
             ShowIndicatorStormIconProperty,
+            ShowIndicatorWormholeIconProperty,
             InfoBoxShowRegionProperty,
             InfoBoxShowConstellationProperty,
             InfoBoxShowSecurityStatusProperty,
@@ -332,7 +366,10 @@ public sealed class MapControl : Control
             InfoBoxShowA0StarIconProperty,
             InfoBoxShowJoveObservatoryIconProperty,
             InfoBoxShowIceBeltsIconProperty,
-            InfoBoxShowStormIconProperty);
+            InfoBoxShowStormIconProperty,
+            InfoBoxShowWormholeIconProperty,
+            AlwaysShowHubWormholesProperty,
+            HubWormholeMarkerModeProperty);
         ClipToBounds = true;
     }
 
@@ -661,6 +698,21 @@ public sealed class MapControl : Control
                                 ? RegionSelectedBrush
                                 : GetCachedBrush(GetNodeBaseColor(node, NodeColorMode));
             context.DrawEllipse(brush, NodeOutlinePen, p, radius, radius);
+            if (AlwaysShowHubWormholes && node.HubWormholeConnections.Count > 0)
+            {
+                switch (HubWormholeMarkerMode)
+                {
+                    case HubWormholeMarkerMode.Ring:
+                        DrawHubWormholeRing(context, p, node, radius);
+                        break;
+                    case HubWormholeMarkerMode.Halo:
+                        DrawHubWormholeHalo(context, p, node, radius);
+                        break;
+                    default:
+                        DrawHubWormholeBeacon(context, p, node);
+                        break;
+                }
+            }
 
             var labelVisibilityMargin = ViewMode == MapViewMode.Universe ? 180 : 96;
             var suppressInlineLabel =
@@ -1931,6 +1983,10 @@ public sealed class MapControl : Control
         {
             return;
         }
+        if (NodeBackgroundColorMode == MapNodeColorMode.Wormholes && node.HubWormholeConnections.Count == 0)
+        {
+            return;
+        }
 
         var color = GetNodeBaseColor(node, NodeBackgroundColorMode);
         var tuned = BrightenForBackground(color);
@@ -1950,8 +2006,26 @@ public sealed class MapControl : Control
             MapNodeColorMode.JoveObservatory => node.HasJoveObservatory ? Color.Parse("#2ED436") : Color.Parse("#98A6B8"),
             MapNodeColorMode.IceBelts => node.IceFieldCount > 0 ? Color.Parse("#58B9FF") : Color.Parse("#98A6B8"),
             MapNodeColorMode.Storms => GetStormColor(node),
+            MapNodeColorMode.Wormholes => GetHubWormholeColor(node),
             _ => Color.Parse("#98A6B8")
         };
+    }
+
+    private static Color GetHubWormholeColor(MapNode node)
+    {
+        var hasThera = node.HubWormholeConnections.Any(c => c.HubType == WormholeHubType.Thera);
+        var hasTurnur = node.HubWormholeConnections.Any(c => c.HubType == WormholeHubType.Turnur);
+        if (!hasThera && !hasTurnur)
+        {
+            return Color.Parse("#98A6B8");
+        }
+
+        if (hasThera && hasTurnur)
+        {
+            return Color.Parse("#ff0000");
+        }
+
+        return hasThera ? Color.Parse("#00ff00") : Color.Parse("#ff9c1a");
     }
 
     private static Color GetStormColor(MapNode node)
@@ -2464,6 +2538,13 @@ public sealed class MapControl : Control
             var iconX = rect.X + IndicatorIconLeftPadding + (indicatorIconSlot * (IconSize + IndicatorIconSlotGap));
             var iconY = rect.Bottom;
             DrawStormIcon(context, node, new Point(iconX, iconY), IconSize);
+            indicatorIconSlot++;
+        }
+        if (ShowIndicatorWormholeIcon && node.HubWormholeConnections.Count > 0)
+        {
+            var iconX = rect.X + IndicatorIconLeftPadding + (indicatorIconSlot * (IconSize + IndicatorIconSlotGap));
+            var iconY = rect.Bottom;
+            DrawHubWormholeIcon(context, node, new Point(iconX, iconY), IconSize);
         }
     }
 
@@ -2533,6 +2614,9 @@ public sealed class MapControl : Control
                 detailLines.Add($"Storm: {storm.Strength} {storm.Type}");
             }
         }
+        var wormholes = node.HubWormholeConnections
+            .OrderBy(c => c.HubType)
+            .ToList();
         var headerText = new FormattedText(
             header,
             CultureInfo.InvariantCulture,
@@ -2562,13 +2646,29 @@ public sealed class MapControl : Control
                 12,
                 Brushes.White);
 
+        var wormholeLineHeight = 0.0;
+        var wormholeMaxWidth = 0.0;
+        foreach (var wh in wormholes)
+        {
+            var hub = new FormattedText($"{wh.HubType}", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Inter"), 12, Brushes.White);
+            var sep = new FormattedText(" | ", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Inter"), 12, new ImmutableSolidColorBrush(Color.Parse("#8A96A8")));
+            var inSig = new FormattedText($"[{(string.IsNullOrWhiteSpace(wh.InSignature) ? "-" : wh.InSignature!)}]", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Inter"), 12, new ImmutableSolidColorBrush(Color.Parse("#5EDC8A")));
+            var outSig = new FormattedText($"[{(string.IsNullOrWhiteSpace(wh.OutSignature) ? "-" : wh.OutSignature!)}]", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Inter"), 12, new ImmutableSolidColorBrush(Color.Parse("#F07171")));
+            var mass = new FormattedText($"[{GetWormholeMassShort(wh.MaxShipSize)}]", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Inter"), 12, new ImmutableSolidColorBrush(Color.Parse("#F5C06A")));
+            var width = hub.Width + sep.Width + inSig.Width + sep.Width + outSig.Width + sep.Width + mass.Width;
+            wormholeMaxWidth = Math.Max(wormholeMaxWidth, width);
+            wormholeLineHeight = Math.Max(wormholeLineHeight, Math.Max(hub.Height, Math.Max(inSig.Height, outSig.Height)));
+        }
+
         var start = GetNodeLabelOrigin(anchor);
         var padX = 8.0;
         var padY = 6.0;
         var headerWidth = headerText.Width + (securityText is null ? 0 : (8 + securityText.Width));
-        var bodyWidth = detailsText?.Width ?? 0;
+        var bodyWidth = Math.Max(detailsText?.Width ?? 0, wormholeMaxWidth);
         var contentWidth = Math.Max(headerWidth, bodyWidth);
-        var contentHeight = headerText.Height + (detailsText is null ? 0 : detailsText.Height + 2);
+        var contentHeight = headerText.Height
+            + (detailsText is null ? 0 : detailsText.Height + 2)
+            + (wormholes.Count == 0 ? 0 : (wormholes.Count * (wormholeLineHeight + 1)));
         var rect = new Rect(
             start.X - 2,
             start.Y - 2,
@@ -2587,6 +2687,32 @@ public sealed class MapControl : Control
         if (detailsText is not null)
         {
             context.DrawText(detailsText, new Point(headerOrigin.X, headerOrigin.Y + headerText.Height + 2));
+        }
+
+        var wormholeStartY = headerOrigin.Y + headerText.Height + 2 + (detailsText?.Height ?? 0);
+        foreach (var wh in wormholes)
+        {
+            var hub = new FormattedText($"{wh.HubType}", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Inter"), 12, Brushes.White);
+            var sep = new FormattedText(" | ", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Inter"), 12, new ImmutableSolidColorBrush(Color.Parse("#8A96A8")));
+            var inSig = new FormattedText($"[{(string.IsNullOrWhiteSpace(wh.InSignature) ? "-" : wh.InSignature!)}]", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Inter"), 12, new ImmutableSolidColorBrush(Color.Parse("#5EDC8A")));
+            var outSig = new FormattedText($"[{(string.IsNullOrWhiteSpace(wh.OutSignature) ? "-" : wh.OutSignature!)}]", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Inter"), 12, new ImmutableSolidColorBrush(Color.Parse("#F07171")));
+            var mass = new FormattedText($"[{GetWormholeMassShort(wh.MaxShipSize)}]", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Inter"), 12, new ImmutableSolidColorBrush(Color.Parse("#F5C06A")));
+
+            var lineX = headerOrigin.X;
+            context.DrawText(hub, new Point(lineX, wormholeStartY));
+            lineX += hub.Width;
+            context.DrawText(sep, new Point(lineX, wormholeStartY));
+            lineX += sep.Width;
+            context.DrawText(inSig, new Point(lineX, wormholeStartY));
+            lineX += inSig.Width;
+            context.DrawText(sep, new Point(lineX, wormholeStartY));
+            lineX += sep.Width;
+            context.DrawText(outSig, new Point(lineX, wormholeStartY));
+            lineX += outSig.Width;
+            context.DrawText(sep, new Point(lineX, wormholeStartY));
+            lineX += sep.Width;
+            context.DrawText(mass, new Point(lineX, wormholeStartY));
+            wormholeStartY += wormholeLineHeight + 1;
         }
 
         var overlayIconSlot = 0;
@@ -2616,7 +2742,26 @@ public sealed class MapControl : Control
             var iconX = rect.X + IndicatorIconLeftPadding + (overlayIconSlot * (IconSize + IndicatorIconSlotGap));
             var iconY = rect.Bottom + 3;
             DrawStormIcon(context, node, new Point(iconX, iconY), IconSize);
+            overlayIconSlot++;
         }
+        if (InfoBoxShowWormholeIcon && node.HubWormholeConnections.Count > 0)
+        {
+            var iconX = rect.X + IndicatorIconLeftPadding + (overlayIconSlot * (IconSize + IndicatorIconSlotGap));
+            var iconY = rect.Bottom + 3;
+            DrawHubWormholeIcon(context, node, new Point(iconX, iconY), IconSize);
+        }
+    }
+
+    private static string GetWormholeMassShort(string? maxShipSize)
+    {
+        return maxShipSize?.Trim().ToLowerInvariant() switch
+        {
+            "xlarge" => "XL",
+            "large" => "L",
+            "medium" => "M",
+            "small" => "S",
+            _ => "?"
+        };
     }
 
     private static Bitmap? LoadA0StarIcon()
@@ -2676,6 +2821,61 @@ public sealed class MapControl : Control
         var src = new Rect(0, 0, icon.Size.Width, icon.Size.Height);
         var dst = new Rect(topLeft.X, topLeft.Y, size, size);
         context.DrawImage(icon, src, dst);
+    }
+
+    private static void DrawHubWormholeIcon(DrawingContext context, MapNode node, Point topLeft, double size)
+    {
+        var icon = WormholeIcon.Value;
+        if (icon is null)
+        {
+            return;
+        }
+
+        var src = new Rect(0, 0, icon.Size.Width, icon.Size.Height);
+        var dst = new Rect(topLeft.X, topLeft.Y, size, size);
+        context.DrawImage(icon, src, dst);
+    }
+
+    private static void DrawHubWormholeBeacon(DrawingContext context, Point nodePoint, MapNode node)
+    {
+        var hasThera = node.HubWormholeConnections.Any(c => c.HubType == WormholeHubType.Thera);
+        var hasTurnur = node.HubWormholeConnections.Any(c => c.HubType == WormholeHubType.Turnur);
+        var color = GetHubWormholeColor(node);
+        var fill = new ImmutableSolidColorBrush(Color.FromArgb(230, color.R, color.G, color.B));
+        var border = new Pen(new ImmutableSolidColorBrush(Color.FromArgb(255, 15, 20, 28)), 1);
+        var label = hasThera && hasTurnur ? "T+U" : hasThera ? "T" : "U";
+        var text = new FormattedText(
+            label,
+            CultureInfo.InvariantCulture,
+            FlowDirection.LeftToRight,
+            new Typeface("Inter"),
+            10,
+            Brushes.Black);
+
+        var rect = new Rect(
+            nodePoint.X + 7.0,
+            nodePoint.Y - 14.0,
+            Math.Max(14, text.Width + 6),
+            12);
+        context.FillRectangle(fill, rect, 3);
+        context.DrawRectangle(border, rect, 3);
+        context.DrawText(text, new Point(rect.X + ((rect.Width - text.Width) / 2), rect.Y + ((rect.Height - text.Height) / 2) - 0.5));
+    }
+
+    private static void DrawHubWormholeRing(DrawingContext context, Point nodePoint, MapNode node, double nodeRadius)
+    {
+        var color = GetHubWormholeColor(node);
+        var pen = new Pen(new ImmutableSolidColorBrush(Color.FromArgb(220, color.R, color.G, color.B)), 2.0);
+        var ringRadius = nodeRadius + 3.4;
+        context.DrawEllipse(null, pen, nodePoint, ringRadius, ringRadius);
+    }
+
+    private static void DrawHubWormholeHalo(DrawingContext context, Point nodePoint, MapNode node, double nodeRadius)
+    {
+        var color = GetHubWormholeColor(node);
+        var halo = new ImmutableSolidColorBrush(Color.FromArgb(120, color.R, color.G, color.B));
+        var haloRadius = nodeRadius + 4.2;
+        context.DrawEllipse(halo, null, nodePoint, haloRadius, haloRadius);
     }
 
     private static bool IsA0BlueSmall(MapNode node)

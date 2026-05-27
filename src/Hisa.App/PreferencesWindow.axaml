@@ -1,0 +1,36 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:Hisa.App"
+        xmlns:converters="clr-namespace:Hisa.App.Converters"
+        mc:Ignorable="d" d:DesignWidth="540" d:DesignHeight="320"
+        x:Class="Hisa.App.PreferencesWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="Preferences"
+        Background="#0D131D">
+  <Window.Resources>
+    <converters:HubWormholeMarkerModeDisplayConverter x:Key="HubWormholeMarkerModeDisplayConverter" />
+  </Window.Resources>
+  <Border Margin="12" Padding="12" Background="#121A26" BorderBrush="#263244" BorderThickness="1" CornerRadius="6">
+    <StackPanel Spacing="12">
+      <TextBlock Text="Map Preferences" FontSize="15" FontWeight="SemiBold" Foreground="#D8E5F8" />
+      <CheckBox IsChecked="{Binding AlwaysShowHubWormholes}" Content="Always show Thera/Turnur Wormholes" />
+      <TextBlock Text="Shows a small corner beacon on connected systems, independent of current map color/icon filters."
+                 Foreground="#8A96A8"
+                 TextWrapping="Wrap" />
+      <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding AlwaysShowHubWormholes}">
+        <TextBlock VerticalAlignment="Center" Text="Marker style" Foreground="#8A96A8" />
+        <ComboBox Width="160"
+                  ItemsSource="{Binding HubWormholeMarkerModes}"
+                  SelectedItem="{Binding HubWormholeMarkerMode}">
+          <ComboBox.ItemTemplate>
+            <DataTemplate>
+              <TextBlock Text="{Binding Converter={StaticResource HubWormholeMarkerModeDisplayConverter}}" />
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
+      </StackPanel>
+    </StackPanel>
+  </Border>
+</Window>

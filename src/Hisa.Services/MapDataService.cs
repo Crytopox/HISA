@@ -11,13 +11,18 @@ public sealed class MapDataService : IMapDataService
     private static readonly Lazy<IReadOnlyDictionary<int, StaticSolarSystemData>> StaticSolarSystemDataById = new(LoadStaticSolarSystemDataById);
     private readonly ISdeDatabase _sdeDatabase;
     private readonly IStormStateService _stormStateService;
+    private readonly IHubWormholeStateService _hubWormholeStateService;
 
     private sealed record StaticSolarSystemData(bool HasJoveObservatory, int IceFieldCount);
 
-    public MapDataService(ISdeDatabase sdeDatabase, IStormStateService stormStateService)
+    public MapDataService(
+        ISdeDatabase sdeDatabase,
+        IStormStateService stormStateService,
+        IHubWormholeStateService hubWormholeStateService)
     {
         _sdeDatabase = sdeDatabase;
         _stormStateService = stormStateService;
+        _hubWormholeStateService = hubWormholeStateService;
     }
 
     public async Task<IReadOnlyList<RegionOption>> GetRegionsAsync(CancellationToken cancellationToken = default)
@@ -272,6 +277,9 @@ public sealed class MapDataService : IMapDataService
                 ConstellationName = reader.IsDBNull(11) ? null : reader.GetString(11),
                 StormEffects = _stormStateService.Current.EffectsBySystemId.TryGetValue(solarSystemId, out var effects)
                     ? effects
+                    : [],
+                HubWormholeConnections = _hubWormholeStateService.Current.ConnectionsBySystemId.TryGetValue(solarSystemId, out var wormholes)
+                    ? wormholes
                     : []
             });
         }
@@ -371,7 +379,8 @@ public sealed class MapDataService : IMapDataService
                 RegionName = n.RegionName,
                 ConstellationId = n.ConstellationId,
                 ConstellationName = n.ConstellationName,
-                StormEffects = n.StormEffects
+                StormEffects = n.StormEffects,
+                HubWormholeConnections = n.HubWormholeConnections
             })
             .ToList();
 

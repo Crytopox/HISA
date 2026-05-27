@@ -14,6 +14,7 @@ public partial class MainWindow : Window
     private Hisa.Core.Models.MapViewMode _lastKnownViewMode;
     private readonly DebugWindowViewModel? _debugWindowViewModel;
     private DebugWindow? _debugWindow;
+    private PreferencesWindow? _preferencesWindow;
 
     public MainWindow()
     {
@@ -51,6 +52,23 @@ public partial class MainWindow : Window
 
         _debugWindow.Show();
         _debugWindow.Activate();
+    }
+
+    private void OnOpenPreferencesClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_preferencesWindow is null)
+        {
+            if (_boundVm is null)
+            {
+                return;
+            }
+
+            _preferencesWindow = new PreferencesWindow(_boundVm);
+            _preferencesWindow.Closed += (_, _) => _preferencesWindow = null;
+        }
+
+        _preferencesWindow.Show();
+        _preferencesWindow.Activate();
     }
 
     private void OnFitCenterClicked(object? sender, RoutedEventArgs e)

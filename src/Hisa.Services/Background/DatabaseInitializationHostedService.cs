@@ -1,6 +1,7 @@
 using Hisa.Data.Database;
 using Hisa.Core.Abstractions;
 using Hisa.Services.Storm;
+using Hisa.Services.Wormholes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -44,6 +45,13 @@ public static class ServiceCollectionExtensions
         });
         services.AddSingleton<IStormStateService, StormStateService>();
         services.AddHostedService<StormRefreshHostedService>();
+        services.AddHttpClient<IHubWormholeSource, EveScoutHubWormholeSource>(client =>
+        {
+            client.BaseAddress = new Uri("https://api.eve-scout.com/");
+            client.Timeout = TimeSpan.FromSeconds(20);
+        });
+        services.AddSingleton<IHubWormholeStateService, HubWormholeStateService>();
+        services.AddHostedService<HubWormholeRefreshHostedService>();
         return services;
     }
 }

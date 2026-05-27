@@ -13,6 +13,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly IMapDataService _mapDataService;
     private readonly ISettingsService _settingsService;
     private readonly IStormStateService _stormStateService;
+    private readonly IHubWormholeStateService _hubWormholeStateService;
     private List<RegionOption> _allRegions = [];
     private bool _isBusy;
     private MapViewMode _selectedViewMode;
@@ -36,6 +37,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _showIndicatorJoveObservatoryIcon = true;
     private bool _showIndicatorIceBeltsIcon = true;
     private bool _showIndicatorStormIcon = true;
+    private bool _showIndicatorWormholeIcon = true;
     private bool _infoBoxShowRegion = true;
     private bool _infoBoxShowConstellation = true;
     private bool _infoBoxShowSecurityStatus = true;
@@ -44,6 +46,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _infoBoxShowJoveObservatoryIcon = true;
     private bool _infoBoxShowIceBeltsIcon = true;
     private bool _infoBoxShowStormIcon = true;
+    private bool _infoBoxShowWormholeIcon = true;
+    private bool _alwaysShowHubWormholes;
+    private HubWormholeMarkerMode _hubWormholeMarkerMode = HubWormholeMarkerMode.Badge;
     private CancellationTokenSource? _searchSuggestionsCts;
     private bool _isInitializing = true;
     private const string ViewModeKey = "Map.SelectedViewMode";
@@ -60,6 +65,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string ShowIndicatorJoveObservatoryIconKey = "Map.ShowIndicatorJoveObservatoryIcon";
     private const string ShowIndicatorIceBeltsIconKey = "Map.ShowIndicatorIceBeltsIcon";
     private const string ShowIndicatorStormIconKey = "Map.ShowIndicatorStormIcon";
+    private const string ShowIndicatorWormholeIconKey = "Map.ShowIndicatorWormholeIcon";
     private const string InfoBoxShowRegionKey = "Map.InfoBoxShowRegion";
     private const string InfoBoxShowConstellationKey = "Map.InfoBoxShowConstellation";
     private const string InfoBoxShowSecurityStatusKey = "Map.InfoBoxShowSecurityStatus";
@@ -68,6 +74,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string InfoBoxShowJoveObservatoryIconKey = "Map.InfoBoxShowJoveObservatoryIcon";
     private const string InfoBoxShowIceBeltsIconKey = "Map.InfoBoxShowIceBeltsIcon";
     private const string InfoBoxShowStormIconKey = "Map.InfoBoxShowStormIcon";
+    private const string InfoBoxShowWormholeIconKey = "Map.InfoBoxShowWormholeIcon";
+    private const string AlwaysShowHubWormholesKey = "Map.AlwaysShowHubWormholes";
+    private const string HubWormholeMarkerModeKey = "Map.HubWormholeMarkerMode";
     private const string WindowPlacementKey = "Window.Main.Placement";
     private const string MapViewportPrefixKey = "Map.Viewport";
     private readonly Task _initialLoadTask;
@@ -75,16 +84,20 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public MainWindowViewModel(
         IMapDataService mapDataService,
         ISettingsService settingsService,
-        IStormStateService stormStateService)
+        IStormStateService stormStateService,
+        IHubWormholeStateService hubWormholeStateService)
     {
         _mapDataService = mapDataService;
         _settingsService = settingsService;
         _stormStateService = stormStateService;
+        _hubWormholeStateService = hubWormholeStateService;
         ViewModes = new ObservableCollection<MapViewMode>(Enum.GetValues<MapViewMode>());
         CoordinateModes = new ObservableCollection<MapCoordinateMode>(Enum.GetValues<MapCoordinateMode>());
         NodeColorModes = new ObservableCollection<MapNodeColorMode>(Enum.GetValues<MapNodeColorMode>());
+        HubWormholeMarkerModes = new ObservableCollection<HubWormholeMarkerMode>(Enum.GetValues<HubWormholeMarkerMode>());
         Regions = [];
         _stormStateService.StormSnapshotUpdated += OnStormSnapshotUpdated;
+        _hubWormholeStateService.HubWormholeSnapshotUpdated += OnHubWormholeSnapshotUpdated;
         _initialLoadTask = LoadAsync();
     }
 
@@ -93,6 +106,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public ObservableCollection<MapViewMode> ViewModes { get; }
     public ObservableCollection<MapCoordinateMode> CoordinateModes { get; }
     public ObservableCollection<MapNodeColorMode> NodeColorModes { get; }
+    public ObservableCollection<HubWormholeMarkerMode> HubWormholeMarkerModes { get; }
     public ObservableCollection<RegionOption> Regions { get; }
     public ObservableCollection<MapSearchCandidate> SearchSuggestions { get; } = [];
 
@@ -300,6 +314,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
+    public bool ShowIndicatorWormholeIcon
+    {
+        get => _showIndicatorWormholeIcon;
+        set
+        {
+            if (SetProperty(ref _showIndicatorWormholeIcon, value) && !_isInitializing)
+            {
+                _ = _settingsService.SetAsync(ShowIndicatorWormholeIconKey, value);
+            }
+        }
+    }
+
     public bool InfoBoxShowRegion
     {
         get => _infoBoxShowRegion;
@@ -392,6 +418,42 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             if (SetProperty(ref _infoBoxShowStormIcon, value) && !_isInitializing)
             {
                 _ = _settingsService.SetAsync(InfoBoxShowStormIconKey, value);
+            }
+        }
+    }
+
+    public bool InfoBoxShowWormholeIcon
+    {
+        get => _infoBoxShowWormholeIcon;
+        set
+        {
+            if (SetProperty(ref _infoBoxShowWormholeIcon, value) && !_isInitializing)
+            {
+                _ = _settingsService.SetAsync(InfoBoxShowWormholeIconKey, value);
+            }
+        }
+    }
+
+    public bool AlwaysShowHubWormholes
+    {
+        get => _alwaysShowHubWormholes;
+        set
+        {
+            if (SetProperty(ref _alwaysShowHubWormholes, value) && !_isInitializing)
+            {
+                _ = _settingsService.SetAsync(AlwaysShowHubWormholesKey, value);
+            }
+        }
+    }
+
+    public HubWormholeMarkerMode HubWormholeMarkerMode
+    {
+        get => _hubWormholeMarkerMode;
+        set
+        {
+            if (SetProperty(ref _hubWormholeMarkerMode, value) && !_isInitializing)
+            {
+                _ = _settingsService.SetAsync(HubWormholeMarkerModeKey, value);
             }
         }
     }
@@ -535,6 +597,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         ShowIndicatorJoveObservatoryIcon = await _settingsService.GetAsync<bool?>(ShowIndicatorJoveObservatoryIconKey) ?? true;
         ShowIndicatorIceBeltsIcon = await _settingsService.GetAsync<bool?>(ShowIndicatorIceBeltsIconKey) ?? true;
         ShowIndicatorStormIcon = await _settingsService.GetAsync<bool?>(ShowIndicatorStormIconKey) ?? true;
+        ShowIndicatorWormholeIcon = await _settingsService.GetAsync<bool?>(ShowIndicatorWormholeIconKey) ?? true;
         InfoBoxShowRegion = await _settingsService.GetAsync<bool?>(InfoBoxShowRegionKey) ?? true;
         InfoBoxShowConstellation = await _settingsService.GetAsync<bool?>(InfoBoxShowConstellationKey) ?? true;
         InfoBoxShowSecurityStatus = await _settingsService.GetAsync<bool?>(InfoBoxShowSecurityStatusKey) ?? true;
@@ -543,6 +606,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         InfoBoxShowJoveObservatoryIcon = await _settingsService.GetAsync<bool?>(InfoBoxShowJoveObservatoryIconKey) ?? true;
         InfoBoxShowIceBeltsIcon = await _settingsService.GetAsync<bool?>(InfoBoxShowIceBeltsIconKey) ?? true;
         InfoBoxShowStormIcon = await _settingsService.GetAsync<bool?>(InfoBoxShowStormIconKey) ?? true;
+        InfoBoxShowWormholeIcon = await _settingsService.GetAsync<bool?>(InfoBoxShowWormholeIconKey) ?? true;
+        AlwaysShowHubWormholes = await _settingsService.GetAsync<bool?>(AlwaysShowHubWormholesKey) ?? false;
+        HubWormholeMarkerMode = await _settingsService.GetAsync<HubWormholeMarkerMode?>(HubWormholeMarkerModeKey) ?? HubWormholeMarkerMode.Badge;
         SelectedViewMode = await _settingsService.GetAsync<MapViewMode?>(ViewModeKey) ?? MapViewMode.Universe;
         EnforceCoordinateModeForView();
 
@@ -590,6 +656,19 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     }
 
     private void OnStormSnapshotUpdated(object? sender, StormSnapshot snapshot)
+    {
+        if (_isInitializing)
+        {
+            return;
+        }
+
+        Dispatcher.UIThread.Post(async () =>
+        {
+            await ReloadGraphAsync();
+        });
+    }
+
+    private void OnHubWormholeSnapshotUpdated(object? sender, HubWormholeSnapshot snapshot)
     {
         if (_isInitializing)
         {

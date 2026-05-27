@@ -13,3 +13,15 @@ public interface IStormStateService
     event EventHandler<StormSnapshot>? StormSnapshotUpdated;
     Task RefreshAsync(CancellationToken cancellationToken = default);
 }
+
+public interface IHubWormholeSource
+{
+    Task<IReadOnlyList<HubWormholeConnection>> GetConnectionsAsync(CancellationToken cancellationToken = default);
+}
+
+public interface IHubWormholeStateService
+{
+    HubWormholeSnapshot Current { get; }
+    event EventHandler<HubWormholeSnapshot>? HubWormholeSnapshotUpdated;
+    Task RefreshAsync(CancellationToken cancellationToken = default);
+}

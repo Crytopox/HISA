@@ -22,7 +22,8 @@ public enum MapNodeColorMode
     NullsecTrueSec = 4,
     JoveObservatory = 5,
     IceBelts = 6,
-    Storms = 7
+    Storms = 7,
+    Wormholes = 8
 }
 
 public sealed class MapGraph
@@ -48,6 +49,7 @@ public sealed class MapNode
     public int? ConstellationId { get; init; }
     public string? ConstellationName { get; init; }
     public IReadOnlyList<StormEffect> StormEffects { get; init; } = [];
+    public IReadOnlyList<HubWormholeConnection> HubWormholeConnections { get; init; } = [];
 }
 
 public enum MapSearchKind

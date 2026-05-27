@@ -84,7 +84,14 @@
         </Popup>
         <Button Grid.Column="5" Content="Fit / Center" Click="OnFitCenterClicked" MinWidth="96" />
         <ToggleButton Grid.Column="6" Content="Display" IsChecked="{Binding IsDisplaySettingsOpen, Mode=TwoWay}" />
-        <Button Grid.Column="7" Content="Settings" Click="OnOpenDebugConsoleClicked" MinWidth="90" />
+        <Button Grid.Column="7" Content="Settings" MinWidth="90">
+          <Button.Flyout>
+            <MenuFlyout>
+              <MenuItem Header="Preferences" Click="OnOpenPreferencesClicked" />
+              <MenuItem Header="Debug Window" Click="OnOpenDebugConsoleClicked" />
+            </MenuFlyout>
+          </Button.Flyout>
+        </Button>
       </Grid>
     </Border>
 
@@ -104,6 +111,7 @@
                             ShowIndicatorJoveObservatoryIcon="{Binding ShowIndicatorJoveObservatoryIcon}"
                             ShowIndicatorIceBeltsIcon="{Binding ShowIndicatorIceBeltsIcon}"
                             ShowIndicatorStormIcon="{Binding ShowIndicatorStormIcon}"
+                            ShowIndicatorWormholeIcon="{Binding ShowIndicatorWormholeIcon}"
                             InfoBoxShowRegion="{Binding InfoBoxShowRegion}"
                             InfoBoxShowConstellation="{Binding InfoBoxShowConstellation}"
                             InfoBoxShowSecurityStatus="{Binding InfoBoxShowSecurityStatus}"
@@ -112,6 +120,9 @@
                             InfoBoxShowJoveObservatoryIcon="{Binding InfoBoxShowJoveObservatoryIcon}"
                             InfoBoxShowIceBeltsIcon="{Binding InfoBoxShowIceBeltsIcon}"
                             InfoBoxShowStormIcon="{Binding InfoBoxShowStormIcon}"
+                            InfoBoxShowWormholeIcon="{Binding InfoBoxShowWormholeIcon}"
+                            AlwaysShowHubWormholes="{Binding AlwaysShowHubWormholes}"
+                            HubWormholeMarkerMode="{Binding HubWormholeMarkerMode}"
                             SelectedNodeId="{Binding SelectedNodeId, Mode=TwoWay}" />
 
       <Border Grid.Column="1"
@@ -152,6 +163,7 @@
             <CheckBox IsChecked="{Binding ShowIndicatorJoveObservatoryIcon}" Content="Jove Observatory" />
             <CheckBox IsChecked="{Binding ShowIndicatorIceBeltsIcon}" Content="Ice Belts" />
             <CheckBox IsChecked="{Binding ShowIndicatorStormIcon}" Content="Metaliminal Storms" />
+            <CheckBox IsChecked="{Binding ShowIndicatorWormholeIcon}" Content="Thera/Turnur Wormholes" />
 
             <Separator />
 
@@ -164,6 +176,8 @@
             <CheckBox IsChecked="{Binding InfoBoxShowJoveObservatoryIcon}" Content="Jove Observatory" />
             <CheckBox IsChecked="{Binding InfoBoxShowIceBeltsIcon}" Content="Ice Belts" />
             <CheckBox IsChecked="{Binding InfoBoxShowStormIcon}" Content="Metaliminal Storms" />
+            <CheckBox IsChecked="{Binding InfoBoxShowWormholeIcon}" Content="Thera/Turnur Wormholes" />
+
           </StackPanel>
         </ScrollViewer>
       </Border>
