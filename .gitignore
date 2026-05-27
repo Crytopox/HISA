@@ -19,3 +19,11 @@
 /tests/Hisa.Logs.Tests/obj
 /HISA_Project_Plan.md
 src/Hisa.App/Data/eve-hk-sde.db
+src/Hisa.App/bin/*
+src/Hisa.Core/bin/*
+src/Hisa.Rendering/bin/*
+src/Hisa.Data/bin/*
+src/Hisa.Esi/bin/*
+src/Hisa.Logs/bin/*
+src/Hisa.Services/bin/*
+build/releases/*
