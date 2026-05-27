@@ -1375,8 +1375,8 @@ public sealed class MapControl : Control
     {
         var step = Math.Max(0.0001, EditorGridStep);
         var worldScale = Math.Max(1e-9, ((plot.Width + plot.Height) * 0.5) * _zoom);
-        var minorPen = new Pen(new ImmutableSolidColorBrush(Color.Parse("#2C6A8A9E")), 1.0 / worldScale);
-        var majorPen = new Pen(new ImmutableSolidColorBrush(Color.Parse("#5AAFD5F2")), 1.25 / worldScale);
+        var minorPen = new Pen(new ImmutableSolidColorBrush(Color.Parse("#1E6A8A9E")), 1.0 / worldScale);
+        var majorPen = new Pen(new ImmutableSolidColorBrush(Color.Parse("#32AFD5F2")), 1.25 / worldScale);
 
         if (!TryScreenToWorld(new Point(0, 0), out var worldTopLeft) ||
             !TryScreenToWorld(new Point(Bounds.Width, Bounds.Height), out var worldBottomRight))
