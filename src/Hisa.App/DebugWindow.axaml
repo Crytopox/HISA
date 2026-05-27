@@ -20,7 +20,7 @@
       <Setter Property="BorderBrush" Value="#1F2937" />
       <Setter Property="BorderThickness" Value="0" />
       <Setter Property="Foreground" Value="#D1D5DB" />
-      <Setter Property="RowHeight" Value="22" />
+      <Setter Property="RowHeight" Value="24" />
       <Setter Property="HeadersVisibility" Value="Column" />
       <Setter Property="GridLinesVisibility" Value="None" />
     </Style>
@@ -29,12 +29,15 @@
       <Setter Property="Foreground" Value="#6B7280" />
       <Setter Property="FontSize" Value="11" />
       <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Padding" Value="4,2" />
+      <Setter Property="Padding" Value="4,0" />
+      <Setter Property="MinHeight" Value="24" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
       <Setter Property="BorderBrush" Value="#141414" />
       <Setter Property="BorderThickness" Value="0,0,1,1" />
     </Style>
     <Style Selector="dg|DataGrid#DebugLogGrid dg|DataGridCell">
-      <Setter Property="Padding" Value="2,1" />
+      <Setter Property="Padding" Value="2,0" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
       <Setter Property="BorderThickness" Value="0" />
       <Setter Property="Background" Value="#090909" />
     </Style>
@@ -67,7 +70,7 @@
           <dg:DataGridTemplateColumn Header="TIME" Width="95" MinWidth="70">
             <dg:DataGridTemplateColumn.CellTemplate>
               <DataTemplate>
-                <TextBlock Text="{Binding Time}" Foreground="#9CA3AF" Margin="2,1,2,1"/>
+                <TextBlock Text="{Binding Time}" Foreground="#9CA3AF" Margin="2,0" VerticalAlignment="Center"/>
               </DataTemplate>
             </dg:DataGridTemplateColumn.CellTemplate>
           </dg:DataGridTemplateColumn>
@@ -76,10 +79,11 @@
             <dg:DataGridTemplateColumn.CellTemplate>
               <DataTemplate>
                 <Border Background="{Binding Level, Converter={StaticResource DebugLogLevelBrushConverter}, ConverterParameter=ChipBg}"
-                        CornerRadius="2" Padding="2,1" Margin="1">
+                        CornerRadius="2" Padding="2,0" Margin="1,0" VerticalAlignment="Center">
                   <TextBlock Text="{Binding LevelText}"
                              Foreground="{Binding Level, Converter={StaticResource DebugLogLevelBrushConverter}}"
-                             FontWeight="SemiBold"/>
+                             FontWeight="SemiBold"
+                             VerticalAlignment="Center"/>
                 </Border>
               </DataTemplate>
             </dg:DataGridTemplateColumn.CellTemplate>
@@ -89,10 +93,11 @@
             <dg:DataGridTemplateColumn.CellTemplate>
               <DataTemplate>
                 <Border Background="{Binding SourceTag, Converter={StaticResource DebugSourceTagBrushConverter}, ConverterParameter=Bg}"
-                        CornerRadius="2" Padding="2,1" Margin="1">
+                        CornerRadius="2" Padding="2,0" Margin="1,0" VerticalAlignment="Center">
                   <TextBlock Text="{Binding SourceTag}"
                              Foreground="{Binding SourceTag, Converter={StaticResource DebugSourceTagBrushConverter}}"
-                             FontWeight="SemiBold"/>
+                             FontWeight="SemiBold"
+                             VerticalAlignment="Center"/>
                 </Border>
               </DataTemplate>
             </dg:DataGridTemplateColumn.CellTemplate>
