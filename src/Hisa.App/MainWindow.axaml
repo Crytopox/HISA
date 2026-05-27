@@ -85,6 +85,7 @@
         <Button Grid.Column="7" Content="Settings" MinWidth="90">
           <Button.Flyout>
             <MenuFlyout>
+              <MenuItem Header="Map Editor" Click="OnOpenMapEditorClicked" />
               <MenuItem Header="Preferences" Click="OnOpenPreferencesClicked" />
               <MenuItem Header="Debug Window" Click="OnOpenDebugConsoleClicked" />
             </MenuFlyout>

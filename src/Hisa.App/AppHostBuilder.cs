@@ -29,6 +29,8 @@ internal static class AppHostBuilder
         builder.Services.AddSingleton(appLogStore);
         builder.Services.AddSingleton<MainWindowViewModel>();
         builder.Services.AddSingleton<MainWindow>();
+        builder.Services.AddSingleton<MapEditorViewModel>();
+        builder.Services.AddSingleton<MapEditorWindow>();
         builder.Services.AddSingleton<DebugWindowViewModel>();
         builder.Services.AddSingleton<DebugWindow>();
 

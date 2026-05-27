@@ -10,6 +10,7 @@ public sealed class MapDataService : IMapDataService
 {
     private static readonly Lazy<IReadOnlyDictionary<int, StaticSolarSystemData>> StaticSolarSystemDataById = new(LoadStaticSolarSystemDataById);
     private readonly ISdeDatabase _sdeDatabase;
+    private readonly IMapLayoutDataService _mapLayoutDataService;
     private readonly IStormStateService _stormStateService;
     private readonly IHubWormholeStateService _hubWormholeStateService;
 
@@ -17,10 +18,12 @@ public sealed class MapDataService : IMapDataService
 
     public MapDataService(
         ISdeDatabase sdeDatabase,
+        IMapLayoutDataService mapLayoutDataService,
         IStormStateService stormStateService,
         IHubWormholeStateService hubWormholeStateService)
     {
         _sdeDatabase = sdeDatabase;
+        _mapLayoutDataService = mapLayoutDataService;
         _stormStateService = stormStateService;
         _hubWormholeStateService = hubWormholeStateService;
     }
@@ -129,6 +132,15 @@ public sealed class MapDataService : IMapDataService
 
     public async Task<MapGraph> GetRegionGraphAsync(int regionId, MapCoordinateMode coordinateMode, CancellationToken cancellationToken = default)
     {
+        if (coordinateMode == MapCoordinateMode.SdePlanarXY)
+        {
+            var customLayoutGraph = await _mapLayoutDataService.TryGetRegionLayoutGraphAsync(regionId, cancellationToken);
+            if (customLayoutGraph is not null)
+            {
+                return customLayoutGraph;
+            }
+        }
+
         var systems = await QuerySystemsAsync(regionId, coordinateMode, cancellationToken);
         var links = await QuerySystemLinksAsync(regionId, cancellationToken);
         return BuildNormalizedGraph(systems, links);

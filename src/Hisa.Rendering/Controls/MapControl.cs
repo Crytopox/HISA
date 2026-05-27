@@ -534,6 +534,108 @@ public sealed class MapControl : Control
         return bestId;
     }
 
+    public long? HitTestNode(Point point, double threshold = 10.0)
+    {
+        if (Graph is null || Graph.Nodes.Count == 0)
+        {
+            return null;
+        }
+
+        var plot = GetPlotMetrics();
+        UpdateScreenPositions(plot, Bounds.Width / 2.0, Bounds.Height / 2.0);
+        return FindClosestNodeAt(point, threshold);
+    }
+
+    public IReadOnlyList<long> GetNodeIdsInScreenRect(Rect screenRect)
+    {
+        if (Graph is null || Graph.Nodes.Count == 0)
+        {
+            return [];
+        }
+
+        var plot = GetPlotMetrics();
+        UpdateScreenPositions(plot, Bounds.Width / 2.0, Bounds.Height / 2.0);
+        var normalizedRect = new Rect(
+            Math.Min(screenRect.X, screenRect.X + screenRect.Width),
+            Math.Min(screenRect.Y, screenRect.Y + screenRect.Height),
+            Math.Abs(screenRect.Width),
+            Math.Abs(screenRect.Height));
+
+        var result = new List<long>();
+        for (var i = 0; i < Graph.Nodes.Count; i++)
+        {
+            if (normalizedRect.Contains(_screenPositions[i]))
+            {
+                result.Add(Graph.Nodes[i].Id);
+            }
+        }
+
+        return result;
+    }
+
+    public bool TryScreenToWorld(Point screenPoint, out Point worldPoint)
+    {
+        worldPoint = default;
+        if (Graph is null || Bounds.Width <= 1 || Bounds.Height <= 1)
+        {
+            return false;
+        }
+
+        var plot = GetPlotMetrics();
+        var viewCenterX = Bounds.Width / 2.0;
+        var viewCenterY = Bounds.Height / 2.0;
+        var baseX = ((screenPoint.X - viewCenterX - _panOffset.X) / _zoom) + viewCenterX;
+        var baseY = ((screenPoint.Y - viewCenterY - _panOffset.Y) / _zoom) + viewCenterY;
+        var worldX = (baseX - plot.OriginX) / plot.Width;
+        var worldY = (baseY - plot.OriginY) / plot.Height;
+        worldPoint = new Point(worldX, worldY);
+        return true;
+    }
+
+    public Point WorldToScreen(Point worldPoint)
+    {
+        var plot = GetPlotMetrics();
+        return ToScreenPointFast(worldPoint.X, worldPoint.Y, plot, Bounds.Width / 2.0, Bounds.Height / 2.0);
+    }
+
+    public void PanBy(double dxPixels, double dyPixels)
+    {
+        _panOffset = new Point(_panOffset.X + dxPixels, _panOffset.Y + dyPixels);
+        InvalidateVisual();
+    }
+
+    public void ZoomBy(double factor)
+    {
+        if (factor <= 0)
+        {
+            return;
+        }
+
+        var oldZoom = _zoom;
+        var newZoom = Math.Clamp(_zoom * factor, 0.4, GetMaxZoom());
+        if (Math.Abs(newZoom - oldZoom) < 1e-9)
+        {
+            return;
+        }
+
+        var center = new Point(Bounds.Width * 0.5, Bounds.Height * 0.5);
+        var plot = GetPlotMetrics();
+        var viewCenterX = Bounds.Width / 2.0;
+        var viewCenterY = Bounds.Height / 2.0;
+        var baseX = ((center.X - viewCenterX - _panOffset.X) / oldZoom) + viewCenterX;
+        var baseY = ((center.Y - viewCenterY - _panOffset.Y) / oldZoom) + viewCenterY;
+        var worldX = (baseX - plot.OriginX) / plot.Width;
+        var worldY = (baseY - plot.OriginY) / plot.Height;
+        var newBaseX = plot.OriginX + (worldX * plot.Width);
+        var newBaseY = plot.OriginY + (worldY * plot.Height);
+
+        _zoom = newZoom;
+        _panOffset = new Point(
+            center.X - (((newBaseX - viewCenterX) * _zoom) + viewCenterX),
+            center.Y - (((newBaseY - viewCenterY) * _zoom) + viewCenterY));
+        InvalidateVisual();
+    }
+
     private IBrush GetCachedBrush(Color color, double alpha01 = 1.0)
     {
         var a = (byte)Math.Clamp((int)(alpha01 * 255), 0, 255);

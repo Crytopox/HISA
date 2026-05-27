@@ -36,6 +36,58 @@ public sealed class SqliteDatabaseInitializer : IDatabaseInitializer
                 Key TEXT NOT NULL PRIMARY KEY,
                 Value TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS MapLayoutPack (
+                Id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                Name TEXT NOT NULL,
+                IsBase INTEGER NOT NULL DEFAULT 0,
+                IsReadOnly INTEGER NOT NULL DEFAULT 0,
+                CreatedUtc TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_MapLayoutPack_Name ON MapLayoutPack(Name COLLATE NOCASE);
+
+            CREATE TABLE IF NOT EXISTS MapLayoutRegion (
+                Id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                PackId INTEGER NOT NULL,
+                Name TEXT NOT NULL,
+                SourceRegionId INTEGER NULL,
+                IsGameRegion INTEGER NOT NULL DEFAULT 0,
+                CreatedUtc TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(PackId) REFERENCES MapLayoutPack(Id) ON DELETE CASCADE
+            );
+
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_MapLayoutRegion_Name ON MapLayoutRegion(Name COLLATE NOCASE);
+            CREATE INDEX IF NOT EXISTS IX_MapLayoutRegion_SourceRegionId ON MapLayoutRegion(SourceRegionId);
+
+            CREATE TABLE IF NOT EXISTS MapLayoutNode (
+                Id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                RegionLayoutId INTEGER NOT NULL,
+                SolarSystemId INTEGER NULL,
+                Name TEXT NOT NULL,
+                X REAL NOT NULL,
+                Y REAL NOT NULL,
+                FOREIGN KEY(RegionLayoutId) REFERENCES MapLayoutRegion(Id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS IX_MapLayoutNode_RegionLayoutId ON MapLayoutNode(RegionLayoutId);
+            CREATE INDEX IF NOT EXISTS IX_MapLayoutNode_SolarSystemId ON MapLayoutNode(SolarSystemId);
+
+            CREATE TABLE IF NOT EXISTS MapLayoutLink (
+                Id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                RegionLayoutId INTEGER NOT NULL,
+                FromNodeId INTEGER NOT NULL,
+                ToNodeId INTEGER NOT NULL,
+                FOREIGN KEY(RegionLayoutId) REFERENCES MapLayoutRegion(Id) ON DELETE CASCADE,
+                FOREIGN KEY(FromNodeId) REFERENCES MapLayoutNode(Id) ON DELETE CASCADE,
+                FOREIGN KEY(ToNodeId) REFERENCES MapLayoutNode(Id) ON DELETE CASCADE
+            );
+
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_MapLayoutLink_Unique ON MapLayoutLink(RegionLayoutId, FromNodeId, ToNodeId);
+
+            INSERT INTO MapLayoutPack(Name, IsBase, IsReadOnly)
+            SELECT 'HISA Base', 1, 1
+            WHERE NOT EXISTS (SELECT 1 FROM MapLayoutPack WHERE Name = 'HISA Base');
             """;
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -120,6 +172,9 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton<IDatabaseInitializer>(_ => new SqliteDatabaseInitializer(connectionString));
         services.AddSingleton<ISettingsService>(_ => new SqliteSettingsService(connectionString));
+        services.AddSingleton<IMapLayoutDataService>(_ => new SqliteMapLayoutDataService(connectionString));
+        services.AddSingleton<IMapLayoutEditorService>(sp =>
+            new SqliteMapLayoutEditorService(connectionString, sp.GetRequiredService<ISdeDatabase>()));
         services.AddSingleton<ISdeDatabase>(_ => new SdeSqliteDatabase(sdeConnectionString));
 
         return services;
