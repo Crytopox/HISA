@@ -60,7 +60,9 @@
         <rendering:MapControl x:Name="EditorMapControl"
                               Graph="{Binding CurrentGraph}"
                               ViewMode="Region"
-                              StretchToWindow="True"
+                              StretchToWindow="False"
+                              ShowEditorGrid="True"
+                              EditorGridStep="0.01"
                               SelectedNodeId="{Binding SelectedNodeId, Mode=TwoWay}"
                               PointerPressed="OnEditorMapPointerPressed"
                               PointerMoved="OnEditorMapPointerMoved"
@@ -68,7 +70,6 @@
                               PointerWheelChanged="OnEditorMapPointerWheelChanged"
                               KeyDown="OnEditorMapKeyDown"
                               SizeChanged="OnEditorMapSizeChanged" />
-        <Canvas x:Name="GridCanvas" IsHitTestVisible="False" />
         <Canvas IsHitTestVisible="False">
           <Border x:Name="SelectionRect"
                   IsVisible="False"

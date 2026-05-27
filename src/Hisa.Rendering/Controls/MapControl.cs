@@ -155,6 +155,10 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, bool>(nameof(AlwaysShowHubWormholes), false);
     public static readonly StyledProperty<HubWormholeMarkerMode> HubWormholeMarkerModeProperty =
         AvaloniaProperty.Register<MapControl, HubWormholeMarkerMode>(nameof(HubWormholeMarkerMode), HubWormholeMarkerMode.Badge);
+    public static readonly StyledProperty<bool> ShowEditorGridProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(ShowEditorGrid), false);
+    public static readonly StyledProperty<double> EditorGridStepProperty =
+        AvaloniaProperty.Register<MapControl, double>(nameof(EditorGridStep), 0.01);
 
     private Point? _lastPanPoint;
     private Point _panOffset = new(0, 0);
@@ -348,6 +352,18 @@ public sealed class MapControl : Control
         set => SetValue(HubWormholeMarkerModeProperty, value);
     }
 
+    public bool ShowEditorGrid
+    {
+        get => GetValue(ShowEditorGridProperty);
+        set => SetValue(ShowEditorGridProperty, value);
+    }
+
+    public double EditorGridStep
+    {
+        get => GetValue(EditorGridStepProperty);
+        set => SetValue(EditorGridStepProperty, value);
+    }
+
     public MapControl()
     {
         AffectsRender<MapControl>(GraphProperty, SelectedNodeIdProperty, ViewModeProperty, StretchToWindowProperty);
@@ -373,7 +389,9 @@ public sealed class MapControl : Control
             InfoBoxShowStormIconProperty,
             InfoBoxShowWormholeIconProperty,
             AlwaysShowHubWormholesProperty,
-            HubWormholeMarkerModeProperty);
+            HubWormholeMarkerModeProperty,
+            ShowEditorGridProperty,
+            EditorGridStepProperty);
         ClipToBounds = true;
     }
 
@@ -687,6 +705,10 @@ public sealed class MapControl : Control
         var viewCenterX = Bounds.Width / 2.0;
         var viewCenterY = Bounds.Height / 2.0;
         UpdateScreenPositions(plot, viewCenterX, viewCenterY);
+        if (ShowEditorGrid)
+        {
+            DrawEditorGrid(context, plot, viewCenterX, viewCenterY);
+        }
 
         var renderVoronoiBackground = NodeBackgroundColorMode != MapNodeColorMode.None && _zoom >= GetVoronoiZoomThreshold();
         if (renderVoronoiBackground && _voronoiWorldGeometriesByNodeId.Count == 0)
@@ -1347,6 +1369,51 @@ public sealed class MapControl : Control
             scaleX, 0,
             0, scaleY,
             offsetX, offsetY);
+    }
+
+    private void DrawEditorGrid(DrawingContext context, PlotMetrics plot, double viewCenterX, double viewCenterY)
+    {
+        var step = Math.Max(0.0001, EditorGridStep);
+        var worldScale = Math.Max(1e-9, ((plot.Width + plot.Height) * 0.5) * _zoom);
+        var minorPen = new Pen(new ImmutableSolidColorBrush(Color.Parse("#2C6A8A9E")), 1.0 / worldScale);
+        var majorPen = new Pen(new ImmutableSolidColorBrush(Color.Parse("#5AAFD5F2")), 1.25 / worldScale);
+
+        if (!TryScreenToWorld(new Point(0, 0), out var worldTopLeft) ||
+            !TryScreenToWorld(new Point(Bounds.Width, Bounds.Height), out var worldBottomRight))
+        {
+            return;
+        }
+
+        var minX = Math.Min(worldTopLeft.X, worldBottomRight.X);
+        var maxX = Math.Max(worldTopLeft.X, worldBottomRight.X);
+        var minY = Math.Min(worldTopLeft.Y, worldBottomRight.Y);
+        var maxY = Math.Max(worldTopLeft.Y, worldBottomRight.Y);
+
+        var firstX = Math.Floor(minX / step) * step;
+        var firstY = Math.Floor(minY / step) * step;
+
+        using (context.PushTransform(GetWorldToScreenMatrix(plot)))
+        {
+            for (var wx = firstX; wx <= maxX + (step * 0.5); wx += step)
+            {
+                var ix = (long)Math.Round(wx / step, MidpointRounding.AwayFromZero);
+                var isMajor = Math.Abs(ix % 5) == 0;
+                context.DrawLine(
+                    isMajor ? majorPen : minorPen,
+                    new Point(wx, minY),
+                    new Point(wx, maxY));
+            }
+
+            for (var wy = firstY; wy <= maxY + (step * 0.5); wy += step)
+            {
+                var iy = (long)Math.Round(wy / step, MidpointRounding.AwayFromZero);
+                var isMajor = Math.Abs(iy % 5) == 0;
+                context.DrawLine(
+                    isMajor ? majorPen : minorPen,
+                    new Point(minX, wy),
+                    new Point(maxX, wy));
+            }
+        }
     }
 
 

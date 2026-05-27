@@ -2,8 +2,6 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia;
-using Avalonia.Media;
-using Avalonia.Controls.Shapes;
 using Hisa.Core.Models;
 using System;
 using System.Linq;
@@ -40,7 +38,6 @@ public partial class MapEditorWindow : Window
 
         await vm.InitialLoadTask;
         EditorMapControl.FitToView();
-        RenderGrid();
     }
 
     private async void OnCreateCustomRegionClicked(object? sender, RoutedEventArgs e)
@@ -96,7 +93,6 @@ public partial class MapEditorWindow : Window
 
         await vm.DeleteSelectedLayoutRegionAsync();
         EditorMapControl.FitToView();
-        RenderGrid();
     }
 
     private void OnEditorMapPointerPressed(object? sender, PointerPressedEventArgs e)
@@ -155,11 +151,6 @@ public partial class MapEditorWindow : Window
 
         if (!_isDraggingNode || DataContext is not MapEditorViewModel vm || _lastDragWorldPoint is null)
         {
-            var props = e.GetCurrentPoint(EditorMapControl).Properties;
-            if (props.IsRightButtonPressed || props.IsMiddleButtonPressed)
-            {
-                RenderGrid();
-            }
             return;
         }
 
@@ -276,7 +267,6 @@ public partial class MapEditorWindow : Window
 
     private void OnEditorMapSizeChanged(object? sender, SizeChangedEventArgs e)
     {
-        RenderGrid();
     }
 
     private void UpdateSelectionRectVisual(Point from, Point to)
@@ -291,64 +281,5 @@ public partial class MapEditorWindow : Window
         SelectionRect.Width = width;
         SelectionRect.Height = height;
         SelectionRect.IsVisible = width > 2 && height > 2;
-    }
-
-    private void RenderGrid()
-    {
-        GridCanvas.Children.Clear();
-        if (EditorMapControl.Bounds.Width <= 1 || EditorMapControl.Bounds.Height <= 1 || DataContext is not MapEditorViewModel vm)
-        {
-            return;
-        }
-
-        var minorBrush = new SolidColorBrush(Color.Parse("#2C6A8A9E"));
-        var majorBrush = new SolidColorBrush(Color.Parse("#5AAFD5F2"));
-        var width = EditorMapControl.Bounds.Width;
-        var height = EditorMapControl.Bounds.Height;
-        var step = vm.GetSnapGridStep();
-
-        // world-anchored grid that moves with pan/zoom for alignment.
-        var minWorld = EditorMapControl.TryScreenToWorld(new Point(0, 0), out var minWorldPoint)
-            ? minWorldPoint
-            : new Point(0, 0);
-        var maxWorld = EditorMapControl.TryScreenToWorld(new Point(width, height), out var maxWorldPoint)
-            ? maxWorldPoint
-            : new Point(1, 1);
-        var worldMinX = Math.Min(minWorld.X, maxWorld.X);
-        var worldMaxX = Math.Max(minWorld.X, maxWorld.X);
-        var worldMinY = Math.Min(minWorld.Y, maxWorld.Y);
-        var worldMaxY = Math.Max(minWorld.Y, maxWorld.Y);
-        var firstX = Math.Floor(worldMinX / step) * step;
-        var firstY = Math.Floor(worldMinY / step) * step;
-
-        var i = 0;
-        for (var wx = firstX; wx <= worldMaxX + (step * 0.5); wx += step, i++)
-        {
-            var pTop = EditorMapControl.WorldToScreen(new Point(wx, worldMinY));
-            var pBottom = EditorMapControl.WorldToScreen(new Point(wx, worldMaxY));
-            var isMajor = i % 5 == 0;
-            GridCanvas.Children.Add(new Line
-            {
-                StartPoint = new Point(pTop.X, 0),
-                EndPoint = new Point(pBottom.X, height),
-                Stroke = isMajor ? majorBrush : minorBrush,
-                StrokeThickness = isMajor ? 1.2 : 1.0
-            });
-        }
-
-        i = 0;
-        for (var wy = firstY; wy <= worldMaxY + (step * 0.5); wy += step, i++)
-        {
-            var pLeft = EditorMapControl.WorldToScreen(new Point(worldMinX, wy));
-            var pRight = EditorMapControl.WorldToScreen(new Point(worldMaxX, wy));
-            var isMajor = i % 5 == 0;
-            GridCanvas.Children.Add(new Line
-            {
-                StartPoint = new Point(0, pLeft.Y),
-                EndPoint = new Point(width, pRight.Y),
-                Stroke = isMajor ? majorBrush : minorBrush,
-                StrokeThickness = isMajor ? 1.2 : 1.0
-            });
-        }
     }
 }
