@@ -29,6 +29,7 @@
             <ListBox x:Name="LayoutRegionsList"
                      ItemsSource="{Binding LayoutRegions}"
                      SelectedItem="{Binding SelectedLayoutRegion, Mode=TwoWay}"
+                     SelectionChanged="OnLayoutRegionsSelectionChanged"
                      Height="220" />
             <Button Content="Delete Selected Layout Region" Click="OnDeleteLayoutRegionClicked" />
 

@@ -3,8 +3,10 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia;
 using Avalonia.Controls.Primitives;
+using Avalonia.Threading;
 using Hisa.Core.Models;
 using System;
+using System.ComponentModel;
 using System.Linq;
 
 namespace Hisa.App;
@@ -23,6 +25,8 @@ public partial class MapEditorWindow : Window
     private Point _rightPanStartPoint;
     private bool _rightPanMoved;
     private readonly ContextMenu _mapContextMenu;
+    private bool _restoreViewportOnNextGraphChange;
+    private MapViewportState? _pendingViewportState;
 
     public MapEditorWindow()
     {
@@ -33,7 +37,9 @@ public partial class MapEditorWindow : Window
     public MapEditorWindow(MapEditorViewModel vm) : this()
     {
         DataContext = vm;
+        vm.PropertyChanged += OnViewModelPropertyChanged;
         Opened += OnOpened;
+        Closed += OnClosed;
     }
 
     private async void OnOpened(object? sender, EventArgs e)
@@ -54,7 +60,7 @@ public partial class MapEditorWindow : Window
             return;
         }
 
-        await vm.CreateCustomRegionAsync();
+        await ExecuteWithPreservedViewportAsync(() => vm.CreateCustomRegionAsync());
     }
 
     private async void OnImportGameRegionsClicked(object? sender, RoutedEventArgs e)
@@ -69,8 +75,12 @@ public partial class MapEditorWindow : Window
             .Select(r => r.RegionId)
             .Distinct()
             .ToList();
-        await vm.ImportGameRegionsAsync(selectedRegionIds);
-        EditorMapControl.FitToView();
+        if (selectedRegionIds.Count == 0)
+        {
+            return;
+        }
+
+        await ExecuteWithPreservedViewportAsync(() => vm.ImportGameRegionsAsync(selectedRegionIds));
     }
 
     private async void OnDeleteSelectedNodeClicked(object? sender, RoutedEventArgs e)
@@ -98,8 +108,12 @@ public partial class MapEditorWindow : Window
             return;
         }
 
-        await vm.DeleteSelectedLayoutRegionAsync();
-        EditorMapControl.FitToView();
+        await ExecuteWithPreservedViewportAsync(() => vm.DeleteSelectedLayoutRegionAsync());
+    }
+
+    private void OnLayoutRegionsSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        PrepareViewportRestoreOnNextGraphChange();
     }
 
     private void OnEditorMapPointerPressed(object? sender, PointerPressedEventArgs e)
@@ -389,5 +403,39 @@ public partial class MapEditorWindow : Window
         SelectionRect.Width = width;
         SelectionRect.Height = height;
         SelectionRect.IsVisible = width > 2 && height > 2;
+    }
+
+    private async Task ExecuteWithPreservedViewportAsync(Func<Task> action)
+    {
+        PrepareViewportRestoreOnNextGraphChange();
+        await action();
+    }
+
+    private void PrepareViewportRestoreOnNextGraphChange()
+    {
+        _pendingViewportState = EditorMapControl.GetViewportState();
+        _restoreViewportOnNextGraphChange = true;
+    }
+
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (!_restoreViewportOnNextGraphChange || e.PropertyName != nameof(MapEditorViewModel.CurrentGraph))
+        {
+            return;
+        }
+
+        _restoreViewportOnNextGraphChange = false;
+        if (_pendingViewportState is { } viewport)
+        {
+            Dispatcher.UIThread.Post(() => EditorMapControl.SetViewportState(viewport), DispatcherPriority.Render);
+        }
+    }
+
+    private void OnClosed(object? sender, EventArgs e)
+    {
+        if (DataContext is MapEditorViewModel vm)
+        {
+            vm.PropertyChanged -= OnViewModelPropertyChanged;
+        }
     }
 }

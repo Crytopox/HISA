@@ -117,7 +117,8 @@ public sealed class SqliteMapLayoutEditorService : IMapLayoutEditorService
         }
 
         var systemsToAdd = await LoadSdeSystemsForRegionsAsync(sourceRegionIds, cancellationToken);
-        foreach (var system in systemsToAdd)
+        var chunkToInsert = BuildImportedChunkCoordinates(existingNodes, systemsToAdd);
+        foreach (var system in chunkToInsert)
         {
             if (existingNodes.ContainsKey(system.Id))
             {
@@ -419,7 +420,7 @@ public sealed class SqliteMapLayoutEditorService : IMapLayoutEditorService
             }
         }
 
-        return NormalizeGraph(nodes, links);
+        return new MapGraph { Nodes = nodes, Links = links };
     }
 
     private async Task RebuildLinksForLayoutRegionAsync(SqliteConnection connection, SqliteTransaction tx, long layoutRegionId, CancellationToken cancellationToken)
@@ -475,45 +476,57 @@ public sealed class SqliteMapLayoutEditorService : IMapLayoutEditorService
         }
     }
 
-    private static MapGraph NormalizeGraph(IReadOnlyList<MapNode> rawNodes, IReadOnlyList<MapLink> rawLinks)
+    private static List<(long Id, string Name, double X, double Y)> BuildImportedChunkCoordinates(
+        IReadOnlyDictionary<long, (string Name, double X, double Y)> existingNodes,
+        IReadOnlyList<(long Id, string Name, double X, double Y)> systemsToAdd)
     {
-        if (rawNodes.Count == 0)
+        if (systemsToAdd.Count == 0)
         {
-            return new MapGraph { Nodes = [], Links = [] };
+            return [];
         }
 
-        var minX = rawNodes.Min(n => n.X);
-        var maxX = rawNodes.Max(n => n.X);
-        var minY = rawNodes.Min(n => n.Y);
-        var maxY = rawNodes.Max(n => n.Y);
+        var minX = systemsToAdd.Min(s => s.X);
+        var maxX = systemsToAdd.Max(s => s.X);
+        var minY = systemsToAdd.Min(s => s.Y);
+        var maxY = systemsToAdd.Max(s => s.Y);
         var width = Math.Max(1e-9, maxX - minX);
         var height = Math.Max(1e-9, maxY - minY);
 
-        var nodes = rawNodes
-            .Select(n => new MapNode
-            {
-                Id = n.Id,
-                Name = n.Name,
-                X = (n.X - minX) / width,
-                Y = 1.0 - ((n.Y - minY) / height),
-                Security = n.Security,
-                SunTypeId = n.SunTypeId,
-                StarTypeName = n.StarTypeName,
-                SpectralClass = n.SpectralClass,
-                HasJoveObservatory = n.HasJoveObservatory,
-                IceFieldCount = n.IceFieldCount,
-                RegionId = n.RegionId,
-                RegionName = n.RegionName,
-                ConstellationId = n.ConstellationId,
-                ConstellationName = n.ConstellationName,
-                StormEffects = n.StormEffects,
-                HubWormholeConnections = n.HubWormholeConnections
-            })
+        var normalized = systemsToAdd
+            .Select(s => (
+                s.Id,
+                s.Name,
+                X: (s.X - minX) / width,
+                Y: 1.0 - ((s.Y - minY) / height)))
             .ToList();
 
-        var idSet = nodes.Select(n => n.Id).ToHashSet();
-        var links = rawLinks.Where(l => idSet.Contains(l.FromId) && idSet.Contains(l.ToId)).ToList();
-        return new MapGraph { Nodes = nodes, Links = links };
+        // First import into an empty layout uses normalized chunk coordinates directly.
+        if (existingNodes.Count == 0)
+        {
+            return normalized;
+        }
+
+        var existingMinX = existingNodes.Min(n => n.Value.X);
+        var existingMaxX = existingNodes.Max(n => n.Value.X);
+        var existingMinY = existingNodes.Min(n => n.Value.Y);
+        var existingMaxY = existingNodes.Max(n => n.Value.Y);
+        var existingWidth = Math.Max(0.2, existingMaxX - existingMinX);
+        var existingHeight = Math.Max(0.2, existingMaxY - existingMinY);
+
+        // Place newly imported chunk to the right of existing content without touching current nodes.
+        var targetWidth = existingWidth * 0.55;
+        var targetHeight = existingHeight * 0.55;
+        var margin = Math.Max(0.06, existingWidth * 0.08);
+        var offsetX = existingMaxX + margin;
+        var offsetY = existingMinY + ((existingHeight - targetHeight) * 0.5);
+
+        return normalized
+            .Select(n => (
+                n.Id,
+                n.Name,
+                X: offsetX + (n.X * targetWidth),
+                Y: offsetY + (n.Y * targetHeight)))
+            .ToList();
     }
 
     private async Task<long> EnsureUserPackAsync(SqliteConnection connection, SqliteTransaction tx, CancellationToken cancellationToken)
