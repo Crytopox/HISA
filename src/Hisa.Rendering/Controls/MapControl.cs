@@ -750,7 +750,7 @@ public sealed class MapControl : Control
             DrawHoverOverlay(context, _screenPositions[hoverIndex], hoverNode);
         }
 
-        if (ViewMode == MapViewMode.Universe && _zoom < GetLabelZoomThreshold())
+        if (ShouldShowUniverseRegionLabels())
         {
             DrawUniverseRegionLabels(context);
         }
@@ -809,28 +809,57 @@ public sealed class MapControl : Control
         };
     }
 
+    private bool ShouldShowUniverseRegionLabels()
+    {
+        if (ViewMode != MapViewMode.Universe)
+        {
+            return false;
+        }
+
+        const double minVisibleZoom = 1.0;
+        return _zoom >= minVisibleZoom && _zoom < GetLabelZoomThreshold();
+    }
+
     private void DrawUniverseRegionLabels(DrawingContext context)
     {
-        if (Graph is null || Graph.Nodes.Count == 0)
+        if (!ShouldShowUniverseRegionLabels() || Graph is null || Graph.Nodes.Count == 0)
         {
             return;
         }
+
+        const double minVisibleZoom = 1.0;
+        var threshold = GetLabelZoomThreshold();
+        var progress = Math.Clamp((_zoom - minVisibleZoom) / (threshold - minVisibleZoom), 0.0, 1.0);
+        var scale = 0.74 + (0.26 * progress);
+        var idleOpacity = 0.40 + (0.28 * progress);
+        var activeOpacity = 0.60 + (0.24 * progress);
 
         foreach (var layout in BuildUniverseRegionLabelLayouts())
         {
             var isSelected = _selectedRegionId == layout.RegionId;
             var isHovered = _hoveredRegionId == layout.RegionId;
+            var opacity = isSelected || isHovered ? activeOpacity : idleOpacity;
+            var rect = new Rect(
+                layout.Center.X - ((layout.Rect.Width * scale) / 2.0),
+                layout.Center.Y - ((layout.Rect.Height * scale) / 2.0),
+                layout.Rect.Width * scale,
+                layout.Rect.Height * scale);
+
+            using var _ = context.PushOpacity(opacity);
             context.FillRectangle(
-                new SolidColorBrush(Color.Parse(isSelected ? "#2B3F58" : isHovered ? "#243750" : "#1A2536")),
-                layout.Rect,
+                new SolidColorBrush(Color.Parse(isSelected ? "#2A3A52" : isHovered ? "#243347" : "#172333")),
+                rect,
                 4);
             context.DrawRectangle(
-                new Pen(new SolidColorBrush(Color.Parse(isSelected ? "#8AC8FF" : isHovered ? "#78AEE6" : "#3F5C83")), 1),
-                layout.Rect,
+                new Pen(new SolidColorBrush(Color.Parse(isSelected ? "#74B0E5" : isHovered ? "#638FB9" : "#33506F")), 0.9),
+                rect,
                 4);
 
-            var origin = new Point(layout.Center.X - (layout.Label.Width / 2.0), layout.Center.Y - (layout.Label.Height / 2.0));
-            DrawLabelWithHalo(context, layout.Label, GetRegionLabelHalo(layout.RegionId, layout.RegionName), origin);
+            var origin = new Point(layout.Center.X - ((layout.Label.Width * scale) / 2.0), layout.Center.Y - ((layout.Label.Height * scale) / 2.0));
+            using (context.PushTransform(Matrix.CreateScale(scale, scale) * Matrix.CreateTranslation(origin.X, origin.Y)))
+            {
+                DrawLabelWithHalo(context, layout.Label, GetRegionLabelHalo(layout.RegionId, layout.RegionName), new Point(0, 0));
+            }
         }
     }
 
@@ -980,8 +1009,7 @@ public sealed class MapControl : Control
         var hoverId = FindClosestNodeAt(point, 10.0);
         int? hoveredRegionId = null;
         if (hoverId is null &&
-            ViewMode == MapViewMode.Universe &&
-            _zoom < GetLabelZoomThreshold())
+            ShouldShowUniverseRegionLabels())
         {
             hoveredRegionId = TryGetHoveredRegionFromRegionLabel(point);
         }
@@ -1272,6 +1300,11 @@ public sealed class MapControl : Control
 
     private int? TryGetHoveredRegionFromRegionLabel(Point point)
     {
+        if (!ShouldShowUniverseRegionLabels())
+        {
+            return null;
+        }
+
         foreach (var layout in BuildUniverseRegionLabelLayouts())
         {
             if (layout.Rect.Contains(point))
@@ -1285,7 +1318,7 @@ public sealed class MapControl : Control
 
     private bool TryToggleRegionSelectionFromLabel(Point point)
     {
-        if (ViewMode != MapViewMode.Universe || _zoom >= GetLabelZoomThreshold())
+        if (!ShouldShowUniverseRegionLabels())
         {
             return false;
         }
@@ -2379,9 +2412,9 @@ public sealed class MapControl : Control
             name,
             System.Globalization.CultureInfo.InvariantCulture,
             FlowDirection.LeftToRight,
-            new Typeface("Inter"),
-            15,
-            new SolidColorBrush(Color.Parse("#BFD9FF")));
+            new Typeface("Inter", FontStyle.Normal, FontWeight.Bold),
+            14,
+            new SolidColorBrush(Color.Parse("#f1f7ff")));
         _regionLabelCache[regionId] = text;
         return text;
     }
@@ -2397,8 +2430,8 @@ public sealed class MapControl : Control
             name,
             System.Globalization.CultureInfo.InvariantCulture,
             FlowDirection.LeftToRight,
-            new Typeface("Inter"),
-            15,
+            new Typeface("Inter", FontStyle.Normal, FontWeight.SemiBold),
+            14,
             new ImmutableSolidColorBrush(Color.Parse("#CC071018")));
         _regionLabelHaloCache[regionId] = text;
         return text;
