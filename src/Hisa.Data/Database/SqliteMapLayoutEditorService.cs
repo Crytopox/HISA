@@ -427,6 +427,52 @@ public sealed class SqliteMapLayoutEditorService : IMapLayoutEditorService
         return result;
     }
 
+    public async Task<IReadOnlyDictionary<long, int>> GetSystemNeighborCountsAsync(
+        IReadOnlyCollection<long> solarSystemIds,
+        CancellationToken cancellationToken = default)
+    {
+        var ids = solarSystemIds.Where(x => x > 0).Select(x => (int)x).Distinct().ToList();
+        if (ids.Count == 0)
+        {
+            return new Dictionary<long, int>();
+        }
+
+        await using var connection = _sdeDatabase.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        var parameters = new List<string>(ids.Count);
+        var command = connection.CreateCommand();
+        for (var i = 0; i < ids.Count; i++)
+        {
+            var p = $"$id{i}";
+            parameters.Add(p);
+            command.Parameters.AddWithValue(p, ids[i]);
+        }
+
+        command.CommandText = $"""
+            SELECT s.systemId, COUNT(DISTINCT s.neighborId) AS cnt
+            FROM (
+                SELECT fromSolarSystemID AS systemId, toSolarSystemID AS neighborId
+                FROM mapSolarSystemJumps
+                WHERE fromSolarSystemID IN ({string.Join(", ", parameters)})
+                UNION ALL
+                SELECT toSolarSystemID AS systemId, fromSolarSystemID AS neighborId
+                FROM mapSolarSystemJumps
+                WHERE toSolarSystemID IN ({string.Join(", ", parameters)})
+            ) s
+            GROUP BY s.systemId;
+            """;
+
+        var result = new Dictionary<long, int>(ids.Count);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            result[reader.GetInt32(0)] = reader.GetInt32(1);
+        }
+
+        return result;
+    }
+
     private async Task<MapGraph?> LoadLayoutGraphAsync(SqliteConnection connection, long layoutRegionId, CancellationToken cancellationToken)
     {
         var nodes = new List<MapNode>();

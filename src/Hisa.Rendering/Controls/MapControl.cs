@@ -76,6 +76,8 @@ public sealed class MapControl : Control
     private static readonly IBrush SelectedBrush = new ImmutableSolidColorBrush(Color.Parse("#E8B75E"));
     private static readonly IBrush HoveredBrush = new ImmutableSolidColorBrush(Color.Parse("#7CC8FF"));
     private static readonly IBrush RegionSelectedBrush = new ImmutableSolidColorBrush(Color.Parse("#6BC1B5"));
+    private static readonly IBrush EditorMissingConnectionBrush = new ImmutableSolidColorBrush(Color.Parse("#FF6B6B"));
+    private static readonly IBrush EditorCrossRegionConnectorBrush = new ImmutableSolidColorBrush(Color.Parse("#8E74D8"));
     private static readonly IBrush NodeHoleBrush = new ImmutableSolidColorBrush(Color.Parse("#0D131D"));
     private static readonly IBrush NodeLabelBackgroundBrush = new ImmutableSolidColorBrush(Color.Parse("#B5000000"));
     private static readonly IBrush TooltipBackgroundBrush = new ImmutableSolidColorBrush(Color.Parse("#1A2536"));
@@ -170,6 +172,10 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, bool>(nameof(UseBuiltInSelection), true);
     public static readonly StyledProperty<IEnumerable<long>?> AdditionalSelectedNodeIdsProperty =
         AvaloniaProperty.Register<MapControl, IEnumerable<long>?>(nameof(AdditionalSelectedNodeIds));
+    public static readonly StyledProperty<IEnumerable<long>?> MissingConnectionNodeIdsProperty =
+        AvaloniaProperty.Register<MapControl, IEnumerable<long>?>(nameof(MissingConnectionNodeIds));
+    public static readonly StyledProperty<IEnumerable<long>?> CrossRegionConnectorNodeIdsProperty =
+        AvaloniaProperty.Register<MapControl, IEnumerable<long>?>(nameof(CrossRegionConnectorNodeIds));
 
     private Point? _lastPanPoint;
     private Point _panOffset = new(0, 0);
@@ -405,6 +411,18 @@ public sealed class MapControl : Control
         set => SetValue(AdditionalSelectedNodeIdsProperty, value);
     }
 
+    public IEnumerable<long>? MissingConnectionNodeIds
+    {
+        get => GetValue(MissingConnectionNodeIdsProperty);
+        set => SetValue(MissingConnectionNodeIdsProperty, value);
+    }
+
+    public IEnumerable<long>? CrossRegionConnectorNodeIds
+    {
+        get => GetValue(CrossRegionConnectorNodeIdsProperty);
+        set => SetValue(CrossRegionConnectorNodeIdsProperty, value);
+    }
+
     public MapControl()
     {
         AffectsRender<MapControl>(GraphProperty, SelectedNodeIdProperty, ViewModeProperty, StretchToWindowProperty);
@@ -437,7 +455,9 @@ public sealed class MapControl : Control
             MaxZoomOverrideProperty,
             AllowFitBeyondMinZoomProperty,
             UseBuiltInSelectionProperty,
-            AdditionalSelectedNodeIdsProperty);
+            AdditionalSelectedNodeIdsProperty,
+            MissingConnectionNodeIdsProperty,
+            CrossRegionConnectorNodeIdsProperty);
         ClipToBounds = true;
     }
 
@@ -847,6 +867,12 @@ public sealed class MapControl : Control
         var additionalSelectedSet = AdditionalSelectedNodeIds is not null
             ? new HashSet<long>(AdditionalSelectedNodeIds)
             : null;
+        var missingConnectionSet = MissingConnectionNodeIds is not null
+            ? new HashSet<long>(MissingConnectionNodeIds)
+            : null;
+        var crossRegionConnectorSet = CrossRegionConnectorNodeIds is not null
+            ? new HashSet<long>(CrossRegionConnectorNodeIds)
+            : null;
         for (var i = 0; i < Graph.Nodes.Count; i++)
         {
             var node = Graph.Nodes[i];
@@ -873,11 +899,15 @@ public sealed class MapControl : Control
                     ? HoveredBrush
                     : isSearchHighlighted
                         ? SelectedBrush
-                        : isSelectedRegionNode
-                            ? SelectedBrush
-                            : isInActiveRegion
-                                ? RegionSelectedBrush
-                                : GetCachedBrush(GetNodeBaseColor(node, NodeColorMode));
+                            : isSelectedRegionNode
+                                ? SelectedBrush
+                                : isInActiveRegion
+                                    ? RegionSelectedBrush
+                                : ShowEditorGrid && (missingConnectionSet?.Contains(node.Id) ?? false)
+                                    ? EditorMissingConnectionBrush
+                                    : ShowEditorGrid && (crossRegionConnectorSet?.Contains(node.Id) ?? false)
+                                        ? EditorCrossRegionConnectorBrush
+                                        : GetCachedBrush(GetNodeBaseColor(node, NodeColorMode));
             context.DrawEllipse(brush, NodeOutlinePen, p, radius, radius);
             if (AlwaysShowHubWormholes && node.HubWormholeConnections.Count > 0)
             {
@@ -899,8 +929,9 @@ public sealed class MapControl : Control
             var suppressInlineLabel =
                 (SelectedNodeId is not null && node.Id == SelectedNodeId.Value) ||
                 (_hoveredNodeId is not null && node.Id == _hoveredNodeId.Value);
+            var alwaysShowEditorLabels = ShowEditorGrid;
             if (!suppressInlineLabel &&
-                (_zoom >= GetLabelZoomThreshold() || isSelected || isHovered) &&
+                (alwaysShowEditorLabels || _zoom >= GetLabelZoomThreshold() || isSelected || isHovered) &&
                 labelsDrawn < labelBudget &&
                 IsPointVisible(p, bounds, labelVisibilityMargin))
             {
@@ -2724,7 +2755,7 @@ public sealed class MapControl : Control
 
         FormattedText? region = null;
         FormattedText? regionHalo = null;
-        if (ShowIndicatorRegion && !string.IsNullOrWhiteSpace(node.RegionName))
+        if ((ShowIndicatorRegion || ShowEditorGrid) && !string.IsNullOrWhiteSpace(node.RegionName))
         {
             region = new FormattedText(
                 node.RegionName,

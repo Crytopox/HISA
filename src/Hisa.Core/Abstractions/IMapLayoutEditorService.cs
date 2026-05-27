@@ -15,4 +15,7 @@ public interface IMapLayoutEditorService
         IReadOnlyCollection<long> existingSystemIds,
         IReadOnlyDictionary<long, (double X, double Y)> existingNodeLayoutBySystemId,
         CancellationToken cancellationToken = default);
+    Task<IReadOnlyDictionary<long, int>> GetSystemNeighborCountsAsync(
+        IReadOnlyCollection<long> solarSystemIds,
+        CancellationToken cancellationToken = default);
 }

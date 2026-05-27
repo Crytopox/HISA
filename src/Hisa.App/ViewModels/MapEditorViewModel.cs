@@ -44,6 +44,8 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
     public ObservableCollection<RegionOption> GameRegions { get; } = [];
     public ObservableCollection<MapLayoutRegionSummary> LayoutRegions { get; } = [];
     public IEnumerable<long> SelectedNodeIdsForView { get; private set; } = [];
+    public IEnumerable<long> MissingConnectionNodeIdsForView { get; private set; } = [];
+    public IEnumerable<long> CrossRegionConnectorNodeIdsForView { get; private set; } = [];
     public Task InitialLoadTask { get; }
 
     public string NewRegionName
@@ -354,6 +356,7 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
         _selectedNodeIds.Clear();
         RefreshSelectedNodeIdsForView();
         CurrentGraph = graph;
+        await RefreshEditorDiagnosticsAsync();
         StatusText = $"Loaded: {SelectedLayoutRegion.Name} | Nodes: {graph.Nodes.Count} | Links: {graph.Links.Count}";
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectionStatus)));
     }
@@ -388,6 +391,7 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
             Nodes = nodes,
             Links = links
         };
+        await RefreshEditorDiagnosticsAsync();
 
         if (!keepSelection || SelectedNodeId is null || !_editableNodesById.ContainsKey(SelectedNodeId.Value))
         {
@@ -470,6 +474,7 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
             Nodes = CurrentGraph.Nodes,
             Links = links
         };
+        await RefreshEditorDiagnosticsAsync();
     }
 
     private bool SetProperty<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
@@ -562,5 +567,71 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
     {
         SelectedNodeIdsForView = _selectedNodeIds.ToArray();
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedNodeIdsForView)));
+    }
+
+    private async Task RefreshEditorDiagnosticsAsync()
+    {
+        var presentById = CurrentGraph.Nodes.ToDictionary(n => n.Id);
+        var presentSystemIds = presentById.Keys.Where(x => x > 0).ToHashSet();
+
+        var crossRegionConnectorIds = new HashSet<long>();
+        foreach (var link in CurrentGraph.Links)
+        {
+            if (!presentById.TryGetValue(link.FromId, out var fromNode) ||
+                !presentById.TryGetValue(link.ToId, out var toNode))
+            {
+                continue;
+            }
+
+            if (fromNode.RegionId is not null &&
+                toNode.RegionId is not null &&
+                fromNode.RegionId != toNode.RegionId)
+            {
+                crossRegionConnectorIds.Add(fromNode.Id);
+                crossRegionConnectorIds.Add(toNode.Id);
+            }
+        }
+
+        var missingConnectionIds = new HashSet<long>();
+        if (presentSystemIds.Count > 0)
+        {
+            var neighborCounts = await _mapLayoutEditorService.GetSystemNeighborCountsAsync(presentSystemIds);
+            var presentNeighborCounts = new Dictionary<long, int>();
+            foreach (var id in presentSystemIds)
+            {
+                presentNeighborCounts[id] = 0;
+            }
+
+            foreach (var link in CurrentGraph.Links)
+            {
+                if (link.FromId > 0 && link.ToId > 0)
+                {
+                    if (presentNeighborCounts.ContainsKey(link.FromId))
+                    {
+                        presentNeighborCounts[link.FromId]++;
+                    }
+
+                    if (presentNeighborCounts.ContainsKey(link.ToId))
+                    {
+                        presentNeighborCounts[link.ToId]++;
+                    }
+                }
+            }
+
+            foreach (var id in presentSystemIds)
+            {
+                var total = neighborCounts.TryGetValue(id, out var totalCount) ? totalCount : 0;
+                var present = presentNeighborCounts.TryGetValue(id, out var presentCount) ? presentCount : 0;
+                if (total > present)
+                {
+                    missingConnectionIds.Add(id);
+                }
+            }
+        }
+
+        CrossRegionConnectorNodeIdsForView = crossRegionConnectorIds.ToArray();
+        MissingConnectionNodeIdsForView = missingConnectionIds.ToArray();
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CrossRegionConnectorNodeIdsForView)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MissingConnectionNodeIdsForView)));
     }
 }
