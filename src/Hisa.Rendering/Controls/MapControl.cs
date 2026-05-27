@@ -2594,13 +2594,17 @@ public sealed class MapControl : Control
     {
         var header = node.Name;
         var detailLines = new List<string>();
-        if (InfoBoxShowRegion && !string.IsNullOrWhiteSpace(node.RegionName))
+        var regionText = (InfoBoxShowRegion && !string.IsNullOrWhiteSpace(node.RegionName))
+            ? $"{node.RegionName}"
+            : null;
+        var constellationText = (InfoBoxShowConstellation && !string.IsNullOrWhiteSpace(node.ConstellationName))
+            ? $"{node.ConstellationName}"
+            : null;
+        if (regionText is not null || constellationText is not null)
         {
-            detailLines.Add($"Region: {node.RegionName}");
-        }
-        if (InfoBoxShowConstellation && !string.IsNullOrWhiteSpace(node.ConstellationName))
-        {
-            detailLines.Add($"Constellation: {node.ConstellationName}");
+            detailLines.Add(regionText is not null && constellationText is not null
+                ? $"{regionText} | {constellationText}"
+                : regionText ?? constellationText!);
         }
         var starClass = GetStarClassDisplayValue(node);
         if (InfoBoxShowStarClass && !string.IsNullOrWhiteSpace(starClass))
