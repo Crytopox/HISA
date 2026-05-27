@@ -155,6 +155,9 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
 
         try
         {
+            // Persist current in-editor changes first so import appends on top
+            // of the latest edited state (including deletions/moves).
+            await _mapLayoutEditorService.SaveLayoutRegionGraphAsync(SelectedLayoutRegion.Id, CurrentGraph);
             await _mapLayoutEditorService.AddGameRegionsToLayoutAsync(SelectedLayoutRegion.Id, sourceRegionIds);
             await LoadSelectedLayoutRegionAsync();
             StatusText = $"Imported {sourceRegionIds.Count} game region(s).";
