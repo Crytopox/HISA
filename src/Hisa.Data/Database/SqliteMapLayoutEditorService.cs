@@ -491,13 +491,15 @@ public sealed class SqliteMapLayoutEditorService : IMapLayoutEditorService
         var maxY = systemsToAdd.Max(s => s.Y);
         var width = Math.Max(1e-9, maxX - minX);
         var height = Math.Max(1e-9, maxY - minY);
+        var maxDim = Math.Max(width, height);
 
+        // Aspect-preserving normalization for this imported chunk.
         var normalized = systemsToAdd
             .Select(s => (
                 s.Id,
                 s.Name,
-                X: (s.X - minX) / width,
-                Y: 1.0 - ((s.Y - minY) / height)))
+                X: (s.X - minX) / maxDim,
+                Y: 1.0 - ((s.Y - minY) / maxDim)))
             .ToList();
 
         // First import into an empty layout uses normalized chunk coordinates directly.
@@ -511,21 +513,25 @@ public sealed class SqliteMapLayoutEditorService : IMapLayoutEditorService
         var existingMinY = existingNodes.Min(n => n.Value.Y);
         var existingMaxY = existingNodes.Max(n => n.Value.Y);
         var existingWidth = Math.Max(0.2, existingMaxX - existingMinX);
-        var existingHeight = Math.Max(0.2, existingMaxY - existingMinY);
+        var existingCenterY = (existingMinY + existingMaxY) * 0.5;
 
-        // Place newly imported chunk to the right of existing content without touching current nodes.
-        var targetWidth = existingWidth * 0.55;
-        var targetHeight = existingHeight * 0.55;
+        // Keep chunk proportions and scale as normalized; only translate into open space.
+        var chunkMinX = normalized.Min(n => n.X);
+        var chunkMaxX = normalized.Max(n => n.X);
+        var chunkMinY = normalized.Min(n => n.Y);
+        var chunkMaxY = normalized.Max(n => n.Y);
+        var chunkHeight = Math.Max(0.0001, chunkMaxY - chunkMinY);
+
         var margin = Math.Max(0.06, existingWidth * 0.08);
-        var offsetX = existingMaxX + margin;
-        var offsetY = existingMinY + ((existingHeight - targetHeight) * 0.5);
+        var offsetX = existingMaxX + margin - chunkMinX;
+        var offsetY = existingCenterY - ((chunkMinY + chunkHeight * 0.5));
 
         return normalized
             .Select(n => (
                 n.Id,
                 n.Name,
-                X: offsetX + (n.X * targetWidth),
-                Y: offsetY + (n.Y * targetHeight)))
+                X: offsetX + n.X,
+                Y: offsetY + n.Y))
             .ToList();
     }
 

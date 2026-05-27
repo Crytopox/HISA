@@ -442,10 +442,9 @@ public sealed class MapControl : Control
             return;
         }
 
-        if (_nodeById.Count != Graph.Nodes.Count)
-        {
-            RebuildGraphCaches();
-        }
+        // Node positions can change without node count changing (editor drag/move),
+        // so always rebuild bounds before fitting.
+        RebuildGraphCaches();
 
         var plot = GetPlotMetrics();
         var plotWidth = plot.Width;
