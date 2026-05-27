@@ -1,4 +1,7 @@
 using Hisa.Data.Database;
+using Hisa.Core.Abstractions;
+using Hisa.Services.Storm;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -30,9 +33,17 @@ public sealed class DatabaseInitializationHostedService : IHostedService
 
 public static class ServiceCollectionExtensions
 {
-    public static IServiceCollection AddHisaServices(this IServiceCollection services)
+    public static IServiceCollection AddHisaServices(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddHostedService<DatabaseInitializationHostedService>();
+        services.Configure<StormRefreshOptions>(configuration.GetSection("Hisa:Storms"));
+        services.AddHttpClient<IStormCenterSource, EveScoutStormCenterSource>(client =>
+        {
+            client.BaseAddress = new Uri("https://api.eve-scout.com/");
+            client.Timeout = TimeSpan.FromSeconds(20);
+        });
+        services.AddSingleton<IStormStateService, StormStateService>();
+        services.AddHostedService<StormRefreshHostedService>();
         return services;
     }
 }

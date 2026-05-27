@@ -21,7 +21,8 @@ public enum MapNodeColorMode
     Star = 3,
     NullsecTrueSec = 4,
     JoveObservatory = 5,
-    IceBelts = 6
+    IceBelts = 6,
+    Storms = 7
 }
 
 public sealed class MapGraph
@@ -46,6 +47,7 @@ public sealed class MapNode
     public string? RegionName { get; init; }
     public int? ConstellationId { get; init; }
     public string? ConstellationName { get; init; }
+    public IReadOnlyList<StormEffect> StormEffects { get; init; } = [];
 }
 
 public enum MapSearchKind

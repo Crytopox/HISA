@@ -27,7 +27,7 @@ internal static class AppHostBuilder
         builder.Services.AddSingleton<MainWindow>();
 
         builder.Services.AddHisaData(builder.Configuration);
-        builder.Services.AddHisaServices();
+        builder.Services.AddHisaServices(builder.Configuration);
         builder.Services.AddHisaMapServices();
 
         return builder.Build();

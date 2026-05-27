@@ -83,6 +83,19 @@ public sealed class MapControl : Control
     private static readonly Lazy<Bitmap?> A0StarIcon = new(LoadA0StarIcon);
     private static readonly Lazy<Bitmap?> JoveObservatoryIcon = new(LoadJoveObservatoryIcon);
     private static readonly Lazy<Bitmap?> IceFieldIcon = new(LoadIceFieldIcon);
+    private static readonly Lazy<Bitmap?> StormElectricCenterIcon = new(() => LoadIcon("storm_electric_center.png"));
+    private static readonly Lazy<Bitmap?> StormElectricStrongIcon = new(() => LoadIcon("storm_electric_strong.png"));
+    private static readonly Lazy<Bitmap?> StormElectricWeakIcon = new(() => LoadIcon("storm_electric_weak.png"));
+    private static readonly Lazy<Bitmap?> StormGammaCenterIcon = new(() => LoadIcon("storm_gamma_center.png"));
+    private static readonly Lazy<Bitmap?> StormGammaStrongIcon = new(() => LoadIcon("storm_gamma_strong.png"));
+    private static readonly Lazy<Bitmap?> StormGammaWeakIcon = new(() => LoadIcon("storm_gamma_weak.png"));
+    private static readonly Lazy<Bitmap?> StormExoticCenterIcon = new(() => LoadIcon("storm_exotic_center.png"));
+    private static readonly Lazy<Bitmap?> StormExoticStrongIcon = new(() => LoadIcon("storm_exotic_strong.png"));
+    private static readonly Lazy<Bitmap?> StormExoticWeakIcon = new(() => LoadIcon("storm_exotic_weak.png"));
+    private static readonly Lazy<Bitmap?> StormPlasmaCenterIcon = new(() => LoadIcon("storm_plasma_center.png"));
+    private static readonly Lazy<Bitmap?> StormPlasmaStrongIcon = new(() => LoadIcon("storm_plasma_strong.png"));
+    private static readonly Lazy<Bitmap?> StormPlasmaWeakIcon = new(() => LoadIcon("storm_plasma_weak.png"));
+    private static readonly Lazy<Bitmap?> StormUnknownIcon = new(() => LoadIcon("storm_unknown.png"));
 
     public static readonly StyledProperty<MapGraph?> GraphProperty =
         AvaloniaProperty.Register<MapControl, MapGraph?>(nameof(Graph));
@@ -111,6 +124,8 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorJoveObservatoryIcon), true);
     public static readonly StyledProperty<bool> ShowIndicatorIceBeltsIconProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorIceBeltsIcon), true);
+    public static readonly StyledProperty<bool> ShowIndicatorStormIconProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorStormIcon), true);
     public static readonly StyledProperty<bool> InfoBoxShowRegionProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowRegion), true);
     public static readonly StyledProperty<bool> InfoBoxShowConstellationProperty =
@@ -125,6 +140,8 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowJoveObservatoryIcon), true);
     public static readonly StyledProperty<bool> InfoBoxShowIceBeltsIconProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowIceBeltsIcon), true);
+    public static readonly StyledProperty<bool> InfoBoxShowStormIconProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowStormIcon), true);
 
     private Point? _lastPanPoint;
     private Point _panOffset = new(0, 0);
@@ -240,6 +257,12 @@ public sealed class MapControl : Control
         set => SetValue(ShowIndicatorIceBeltsIconProperty, value);
     }
 
+    public bool ShowIndicatorStormIcon
+    {
+        get => GetValue(ShowIndicatorStormIconProperty);
+        set => SetValue(ShowIndicatorStormIconProperty, value);
+    }
+
     public bool InfoBoxShowRegion
     {
         get => GetValue(InfoBoxShowRegionProperty);
@@ -282,6 +305,12 @@ public sealed class MapControl : Control
         set => SetValue(InfoBoxShowIceBeltsIconProperty, value);
     }
 
+    public bool InfoBoxShowStormIcon
+    {
+        get => GetValue(InfoBoxShowStormIconProperty);
+        set => SetValue(InfoBoxShowStormIconProperty, value);
+    }
+
     public MapControl()
     {
         AffectsRender<MapControl>(GraphProperty, SelectedNodeIdProperty, ViewModeProperty, StretchToWindowProperty);
@@ -295,13 +324,15 @@ public sealed class MapControl : Control
             ShowIndicatorA0StarIconProperty,
             ShowIndicatorJoveObservatoryIconProperty,
             ShowIndicatorIceBeltsIconProperty,
+            ShowIndicatorStormIconProperty,
             InfoBoxShowRegionProperty,
             InfoBoxShowConstellationProperty,
             InfoBoxShowSecurityStatusProperty,
             InfoBoxShowStarClassProperty,
             InfoBoxShowA0StarIconProperty,
             InfoBoxShowJoveObservatoryIconProperty,
-            InfoBoxShowIceBeltsIconProperty);
+            InfoBoxShowIceBeltsIconProperty,
+            InfoBoxShowStormIconProperty);
         ClipToBounds = true;
     }
 
@@ -1896,6 +1927,10 @@ public sealed class MapControl : Control
         {
             return;
         }
+        if (NodeBackgroundColorMode == MapNodeColorMode.Storms && node.StormEffects.Count == 0)
+        {
+            return;
+        }
 
         var color = GetNodeBaseColor(node, NodeBackgroundColorMode);
         var tuned = BrightenForBackground(color);
@@ -1914,8 +1949,51 @@ public sealed class MapControl : Control
             MapNodeColorMode.NullsecTrueSec => GetNullsecTrueSecColor(node),
             MapNodeColorMode.JoveObservatory => node.HasJoveObservatory ? Color.Parse("#2ED436") : Color.Parse("#98A6B8"),
             MapNodeColorMode.IceBelts => node.IceFieldCount > 0 ? Color.Parse("#58B9FF") : Color.Parse("#98A6B8"),
+            MapNodeColorMode.Storms => GetStormColor(node),
             _ => Color.Parse("#98A6B8")
         };
+    }
+
+    private static Color GetStormColor(MapNode node)
+    {
+        var primary = GetPrimaryStormEffect(node);
+        if (primary is null)
+        {
+            return Color.Parse("#98A6B8");
+        }
+
+        var baseColor = GetStormBaseColor(primary.Type);
+        return primary.Strength switch
+        {
+            StormStrength.Center => baseColor,
+            StormStrength.Strong => LerpColor(baseColor, Color.FromRgb(210, 210, 210), 0.25),
+            _ => LerpColor(baseColor, Color.FromRgb(210, 210, 210), 0.50)
+        };
+    }
+
+    private static Color GetStormBaseColor(StormType type)
+    {
+        return type switch
+        {
+            StormType.Electrical => Color.Parse("#4AA8FF"),
+            StormType.Plasma => Color.Parse("#DE5B52"),
+            StormType.Gamma => Color.Parse("#E69138"),
+            StormType.Exotic => Color.Parse("#CFD4DC"),
+            _ => Color.Parse("#A9B2BF")
+        };
+    }
+
+    private static StormEffect? GetPrimaryStormEffect(MapNode node)
+    {
+        if (node.StormEffects.Count == 0)
+        {
+            return null;
+        }
+
+        return node.StormEffects
+            .OrderByDescending(e => e.Strength)
+            .ThenBy(e => e.Type)
+            .FirstOrDefault();
     }
 
     private static Color WithAlpha(Color color, double alpha01)
@@ -2379,6 +2457,13 @@ public sealed class MapControl : Control
             var iconX = rect.X + IndicatorIconLeftPadding + (indicatorIconSlot * (IconSize + IndicatorIconSlotGap));
             var iconY = rect.Bottom;
             DrawIceFieldIcon(context, new Point(iconX, iconY), IconSize);
+            indicatorIconSlot++;
+        }
+        if (ShowIndicatorStormIcon && node.StormEffects.Count > 0)
+        {
+            var iconX = rect.X + IndicatorIconLeftPadding + (indicatorIconSlot * (IconSize + IndicatorIconSlotGap));
+            var iconY = rect.Bottom;
+            DrawStormIcon(context, node, new Point(iconX, iconY), IconSize);
         }
     }
 
@@ -2440,6 +2525,13 @@ public sealed class MapControl : Control
         if (InfoBoxShowStarClass && !string.IsNullOrWhiteSpace(starClass))
         {
             detailLines.Add(starClass);
+        }
+        if (node.StormEffects.Count > 0)
+        {
+            foreach (var storm in node.StormEffects.OrderByDescending(e => e.Strength).ThenBy(e => e.Type))
+            {
+                detailLines.Add($"Storm: {storm.Strength} {storm.Type}");
+            }
         }
         var headerText = new FormattedText(
             header,
@@ -2517,28 +2609,36 @@ public sealed class MapControl : Control
             var iconX = rect.X + IndicatorIconLeftPadding + (overlayIconSlot * (IconSize + IndicatorIconSlotGap));
             var iconY = rect.Bottom + 3;
             DrawIceFieldIcon(context, new Point(iconX, iconY), IconSize);
+            overlayIconSlot++;
+        }
+        if (InfoBoxShowStormIcon && node.StormEffects.Count > 0)
+        {
+            var iconX = rect.X + IndicatorIconLeftPadding + (overlayIconSlot * (IconSize + IndicatorIconSlotGap));
+            var iconY = rect.Bottom + 3;
+            DrawStormIcon(context, node, new Point(iconX, iconY), IconSize);
         }
     }
 
     private static Bitmap? LoadA0StarIcon()
     {
-        try
-        {
-            var uri = new Uri("avares://Hisa.App/Assets/Icons/a0-star.png");
-            using var stream = AssetLoader.Open(uri);
-            return new Bitmap(stream);
-        }
-        catch
-        {
-            return null;
-        }
+        return LoadIcon("a0-star.png");
     }
 
     private static Bitmap? LoadJoveObservatoryIcon()
     {
+        return LoadIcon("jove_observatory.png");
+    }
+
+    private static Bitmap? LoadIceFieldIcon()
+    {
+        return LoadIcon("iceField.png");
+    }
+
+    private static Bitmap? LoadIcon(string fileName)
+    {
         try
         {
-            var uri = new Uri("avares://Hisa.App/Assets/Icons/jove_observatory.png");
+            var uri = new Uri($"avares://Hisa.App/Assets/Icons/{fileName}");
             using var stream = AssetLoader.Open(uri);
             return new Bitmap(stream);
         }
@@ -2548,18 +2648,34 @@ public sealed class MapControl : Control
         }
     }
 
-    private static Bitmap? LoadIceFieldIcon()
+    private static void DrawStormIcon(DrawingContext context, MapNode node, Point topLeft, double size)
     {
-        try
+        var effect = GetPrimaryStormEffect(node);
+        var icon = effect switch
         {
-            var uri = new Uri("avares://Hisa.App/Assets/Icons/iceField.png");
-            using var stream = AssetLoader.Open(uri);
-            return new Bitmap(stream);
-        }
-        catch
+            null => StormUnknownIcon.Value,
+            { Type: StormType.Electrical, Strength: StormStrength.Center } => StormElectricCenterIcon.Value,
+            { Type: StormType.Electrical, Strength: StormStrength.Strong } => StormElectricStrongIcon.Value,
+            { Type: StormType.Electrical, Strength: StormStrength.Weak } => StormElectricWeakIcon.Value,
+            { Type: StormType.Gamma, Strength: StormStrength.Center } => StormGammaCenterIcon.Value,
+            { Type: StormType.Gamma, Strength: StormStrength.Strong } => StormGammaStrongIcon.Value,
+            { Type: StormType.Gamma, Strength: StormStrength.Weak } => StormGammaWeakIcon.Value,
+            { Type: StormType.Exotic, Strength: StormStrength.Center } => StormExoticCenterIcon.Value,
+            { Type: StormType.Exotic, Strength: StormStrength.Strong } => StormExoticStrongIcon.Value,
+            { Type: StormType.Exotic, Strength: StormStrength.Weak } => StormExoticWeakIcon.Value,
+            { Type: StormType.Plasma, Strength: StormStrength.Center } => StormPlasmaCenterIcon.Value,
+            { Type: StormType.Plasma, Strength: StormStrength.Strong } => StormPlasmaStrongIcon.Value,
+            { Type: StormType.Plasma, Strength: StormStrength.Weak } => StormPlasmaWeakIcon.Value,
+            _ => StormUnknownIcon.Value
+        };
+        if (icon is null)
         {
-            return null;
+            return;
         }
+
+        var src = new Rect(0, 0, icon.Size.Width, icon.Size.Height);
+        var dst = new Rect(topLeft.X, topLeft.Y, size, size);
+        context.DrawImage(icon, src, dst);
     }
 
     private static bool IsA0BlueSmall(MapNode node)

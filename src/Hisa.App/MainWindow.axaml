@@ -102,6 +102,7 @@
                             ShowIndicatorA0StarIcon="{Binding ShowIndicatorA0StarIcon}"
                             ShowIndicatorJoveObservatoryIcon="{Binding ShowIndicatorJoveObservatoryIcon}"
                             ShowIndicatorIceBeltsIcon="{Binding ShowIndicatorIceBeltsIcon}"
+                            ShowIndicatorStormIcon="{Binding ShowIndicatorStormIcon}"
                             InfoBoxShowRegion="{Binding InfoBoxShowRegion}"
                             InfoBoxShowConstellation="{Binding InfoBoxShowConstellation}"
                             InfoBoxShowSecurityStatus="{Binding InfoBoxShowSecurityStatus}"
@@ -109,6 +110,7 @@
                             InfoBoxShowA0StarIcon="{Binding InfoBoxShowA0StarIcon}"
                             InfoBoxShowJoveObservatoryIcon="{Binding InfoBoxShowJoveObservatoryIcon}"
                             InfoBoxShowIceBeltsIcon="{Binding InfoBoxShowIceBeltsIcon}"
+                            InfoBoxShowStormIcon="{Binding InfoBoxShowStormIcon}"
                             SelectedNodeId="{Binding SelectedNodeId, Mode=TwoWay}" />
 
       <Border Grid.Column="1"
@@ -148,6 +150,7 @@
             <CheckBox IsChecked="{Binding ShowIndicatorA0StarIcon}" Content="A0 Stars" />
             <CheckBox IsChecked="{Binding ShowIndicatorJoveObservatoryIcon}" Content="Jove Observatory" />
             <CheckBox IsChecked="{Binding ShowIndicatorIceBeltsIcon}" Content="Ice Belts" />
+            <CheckBox IsChecked="{Binding ShowIndicatorStormIcon}" Content="Metaliminal Storms" />
 
             <Separator />
 
@@ -159,6 +162,7 @@
             <CheckBox IsChecked="{Binding InfoBoxShowA0StarIcon}" Content="A0 Stars" />
             <CheckBox IsChecked="{Binding InfoBoxShowJoveObservatoryIcon}" Content="Jove Observatory" />
             <CheckBox IsChecked="{Binding InfoBoxShowIceBeltsIcon}" Content="Ice Belts" />
+            <CheckBox IsChecked="{Binding InfoBoxShowStormIcon}" Content="Metaliminal Storms" />
           </StackPanel>
         </ScrollViewer>
       </Border>

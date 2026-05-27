@@ -21,6 +21,7 @@ public sealed class MapNodeColorModeDisplayConverter : IValueConverter
             MapNodeColorMode.NullsecTrueSec => "Nullsec TrueSec",
             MapNodeColorMode.JoveObservatory => "Jove Observatory",
             MapNodeColorMode.IceBelts => "Ice Belts",
+            MapNodeColorMode.Storms => "Metaliminal Storms",
             _ => mode.ToString()
         };
     }
