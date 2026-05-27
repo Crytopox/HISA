@@ -26,6 +26,11 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
         public required string Name { get; set; }
         public required double X { get; set; }
         public required double Y { get; set; }
+        public double? Security { get; set; }
+        public int? RegionId { get; set; }
+        public string? RegionName { get; set; }
+        public int? ConstellationId { get; set; }
+        public string? ConstellationName { get; set; }
     }
 
     public MapEditorViewModel(
@@ -279,7 +284,12 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
                 Id = node.Id,
                 Name = node.Name,
                 X = node.X,
-                Y = node.Y
+                Y = node.Y,
+                Security = node.Security,
+                RegionId = node.RegionId,
+                RegionName = node.RegionName,
+                ConstellationId = node.ConstellationId,
+                ConstellationName = node.ConstellationName
             };
             added++;
         }
@@ -348,7 +358,12 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
                 Id = node.Id,
                 Name = node.Name,
                 X = node.X,
-                Y = node.Y
+                Y = node.Y,
+                Security = node.Security,
+                RegionId = node.RegionId,
+                RegionName = node.RegionName,
+                ConstellationId = node.ConstellationId,
+                ConstellationName = node.ConstellationName
             };
         }
 
@@ -363,25 +378,52 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
 
     private async Task RebuildGraphAsync(bool keepSelection)
     {
+        var existingById = CurrentGraph.Nodes.ToDictionary(n => n.Id);
         var nodes = _editableNodesById.Values
-            .Select(n => new MapNode
+            .Select(n =>
             {
-                Id = n.Id,
-                Name = n.Name,
-                X = n.X,
-                Y = n.Y,
-                Security = null,
-                SunTypeId = null,
-                StarTypeName = null,
-                SpectralClass = null,
-                HasJoveObservatory = false,
-                IceFieldCount = 0,
-                RegionId = null,
-                RegionName = null,
-                ConstellationId = null,
-                ConstellationName = null,
-                StormEffects = [],
-                HubWormholeConnections = []
+                if (existingById.TryGetValue(n.Id, out var existing))
+                {
+                    return new MapNode
+                    {
+                        Id = existing.Id,
+                        Name = existing.Name,
+                        X = n.X,
+                        Y = n.Y,
+                        Security = existing.Security,
+                        SunTypeId = existing.SunTypeId,
+                        StarTypeName = existing.StarTypeName,
+                        SpectralClass = existing.SpectralClass,
+                        HasJoveObservatory = existing.HasJoveObservatory,
+                        IceFieldCount = existing.IceFieldCount,
+                        RegionId = existing.RegionId,
+                        RegionName = existing.RegionName,
+                        ConstellationId = existing.ConstellationId,
+                        ConstellationName = existing.ConstellationName,
+                        StormEffects = existing.StormEffects,
+                        HubWormholeConnections = existing.HubWormholeConnections
+                    };
+                }
+
+                return new MapNode
+                {
+                    Id = n.Id,
+                    Name = n.Name,
+                    X = n.X,
+                    Y = n.Y,
+                    Security = n.Security,
+                    SunTypeId = null,
+                    StarTypeName = null,
+                    SpectralClass = null,
+                    HasJoveObservatory = false,
+                    IceFieldCount = 0,
+                    RegionId = n.RegionId,
+                    RegionName = n.RegionName,
+                    ConstellationId = n.ConstellationId,
+                    ConstellationName = n.ConstellationName,
+                    StormEffects = [],
+                    HubWormholeConnections = []
+                };
             })
             .ToList();
 
@@ -436,16 +478,16 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
                     Name = n.Name,
                     X = n.X,
                     Y = n.Y,
-                    Security = null,
+                    Security = n.Security,
                     SunTypeId = null,
                     StarTypeName = null,
                     SpectralClass = null,
                     HasJoveObservatory = false,
                     IceFieldCount = 0,
-                    RegionId = null,
-                    RegionName = null,
-                    ConstellationId = null,
-                    ConstellationName = null,
+                    RegionId = n.RegionId,
+                    RegionName = n.RegionName,
+                    ConstellationId = n.ConstellationId,
+                    ConstellationName = n.ConstellationName,
                     StormEffects = [],
                     HubWormholeConnections = []
                 };

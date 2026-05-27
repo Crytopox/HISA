@@ -287,6 +287,7 @@ public sealed class SqliteMapLayoutEditorService : IMapLayoutEditorService
             """;
 
         var missingNeighborIds = new HashSet<int>();
+        var missingToPresentNeighbors = new Dictionary<int, HashSet<int>>();
         await using (var reader = await jumpsCommand.ExecuteReaderAsync(cancellationToken))
         {
             while (await reader.ReadAsync(cancellationToken))
@@ -296,11 +297,31 @@ public sealed class SqliteMapLayoutEditorService : IMapLayoutEditorService
                 if (selectedSet.Contains(from) && !existing.Contains(to))
                 {
                     missingNeighborIds.Add(to);
+                    if (existing.Contains(from))
+                    {
+                        if (!missingToPresentNeighbors.TryGetValue(to, out var neighbors))
+                        {
+                            neighbors = [];
+                            missingToPresentNeighbors[to] = neighbors;
+                        }
+
+                        neighbors.Add(from);
+                    }
                 }
 
                 if (selectedSet.Contains(to) && !existing.Contains(from))
                 {
                     missingNeighborIds.Add(from);
+                    if (existing.Contains(to))
+                    {
+                        if (!missingToPresentNeighbors.TryGetValue(from, out var neighbors))
+                        {
+                            neighbors = [];
+                            missingToPresentNeighbors[from] = neighbors;
+                        }
+
+                        neighbors.Add(to);
+                    }
                 }
             }
         }
@@ -327,19 +348,29 @@ public sealed class SqliteMapLayoutEditorService : IMapLayoutEditorService
         }
 
         nodesCommand.CommandText = $"""
-            SELECT solarSystemID, solarSystemName, x2D, y2D
-            FROM mapSolarSystems
-            WHERE solarSystemID IN ({string.Join(", ", nodeParams)})
-              AND x2D IS NOT NULL
-              AND y2D IS NOT NULL;
+            SELECT s.solarSystemID, s.solarSystemName, s.x2D, s.y2D, s.security, s.regionID, r.regionName, s.constellationID, c.constellationName
+            FROM mapSolarSystems s
+            LEFT JOIN mapRegions r ON r.regionID = s.regionID
+            LEFT JOIN mapConstellations c ON c.constellationID = s.constellationID
+            WHERE s.solarSystemID IN ({string.Join(", ", nodeParams)})
+              AND s.x2D IS NOT NULL
+              AND s.y2D IS NOT NULL;
             """;
 
-        var rawBySystemId = new Dictionary<int, (string Name, double X, double Y)>(rawSystemIds.Count);
+        var rawBySystemId = new Dictionary<int, (string Name, double X, double Y, double? Security, int? RegionId, string? RegionName, int? ConstellationId, string? ConstellationName)>(rawSystemIds.Count);
         await using var nodeReader = await nodesCommand.ExecuteReaderAsync(cancellationToken);
         while (await nodeReader.ReadAsync(cancellationToken))
         {
             var id = nodeReader.GetInt32(0);
-            rawBySystemId[id] = (nodeReader.GetString(1), nodeReader.GetDouble(2), nodeReader.GetDouble(3));
+            rawBySystemId[id] = (
+                nodeReader.GetString(1),
+                nodeReader.GetDouble(2),
+                nodeReader.GetDouble(3),
+                nodeReader.IsDBNull(4) ? (double?)null : nodeReader.GetDouble(4),
+                nodeReader.IsDBNull(5) ? (int?)null : nodeReader.GetInt32(5),
+                nodeReader.IsDBNull(6) ? null : nodeReader.GetString(6),
+                nodeReader.IsDBNull(7) ? (int?)null : nodeReader.GetInt32(7),
+                nodeReader.IsDBNull(8) ? null : nodeReader.GetString(8));
         }
 
         var anchors = rawBySystemId
@@ -403,22 +434,52 @@ public sealed class SqliteMapLayoutEditorService : IMapLayoutEditorService
                 fallbackIndex++;
             }
 
+            // Prefer placing new missing node near the existing source node(s) it connects from.
+            if (missingToPresentNeighbors.TryGetValue(missingId, out var presentNeighbors) && presentNeighbors.Count > 0)
+            {
+                var anchorPoints = presentNeighbors
+                    .Where(id => existingNodeLayoutBySystemId.ContainsKey(id))
+                    .Select(id => existingNodeLayoutBySystemId[(long)id])
+                    .ToList();
+
+                if (anchorPoints.Count > 0)
+                {
+                    var anchorX = anchorPoints.Average(p => p.X);
+                    var anchorY = anchorPoints.Average(p => p.Y);
+                    var dirX = mappedX - anchorX;
+                    var dirY = mappedY - anchorY;
+                    var len = Math.Sqrt((dirX * dirX) + (dirY * dirY));
+                    if (len < 1e-9)
+                    {
+                        // deterministic fallback angle per system id
+                        var angle = ((missingId % 360) * Math.PI) / 180.0;
+                        dirX = Math.Cos(angle);
+                        dirY = Math.Sin(angle);
+                        len = 1.0;
+                    }
+
+                    const double placeDistance = 0.05;
+                    mappedX = anchorX + ((dirX / len) * placeDistance);
+                    mappedY = anchorY + ((dirY / len) * placeDistance);
+                }
+            }
+
             result.Add(new MapNode
             {
                 Id = missingId,
                 Name = rawNode.Name,
                 X = mappedX,
                 Y = mappedY,
-                Security = null,
+                Security = rawNode.Security,
                 SunTypeId = null,
                 StarTypeName = null,
                 SpectralClass = null,
                 HasJoveObservatory = false,
                 IceFieldCount = 0,
-                RegionId = null,
-                RegionName = null,
-                ConstellationId = null,
-                ConstellationName = null,
+                RegionId = rawNode.RegionId,
+                RegionName = rawNode.RegionName,
+                ConstellationId = rawNode.ConstellationId,
+                ConstellationName = rawNode.ConstellationName,
                 StormEffects = [],
                 HubWormholeConnections = []
             });
