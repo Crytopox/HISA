@@ -256,6 +256,7 @@ public sealed class SqliteMapLayoutEditorService : IMapLayoutEditorService
     public async Task<IReadOnlyList<MapNode>> GetMissingConnectedSystemsAsync(
         IReadOnlyCollection<long> selectedSystemIds,
         IReadOnlyCollection<long> existingSystemIds,
+        IReadOnlyDictionary<long, (double X, double Y)> existingNodeLayoutBySystemId,
         CancellationToken cancellationToken = default)
     {
         var selectedList = selectedSystemIds.Where(x => x > 0).Select(x => (int)x).Distinct().ToList();
@@ -310,13 +311,19 @@ public sealed class SqliteMapLayoutEditorService : IMapLayoutEditorService
         }
 
         var missingList = missingNeighborIds.ToList();
-        var nodeParams = new List<string>(missingList.Count);
+        var rawSystemIds = existingSystemIds
+            .Where(x => x > 0)
+            .Select(x => (int)x)
+            .Concat(missingList)
+            .Distinct()
+            .ToList();
+        var nodeParams = new List<string>(rawSystemIds.Count);
         var nodesCommand = connection.CreateCommand();
-        for (var i = 0; i < missingList.Count; i++)
+        for (var i = 0; i < rawSystemIds.Count; i++)
         {
             var name = $"$node{i}";
             nodeParams.Add(name);
-            nodesCommand.Parameters.AddWithValue(name, missingList[i]);
+            nodesCommand.Parameters.AddWithValue(name, rawSystemIds[i]);
         }
 
         nodesCommand.CommandText = $"""
@@ -327,16 +334,81 @@ public sealed class SqliteMapLayoutEditorService : IMapLayoutEditorService
               AND y2D IS NOT NULL;
             """;
 
-        var result = new List<MapNode>(missingList.Count);
+        var rawBySystemId = new Dictionary<int, (string Name, double X, double Y)>(rawSystemIds.Count);
         await using var nodeReader = await nodesCommand.ExecuteReaderAsync(cancellationToken);
         while (await nodeReader.ReadAsync(cancellationToken))
         {
+            var id = nodeReader.GetInt32(0);
+            rawBySystemId[id] = (nodeReader.GetString(1), nodeReader.GetDouble(2), nodeReader.GetDouble(3));
+        }
+
+        var anchors = rawBySystemId
+            .Where(kvp => existingNodeLayoutBySystemId.ContainsKey(kvp.Key))
+            .Select(kvp => new
+            {
+                Id = (long)kvp.Key,
+                RawX = kvp.Value.X,
+                RawY = kvp.Value.Y,
+                LayoutX = existingNodeLayoutBySystemId[kvp.Key].X,
+                LayoutY = existingNodeLayoutBySystemId[kvp.Key].Y
+            })
+            .ToList();
+
+        var canAffineMap = anchors.Count >= 2;
+        var rawMinX = canAffineMap ? anchors.Min(a => a.RawX) : 0;
+        var rawMaxX = canAffineMap ? anchors.Max(a => a.RawX) : 1;
+        var rawMinY = canAffineMap ? anchors.Min(a => a.RawY) : 0;
+        var rawMaxY = canAffineMap ? anchors.Max(a => a.RawY) : 1;
+        var layoutMinX = canAffineMap ? anchors.Min(a => a.LayoutX) : 0;
+        var layoutMaxX = canAffineMap ? anchors.Max(a => a.LayoutX) : 1;
+        var layoutMinY = canAffineMap ? anchors.Min(a => a.LayoutY) : 0;
+        var layoutMaxY = canAffineMap ? anchors.Max(a => a.LayoutY) : 1;
+        var rawWidth = Math.Max(1e-9, rawMaxX - rawMinX);
+        var rawHeight = Math.Max(1e-9, rawMaxY - rawMinY);
+        var layoutWidth = Math.Max(1e-9, layoutMaxX - layoutMinX);
+        var layoutHeight = Math.Max(1e-9, layoutMaxY - layoutMinY);
+        var scaleX = layoutWidth / rawWidth;
+        var scaleY = layoutHeight / rawHeight;
+
+        var selectedAnchorPoints = selectedList
+            .Where(rawBySystemId.ContainsKey)
+            .Where(id => existingNodeLayoutBySystemId.ContainsKey(id))
+            .Select(id => existingNodeLayoutBySystemId[id])
+            .ToList();
+        var selectedCenterX = selectedAnchorPoints.Count > 0 ? selectedAnchorPoints.Average(p => p.X) : 0.5;
+        var selectedCenterY = selectedAnchorPoints.Count > 0 ? selectedAnchorPoints.Average(p => p.Y) : 0.5;
+        const double fallbackRadius = 0.08;
+        var fallbackIndex = 0;
+
+        var result = new List<MapNode>(missingList.Count);
+        foreach (var missingId in missingList)
+        {
+            if (!rawBySystemId.TryGetValue(missingId, out var rawNode))
+            {
+                continue;
+            }
+
+            double mappedX;
+            double mappedY;
+            if (canAffineMap)
+            {
+                mappedX = layoutMinX + ((rawNode.X - rawMinX) * scaleX);
+                mappedY = layoutMaxY - ((rawNode.Y - rawMinY) * scaleY);
+            }
+            else
+            {
+                var angle = (Math.PI * 2.0 * fallbackIndex) / Math.Max(1, missingList.Count);
+                mappedX = selectedCenterX + (Math.Cos(angle) * fallbackRadius);
+                mappedY = selectedCenterY + (Math.Sin(angle) * fallbackRadius);
+                fallbackIndex++;
+            }
+
             result.Add(new MapNode
             {
-                Id = nodeReader.GetInt32(0),
-                Name = nodeReader.GetString(1),
-                X = nodeReader.GetDouble(2),
-                Y = nodeReader.GetDouble(3),
+                Id = missingId,
+                Name = rawNode.Name,
+                X = mappedX,
+                Y = mappedY,
                 Security = null,
                 SunTypeId = null,
                 StarTypeName = null,

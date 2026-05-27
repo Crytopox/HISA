@@ -257,7 +257,13 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
         }
 
         var existingSystemIds = _editableNodesById.Keys.Where(id => id > 0).ToList();
-        var missingNodes = await _mapLayoutEditorService.GetMissingConnectedSystemsAsync(selectedSystemIds, existingSystemIds);
+        var existingPositions = _editableNodesById
+            .Where(kvp => kvp.Key > 0)
+            .ToDictionary(kvp => kvp.Key, kvp => (kvp.Value.X, kvp.Value.Y));
+        var missingNodes = await _mapLayoutEditorService.GetMissingConnectedSystemsAsync(
+            selectedSystemIds,
+            existingSystemIds,
+            existingPositions);
         var added = 0;
         foreach (var node in missingNodes)
         {

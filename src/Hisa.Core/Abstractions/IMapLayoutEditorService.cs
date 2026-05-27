@@ -13,5 +13,6 @@ public interface IMapLayoutEditorService
     Task<IReadOnlyList<MapNode>> GetMissingConnectedSystemsAsync(
         IReadOnlyCollection<long> selectedSystemIds,
         IReadOnlyCollection<long> existingSystemIds,
+        IReadOnlyDictionary<long, (double X, double Y)> existingNodeLayoutBySystemId,
         CancellationToken cancellationToken = default);
 }
