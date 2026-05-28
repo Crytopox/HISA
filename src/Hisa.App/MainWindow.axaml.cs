@@ -2,9 +2,12 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Media.Imaging;
 using Avalonia;
+using Avalonia.Platform;
 using Avalonia.Threading;
 using Microsoft.Extensions.DependencyInjection;
+using System.Diagnostics;
 using System.Linq;
 
 namespace Hisa.App;
@@ -23,6 +26,7 @@ public partial class MainWindow : Window
     private SovUpgradesWindow? _sovUpgradesWindow;
     private readonly ContextMenu _mapNodeContextMenu;
     private readonly MenuItem _copySystemNameMenuItem;
+    private readonly MenuItem _openInDotlanMenuItem;
     private Point? _mapRightPressPoint;
     private bool _mapRightMoved;
     private string? _contextSystemName;
@@ -37,11 +41,19 @@ public partial class MainWindow : Window
             Padding = new Thickness(8, 3)
         };
         _copySystemNameMenuItem.Click += OnCopySystemNameClicked;
+        _openInDotlanMenuItem = new MenuItem
+        {
+            Header = "Open in Dotlan",
+            FontSize = 11,
+            Padding = new Thickness(8, 3),
+            Icon = BuildDotlanMenuIcon()
+        };
+        _openInDotlanMenuItem.Click += OnOpenInDotlanClicked;
         _mapNodeContextMenu = new ContextMenu
         {
             MinWidth = 0,
             FontSize = 11,
-            ItemsSource = new object[] { _copySystemNameMenuItem }
+            ItemsSource = new object[] { _copySystemNameMenuItem, _openInDotlanMenuItem }
         };
         MainMapControl.UniverseRegionNodeDoubleClicked += OnUniverseRegionNodeClicked;
         Opened += OnOpened;
@@ -325,10 +337,33 @@ public partial class MainWindow : Window
         await topLevel.Clipboard.SetTextAsync(_contextSystemName);
     }
 
+    private void OnOpenInDotlanClicked(object? sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(_contextSystemName))
+        {
+            return;
+        }
+
+        var escapedSystem = Uri.EscapeDataString(_contextSystemName.Trim());
+        var url = $"https://evemaps.dotlan.net/system/{escapedSystem}";
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = url,
+                UseShellExecute = true
+            });
+        }
+        catch
+        {
+            // Ignore failures from shell/browser launch.
+        }
+    }
+
     private void ConfigureMapNodeMenuPlacement(Point clickPoint)
     {
-        const double estimatedMenuWidth = 185;
-        const double estimatedMenuHeight = 30;
+        const double estimatedMenuWidth = 210;
+        const double estimatedMenuHeight = 58;
         const double offset = 3;
         const double margin = 10;
 
@@ -345,6 +380,26 @@ public partial class MainWindow : Window
         _mapNodeContextMenu.PlacementRect = new Rect(clickPoint, new Size(1, 1));
         _mapNodeContextMenu.HorizontalOffset = offset;
         _mapNodeContextMenu.VerticalOffset = offset;
+    }
+
+    private static Control? BuildDotlanMenuIcon()
+    {
+        try
+        {
+            var uri = new Uri("avares://Hisa.App/Assets/Icons/dotlan.ico");
+            using var stream = AssetLoader.Open(uri);
+            var bitmap = new Bitmap(stream);
+            return new Image
+            {
+                Source = bitmap,
+                Width = 12,
+                Height = 12
+            };
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private async void OnOpened(object? sender, EventArgs e)
