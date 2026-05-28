@@ -185,6 +185,9 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, IEnumerable<long>?>(nameof(CrossRegionConnectorNodeIds));
 
     private Point? _lastPanPoint;
+    private Point? _leftPressPoint;
+    private bool _pendingClearSelectionOnLeftRelease;
+    private bool _leftDragPanned;
     private Point _panOffset = new(0, 0);
     private double _zoom = 1.0;
     private long? _hoveredNodeId;
@@ -1179,10 +1182,11 @@ public sealed class MapControl : Control
                 return;
             }
 
-            SelectedNodeId = null;
-            _selectedRegionId = null;
-            ClearSearchHighlight();
-            InvalidateVisual();
+            _leftPressPoint = point;
+            _pendingClearSelectionOnLeftRelease = true;
+            _leftDragPanned = false;
+            _lastPanPoint = point;
+            e.Pointer.Capture(this);
             return;
         }
 
@@ -1210,6 +1214,7 @@ public sealed class MapControl : Control
             return;
         }
 
+        _leftDragPanned = true;
         _panOffset += delta;
         _lastPanPoint = point;
         InvalidateVisual();
@@ -1218,6 +1223,17 @@ public sealed class MapControl : Control
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
         base.OnPointerReleased(e);
+        if (_pendingClearSelectionOnLeftRelease && !_leftDragPanned)
+        {
+            SelectedNodeId = null;
+            _selectedRegionId = null;
+            ClearSearchHighlight();
+            InvalidateVisual();
+        }
+
+        _pendingClearSelectionOnLeftRelease = false;
+        _leftDragPanned = false;
+        _leftPressPoint = null;
         _lastPanPoint = null;
         e.Pointer.Capture(null);
     }
