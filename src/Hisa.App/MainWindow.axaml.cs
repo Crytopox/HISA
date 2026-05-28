@@ -150,7 +150,14 @@ public partial class MainWindow : Window
             }
 
             _mapEditorWindow = new MapEditorWindow(vm);
-            _mapEditorWindow.Closed += (_, _) => _mapEditorWindow = null;
+            _mapEditorWindow.Closed += async (_, _) =>
+            {
+                _mapEditorWindow = null;
+                if (_boundVm is not null)
+                {
+                    await _boundVm.RefreshRegionOptionsAsync();
+                }
+            };
         }
 
         _mapEditorWindow.Show();

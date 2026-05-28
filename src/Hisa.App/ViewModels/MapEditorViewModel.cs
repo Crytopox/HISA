@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using Hisa.Core.Abstractions;
 using Hisa.Core.Models;
 
@@ -19,6 +20,7 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
     private string _statusText = "Loading map editor data...";
     private MapGraph _currentGraph = new() { Nodes = [], Links = [] };
     private const double SnapGridStep = 0.01;
+    private const string RegionExchangeFormat = "hisa-region-v1";
 
     private sealed class EditableNode
     {
@@ -218,6 +220,103 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
         }
     }
 
+    public async Task ExportSelectedRegionAsync(string filePath)
+    {
+        if (SelectedLayoutRegion is null)
+        {
+            StatusText = "Select a layout region first.";
+            return;
+        }
+
+        try
+        {
+            var graph = await _mapLayoutEditorService.GetLayoutRegionGraphAsync(SelectedLayoutRegion.Id)
+                ?? CurrentGraph;
+
+            var payload = new RegionExchangePayload
+            {
+                Format = RegionExchangeFormat,
+                ExportedAtUtc = DateTime.UtcNow,
+                RegionName = SelectedLayoutRegion.Name,
+                Nodes = graph.Nodes.Select(n => new RegionExchangeNode
+                {
+                    Id = n.Id,
+                    Name = n.Name,
+                    X = n.X,
+                    Y = n.Y,
+                    Security = n.Security,
+                    RegionId = n.RegionId,
+                    RegionName = n.RegionName,
+                    ConstellationId = n.ConstellationId,
+                    ConstellationName = n.ConstellationName
+                }).ToList(),
+                Links = graph.Links.Select(l => new RegionExchangeLink { FromId = l.FromId, ToId = l.ToId }).ToList()
+            };
+
+            var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true });
+            await File.WriteAllTextAsync(filePath, json);
+            StatusText = $"Exported custom region to {Path.GetFileName(filePath)}";
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Export failed: {ex.Message}";
+        }
+    }
+
+    public async Task ImportRegionJsonAsync(string filePath)
+    {
+        try
+        {
+            var json = await File.ReadAllTextAsync(filePath);
+            var payload = JsonSerializer.Deserialize<RegionExchangePayload>(json);
+            if (payload is null || payload.Format != RegionExchangeFormat)
+            {
+                throw new InvalidOperationException("Unsupported region format.");
+            }
+
+            var regionNameBase = string.IsNullOrWhiteSpace(payload.RegionName)
+                ? Path.GetFileNameWithoutExtension(filePath)
+                : payload.RegionName.Trim();
+            var regionName = EnsureUniqueRegionName(regionNameBase);
+            var created = await _mapLayoutEditorService.CreateCustomRegionAsync(regionName);
+
+            var importedGraph = new MapGraph
+            {
+                Nodes = payload.Nodes.Select(n => new MapNode
+                {
+                    Id = n.Id,
+                    Name = n.Name,
+                    X = n.X,
+                    Y = n.Y,
+                    Security = n.Security,
+                    SunTypeId = null,
+                    StarTypeName = null,
+                    SpectralClass = null,
+                    HasJoveObservatory = false,
+                    IceFieldCount = 0,
+                    RegionId = n.RegionId,
+                    RegionName = n.RegionName,
+                    ConstellationId = n.ConstellationId,
+                    ConstellationName = n.ConstellationName,
+                    StormEffects = [],
+                    HubWormholeConnections = [],
+                    SovUpgrades = []
+                }).ToList(),
+                Links = payload.Links.Select(l => new MapLink { FromId = l.FromId, ToId = l.ToId }).ToList()
+            };
+
+            await _mapLayoutEditorService.SaveLayoutRegionGraphAsync(created.Id, importedGraph);
+            await ReloadAsync();
+            SelectedLayoutRegion = LayoutRegions.FirstOrDefault(r => r.Id == created.Id);
+            StatusText = $"Imported custom region: {created.Name}";
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Import JSON failed: {ex.Message}";
+        }
+    }
+
+
     public bool MoveSelectedNodeAsync(double dx, double dy, bool freeMove = false)
     {
         if (!IsSelectedLayoutRegionEditable)
@@ -359,7 +458,7 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
             }
 
             LayoutRegions.Clear();
-            foreach (var layoutRegion in layoutRegions)
+            foreach (var layoutRegion in layoutRegions.Where(r => !r.IsReadOnly).OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase))
             {
                 LayoutRegions.Add(layoutRegion);
             }
@@ -367,6 +466,10 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
             if (SelectedLayoutRegion is null && LayoutRegions.Count > 0)
             {
                 SelectedLayoutRegion = LayoutRegions[0];
+            }
+            else if (SelectedLayoutRegion is not null && LayoutRegions.All(r => r.Id != SelectedLayoutRegion.Id))
+            {
+                SelectedLayoutRegion = LayoutRegions.FirstOrDefault();
             }
             else
             {
@@ -559,6 +662,57 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
         };
         await RefreshEditorDiagnosticsAsync();
     }
+
+    private string EnsureUniqueRegionName(string baseName)
+    {
+        var candidate = string.IsNullOrWhiteSpace(baseName) ? "Imported Region" : baseName.Trim();
+        var existing = LayoutRegions.Select(r => r.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (!existing.Contains(candidate))
+        {
+            return candidate;
+        }
+
+        for (var i = 2; i < 1000; i++)
+        {
+            var next = $"{candidate} ({i})";
+            if (!existing.Contains(next))
+            {
+                return next;
+            }
+        }
+
+        return $"{candidate} ({DateTime.UtcNow:yyyyMMddHHmmss})";
+    }
+
+
+    private sealed class RegionExchangePayload
+    {
+        public required string Format { get; init; }
+        public required DateTime ExportedAtUtc { get; init; }
+        public required string RegionName { get; init; }
+        public required List<RegionExchangeNode> Nodes { get; init; }
+        public required List<RegionExchangeLink> Links { get; init; }
+    }
+
+    private sealed class RegionExchangeNode
+    {
+        public long Id { get; init; }
+        public required string Name { get; init; }
+        public double X { get; init; }
+        public double Y { get; init; }
+        public double? Security { get; init; }
+        public int? RegionId { get; init; }
+        public string? RegionName { get; init; }
+        public int? ConstellationId { get; init; }
+        public string? ConstellationName { get; init; }
+    }
+
+    private sealed class RegionExchangeLink
+    {
+        public long FromId { get; init; }
+        public long ToId { get; init; }
+    }
+
 
     private bool SetProperty<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
     {

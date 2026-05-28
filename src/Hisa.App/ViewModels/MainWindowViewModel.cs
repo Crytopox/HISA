@@ -668,6 +668,26 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
+    public async Task RefreshRegionOptionsAsync()
+    {
+        var selectedId = SelectedRegion?.RegionId;
+        var selectedToken = SelectedRegion is null
+            ? null
+            : new SavedRegionToken
+            {
+                RegionName = SelectedRegion.RegionName,
+                Kind = SelectedRegion.Kind
+            };
+
+        _allRegions = (await _mapDataService.GetRegionsAsync()).ToList();
+        ApplyRegionFilter();
+
+        SelectedRegion = (selectedId is not null ? Regions.FirstOrDefault(r => !r.IsHeader && r.RegionId == selectedId.Value) : null)
+            ?? FindRegionByToken(selectedToken)
+            ?? GetFirstRegularRegionOption()
+            ?? Regions.FirstOrDefault(r => !r.IsHeader);
+    }
+
     private async Task LoadAsync()
     {
         _allRegions = (await _mapDataService.GetRegionsAsync()).ToList();
@@ -1040,6 +1060,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
         var selectedId = SelectedRegion?.RegionId;
         Regions.Clear();
+        // Keep user-created custom regions as the first group in the selector.
         AddRegionGroup(RegionOptionKind.Custom, "Custom Regions", filtered);
         AddRegionGroup(RegionOptionKind.Combined, "Combined Regions", filtered);
         AddRegionGroup(RegionOptionKind.Regular, "Regular Regions", filtered);

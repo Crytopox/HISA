@@ -11,53 +11,96 @@
         x:DataType="vm:MapEditorViewModel"
         Title="HISA Map Editor"
         Background="#0D131D">
+  <Window.Styles>
+    <Style Selector="Border.editor-card">
+      <Setter Property="Background" Value="#141D2B" />
+      <Setter Property="BorderBrush" Value="#263244" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Padding" Value="8" />
+    </Style>
+    <Style Selector="TextBlock.editor-section-title">
+      <Setter Property="Foreground" Value="#D8E5F8" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="TextBlock.editor-muted">
+      <Setter Property="Foreground" Value="#8A96A8" />
+      <Setter Property="FontSize" Value="11" />
+    </Style>
+    <Style Selector="Button.editor-compact">
+      <Setter Property="Padding" Value="8,4" />
+      <Setter Property="MinHeight" Value="28" />
+    </Style>
+  </Window.Styles>
   <Grid RowDefinitions="Auto,*,Auto">
     <Border Padding="10" Background="#121A26" BorderBrush="#263244" BorderThickness="0,0,0,1">
       <TextBlock Text="Map Editor" FontSize="16" FontWeight="SemiBold" Foreground="#D8E5F8" />
     </Border>
 
-    <Grid Grid.Row="1" ColumnDefinitions="320,*">
+    <Grid Grid.Row="1" ColumnDefinitions="300,*">
       <Border Grid.Column="0" BorderBrush="#263244" BorderThickness="0,0,1,0" Padding="8" Background="#101826">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
           <StackPanel Spacing="8">
-            <TextBlock Text="Custom Region Name" Foreground="#8A96A8" />
-            <TextBox Text="{Binding NewRegionName}" Watermark="My Custom Region" />
-            <Button Content="Create Custom Region" Click="OnCreateCustomRegionClicked" />
+            <Border Classes="editor-card">
+              <StackPanel Spacing="6">
+                <TextBlock Classes="editor-section-title" Text="Custom Layout Region" />
+                <TextBox Text="{Binding NewRegionName}" Watermark="New custom region name..." />
+                <Button Classes="editor-compact" Content="Create Region" Click="OnCreateCustomRegionClicked" />
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="6">
+                  <Button Classes="editor-compact" Grid.Column="0" Content="Export Selected" Click="OnExportSelectedRegionClicked" />
+                  <Button Classes="editor-compact" Grid.Column="1" Content="Import JSON" Click="OnImportRegionJsonClicked" />
+                </Grid>
+              </StackPanel>
+            </Border>
 
-            <Separator />
-            <TextBlock Text="Layout Regions" Foreground="#8A96A8" />
-            <ListBox x:Name="LayoutRegionsList"
-                     ItemsSource="{Binding LayoutRegions}"
-                     SelectedItem="{Binding SelectedLayoutRegion, Mode=TwoWay}"
-                     SelectionChanged="OnLayoutRegionsSelectionChanged"
-                     MinHeight="140"
-                     MaxHeight="180" />
-            <Button Content="Delete Selected Layout Region" Click="OnDeleteLayoutRegionClicked" IsEnabled="{Binding IsSelectedLayoutRegionEditable}" />
+            <Border Classes="editor-card">
+              <StackPanel Spacing="6">
+                <TextBlock Classes="editor-section-title" Text="Layout Regions" />
+                <ListBox x:Name="LayoutRegionsList"
+                         ItemsSource="{Binding LayoutRegions}"
+                         SelectedItem="{Binding SelectedLayoutRegion, Mode=TwoWay}"
+                         SelectionChanged="OnLayoutRegionsSelectionChanged"
+                         MinHeight="120"
+                         MaxHeight="160" />
+                <Button Classes="editor-compact"
+                        Content="Delete Selected Region"
+                        Click="OnDeleteLayoutRegionClicked"
+                        IsEnabled="{Binding IsSelectedLayoutRegionEditable}" />
+              </StackPanel>
+            </Border>
 
-            <TextBlock Text="Game Regions (multi-select import)" Foreground="#8A96A8" />
-            <ListBox x:Name="GameRegionsList"
-                     ItemsSource="{Binding GameRegions}"
-                     SelectionMode="Multiple"
-                     MinHeight="160"
-                     MaxHeight="220" />
-            <Button Content="Import Selected Game Regions" Click="OnImportGameRegionsClicked" IsEnabled="{Binding IsSelectedLayoutRegionEditable}" />
+            <Border Classes="editor-card">
+              <StackPanel Spacing="6">
+                <TextBlock Classes="editor-section-title" Text="Import Game Regions" />
+                <TextBlock Classes="editor-muted" Text="Multi-select regions to append into the selected custom layout." TextWrapping="Wrap" />
+                <ListBox x:Name="GameRegionsList"
+                         ItemsSource="{Binding GameRegions}"
+                         SelectionMode="Multiple"
+                         MinHeight="150"
+                         MaxHeight="210" />
+                <Button Classes="editor-compact"
+                        Content="Import Selected"
+                        Click="OnImportGameRegionsClicked"
+                        IsEnabled="{Binding IsSelectedLayoutRegionEditable}" />
+              </StackPanel>
+            </Border>
 
-            <Separator />
-            <TextBlock Text="{Binding SelectionStatus}" Foreground="#8A96A8" />
-            <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="6" RowSpacing="6">
-              <Button Grid.Row="0" Grid.Column="0" Content="Fit View" Click="OnFitViewClicked" />
-              <Button Grid.Row="0" Grid.Column="1" Content="Delete Node" Click="OnDeleteSelectedNodeClicked" IsEnabled="{Binding IsSelectedLayoutRegionEditable}" />
-              <Button Grid.Row="1" Grid.ColumnSpan="2" Content="Save Current Region" Click="OnSaveCurrentRegionClicked" IsEnabled="{Binding IsSelectedLayoutRegionEditable}" />
-            </Grid>
-            <TextBlock Text="Read-only layout selected: create/select a custom region to edit."
-                       IsVisible="{Binding IsSelectedLayoutRegionReadOnly}"
-                       Foreground="#C77D7D"
-                       FontSize="11"
+            <Border Classes="editor-card">
+              <StackPanel Spacing="6">
+                <TextBlock Classes="editor-section-title" Text="Map Actions" />
+                <TextBlock Classes="editor-muted" Text="{Binding SelectionStatus}" />
+                <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="6" RowSpacing="6">
+                  <Button Classes="editor-compact" Grid.Row="0" Grid.Column="0" Content="Fit View" Click="OnFitViewClicked" />
+                  <Button Classes="editor-compact" Grid.Row="0" Grid.Column="1" Content="Delete Node" Click="OnDeleteSelectedNodeClicked" IsEnabled="{Binding IsSelectedLayoutRegionEditable}" />
+                  <Button Classes="editor-compact" Grid.Row="1" Grid.ColumnSpan="2" Content="Save Region" Click="OnSaveCurrentRegionClicked" IsEnabled="{Binding IsSelectedLayoutRegionEditable}" />
+                </Grid>
+              </StackPanel>
+            </Border>
+
+            <TextBlock Classes="editor-muted"
+                       Text="Mouse: left-drag selected nodes (snap), Alt for free move, Ctrl+click add, Shift+drag box select, right/middle drag pan, wheel zoom."
                        TextWrapping="Wrap" />
-            <TextBlock Text="Mouse: left-drag selected nodes (snap), hold Alt while dragging for free move, Ctrl+click add selection, Shift+drag box select, right/middle drag pan, wheel zoom."
-                       TextWrapping="Wrap"
-                       FontSize="11"
-                       Foreground="#8A96A8" />
           </StackPanel>
         </ScrollViewer>
       </Border>

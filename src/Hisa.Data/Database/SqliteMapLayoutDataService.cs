@@ -89,14 +89,19 @@ public sealed class SqliteMapLayoutDataService : IMapLayoutDataService
         var maxY = rawNodes.Max(n => n.Y);
         var width = Math.Max(1e-9, maxX - minX);
         var height = Math.Max(1e-9, maxY - minY);
+        var uniformScale = Math.Max(width, height);
+        var padX = (uniformScale - width) * 0.5;
+        var padY = (uniformScale - height) * 0.5;
 
         var nodes = rawNodes
             .Select(n => new MapNode
             {
                 Id = n.Id,
                 Name = n.Name,
-                X = (n.X - minX) / width,
-                Y = 1.0 - ((n.Y - minY) / height),
+                // Keep layout orientation consistent with editor (no Y inversion)
+                // and preserve relative spacing/aspect ratio via uniform scaling.
+                X = ((n.X - minX) + padX) / uniformScale,
+                Y = ((n.Y - minY) + padY) / uniformScale,
                 Security = n.Security,
                 SunTypeId = n.SunTypeId,
                 StarTypeName = n.StarTypeName,

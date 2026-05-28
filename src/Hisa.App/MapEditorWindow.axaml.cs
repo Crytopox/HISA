@@ -3,6 +3,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia;
 using Avalonia.Controls.Primitives;
+using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Hisa.Core.Models;
 using System;
@@ -109,6 +110,60 @@ public partial class MapEditorWindow : Window
         }
 
         await ExecuteWithPreservedViewportAsync(() => vm.DeleteSelectedLayoutRegionAsync());
+    }
+
+    private async void OnExportSelectedRegionClicked(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MapEditorViewModel vm || StorageProvider is null)
+        {
+            return;
+        }
+
+        var suggested = $"{(vm.SelectedLayoutRegion?.Name ?? "custom-region").Replace(' ', '_')}.hisa-region.json";
+        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Export Custom Region",
+            SuggestedFileName = suggested,
+            DefaultExtension = "json",
+            FileTypeChoices =
+            [
+                new FilePickerFileType("HISA Region JSON") { Patterns = ["*.hisa-region.json", "*.json"] }
+            ]
+        });
+
+        var path = file?.TryGetLocalPath();
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        await vm.ExportSelectedRegionAsync(path);
+    }
+
+    private async void OnImportRegionJsonClicked(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MapEditorViewModel vm || StorageProvider is null)
+        {
+            return;
+        }
+
+        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Import HISA Region JSON",
+            AllowMultiple = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("HISA Region JSON") { Patterns = ["*.hisa-region.json", "*.json"] }
+            ]
+        });
+
+        var path = files.FirstOrDefault()?.TryGetLocalPath();
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        await ExecuteWithPreservedViewportAsync(() => vm.ImportRegionJsonAsync(path));
     }
 
     private void OnLayoutRegionsSelectionChanged(object? sender, SelectionChangedEventArgs e)
