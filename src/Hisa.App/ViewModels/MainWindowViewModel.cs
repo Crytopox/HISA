@@ -12,6 +12,12 @@ namespace Hisa.App;
 
 public sealed class MainWindowViewModel : INotifyPropertyChanged
 {
+    private sealed class SavedRegionToken
+    {
+        public required string RegionName { get; init; }
+        public required RegionOptionKind Kind { get; init; }
+    }
+
     private readonly IMapDataService _mapDataService;
     private readonly ISettingsService _settingsService;
     private readonly IStormStateService _stormStateService;
@@ -59,6 +65,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _isInitializing = true;
     private const string ViewModeKey = "Map.SelectedViewMode";
     private const string RegionIdKey = "Map.SelectedRegionId";
+    private const string RegionTokenKey = "Map.SelectedRegionToken";
     private const string CoordinateModeKey = "Map.SelectedCoordinateMode";
     private const string StretchMapToWindowKey = "Map.StretchToWindow";
     private const string NodeColorModeKey = "Map.NodeColorMode";
@@ -543,6 +550,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 if (!_isInitializing)
                 {
                     _ = _settingsService.SetAsync(RegionIdKey, value?.RegionId);
+                    _ = SaveSelectedRegionTokenAsync(value);
                     _ = ReloadGraphAsync();
                 }
             }
@@ -704,7 +712,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         EnforceCoordinateModeForView();
 
         var savedRegionId = await _settingsService.GetAsync<int?>(RegionIdKey);
-        SelectedRegion = _allRegions.FirstOrDefault(r => r.RegionId == savedRegionId) ?? Regions.FirstOrDefault(r => !r.IsHeader);
+        var savedRegionToken = await _settingsService.GetAsync<SavedRegionToken>(RegionTokenKey);
+        SelectedRegion = _allRegions.FirstOrDefault(r => r.RegionId == savedRegionId)
+            ?? FindRegionByToken(savedRegionToken)
+            ?? GetFirstRegularRegionOption()
+            ?? Regions.FirstOrDefault(r => !r.IsHeader);
 
         _isInitializing = false;
         await ReloadGraphAsync();
@@ -735,6 +747,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             StatusText = $"Mode: {SelectedViewMode} | Coordinates: {SelectedCoordinateMode} | Nodes: {graph.Nodes.Count} | Links: {graph.Links.Count}";
             _ = _settingsService.SetAsync(ViewModeKey, SelectedViewMode);
             _ = _settingsService.SetAsync(RegionIdKey, SelectedRegion?.RegionId);
+            _ = SaveSelectedRegionTokenAsync(SelectedRegion);
         }
         catch (Exception ex)
         {
@@ -1012,6 +1025,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _selectedRegion = region;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedRegion)));
         await _settingsService.SetAsync(RegionIdKey, region.RegionId);
+        await SaveSelectedRegionTokenAsync(region);
 
         SelectedViewMode = MapViewMode.Region;
         await ReloadGraphAsync();
@@ -1032,11 +1046,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
         if (selectedId is not null)
         {
-            SelectedRegion = Regions.FirstOrDefault(r => r.RegionId == selectedId.Value) ?? Regions.FirstOrDefault(r => !r.IsHeader);
+            SelectedRegion = Regions.FirstOrDefault(r => r.RegionId == selectedId.Value)
+                ?? GetFirstRegularRegionOption()
+                ?? Regions.FirstOrDefault(r => !r.IsHeader);
         }
         else if (SelectedRegion is null)
         {
-            SelectedRegion = Regions.FirstOrDefault(r => !r.IsHeader);
+            SelectedRegion = GetFirstRegularRegionOption() ?? Regions.FirstOrDefault(r => !r.IsHeader);
         }
     }
 
@@ -1063,6 +1079,39 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         {
             Regions.Add(item);
         }
+    }
+
+    private RegionOption? GetFirstRegularRegionOption()
+    {
+        return Regions.FirstOrDefault(r => !r.IsHeader && r.Kind == RegionOptionKind.Regular);
+    }
+
+    private RegionOption? FindRegionByToken(SavedRegionToken? token)
+    {
+        if (token is null || string.IsNullOrWhiteSpace(token.RegionName))
+        {
+            return null;
+        }
+
+        return _allRegions.FirstOrDefault(r =>
+            !r.IsHeader &&
+            r.Kind == token.Kind &&
+            string.Equals(r.RegionName, token.RegionName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private Task SaveSelectedRegionTokenAsync(RegionOption? region)
+    {
+        if (region is null || region.IsHeader)
+        {
+            return _settingsService.SetAsync<SavedRegionToken?>(RegionTokenKey, null);
+        }
+
+        var token = new SavedRegionToken
+        {
+            RegionName = region.RegionName,
+            Kind = region.Kind
+        };
+        return _settingsService.SetAsync(RegionTokenKey, token);
     }
 
     private bool SetProperty<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
