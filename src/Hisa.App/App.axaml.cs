@@ -24,7 +24,7 @@ public partial class App : Application
 
             try
             {
-                await Task.WhenAll(Task.Delay(TimeSpan.FromSeconds(3)), vm.InitialLoadTask);
+                await Task.WhenAll(Task.Delay(TimeSpan.FromSeconds(2)), vm.InitialLoadTask);
             }
             catch
             {

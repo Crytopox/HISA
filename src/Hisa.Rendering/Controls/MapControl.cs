@@ -50,7 +50,8 @@ public sealed class MapControl : Control
     private const double NodeLabelFontSize = 12.5;
     private const double NodeRegionConstellationFontSize = 10.5;
     private const double UniverseMinNodeScale = 0.55;
-    private const double IconSize = 22.0;
+    private const double IconSize = 18.0;
+    private const double SovIconSize = 22.0;
     private const double IndicatorIconLeftPadding = 4.0;
     private const double IndicatorIconSlotGap = 3.0;
     private const string A0BlueSmallName = "Sun A0 (Blue Small)";
@@ -3082,26 +3083,33 @@ public sealed class MapControl : Control
             DrawHubWormholeIcon(context, node, new Point(iconX, iconY), IconSize);
             indicatorIconSlot++;
         }
+
+        // Keep SOV icons on a dedicated second row, but collapse up if first row is empty.
+        var primaryRowHasIcons = indicatorIconSlot > 0;
+        var sovIndicatorRowY = primaryRowHasIcons
+            ? rect.Bottom + SovIconSize + 2
+            : rect.Bottom;
+        var sovIconSlot = 0;
         if (ShowIndicatorSovUpgradeIcon && node.SovUpgrades.Count > 0)
         {
             foreach (var sov in GetVisibleSovUpgrades(node.SovUpgrades, IndicatorSovUpgradeFilterKeys))
             {
-                var iconX = rect.X + IndicatorIconLeftPadding + (indicatorIconSlot * (IconSize + IndicatorIconSlotGap));
-                var iconY = rect.Bottom;
-                DrawSovUpgradeIcon(context, sov, new Point(iconX, iconY), IconSize);
-                indicatorIconSlot++;
+                var iconX = rect.X + IndicatorIconLeftPadding + (sovIconSlot * (IconSize + IndicatorIconSlotGap));
+                var iconY = sovIndicatorRowY;
+                DrawSovUpgradeIcon(context, sov, new Point(iconX, iconY), SovIconSize);
+                sovIconSlot++;
             }
         }
         if (ShowIndicatorSovUpgradeIcon &&
             _indicatorExplorationOverlapByNodeId.TryGetValue(node.Id, out var overlapCount) &&
             overlapCount > 0)
         {
-            var iconX = rect.X + IndicatorIconLeftPadding + (indicatorIconSlot * (IconSize + IndicatorIconSlotGap));
-            var iconY = rect.Bottom;
+            var iconX = rect.X + IndicatorIconLeftPadding + (sovIconSlot * (IconSize + IndicatorIconSlotGap));
+            var iconY = sovIndicatorRowY;
             var sourceUpgrade = GetNodeExplorationDetector(node, IndicatorSovUpgradeFilterKeys)
                 ?? new SovUpgradeEntry { UpgradeName = "Exploration Detector", Tier = 1 };
             var isDirectSource = _indicatorExplorationSourceNodeIds.Contains(node.Id);
-            DrawSovUpgradeIcon(context, sourceUpgrade, new Point(iconX, iconY), IconSize, isDirectSource ? 1.0 : 0.5);
+            DrawSovUpgradeIcon(context, sourceUpgrade, new Point(iconX, iconY), SovIconSize, isDirectSource ? 1.0 : 0.5);
 
             var counterText = new FormattedText(
                 $"x{overlapCount}",
@@ -3110,8 +3118,8 @@ public sealed class MapControl : Control
                 NodeLabelTypeface,
                 10.5,
                 Brushes.White);
-            context.DrawText(counterText, new Point(iconX + IconSize + 1, iconY + ((IconSize - counterText.Height) / 2)));
-            indicatorIconSlot += 2;
+            context.DrawText(counterText, new Point(iconX + SovIconSize + 1, iconY + ((SovIconSize - counterText.Height) / 2)));
+            sovIconSlot += 2;
         }
     }
 
@@ -3369,8 +3377,8 @@ public sealed class MapControl : Control
         var sovMaxWidth = 0.0;
         foreach (var sovLine in sovLineTexts)
         {
-            sovLineHeight = Math.Max(sovLineHeight, Math.Max(IconSize, sovLine.Text.Height));
-            sovMaxWidth = Math.Max(sovMaxWidth, IconSize + 4 + sovLine.Text.Width);
+            sovLineHeight = Math.Max(sovLineHeight, Math.Max(SovIconSize, sovLine.Text.Height));
+            sovMaxWidth = Math.Max(sovMaxWidth, SovIconSize + 4 + sovLine.Text.Width);
         }
 
         var start = GetNodeLabelOrigin(anchor);
@@ -3413,8 +3421,8 @@ public sealed class MapControl : Control
 
         foreach (var sovLine in sovLineTexts)
         {
-            DrawSovUpgradeIcon(context, sovLine.Upgrade, new Point(headerOrigin.X, detailsStartY), IconSize, sovLine.Opacity);
-            context.DrawText(sovLine.Text, new Point(headerOrigin.X + IconSize + 4, detailsStartY + ((sovLineHeight - sovLine.Text.Height) / 2)));
+            DrawSovUpgradeIcon(context, sovLine.Upgrade, new Point(headerOrigin.X, detailsStartY), SovIconSize, sovLine.Opacity);
+            context.DrawText(sovLine.Text, new Point(headerOrigin.X + SovIconSize + 4, detailsStartY + ((sovLineHeight - sovLine.Text.Height) / 2)));
             detailsStartY += sovLineHeight + 1;
         }
 
