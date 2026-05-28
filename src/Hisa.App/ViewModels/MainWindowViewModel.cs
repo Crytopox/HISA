@@ -25,7 +25,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private MapSearchCandidate? _selectedSearchSuggestion;
     private string _regionSearchText = string.Empty;
     private string _statusText = "Loading map...";
-    private bool _stretchMapToWindow = true;
+    private bool _stretchMapToWindow;
     private bool _isDisplaySettingsOpen;
     private MapNodeColorMode _nodeColorMode = MapNodeColorMode.None;
     private MapNodeColorMode _nodeBackgroundColorMode = MapNodeColorMode.None;
@@ -612,7 +612,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         ApplyRegionFilter();
 
         SelectedCoordinateMode = await _settingsService.GetAsync<MapCoordinateMode?>(CoordinateModeKey) ?? MapCoordinateMode.SdePlanarXY;
-        StretchMapToWindow = await _settingsService.GetAsync<bool?>(StretchMapToWindowKey) ?? true;
+        StretchMapToWindow = await _settingsService.GetAsync<bool?>(StretchMapToWindowKey) ?? false;
         NodeColorMode = await _settingsService.GetAsync<MapNodeColorMode?>(NodeColorModeKey) ?? MapNodeColorMode.None;
         NodeBackgroundColorMode = await _settingsService.GetAsync<MapNodeColorMode?>(NodeBackgroundColorModeKey) ?? MapNodeColorMode.None;
         ShowIndicatorRegion = await _settingsService.GetAsync<bool?>(ShowIndicatorRegionKey) ?? false;
