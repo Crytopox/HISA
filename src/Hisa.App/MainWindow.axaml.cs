@@ -1,8 +1,11 @@
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia;
 using Avalonia.Threading;
 using Microsoft.Extensions.DependencyInjection;
+using System.Linq;
 
 namespace Hisa.App;
 
@@ -18,10 +21,28 @@ public partial class MainWindow : Window
     private PreferencesWindow? _preferencesWindow;
     private MapEditorWindow? _mapEditorWindow;
     private SovUpgradesWindow? _sovUpgradesWindow;
+    private readonly ContextMenu _mapNodeContextMenu;
+    private readonly MenuItem _copySystemNameMenuItem;
+    private Point? _mapRightPressPoint;
+    private bool _mapRightMoved;
+    private string? _contextSystemName;
 
     public MainWindow()
     {
         InitializeComponent();
+        _copySystemNameMenuItem = new MenuItem
+        {
+            Header = "Copy System Name",
+            FontSize = 11,
+            Padding = new Thickness(8, 3)
+        };
+        _copySystemNameMenuItem.Click += OnCopySystemNameClicked;
+        _mapNodeContextMenu = new ContextMenu
+        {
+            MinWidth = 0,
+            FontSize = 11,
+            ItemsSource = new object[] { _copySystemNameMenuItem }
+        };
         MainMapControl.UniverseRegionNodeDoubleClicked += OnUniverseRegionNodeClicked;
         Opened += OnOpened;
         Closing += (_, _) =>
@@ -213,6 +234,117 @@ public partial class MainWindow : Window
 
         await vm.OpenRegionFromUniverseRegionsNodeAsync(regionId);
         MainMapControl.FitToView();
+    }
+
+    private void OnMainMapPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        var props = e.GetCurrentPoint(MainMapControl).Properties;
+        if (!props.IsRightButtonPressed)
+        {
+            return;
+        }
+
+        _mapRightPressPoint = e.GetPosition(MainMapControl);
+        _mapRightMoved = false;
+    }
+
+    private void OnMainMapPointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (_mapRightPressPoint is null)
+        {
+            return;
+        }
+
+        var point = e.GetPosition(MainMapControl);
+        var dx = point.X - _mapRightPressPoint.Value.X;
+        var dy = point.Y - _mapRightPressPoint.Value.Y;
+        if ((dx * dx) + (dy * dy) > 16.0)
+        {
+            _mapRightMoved = true;
+        }
+    }
+
+    private void OnMainMapPointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        try
+        {
+            if (_mapRightPressPoint is null || _mapRightMoved)
+            {
+                return;
+            }
+
+            if (DataContext is not MainWindowViewModel vm)
+            {
+                return;
+            }
+
+            if (vm.SelectedViewMode is not (Hisa.Core.Models.MapViewMode.Universe or Hisa.Core.Models.MapViewMode.Region))
+            {
+                return;
+            }
+
+            var point = e.GetPosition(MainMapControl);
+            var nodeId = MainMapControl.HitTestNode(point, 12.0);
+            if (nodeId is null)
+            {
+                return;
+            }
+
+            var node = vm.CurrentGraph?.Nodes.FirstOrDefault(n => n.Id == nodeId.Value);
+            if (node is null || string.IsNullOrWhiteSpace(node.Name))
+            {
+                return;
+            }
+
+            _contextSystemName = node.Name.Trim();
+            _copySystemNameMenuItem.Header = $"Copy '{_contextSystemName}'";
+            ConfigureMapNodeMenuPlacement(point);
+            _mapNodeContextMenu.Open(MainMapControl);
+            e.Handled = true;
+        }
+        finally
+        {
+            _mapRightPressPoint = null;
+            _mapRightMoved = false;
+        }
+    }
+
+    private async void OnCopySystemNameClicked(object? sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(_contextSystemName))
+        {
+            return;
+        }
+
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel?.Clipboard is null)
+        {
+            return;
+        }
+
+        await topLevel.Clipboard.SetTextAsync(_contextSystemName);
+    }
+
+    private void ConfigureMapNodeMenuPlacement(Point clickPoint)
+    {
+        const double estimatedMenuWidth = 185;
+        const double estimatedMenuHeight = 30;
+        const double offset = 3;
+        const double margin = 10;
+
+        var availableRight = MainMapControl.Bounds.Width - clickPoint.X;
+        var availableBottom = MainMapControl.Bounds.Height - clickPoint.Y;
+        var canOpenRight = availableRight >= estimatedMenuWidth + margin;
+        var canOpenBottom = availableBottom >= estimatedMenuHeight + margin;
+
+        var placement = canOpenRight
+            ? (canOpenBottom ? PlacementMode.BottomEdgeAlignedLeft : PlacementMode.TopEdgeAlignedLeft)
+            : (canOpenBottom ? PlacementMode.BottomEdgeAlignedRight : PlacementMode.TopEdgeAlignedRight);
+
+        _mapNodeContextMenu.Placement = placement;
+        _mapNodeContextMenu.PlacementRect = new Rect(clickPoint, new Size(1, 1));
+        _mapNodeContextMenu.HorizontalOffset = offset;
+        _mapNodeContextMenu.VerticalOffset = offset;
     }
 
     private async void OnOpened(object? sender, EventArgs e)
