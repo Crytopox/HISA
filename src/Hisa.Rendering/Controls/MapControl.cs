@@ -77,7 +77,10 @@ public sealed class MapControl : Control
     private static readonly IBrush HoveredBrush = new ImmutableSolidColorBrush(Color.Parse("#7CC8FF"));
     private static readonly IBrush RegionSelectedBrush = new ImmutableSolidColorBrush(Color.Parse("#6BC1B5"));
     private static readonly IBrush EditorMissingConnectionBrush = new ImmutableSolidColorBrush(Color.Parse("#FF6B6B"));
-    private static readonly Pen MissingConnectionRingPen = new(new ImmutableSolidColorBrush(Color.Parse("#FF6B6B")), 1.8);
+    private static readonly Pen MissingConnectionRingPen = new(
+        new ImmutableSolidColorBrush(Color.Parse("#C567D6")),
+        1.8,
+        dashStyle: new DashStyle([1.2, 2.4], 0));
     private static readonly IBrush EditorCrossRegionConnectorBrush = new ImmutableSolidColorBrush(Color.Parse("#8E74D8"));
     private static readonly IBrush NodeHoleBrush = new ImmutableSolidColorBrush(Color.Parse("#0D131D"));
     private static readonly IBrush NodeLabelBackgroundBrush = new ImmutableSolidColorBrush(Color.Parse("#B5000000"));
