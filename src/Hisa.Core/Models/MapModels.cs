@@ -40,6 +40,9 @@ public sealed class MapNode
     public required string Name { get; init; }
     public required double X { get; init; }
     public required double Y { get; init; }
+    public double? PositionX { get; init; }
+    public double? PositionY { get; init; }
+    public double? PositionZ { get; init; }
     public double? Security { get; init; }
     public int? SunTypeId { get; init; }
     public string? StarTypeName { get; init; }
@@ -131,6 +134,24 @@ public sealed class MapLink
 {
     public required long FromId { get; init; }
     public required long ToId { get; init; }
+}
+
+public sealed class JumpRangeOriginDisplay
+{
+    public required long NodeId { get; init; }
+    public required string SystemName { get; init; }
+    public required double RangeLy { get; init; }
+    public required uint ColorArgb { get; init; }
+    public required string ColorHex { get; init; }
+}
+
+public sealed class JumpRangeDistanceDisplay
+{
+    public required long OriginNodeId { get; init; }
+    public required string OriginSystemName { get; init; }
+    public required double DistanceLy { get; init; }
+    public required double MaxLy { get; init; }
+    public required bool IsInRange { get; init; }
 }
 
 public sealed class RegionOption

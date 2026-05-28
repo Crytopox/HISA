@@ -8,6 +8,7 @@ using Avalonia.Platform;
 using Avalonia.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
 
 namespace Hisa.App;
@@ -29,6 +30,7 @@ public partial class MainWindow : Window
     private readonly MenuItem _openInViewMenuItem;
     private readonly MenuItem _openInDotlanMenuItem;
     private readonly MenuItem _openInZkillboardMenuItem;
+    private readonly MenuItem _jumpRangeMenuItem;
     private Point? _mapRightPressPoint;
     private bool _mapRightMoved;
     private string? _contextSystemName;
@@ -80,11 +82,12 @@ public partial class MainWindow : Window
         };
         _openInZkillboardMenuItem.Classes.Add("map-node-menu-item");
         _openInZkillboardMenuItem.Click += OnOpenInZkillboardClicked;
+        _jumpRangeMenuItem = BuildJumpRangeMenu(subMenufontSize);
         _mapNodeContextMenu = new ContextMenu
         {
             MinWidth = 0,
             FontSize = subMenufontSize,
-            ItemsSource = new object[] { _copySystemNameMenuItem, _openInViewMenuItem, new Separator(), _openInDotlanMenuItem, _openInZkillboardMenuItem }
+            ItemsSource = new object[] { _copySystemNameMenuItem, _openInViewMenuItem, _jumpRangeMenuItem, new Separator(), _openInDotlanMenuItem, _openInZkillboardMenuItem }
         };
         _mapNodeContextMenu.Classes.Add("map-node-menu");
         MainMapControl.UniverseRegionNodeDoubleClicked += OnUniverseRegionNodeClicked;
@@ -537,6 +540,151 @@ public partial class MainWindow : Window
         {
             return null;
         }
+    }
+
+    private MenuItem BuildJumpRangeMenu(int subMenuFontSize)
+    {
+        MenuItem BuildJumpItem(string header, string tag, EventHandler<RoutedEventArgs> click)
+        {
+            var item = new MenuItem
+            {
+                Header = header,
+                Tag = tag,
+                FontSize = subMenuFontSize,
+                FontWeight = Avalonia.Media.FontWeight.SemiBold,
+                Padding = new Thickness(8, 3)
+            };
+            item.Classes.Add("map-node-menu-item");
+            item.Click += click;
+            return item;
+        }
+
+        return new MenuItem
+        {
+            Header = "Calculate Jump Range",
+            FontSize = subMenuFontSize,
+            FontWeight = Avalonia.Media.FontWeight.SemiBold,
+            Padding = new Thickness(8, 3),
+            ItemsSource = new object[]
+            {
+                BuildJumpItem("Clear All Jump Ranges", "clear-all", OnSetJumpRangeClicked),
+                BuildJumpItem("Remove This Origin", "remove", OnSetJumpRangeClicked),
+                new Separator(),
+                BuildJumpItem("Titans / Supers (6.0 LY)", "6", OnSetJumpRangeClicked),
+                BuildJumpItem("Carriers / Dreads / Fax (7.0 LY)", "7", OnSetJumpRangeClicked),
+                BuildJumpItem("Black Ops (8.0 LY)", "8", OnSetJumpRangeClicked),
+                BuildJumpItem("Jump Freighters / Rorquals (10.0 LY)", "10", OnSetJumpRangeClicked),
+                BuildJumpItem("Custom... (LY)", "custom", OnSetJumpRangeClicked)
+            }
+        };
+    }
+
+    private async void OnSetJumpRangeClicked(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel vm || sender is not MenuItem menuItem || _contextSystemId is null)
+        {
+            return;
+        }
+
+        var systemId = _contextSystemId.Value;
+        var tag = menuItem.Tag as string;
+        if (tag == "remove")
+        {
+            vm.RemoveJumpRangeOrigin(systemId);
+            return;
+        }
+
+        if (tag == "clear-all")
+        {
+            vm.ClearJumpRangeOrigins();
+            return;
+        }
+
+        double? range = tag switch
+        {
+            "6" => 6.0,
+            "7" => 7.0,
+            "8" => 8.0,
+            "10" => 10.0,
+            "custom" => await PromptForCustomJumpRangeLyAsync(),
+            _ => null
+        };
+
+        if (range is null || range.Value <= 0)
+        {
+            return;
+        }
+
+        vm.TrySetJumpRangeOrigin(systemId, range.Value);
+    }
+
+    private async Task<double?> PromptForCustomJumpRangeLyAsync()
+    {
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is not Window owner)
+        {
+            return null;
+        }
+
+        var dialog = new Window
+        {
+            Title = "Custom Jump Range",
+            Width = 330,
+            Height = 170,
+            CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            ShowInTaskbar = false
+        };
+
+        var input = new TextBox { Text = "6.0", Width = 120 };
+        var okButton = new Button { Content = "OK", MinWidth = 84 };
+        var cancelButton = new Button { Content = "Cancel", MinWidth = 84 };
+        var tcs = new TaskCompletionSource<double?>();
+
+        okButton.Click += (_, _) =>
+        {
+            var raw = input.Text?.Trim();
+            if (double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) ||
+                double.TryParse(raw, NumberStyles.Float, CultureInfo.CurrentCulture, out parsed))
+            {
+                if (parsed > 0)
+                {
+                    tcs.TrySetResult(parsed);
+                    dialog.Close();
+                    return;
+                }
+            }
+
+            tcs.TrySetResult(null);
+            dialog.Close();
+        };
+        cancelButton.Click += (_, _) =>
+        {
+            tcs.TrySetResult(null);
+            dialog.Close();
+        };
+        dialog.Closed += (_, _) => tcs.TrySetResult(null);
+
+        dialog.Content = new StackPanel
+        {
+            Margin = new Thickness(12),
+            Spacing = 8,
+            Children =
+            {
+                new TextBlock { Text = "Enter LY (e.g. 6.8):" },
+                input,
+                new StackPanel
+                {
+                    Orientation = Avalonia.Layout.Orientation.Horizontal,
+                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                    Spacing = 8,
+                    Children = { okButton, cancelButton }
+                }
+            }
+        };
+
+        await dialog.ShowDialog(owner);
+        return await tcs.Task;
     }
 
     private async void OnOpened(object? sender, EventArgs e)

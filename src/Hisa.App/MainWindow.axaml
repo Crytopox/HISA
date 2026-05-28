@@ -157,7 +157,58 @@
                               HubWormholeMarkerMode="{Binding HubWormholeMarkerMode}"
                               MissingConnectionNodeIds="{Binding MissingConnectionNodeIdsForView}"
                               ShowMissingConnectionMarkers="{Binding ShowMissingConnectionMarkers}"
+                              JumpRangeOriginNodeIds="{Binding JumpRangeOriginNodeIdsForView}"
+                              JumpRangeInRangeNodeIds="{Binding JumpRangeInRangeNodeIdsForView}"
+                              JumpRangeOriginsDisplay="{Binding JumpRangeOriginsDisplayForView}"
+                              JumpRangeMembershipByNodeId="{Binding JumpRangeMembershipByNodeIdForView}"
+                              JumpRangeDistancesByNodeId="{Binding JumpRangeDistancesByNodeIdForView}"
+                              ShowIndicatorJumpRangeLy="{Binding ShowIndicatorJumpRangeLy}"
+                              InfoBoxShowJumpRangeLy="{Binding InfoBoxShowJumpRangeLy}"
                               SelectedNodeId="{Binding SelectedNodeId, Mode=TwoWay}" />
+        <Border HorizontalAlignment="Left"
+                VerticalAlignment="Bottom"
+                Margin="12"
+                Padding="8"
+                Background="#C0101724"
+                BorderBrush="#5A7AA5D6"
+                BorderThickness="1"
+                CornerRadius="6"
+                IsVisible="{Binding HasJumpRangeOverlay}">
+          <StackPanel Spacing="4">
+            <TextBlock Text="Jump Ranges" FontWeight="SemiBold" Foreground="#EAF3FF" />
+            <ItemsControl ItemsSource="{Binding JumpRangeOriginsDisplayForView}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Border Width="10" Height="10" CornerRadius="5" VerticalAlignment="Center">
+                      <Border.Background>
+                        <SolidColorBrush Color="{Binding ColorHex}" />
+                      </Border.Background>
+                    </Border>
+                    <TextBlock Foreground="{Binding ColorHex}"
+                               Text="{Binding SystemName}" />
+                    <TextBlock Foreground="#9EB5D8"
+                               Text="{Binding RangeLy, StringFormat='({0:0.0} LY)'}" />
+                  </StackPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <Border BorderBrush="#6689A8CC" BorderThickness="1" CornerRadius="4" Padding="6,4" Margin="0,4,0,0">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <Canvas Width="14" Height="14">
+                  <Ellipse Width="12" Height="12"
+                           Stroke="#F3BE5E"
+                           StrokeThickness="2"
+                           StrokeDashArray="3,2"
+                           Fill="Transparent"
+                           Canvas.Left="1"
+                           Canvas.Top="1" />
+                </Canvas>
+                <TextBlock Foreground="#C7D8EF" Text="Dotted ring = jump-range source system" />
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </Border>
 
         <Button HorizontalAlignment="Right"
                 VerticalAlignment="Top"
@@ -293,6 +344,7 @@
             <CheckBox IsChecked="{Binding ShowIndicatorStormIcon}" Content="Metaliminal Storms" />
             <CheckBox IsChecked="{Binding ShowIndicatorWormholeIcon}" Content="Thera/Turnur Wormholes" />
             <CheckBox IsChecked="{Binding ShowIndicatorIncursionIcon}" Content="Incursions" />
+            <CheckBox IsChecked="{Binding ShowIndicatorJumpRangeLy}" Content="Jump Range LY" />
             <StackPanel Orientation="Horizontal" Spacing="6">
               <CheckBox IsChecked="{Binding ShowIndicatorSovUpgradeIcon}" Content="SOV Upgrades" />
               <Button Width="24" Height="24" Padding="0">
@@ -342,6 +394,7 @@
             <CheckBox IsChecked="{Binding InfoBoxShowStormIcon}" Content="Metaliminal Storms" />
             <CheckBox IsChecked="{Binding InfoBoxShowWormholeIcon}" Content="Thera/Turnur Wormholes" />
             <CheckBox IsChecked="{Binding InfoBoxShowIncursionIcon}" Content="Incursions" />
+            <CheckBox IsChecked="{Binding InfoBoxShowJumpRangeLy}" Content="Jump Range LY" />
             <StackPanel Orientation="Horizontal" Spacing="6">
               <CheckBox IsChecked="{Binding InfoBoxShowSovUpgradeIcon}" Content="SOV Upgrades" />
               <Button Width="24" Height="24" Padding="0">

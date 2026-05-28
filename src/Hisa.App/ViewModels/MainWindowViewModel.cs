@@ -50,6 +50,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _showIndicatorWormholeIcon = true;
     private bool _showIndicatorSovUpgradeIcon = true;
     private bool _showIndicatorIncursionIcon = true;
+    private bool _showIndicatorJumpRangeLy = true;
     private bool _infoBoxShowRegion = true;
     private bool _infoBoxShowConstellation = true;
     private bool _infoBoxShowSecurityStatus = true;
@@ -61,9 +62,16 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _infoBoxShowWormholeIcon = true;
     private bool _infoBoxShowSovUpgradeIcon = true;
     private bool _infoBoxShowIncursionIcon = true;
+    private bool _infoBoxShowJumpRangeLy = true;
     private bool _alwaysShowHubWormholes = true;
     private bool _showMissingConnectionMarkers = true;
     private HubWormholeMarkerMode _hubWormholeMarkerMode = HubWormholeMarkerMode.Badge;
+    private readonly Dictionary<long, double> _jumpRangeOriginsLyByNodeId = [];
+    private readonly Dictionary<long, uint> _jumpRangeOriginColorByNodeId = [];
+    private List<long> _jumpRangeInRangeNodeIdsForView = [];
+    private IReadOnlyList<JumpRangeOriginDisplay> _jumpRangeOriginsDisplayForView = [];
+    private readonly Dictionary<long, List<long>> _jumpRangeMembershipByNodeId = [];
+    private readonly Dictionary<long, List<JumpRangeDistanceDisplay>> _jumpRangeDistancesByNodeId = [];
     private CancellationTokenSource? _searchSuggestionsCts;
     private bool _isInitializing = true;
     private const string ViewModeKey = "Map.SelectedViewMode";
@@ -84,6 +92,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string ShowIndicatorWormholeIconKey = "Map.ShowIndicatorWormholeIcon";
     private const string ShowIndicatorSovUpgradeIconKey = "Map.ShowIndicatorSovUpgradeIcon";
     private const string ShowIndicatorIncursionIconKey = "Map.ShowIndicatorIncursionIcon";
+    private const string ShowIndicatorJumpRangeLyKey = "Map.ShowIndicatorJumpRangeLy";
     private const string InfoBoxShowRegionKey = "Map.InfoBoxShowRegion";
     private const string InfoBoxShowConstellationKey = "Map.InfoBoxShowConstellation";
     private const string InfoBoxShowSecurityStatusKey = "Map.InfoBoxShowSecurityStatus";
@@ -95,6 +104,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string InfoBoxShowWormholeIconKey = "Map.InfoBoxShowWormholeIcon";
     private const string InfoBoxShowSovUpgradeIconKey = "Map.InfoBoxShowSovUpgradeIcon";
     private const string InfoBoxShowIncursionIconKey = "Map.InfoBoxShowIncursionIcon";
+    private const string InfoBoxShowJumpRangeLyKey = "Map.InfoBoxShowJumpRangeLy";
     private const string IndicatorSovFilterKeysKey = "Map.IndicatorSovFilter.Keys";
     private const string OverlaySovFilterKeysKey = "Map.OverlaySovFilter.Keys";
     private const string IndicatorSovFilterConfiguredKey = "Map.IndicatorSovFilter.Configured";
@@ -143,6 +153,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public ObservableCollection<SovUpgradeDisplayOption> IndicatorSovUpgradeOptions { get; } = [];
     public ObservableCollection<SovUpgradeDisplayOption> OverlaySovUpgradeOptions { get; } = [];
     public IEnumerable<long> MissingConnectionNodeIdsForView { get; private set; } = [];
+    public IEnumerable<long> JumpRangeOriginNodeIdsForView => _jumpRangeOriginsLyByNodeId.Keys;
+    public IEnumerable<long> JumpRangeInRangeNodeIdsForView => _jumpRangeInRangeNodeIdsForView;
+    public IReadOnlyList<JumpRangeOriginDisplay> JumpRangeOriginsDisplayForView => _jumpRangeOriginsDisplayForView;
+    public IReadOnlyDictionary<long, IReadOnlyList<long>> JumpRangeMembershipByNodeIdForView =>
+        _jumpRangeMembershipByNodeId.ToDictionary(kvp => kvp.Key, kvp => (IReadOnlyList<long>)kvp.Value);
+    public IReadOnlyDictionary<long, IReadOnlyList<JumpRangeDistanceDisplay>> JumpRangeDistancesByNodeIdForView =>
+        _jumpRangeDistancesByNodeId.ToDictionary(kvp => kvp.Key, kvp => (IReadOnlyList<JumpRangeDistanceDisplay>)kvp.Value);
 
     public MapViewMode SelectedViewMode
     {
@@ -384,6 +401,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
+    public bool ShowIndicatorJumpRangeLy
+    {
+        get => _showIndicatorJumpRangeLy;
+        set
+        {
+            if (SetProperty(ref _showIndicatorJumpRangeLy, value) && !_isInitializing)
+            {
+                _ = _settingsService.SetAsync(ShowIndicatorJumpRangeLyKey, value);
+            }
+        }
+    }
+
     public bool InfoBoxShowRegion
     {
         get => _infoBoxShowRegion;
@@ -512,6 +541,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             if (SetProperty(ref _infoBoxShowIncursionIcon, value) && !_isInitializing)
             {
                 _ = _settingsService.SetAsync(InfoBoxShowIncursionIconKey, value);
+            }
+        }
+    }
+
+    public bool InfoBoxShowJumpRangeLy
+    {
+        get => _infoBoxShowJumpRangeLy;
+        set
+        {
+            if (SetProperty(ref _infoBoxShowJumpRangeLy, value) && !_isInitializing)
+            {
+                _ = _settingsService.SetAsync(InfoBoxShowJumpRangeLyKey, value);
             }
         }
     }
@@ -664,7 +705,50 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     }
 
     public bool HasSearchSuggestions => SearchSuggestions.Count > 0;
+    public bool HasJumpRangeOverlay => _jumpRangeOriginsLyByNodeId.Count > 0;
     public Task InitialLoadTask => _initialLoadTask;
+
+    public bool TrySetJumpRangeOrigin(long nodeId, double lightYears)
+    {
+        if (lightYears <= 0 || CurrentGraph is null)
+        {
+            return false;
+        }
+
+        var node = CurrentGraph.Nodes.FirstOrDefault(n => n.Id == nodeId);
+        if (node is null || !HasSdePosition(node))
+        {
+            StatusText = "Jump range failed: selected system has no SDE xyz coordinates.";
+            return false;
+        }
+
+        _jumpRangeOriginsLyByNodeId[nodeId] = lightYears;
+        RebuildJumpRangeOverlay();
+        return true;
+    }
+
+    public bool RemoveJumpRangeOrigin(long nodeId)
+    {
+        if (!_jumpRangeOriginsLyByNodeId.Remove(nodeId))
+        {
+            return false;
+        }
+
+        RebuildJumpRangeOverlay();
+        return true;
+    }
+
+    public void ClearJumpRangeOrigins()
+    {
+        if (_jumpRangeOriginsLyByNodeId.Count == 0 && _jumpRangeInRangeNodeIdsForView.Count == 0)
+        {
+            return;
+        }
+
+        _jumpRangeOriginsLyByNodeId.Clear();
+        _jumpRangeOriginColorByNodeId.Clear();
+        RebuildJumpRangeOverlay();
+    }
 
     public async Task<WindowPlacementState?> GetWindowPlacementAsync()
     {
@@ -740,6 +824,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         ShowIndicatorWormholeIcon = await _settingsService.GetAsync<bool?>(ShowIndicatorWormholeIconKey) ?? true;
         ShowIndicatorSovUpgradeIcon = await _settingsService.GetAsync<bool?>(ShowIndicatorSovUpgradeIconKey) ?? true;
         ShowIndicatorIncursionIcon = await _settingsService.GetAsync<bool?>(ShowIndicatorIncursionIconKey) ?? true;
+        ShowIndicatorJumpRangeLy = await _settingsService.GetAsync<bool?>(ShowIndicatorJumpRangeLyKey) ?? true;
         InfoBoxShowRegion = await _settingsService.GetAsync<bool?>(InfoBoxShowRegionKey) ?? true;
         InfoBoxShowConstellation = await _settingsService.GetAsync<bool?>(InfoBoxShowConstellationKey) ?? true;
         InfoBoxShowSecurityStatus = await _settingsService.GetAsync<bool?>(InfoBoxShowSecurityStatusKey) ?? true;
@@ -751,6 +836,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         InfoBoxShowWormholeIcon = await _settingsService.GetAsync<bool?>(InfoBoxShowWormholeIconKey) ?? true;
         InfoBoxShowSovUpgradeIcon = await _settingsService.GetAsync<bool?>(InfoBoxShowSovUpgradeIconKey) ?? true;
         InfoBoxShowIncursionIcon = await _settingsService.GetAsync<bool?>(InfoBoxShowIncursionIconKey) ?? true;
+        InfoBoxShowJumpRangeLy = await _settingsService.GetAsync<bool?>(InfoBoxShowJumpRangeLyKey) ?? true;
         await _sovUpgradeStateService.InitializeAsync();
         InitializeSovFilterOptions();
         var indicatorKeys = await _settingsService.GetAsync<List<string>>(IndicatorSovFilterKeysKey) ?? [];
@@ -797,6 +883,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
             CurrentGraph = graph;
             await RefreshRegionMissingConnectionMarkersAsync(graph);
+            RebuildJumpRangeOverlay();
             SelectedNodeId = null;
             StatusText = $"Mode: {SelectedViewMode} | Coordinates: {SelectedCoordinateMode} | Nodes: {graph.Nodes.Count} | Links: {graph.Links.Count}";
             _ = _settingsService.SetAsync(ViewModeKey, SelectedViewMode);
@@ -809,6 +896,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             CurrentGraph = new MapGraph { Nodes = [], Links = [] };
             MissingConnectionNodeIdsForView = [];
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MissingConnectionNodeIdsForView)));
+            RebuildJumpRangeOverlay();
         }
         finally
         {
@@ -1192,6 +1280,210 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         field = value;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         return true;
+    }
+
+    private void RebuildJumpRangeOverlay()
+    {
+        if (CurrentGraph is null || CurrentGraph.Nodes.Count == 0 || _jumpRangeOriginsLyByNodeId.Count == 0)
+        {
+            if (_jumpRangeOriginsLyByNodeId.Count > 0)
+            {
+                _jumpRangeOriginsLyByNodeId.Clear();
+            }
+            if (_jumpRangeOriginColorByNodeId.Count > 0)
+            {
+                _jumpRangeOriginColorByNodeId.Clear();
+            }
+
+            if (_jumpRangeInRangeNodeIdsForView.Count > 0)
+            {
+                _jumpRangeInRangeNodeIdsForView = [];
+            }
+
+            _jumpRangeOriginsDisplayForView = [];
+            _jumpRangeMembershipByNodeId.Clear();
+            _jumpRangeDistancesByNodeId.Clear();
+
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(JumpRangeOriginNodeIdsForView)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(JumpRangeInRangeNodeIdsForView)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(JumpRangeOriginsDisplayForView)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(JumpRangeMembershipByNodeIdForView)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(JumpRangeDistancesByNodeIdForView)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasJumpRangeOverlay)));
+            return;
+        }
+
+        var nodeById = CurrentGraph.Nodes.ToDictionary(n => n.Id);
+        var removedAny = false;
+        foreach (var originId in _jumpRangeOriginsLyByNodeId.Keys.ToList())
+        {
+            if (!nodeById.TryGetValue(originId, out var originNode) || !HasSdePosition(originNode))
+            {
+                _jumpRangeOriginsLyByNodeId.Remove(originId);
+                _jumpRangeOriginColorByNodeId.Remove(originId);
+                removedAny = true;
+            }
+        }
+
+        if (_jumpRangeOriginsLyByNodeId.Count == 0)
+        {
+            _jumpRangeInRangeNodeIdsForView = [];
+            _jumpRangeOriginsDisplayForView = [];
+            _jumpRangeMembershipByNodeId.Clear();
+            _jumpRangeDistancesByNodeId.Clear();
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(JumpRangeOriginNodeIdsForView)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(JumpRangeInRangeNodeIdsForView)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(JumpRangeOriginsDisplayForView)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(JumpRangeMembershipByNodeIdForView)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(JumpRangeDistancesByNodeIdForView)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasJumpRangeOverlay)));
+            return;
+        }
+
+        var originColorPalette = new uint[]
+        {
+            0xFFFF4D4D, 0xFF3DE1FF, 0xFFFFC233, 0xFF7BFF4D, 0xFFFF66D6, 0xFF8C7BFF, 0xFFFF8F3D, 0xFF53FFB8
+        };
+        var sortedOrigins = _jumpRangeOriginsLyByNodeId.Keys.OrderBy(x => x).ToList();
+        for (var i = 0; i < sortedOrigins.Count; i++)
+        {
+            var originId = sortedOrigins[i];
+            if (_jumpRangeOriginColorByNodeId.ContainsKey(originId))
+            {
+                continue;
+            }
+
+            var color = originColorPalette
+                .FirstOrDefault(c => !_jumpRangeOriginColorByNodeId.Values.Contains(c));
+            if (color == 0)
+            {
+                color = originColorPalette[i % originColorPalette.Length];
+            }
+
+            _jumpRangeOriginColorByNodeId[originId] = color;
+        }
+        _jumpRangeOriginsDisplayForView = sortedOrigins
+            .Where(nodeById.ContainsKey)
+            .Select(originId => new JumpRangeOriginDisplay
+            {
+                NodeId = originId,
+                SystemName = nodeById[originId].Name,
+                RangeLy = _jumpRangeOriginsLyByNodeId[originId],
+                ColorArgb = _jumpRangeOriginColorByNodeId[originId],
+                ColorHex = $"#{_jumpRangeOriginColorByNodeId[originId]:X8}"
+            })
+            .ToList();
+
+        var inRange = new List<long>();
+        _jumpRangeMembershipByNodeId.Clear();
+        _jumpRangeDistancesByNodeId.Clear();
+        if (_jumpRangeOriginsLyByNodeId.Count > 0)
+        {
+            foreach (var targetNode in CurrentGraph.Nodes)
+            {
+                foreach (var (originId, maxLy) in _jumpRangeOriginsLyByNodeId)
+                {
+                    if (!nodeById.TryGetValue(originId, out var originNode))
+                    {
+                        continue;
+                    }
+
+                    if (originId == targetNode.Id)
+                    {
+                        AddJumpRangeDistance(targetNode, originNode, originId, maxLy, 0);
+                        if (targetNode.Security is null || targetNode.Security.Value <= 0.45)
+                        {
+                            inRange.Add(targetNode.Id);
+                            if (!_jumpRangeMembershipByNodeId.TryGetValue(targetNode.Id, out var sourceList))
+                            {
+                                sourceList = [];
+                                _jumpRangeMembershipByNodeId[targetNode.Id] = sourceList;
+                            }
+                            sourceList.Add(originId);
+                        }
+                        continue;
+                    }
+
+                    var distanceLy = GetDistanceLy(originNode, targetNode);
+                    if (distanceLy < 0)
+                    {
+                        continue;
+                    }
+
+                    var isInRange = distanceLy > 0 && distanceLy < maxLy;
+                    AddJumpRangeDistance(targetNode, originNode, originId, maxLy, distanceLy);
+                    if (isInRange && (targetNode.Security is null || targetNode.Security.Value <= 0.45))
+                    {
+                        inRange.Add(targetNode.Id);
+                        if (!_jumpRangeMembershipByNodeId.TryGetValue(targetNode.Id, out var sourceList))
+                        {
+                            sourceList = [];
+                            _jumpRangeMembershipByNodeId[targetNode.Id] = sourceList;
+                        }
+                        sourceList.Add(originId);
+                    }
+                }
+            }
+        }
+        foreach (var targetId in _jumpRangeDistancesByNodeId.Keys.ToList())
+        {
+            _jumpRangeDistancesByNodeId[targetId] = _jumpRangeDistancesByNodeId[targetId]
+                .OrderBy(x => x.DistanceLy)
+                .ToList();
+        }
+
+        _jumpRangeInRangeNodeIdsForView = inRange;
+        if (removedAny)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(JumpRangeOriginNodeIdsForView)));
+        }
+
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(JumpRangeInRangeNodeIdsForView)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(JumpRangeOriginsDisplayForView)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(JumpRangeMembershipByNodeIdForView)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(JumpRangeDistancesByNodeIdForView)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasJumpRangeOverlay)));
+    }
+
+    private void AddJumpRangeDistance(MapNode targetNode, MapNode originNode, long originId, double maxLy, double distanceLy)
+    {
+        if (!_jumpRangeDistancesByNodeId.TryGetValue(targetNode.Id, out var values))
+        {
+            values = [];
+            _jumpRangeDistancesByNodeId[targetNode.Id] = values;
+        }
+
+        values.Add(new JumpRangeDistanceDisplay
+        {
+            OriginNodeId = originId,
+            OriginSystemName = originNode.Name,
+            DistanceLy = distanceLy,
+            MaxLy = maxLy,
+            IsInRange = distanceLy == 0 || (distanceLy > 0 && distanceLy < maxLy)
+        });
+    }
+
+    private static double GetDistanceLy(MapNode from, MapNode to)
+    {
+        if (from.PositionX is double fromX &&
+            from.PositionY is double fromY &&
+            from.PositionZ is double fromZ &&
+            to.PositionX is double toX &&
+            to.PositionY is double toY &&
+            to.PositionZ is double toZ)
+        {
+            var dx3 = toX - fromX;
+            var dy3 = toY - fromY;
+            var dz3 = toZ - fromZ;
+            return Math.Sqrt((dx3 * dx3) + (dy3 * dy3) + (dz3 * dz3)) / 9_460_000_000_000_000.0;
+        }
+
+        return -1;
+    }
+
+    private static bool HasSdePosition(MapNode node)
+    {
+        return node.PositionX is not null && node.PositionY is not null && node.PositionZ is not null;
     }
 
     private void EnforceCoordinateModeForView()

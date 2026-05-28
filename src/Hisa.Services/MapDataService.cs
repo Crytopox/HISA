@@ -215,6 +215,9 @@ public sealed class MapDataService : IMapDataService
                 Name = n.Name,
                 X = n.X,
                 Y = n.Y,
+                PositionX = m.PositionX,
+                PositionY = m.PositionY,
+                PositionZ = m.PositionZ,
                 Security = m.Security,
                 SunTypeId = m.SunTypeId,
                 StarTypeName = m.StarTypeName,
@@ -241,14 +244,14 @@ public sealed class MapDataService : IMapDataService
         return new MapGraph { Nodes = nodes, Links = layoutGraph.Links };
     }
 
-    private async Task<Dictionary<int, (double? Security, int? SunTypeId, string? StarTypeName, string? SpectralClass, int? RegionId, string? RegionName, int? ConstellationId, string? ConstellationName)>> LoadSdeNodeMetadataBySystemIdAsync(
+    private async Task<Dictionary<int, (double? PositionX, double? PositionY, double? PositionZ, double? Security, int? SunTypeId, string? StarTypeName, string? SpectralClass, int? RegionId, string? RegionName, int? ConstellationId, string? ConstellationName)>> LoadSdeNodeMetadataBySystemIdAsync(
         IReadOnlyList<int> systemIds,
         CancellationToken cancellationToken)
     {
         await using var connection = _sdeDatabase.CreateConnection();
         await connection.OpenAsync(cancellationToken);
 
-        var result = new Dictionary<int, (double? Security, int? SunTypeId, string? StarTypeName, string? SpectralClass, int? RegionId, string? RegionName, int? ConstellationId, string? ConstellationName)>(systemIds.Count);
+        var result = new Dictionary<int, (double? PositionX, double? PositionY, double? PositionZ, double? Security, int? SunTypeId, string? StarTypeName, string? SpectralClass, int? RegionId, string? RegionName, int? ConstellationId, string? ConstellationName)>(systemIds.Count);
         const int chunkSize = 500;
         for (var i = 0; i < systemIds.Count; i += chunkSize)
         {
@@ -268,7 +271,7 @@ public sealed class MapDataService : IMapDataService
             }
 
             command.CommandText = $"""
-                SELECT s.solarSystemID, s.security, star.typeID, st.typeName, cs.spectralClass, s.regionID, r.regionName, s.constellationID, c.constellationName
+                SELECT s.solarSystemID, s.x, s.y, s.z, s.security, star.typeID, st.typeName, cs.spectralClass, s.regionID, r.regionName, s.constellationID, c.constellationName
                 FROM mapSolarSystems s
                 LEFT JOIN mapDenormalize star ON star.solarSystemID = s.solarSystemID AND star.groupID = 6
                 LEFT JOIN mapCelestialStatistics cs ON cs.celestialID = star.itemID
@@ -284,13 +287,16 @@ public sealed class MapDataService : IMapDataService
                 var systemId = reader.GetInt32(0);
                 result[systemId] = (
                     reader.IsDBNull(1) ? null : reader.GetDouble(1),
-                    reader.IsDBNull(2) ? null : reader.GetInt32(2),
-                    reader.IsDBNull(3) ? null : reader.GetString(3),
-                    reader.IsDBNull(4) ? null : reader.GetString(4),
+                    reader.IsDBNull(2) ? null : reader.GetDouble(2),
+                    reader.IsDBNull(3) ? null : reader.GetDouble(3),
+                    reader.IsDBNull(4) ? null : reader.GetDouble(4),
                     reader.IsDBNull(5) ? null : reader.GetInt32(5),
                     reader.IsDBNull(6) ? null : reader.GetString(6),
-                    reader.IsDBNull(7) ? null : reader.GetInt32(7),
-                    reader.IsDBNull(8) ? null : reader.GetString(8));
+                    reader.IsDBNull(7) ? null : reader.GetString(7),
+                    reader.IsDBNull(8) ? null : reader.GetInt32(8),
+                    reader.IsDBNull(9) ? null : reader.GetString(9),
+                    reader.IsDBNull(10) ? null : reader.GetInt32(10),
+                    reader.IsDBNull(11) ? null : reader.GetString(11));
             }
         }
 
@@ -442,6 +448,7 @@ public sealed class MapDataService : IMapDataService
               SELECT s.solarSystemID, s.solarSystemName, {xColumn}, {yColumn}, s.security, star.typeID, st.typeName, cs.spectralClass, s.regionID, r.regionName
                      , s.constellationID
                      , c.constellationName
+                     , s.x, s.y, s.z
               FROM mapSolarSystems s
               LEFT JOIN mapDenormalize star ON star.solarSystemID = s.solarSystemID AND star.groupID = 6
               LEFT JOIN mapCelestialStatistics cs ON cs.celestialID = star.itemID
@@ -453,6 +460,7 @@ public sealed class MapDataService : IMapDataService
               SELECT s.solarSystemID, s.solarSystemName, {xColumn}, {yColumn}, s.security, star.typeID, st.typeName, cs.spectralClass, s.regionID, r.regionName
                      , s.constellationID
                      , c.constellationName
+                     , s.x, s.y, s.z
               FROM mapSolarSystems s
               LEFT JOIN mapDenormalize star ON star.solarSystemID = s.solarSystemID AND star.groupID = 6
               LEFT JOIN mapCelestialStatistics cs ON cs.celestialID = star.itemID
@@ -496,6 +504,9 @@ public sealed class MapDataService : IMapDataService
                 Name = reader.GetString(1),
                 X = reader.GetDouble(2),
                 Y = reader.GetDouble(3),
+                PositionX = reader.IsDBNull(12) ? null : reader.GetDouble(12),
+                PositionY = reader.IsDBNull(13) ? null : reader.GetDouble(13),
+                PositionZ = reader.IsDBNull(14) ? null : reader.GetDouble(14),
                 Security = reader.IsDBNull(4) ? null : reader.GetDouble(4),
                 SunTypeId = reader.IsDBNull(5) ? null : reader.GetInt32(5),
                 StarTypeName = reader.IsDBNull(6) ? null : reader.GetString(6),
@@ -604,6 +615,9 @@ public sealed class MapDataService : IMapDataService
                 Name = n.Name,
                 X = (n.X - minX) / width,
                 Y = 1.0 - ((n.Y - minY) / height),
+                PositionX = n.PositionX,
+                PositionY = n.PositionY,
+                PositionZ = n.PositionZ,
                 Security = n.Security,
                 SunTypeId = n.SunTypeId,
                 StarTypeName = n.StarTypeName,

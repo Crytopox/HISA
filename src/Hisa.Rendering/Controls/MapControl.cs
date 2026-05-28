@@ -85,6 +85,14 @@ public sealed class MapControl : Control
         new ImmutableSolidColorBrush(Color.Parse("#C567D6")),
         1.8,
         dashStyle: new DashStyle([1.2, 2.4], 0));
+    private static readonly Pen JumpRangeInRangeRingPen = new(
+        new ImmutableSolidColorBrush(Color.Parse("#6FD7F7")),
+        1.9,
+        dashStyle: new DashStyle([2.2, 2.6], 0));
+    private static readonly Pen JumpRangeOriginRingPen = new(
+        new ImmutableSolidColorBrush(Color.Parse("#F3BE5E")),
+        2.2,
+        dashStyle: new DashStyle([3.2, 2.0], 0));
     private static readonly IBrush EditorCrossRegionConnectorBrush = new ImmutableSolidColorBrush(Color.Parse("#8E74D8"));
     private static readonly IBrush NodeHoleBrush = new ImmutableSolidColorBrush(Color.Parse("#0D131D"));
     private static readonly IBrush NodeLabelBackgroundBrush = new ImmutableSolidColorBrush(Color.Parse("#B5000000"));
@@ -113,6 +121,8 @@ public sealed class MapControl : Control
     private static readonly Lazy<Bitmap?> StormUnknownIcon = new(() => LoadIcon("storm_unknown.png"));
     private static readonly Lazy<Bitmap?> WormholeIcon = new(() => LoadIcon("wormhole.png"));
     private static readonly Lazy<Bitmap?> IncursionIcon = new(() => LoadIcon("incursion.png"));
+    private static readonly Lazy<Bitmap?> JumpRangeInRangeIcon = new(() => LoadIcon("jumpRange_onRange.png"));
+    private static readonly Lazy<Bitmap?> JumpRangeOutRangeIcon = new(() => LoadIcon("jumpRange_outRange.png"));
     private static readonly Dictionary<string, Lazy<Bitmap?>> SovUpgradeIcons = new(StringComparer.OrdinalIgnoreCase);
     private static readonly HashSet<string> SingleLevelSovUpgrades = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -161,6 +171,8 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorSovUpgradeIcon), true);
     public static readonly StyledProperty<bool> ShowIndicatorIncursionIconProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorIncursionIcon), true);
+    public static readonly StyledProperty<bool> ShowIndicatorJumpRangeLyProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorJumpRangeLy), true);
     public static readonly StyledProperty<IEnumerable<string>?> IndicatorSovUpgradeFilterKeysProperty =
         AvaloniaProperty.Register<MapControl, IEnumerable<string>?>(nameof(IndicatorSovUpgradeFilterKeys));
     public static readonly StyledProperty<bool> InfoBoxShowRegionProperty =
@@ -185,6 +197,8 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowSovUpgradeIcon), true);
     public static readonly StyledProperty<bool> InfoBoxShowIncursionIconProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowIncursionIcon), true);
+    public static readonly StyledProperty<bool> InfoBoxShowJumpRangeLyProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowJumpRangeLy), true);
     public static readonly StyledProperty<IEnumerable<string>?> OverlaySovUpgradeFilterKeysProperty =
         AvaloniaProperty.Register<MapControl, IEnumerable<string>?>(nameof(OverlaySovUpgradeFilterKeys));
     public static readonly StyledProperty<bool> AlwaysShowHubWormholesProperty =
@@ -213,6 +227,16 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowMissingConnectionMarkers), true);
     public static readonly StyledProperty<IEnumerable<long>?> CrossRegionConnectorNodeIdsProperty =
         AvaloniaProperty.Register<MapControl, IEnumerable<long>?>(nameof(CrossRegionConnectorNodeIds));
+    public static readonly StyledProperty<IEnumerable<long>?> JumpRangeOriginNodeIdsProperty =
+        AvaloniaProperty.Register<MapControl, IEnumerable<long>?>(nameof(JumpRangeOriginNodeIds));
+    public static readonly StyledProperty<IEnumerable<long>?> JumpRangeInRangeNodeIdsProperty =
+        AvaloniaProperty.Register<MapControl, IEnumerable<long>?>(nameof(JumpRangeInRangeNodeIds));
+    public static readonly StyledProperty<IReadOnlyList<JumpRangeOriginDisplay>?> JumpRangeOriginsDisplayProperty =
+        AvaloniaProperty.Register<MapControl, IReadOnlyList<JumpRangeOriginDisplay>?>(nameof(JumpRangeOriginsDisplay));
+    public static readonly StyledProperty<IReadOnlyDictionary<long, IReadOnlyList<long>>?> JumpRangeMembershipByNodeIdProperty =
+        AvaloniaProperty.Register<MapControl, IReadOnlyDictionary<long, IReadOnlyList<long>>?>(nameof(JumpRangeMembershipByNodeId));
+    public static readonly StyledProperty<IReadOnlyDictionary<long, IReadOnlyList<JumpRangeDistanceDisplay>>?> JumpRangeDistancesByNodeIdProperty =
+        AvaloniaProperty.Register<MapControl, IReadOnlyDictionary<long, IReadOnlyList<JumpRangeDistanceDisplay>>?>(nameof(JumpRangeDistancesByNodeId));
 
     private Point? _lastPanPoint;
     private Point? _leftPressPoint;
@@ -247,6 +271,9 @@ public sealed class MapControl : Control
     private HashSet<long> _indicatorExplorationSourceNodeIds = [];
     private Dictionary<long, int> _overlayExplorationOverlapByNodeId = [];
     private HashSet<long> _overlayExplorationSourceNodeIds = [];
+    private Dictionary<long, int> _jumpRangeOverlapByNodeId = [];
+    private HashSet<long> _jumpRangeOriginNodeIds = [];
+    private Dictionary<long, Color> _jumpRangeOriginColorByNodeId = [];
     private Point[] _screenPositions = [];
     private double _graphMinX;
     private double _graphMaxX;
@@ -368,6 +395,12 @@ public sealed class MapControl : Control
         set => SetValue(ShowIndicatorIncursionIconProperty, value);
     }
 
+    public bool ShowIndicatorJumpRangeLy
+    {
+        get => GetValue(ShowIndicatorJumpRangeLyProperty);
+        set => SetValue(ShowIndicatorJumpRangeLyProperty, value);
+    }
+
     public IEnumerable<string>? IndicatorSovUpgradeFilterKeys
     {
         get => GetValue(IndicatorSovUpgradeFilterKeysProperty);
@@ -438,6 +471,12 @@ public sealed class MapControl : Control
     {
         get => GetValue(InfoBoxShowIncursionIconProperty);
         set => SetValue(InfoBoxShowIncursionIconProperty, value);
+    }
+
+    public bool InfoBoxShowJumpRangeLy
+    {
+        get => GetValue(InfoBoxShowJumpRangeLyProperty);
+        set => SetValue(InfoBoxShowJumpRangeLyProperty, value);
     }
 
     public IEnumerable<string>? OverlaySovUpgradeFilterKeys
@@ -524,6 +563,36 @@ public sealed class MapControl : Control
         set => SetValue(CrossRegionConnectorNodeIdsProperty, value);
     }
 
+    public IEnumerable<long>? JumpRangeOriginNodeIds
+    {
+        get => GetValue(JumpRangeOriginNodeIdsProperty);
+        set => SetValue(JumpRangeOriginNodeIdsProperty, value);
+    }
+
+    public IEnumerable<long>? JumpRangeInRangeNodeIds
+    {
+        get => GetValue(JumpRangeInRangeNodeIdsProperty);
+        set => SetValue(JumpRangeInRangeNodeIdsProperty, value);
+    }
+
+    public IReadOnlyList<JumpRangeOriginDisplay>? JumpRangeOriginsDisplay
+    {
+        get => GetValue(JumpRangeOriginsDisplayProperty);
+        set => SetValue(JumpRangeOriginsDisplayProperty, value);
+    }
+
+    public IReadOnlyDictionary<long, IReadOnlyList<long>>? JumpRangeMembershipByNodeId
+    {
+        get => GetValue(JumpRangeMembershipByNodeIdProperty);
+        set => SetValue(JumpRangeMembershipByNodeIdProperty, value);
+    }
+
+    public IReadOnlyDictionary<long, IReadOnlyList<JumpRangeDistanceDisplay>>? JumpRangeDistancesByNodeId
+    {
+        get => GetValue(JumpRangeDistancesByNodeIdProperty);
+        set => SetValue(JumpRangeDistancesByNodeIdProperty, value);
+    }
+
     public MapControl()
     {
         AffectsRender<MapControl>(GraphProperty, SelectedNodeIdProperty, ViewModeProperty, StretchToWindowProperty);
@@ -541,6 +610,7 @@ public sealed class MapControl : Control
             ShowIndicatorWormholeIconProperty,
             ShowIndicatorSovUpgradeIconProperty,
             ShowIndicatorIncursionIconProperty,
+            ShowIndicatorJumpRangeLyProperty,
             IndicatorSovUpgradeFilterKeysProperty,
             InfoBoxShowRegionProperty,
             InfoBoxShowConstellationProperty,
@@ -553,6 +623,7 @@ public sealed class MapControl : Control
             InfoBoxShowWormholeIconProperty,
             InfoBoxShowSovUpgradeIconProperty,
             InfoBoxShowIncursionIconProperty,
+            InfoBoxShowJumpRangeLyProperty,
             OverlaySovUpgradeFilterKeysProperty,
             AlwaysShowHubWormholesProperty,
             HubWormholeMarkerModeProperty,
@@ -566,7 +637,12 @@ public sealed class MapControl : Control
             AdditionalSelectedNodeIdsProperty,
             MissingConnectionNodeIdsProperty,
             ShowMissingConnectionMarkersProperty,
-            CrossRegionConnectorNodeIdsProperty);
+            CrossRegionConnectorNodeIdsProperty,
+            JumpRangeOriginNodeIdsProperty,
+            JumpRangeInRangeNodeIdsProperty,
+            JumpRangeOriginsDisplayProperty,
+            JumpRangeMembershipByNodeIdProperty,
+            JumpRangeDistancesByNodeIdProperty);
         ClipToBounds = true;
     }
 
@@ -947,6 +1023,9 @@ public sealed class MapControl : Control
             BuildExplorationDetectorOverlap(IndicatorSovUpgradeFilterKeys);
         (_overlayExplorationOverlapByNodeId, _overlayExplorationSourceNodeIds) =
             BuildExplorationDetectorOverlap(OverlaySovUpgradeFilterKeys);
+        (_jumpRangeOverlapByNodeId, _jumpRangeOriginNodeIds) =
+            BuildNodeOverlapCounts(JumpRangeInRangeNodeIds, JumpRangeOriginNodeIds);
+        _jumpRangeOriginColorByNodeId = BuildJumpRangeOriginColorMap(JumpRangeOriginsDisplay);
 
         var plot = GetPlotMetrics();
         var viewCenterX = Bounds.Width / 2.0;
@@ -1125,6 +1204,34 @@ public sealed class MapControl : Control
             {
                 var ringRadius = radius + 2.7;
                 context.DrawEllipse(null, MissingConnectionRingPen, p, ringRadius, ringRadius);
+            }
+            if (_jumpRangeOverlapByNodeId.TryGetValue(node.Id, out var jumpRangeOverlapCount) &&
+                jumpRangeOverlapCount > 0)
+            {
+                var inRangeRadius = radius + 6.4;
+                if (JumpRangeMembershipByNodeId is not null &&
+                    JumpRangeMembershipByNodeId.TryGetValue(node.Id, out var sourceOriginIds) &&
+                    sourceOriginIds.Count > 0)
+                {
+                    DrawJumpRangeSegments(context, p, inRangeRadius, sourceOriginIds);
+                }
+                else
+                {
+                    context.DrawEllipse(null, JumpRangeInRangeRingPen, p, inRangeRadius, inRangeRadius);
+                }
+            }
+            if (_jumpRangeOriginNodeIds.Contains(node.Id))
+            {
+                var originRadius = radius + 10.1;
+                if (_jumpRangeOriginColorByNodeId.TryGetValue(node.Id, out var originColor))
+                {
+                    var originPen = new Pen(new ImmutableSolidColorBrush(originColor), 2.8, dashStyle: new DashStyle([3.8, 2.4], 0));
+                    context.DrawEllipse(null, originPen, p, originRadius, originRadius);
+                }
+                else
+                {
+                    context.DrawEllipse(null, JumpRangeOriginRingPen, p, originRadius, originRadius);
+                }
             }
             if (AlwaysShowHubWormholes && node.HubWormholeConnections.Count > 0)
             {
@@ -3249,6 +3356,28 @@ public sealed class MapControl : Control
             indicatorIconSlot++;
         }
 
+        FormattedText? jumpRangeIndicatorText = null;
+        Bitmap? jumpRangeIndicatorIcon = null;
+        if (ShowIndicatorJumpRangeLy &&
+            JumpRangeDistancesByNodeId is not null &&
+            JumpRangeDistancesByNodeId.TryGetValue(node.Id, out var jumpDistancesForNode) &&
+            jumpDistancesForNode.Count > 0)
+        {
+            var best = jumpDistancesForNode
+                .OrderByDescending(x => x.IsInRange)
+                .ThenBy(x => x.DistanceLy)
+                .First();
+            var overlapSuffix = jumpDistancesForNode.Count > 1 ? $" (+{jumpDistancesForNode.Count - 1})" : string.Empty;
+            jumpRangeIndicatorText = new FormattedText(
+                $"{best.DistanceLy:0.0} LY{overlapSuffix}",
+                CultureInfo.InvariantCulture,
+                FlowDirection.LeftToRight,
+                NodeLabelTypeface,
+                10.5,
+                Brushes.White);
+            jumpRangeIndicatorIcon = best.IsInRange ? JumpRangeInRangeIcon.Value : JumpRangeOutRangeIcon.Value;
+        }
+
         // Keep SOV icons on a dedicated second row, but collapse up if first row is empty.
         var primaryRowHasIcons = indicatorIconSlot > 0;
         var sovIndicatorRowY = primaryRowHasIcons
@@ -3285,6 +3414,22 @@ public sealed class MapControl : Control
                 Brushes.White);
             context.DrawText(counterText, new Point(iconX + SovIconSize + 1, iconY + ((SovIconSize - counterText.Height) / 2)));
             sovIconSlot += 2;
+        }
+
+        if (jumpRangeIndicatorText is not null)
+        {
+            var indicatorY = sovIconSlot > 0
+                ? sovIndicatorRowY + SovIconSize + 2
+                : (primaryRowHasIcons ? rect.Bottom + IconSize + 2 : rect.Bottom + 2);
+            var textX = rect.X + IndicatorIconLeftPadding;
+            if (jumpRangeIndicatorIcon is not null)
+            {
+                var iconSize = 13.5;
+                DrawBitmap(context, jumpRangeIndicatorIcon, new Point(textX, indicatorY - 1), iconSize);
+                textX += iconSize + 3;
+            }
+
+            context.DrawText(jumpRangeIndicatorText, new Point(textX, indicatorY));
         }
     }
 
@@ -3485,6 +3630,33 @@ public sealed class MapControl : Control
                 new Typeface("Inter"),
                 12,
                 Brushes.White);
+        var jumpRangeLineTexts = new List<(Bitmap? Icon, FormattedText Text, IBrush Brush)>();
+        if (InfoBoxShowJumpRangeLy &&
+            JumpRangeDistancesByNodeId is not null &&
+            JumpRangeDistancesByNodeId.TryGetValue(node.Id, out var jumpDistances) &&
+            jumpDistances.Count > 0)
+        {
+            foreach (var distance in jumpDistances.OrderBy(x => x.DistanceLy))
+            {
+                var isInRange = distance.IsInRange;
+                var color = _jumpRangeOriginColorByNodeId.TryGetValue(distance.OriginNodeId, out var originColor)
+                    ? GetCachedBrush(originColor)
+                    : Brushes.White;
+                var label = distance.DistanceLy <= 0
+                    ? $"{distance.OriginSystemName}: 0.00 LY (origin)"
+                    : $"{distance.OriginSystemName}: {distance.DistanceLy:0.00} LY / {distance.MaxLy:0.0} LY{(isInRange ? " (in)" : " (out)")}";
+                jumpRangeLineTexts.Add((
+                    isInRange ? JumpRangeInRangeIcon.Value : JumpRangeOutRangeIcon.Value,
+                    new FormattedText(
+                        label,
+                        CultureInfo.InvariantCulture,
+                        FlowDirection.LeftToRight,
+                        new Typeface("Inter"),
+                        12,
+                        color),
+                    color));
+            }
+        }
         var sovLineTexts = visibleOverlaySovUpgrades
             .Select(sov => new
             {
@@ -3549,16 +3721,24 @@ public sealed class MapControl : Control
             sovLineHeight = Math.Max(sovLineHeight, Math.Max(SovIconSize, sovLine.Text.Height));
             sovMaxWidth = Math.Max(sovMaxWidth, SovIconSize + 4 + sovLine.Text.Width);
         }
+        var jumpLineHeight = 0.0;
+        var jumpMaxWidth = 0.0;
+        foreach (var jumpLine in jumpRangeLineTexts)
+        {
+            jumpLineHeight = Math.Max(jumpLineHeight, Math.Max(14, jumpLine.Text.Height));
+            jumpMaxWidth = Math.Max(jumpMaxWidth, 14 + 4 + jumpLine.Text.Width);
+        }
 
         var start = GetNodeLabelOrigin(anchor);
         var padX = 8.0;
         var padY = 6.0;
         var headerWidth = headerText.Width + (securityText is null ? 0 : (8 + securityText.Width));
-        var bodyWidth = Math.Max(Math.Max(Math.Max(regionConstellationText?.Width ?? 0, detailsText?.Width ?? 0), wormholeMaxWidth), sovMaxWidth);
+        var bodyWidth = Math.Max(Math.Max(Math.Max(Math.Max(regionConstellationText?.Width ?? 0, detailsText?.Width ?? 0), wormholeMaxWidth), sovMaxWidth), jumpMaxWidth);
         var contentWidth = Math.Max(headerWidth, bodyWidth);
         var contentHeight = headerText.Height
             + (regionConstellationText is null ? 0 : regionConstellationText.Height + 2)
             + (detailsText is null ? 0 : detailsText.Height + 2)
+            + (jumpRangeLineTexts.Count == 0 ? 0 : (jumpRangeLineTexts.Count * (jumpLineHeight + 1)))
             + (sovLineTexts.Count == 0 ? 0 : (sovLineTexts.Count * (sovLineHeight + 1)))
             + (wormholes.Count == 0 ? 0 : (wormholes.Count * (wormholeLineHeight + 1)));
         var rect = new Rect(
@@ -3586,6 +3766,16 @@ public sealed class MapControl : Control
         {
             context.DrawText(detailsText, new Point(headerOrigin.X, detailsStartY));
             detailsStartY += detailsText.Height;
+        }
+        foreach (var jumpLine in jumpRangeLineTexts)
+        {
+            if (jumpLine.Icon is not null)
+            {
+                DrawBitmap(context, jumpLine.Icon, new Point(headerOrigin.X, detailsStartY + ((jumpLineHeight - 14) / 2)), 14);
+            }
+
+            context.DrawText(jumpLine.Text, new Point(headerOrigin.X + 18, detailsStartY + ((jumpLineHeight - jumpLine.Text.Height) / 2)));
+            detailsStartY += jumpLineHeight + 1;
         }
 
         foreach (var sovLine in sovLineTexts)
@@ -3909,6 +4099,100 @@ public sealed class MapControl : Control
         context.DrawImage(icon, src, dst);
     }
 
+    private static (Dictionary<long, int> CountsByNodeId, HashSet<long> SourceNodeIds) BuildNodeOverlapCounts(
+        IEnumerable<long>? nodeIds,
+        IEnumerable<long>? sourceNodeIds)
+    {
+        var counts = new Dictionary<long, int>();
+        if (nodeIds is not null)
+        {
+            foreach (var nodeId in nodeIds)
+            {
+                counts[nodeId] = counts.TryGetValue(nodeId, out var existing) ? existing + 1 : 1;
+            }
+        }
+
+        var sources = sourceNodeIds is null
+            ? []
+            : sourceNodeIds.ToHashSet();
+        return (counts, sources);
+    }
+
+    private static Dictionary<long, Color> BuildJumpRangeOriginColorMap(IReadOnlyList<JumpRangeOriginDisplay>? origins)
+    {
+        var result = new Dictionary<long, Color>();
+        if (origins is null)
+        {
+            return result;
+        }
+
+        foreach (var origin in origins)
+        {
+            var a = (byte)((origin.ColorArgb >> 24) & 0xFF);
+            var r = (byte)((origin.ColorArgb >> 16) & 0xFF);
+            var g = (byte)((origin.ColorArgb >> 8) & 0xFF);
+            var b = (byte)(origin.ColorArgb & 0xFF);
+            result[origin.NodeId] = Color.FromArgb(a, r, g, b);
+        }
+
+        return result;
+    }
+
+    private void DrawJumpRangeSegments(DrawingContext context, Point center, double radius, IReadOnlyList<long> originIds)
+    {
+        var segments = originIds
+            .Select(id => _jumpRangeOriginColorByNodeId.TryGetValue(id, out var c) ? c : Color.Parse("#6FD7F7"))
+            .ToList();
+        if (segments.Count == 0)
+        {
+            return;
+        }
+
+        if (segments.Count == 1)
+        {
+            var pen = new Pen(new ImmutableSolidColorBrush(segments[0]), 3.2);
+            context.DrawEllipse(null, pen, center, radius, radius);
+            return;
+        }
+
+        var gapDegrees = 3.5;
+        var sweep = (360.0 / segments.Count) - gapDegrees;
+        for (var i = 0; i < segments.Count; i++)
+        {
+            var start = (360.0 / segments.Count) * i + (gapDegrees * 0.5);
+            var pen = new Pen(new ImmutableSolidColorBrush(segments[i]), 3.2);
+            DrawArcSegment(context, center, radius, start, sweep, pen);
+        }
+    }
+
+    private static void DrawArcSegment(DrawingContext context, Point center, double radius, double startDegrees, double sweepDegrees, Pen pen)
+    {
+        if (sweepDegrees <= 0)
+        {
+            return;
+        }
+
+        var startRad = startDegrees * (Math.PI / 180.0);
+        var endRad = (startDegrees + sweepDegrees) * (Math.PI / 180.0);
+        var start = new Point(center.X + (radius * Math.Cos(startRad)), center.Y + (radius * Math.Sin(startRad)));
+        var end = new Point(center.X + (radius * Math.Cos(endRad)), center.Y + (radius * Math.Sin(endRad)));
+
+        var geometry = new StreamGeometry();
+        using (var g = geometry.Open())
+        {
+            g.BeginFigure(start, false);
+            g.ArcTo(
+                end,
+                new Size(radius, radius),
+                0,
+                sweepDegrees > 180,
+                SweepDirection.Clockwise);
+            g.EndFigure(false);
+        }
+
+        context.DrawGeometry(null, pen, geometry);
+    }
+
     private static void DrawIncursionIcon(DrawingContext context, Point topLeft, double size)
     {
         var icon = IncursionIcon.Value;
@@ -3917,6 +4201,13 @@ public sealed class MapControl : Control
             return;
         }
 
+        var src = new Rect(0, 0, icon.Size.Width, icon.Size.Height);
+        var dst = new Rect(topLeft.X, topLeft.Y, size, size);
+        context.DrawImage(icon, src, dst);
+    }
+
+    private static void DrawBitmap(DrawingContext context, Bitmap icon, Point topLeft, double size)
+    {
         var src = new Rect(0, 0, icon.Size.Width, icon.Size.Height);
         var dst = new Rect(topLeft.X, topLeft.Y, size, size);
         context.DrawImage(icon, src, dst);
