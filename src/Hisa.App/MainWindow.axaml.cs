@@ -589,6 +589,12 @@ public partial class MainWindow : Window
 
         if (e.PropertyName == nameof(MainWindowViewModel.CurrentGraph))
         {
+            if (_boundVm.SelectedViewMode == Hisa.Core.Models.MapViewMode.Region)
+            {
+                await Dispatcher.UIThread.InvokeAsync(() => MainMapControl.FitToView());
+                return;
+            }
+
             await RestoreViewportForCurrentModeAsync(fallbackToFit: true);
         }
     }
