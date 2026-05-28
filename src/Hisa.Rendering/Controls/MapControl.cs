@@ -47,14 +47,14 @@ public sealed class MapControl : Control
     private static readonly Point NodeLabelOffset = new(9, 3);
     private static readonly Typeface NodeLabelTypeface = new("Inter", FontStyle.Normal, FontWeight.SemiBold);
     private static readonly Typeface RegionCardTypeface = new("Inter", FontStyle.Normal, FontWeight.SemiBold);
-    private const double NodeLabelFontSize = 12;
-    private const double EditorNodeLabelFontSize = 10;
-    private const double NodeRegionConstellationFontSize = 10;
+    private const double NodeLabelFontSize = 11;
+    private const double EditorNodeLabelFontSize = 9;
+    private const double NodeRegionConstellationFontSize = 9.5;
     private const double EditorRegionConstellationFontSize = 9.0;
     private const double UniverseMinNodeScale = 0.55;
     private const double IconSize = 18.0;
     private const double SovIconSize = 22.0;
-    private const double IndicatorIconLeftPadding = 4.0;
+    private const double IndicatorIconLeftPadding = 2.0;
     private const double IndicatorIconSlotGap = 3.0;
     private const string A0BlueSmallName = "Sun A0 (Blue Small)";
     private const int A0BlueSmallTypeId = 3801;
@@ -247,9 +247,16 @@ public sealed class MapControl : Control
     private double _graphMaxY;
     private double _typicalLinkSpacing;
     private const double BasePadding = 0.0;
-    private const double FitPadding = 30.0;
+    private const double FitPadding = 40.0;
     private const double EditorFitPadding = 60.0;
     private const double EditorFitPaddingWide = 40.0;
+
+    private const double DenseSpacingLow = 0.02;
+    private const double DenseSpacingHigh = 0.07;
+    private const double RegionLabelSpacingPxSparse = 48.0;
+    private const double RegionLabelSpacingPxDense = 52.0;
+    private const double RegionMaxZoomSparse = 6.0;
+    private const double RegionMaxZoomDense = 14.0;
     public event EventHandler<int>? UniverseRegionNodeDoubleClicked;
 
     public MapGraph? Graph
@@ -1007,6 +1014,7 @@ public sealed class MapControl : Control
         }
 
         var labelBudget = GetLabelBudget();
+        var shouldShowInlineLabels = ShouldShowInlineLabels(plot);
         var labelsDrawn = 0;
         var additionalSelectedSet = AdditionalSelectedNodeIds is not null
             ? new HashSet<long>(AdditionalSelectedNodeIds)
@@ -1111,7 +1119,7 @@ public sealed class MapControl : Control
                 (SelectedNodeId is not null && node.Id == SelectedNodeId.Value) ||
                 (_hoveredNodeId is not null && node.Id == _hoveredNodeId.Value);
             if (!suppressInlineLabel &&
-                (_zoom >= GetLabelZoomThreshold() || isSelected || isHovered) &&
+                (shouldShowInlineLabels || isSelected || isHovered) &&
                 labelsDrawn < labelBudget &&
                 IsPointVisible(p, bounds, labelVisibilityMargin))
             {
@@ -1157,6 +1165,26 @@ public sealed class MapControl : Control
             MapViewMode.Region => 0.6,
             _ => 1.0
         };
+    }
+
+    private bool ShouldShowInlineLabels(PlotMetrics plot)
+    {
+        if (ShowEditorGrid)
+        {
+            return _zoom >= GetLabelZoomThreshold();
+        }
+
+        if (ViewMode == MapViewMode.Region)
+        {
+            // use screen-space spacing instead of raw zoom threshold.
+            var worldScale = Math.Max(1e-9, ((plot.Width + plot.Height) * 0.5) * _zoom);
+            var typicalSpacingPx = _typicalLinkSpacing * worldScale;
+            var density01 = GetRegionDensity01();
+            var requiredSpacingPx = RegionLabelSpacingPxSparse + ((RegionLabelSpacingPxDense - RegionLabelSpacingPxSparse) * density01);
+            return typicalSpacingPx >= requiredSpacingPx;
+        }
+
+        return _zoom >= GetLabelZoomThreshold();
     }
 
     private int GetLabelBudget()
@@ -1712,9 +1740,23 @@ public sealed class MapControl : Control
         return ViewMode switch
         {
             MapViewMode.Universe => 60.0,
-            MapViewMode.Region => 3.0,
+            MapViewMode.Region => GetAdaptiveRegionMaxZoom(),
             _ => 12.0
         };
+    }
+
+    private double GetAdaptiveRegionMaxZoom()
+    {
+        // denser/larger regions (smaller typical spacing) get higher max zoom.
+        var density01 = GetRegionDensity01();
+        var maxZoom = RegionMaxZoomSparse + ((RegionMaxZoomDense - RegionMaxZoomSparse) * density01);
+        return Math.Max(GetMinZoom() + 0.01, maxZoom);
+    }
+
+    private double GetRegionDensity01()
+    {
+        var spacing = Math.Max(1e-6, _typicalLinkSpacing);
+        return Math.Clamp((DenseSpacingHigh - spacing) / Math.Max(1e-9, DenseSpacingHigh - DenseSpacingLow), 0.0, 1.0);
     }
 
     private double GetMinZoom()
