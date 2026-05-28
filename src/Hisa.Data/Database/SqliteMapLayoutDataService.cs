@@ -36,80 +36,14 @@ public sealed class SqliteMapLayoutDataService : IMapLayoutDataService
         }
 
         var regionLayoutId = Convert.ToInt64(regionLayoutIdRaw);
+        return await LoadLayoutGraphAsync(connection, regionLayoutId, regionId, cancellationToken);
+    }
 
-        var nodes = new List<MapNode>();
-        var nodeById = new Dictionary<long, MapNode>();
-        var nodeCommand = connection.CreateCommand();
-        nodeCommand.CommandText = """
-            SELECT n.Id, n.SolarSystemId, n.Name, n.X, n.Y
-            FROM MapLayoutNode n
-            WHERE n.RegionLayoutId = $layoutId;
-            """;
-        nodeCommand.Parameters.AddWithValue("$layoutId", regionLayoutId);
-        await using (var reader = await nodeCommand.ExecuteReaderAsync(cancellationToken))
-        {
-            while (await reader.ReadAsync(cancellationToken))
-            {
-                var nodeRowId = reader.GetInt64(0);
-                var solarSystemId = reader.IsDBNull(1) ? (long?)null : reader.GetInt64(1);
-                var node = new MapNode
-                {
-                    Id = solarSystemId is > 0 ? solarSystemId.Value : -nodeRowId,
-                    Name = reader.GetString(2),
-                    X = reader.GetDouble(3),
-                    Y = reader.GetDouble(4),
-                    Security = null,
-                    SunTypeId = null,
-                    StarTypeName = null,
-                    SpectralClass = null,
-                    HasJoveObservatory = false,
-                    IceFieldCount = 0,
-                    RegionId = regionId,
-                    RegionName = null,
-                    ConstellationId = null,
-                    ConstellationName = null,
-                    StormEffects = [],
-                    HubWormholeConnections = []
-                };
-
-                nodeById[nodeRowId] = node;
-                nodes.Add(node);
-            }
-        }
-
-        var links = new List<MapLink>();
-        var linkCommand = connection.CreateCommand();
-        linkCommand.CommandText = """
-            SELECT l.FromNodeId, l.ToNodeId
-            FROM MapLayoutLink l
-            WHERE l.RegionLayoutId = $layoutId;
-            """;
-        linkCommand.Parameters.AddWithValue("$layoutId", regionLayoutId);
-        await using (var reader = await linkCommand.ExecuteReaderAsync(cancellationToken))
-        {
-            while (await reader.ReadAsync(cancellationToken))
-            {
-                var fromNodeId = reader.GetInt64(0);
-                var toNodeId = reader.GetInt64(1);
-                if (!nodeById.TryGetValue(fromNodeId, out var fromNode) || !nodeById.TryGetValue(toNodeId, out var toNode))
-                {
-                    continue;
-                }
-
-                links.Add(new MapLink
-                {
-                    FromId = fromNode.Id,
-                    ToId = toNode.Id
-                });
-            }
-        }
-
-        if (nodes.Count == 0)
-        {
-            return null;
-        }
-
-        return NormalizeGraph(nodes, links);
+    public async Task<MapGraph?> TryGetLayoutRegionGraphAsync(long layoutRegionId, CancellationToken cancellationToken = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        return await LoadLayoutGraphAsync(connection, layoutRegionId, null, cancellationToken);
     }
 
     public async Task<IReadOnlyList<MapLayoutRegionSummary>> GetLayoutRegionsAsync(CancellationToken cancellationToken = default)
@@ -181,5 +115,106 @@ public sealed class SqliteMapLayoutDataService : IMapLayoutDataService
         var idSet = nodes.Select(n => n.Id).ToHashSet();
         var links = rawLinks.Where(l => idSet.Contains(l.FromId) && idSet.Contains(l.ToId)).ToList();
         return new MapGraph { Nodes = nodes, Links = links };
+    }
+
+    private static async Task<MapGraph?> LoadLayoutGraphAsync(
+        SqliteConnection connection,
+        long layoutRegionId,
+        int? forcedRegionId,
+        CancellationToken cancellationToken)
+    {
+        var regionMetaCommand = connection.CreateCommand();
+        regionMetaCommand.CommandText = """
+            SELECT Name, SourceRegionId
+            FROM MapLayoutRegion
+            WHERE Id = $layoutId
+            LIMIT 1;
+            """;
+        regionMetaCommand.Parameters.AddWithValue("$layoutId", layoutRegionId);
+        string? layoutName = null;
+        int? sourceRegionId = null;
+        await using (var metaReader = await regionMetaCommand.ExecuteReaderAsync(cancellationToken))
+        {
+            if (await metaReader.ReadAsync(cancellationToken))
+            {
+                layoutName = metaReader.IsDBNull(0) ? null : metaReader.GetString(0);
+                sourceRegionId = metaReader.IsDBNull(1) ? null : metaReader.GetInt32(1);
+            }
+        }
+
+        var effectiveRegionId = forcedRegionId ?? sourceRegionId;
+        var nodes = new List<MapNode>();
+        var nodeById = new Dictionary<long, MapNode>();
+        var nodeCommand = connection.CreateCommand();
+        nodeCommand.CommandText = """
+            SELECT n.Id, n.SolarSystemId, n.Name, n.X, n.Y
+            FROM MapLayoutNode n
+            WHERE n.RegionLayoutId = $layoutId;
+            """;
+        nodeCommand.Parameters.AddWithValue("$layoutId", layoutRegionId);
+        await using (var reader = await nodeCommand.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var nodeRowId = reader.GetInt64(0);
+                var solarSystemId = reader.IsDBNull(1) ? (long?)null : reader.GetInt64(1);
+                var node = new MapNode
+                {
+                    Id = solarSystemId is > 0 ? solarSystemId.Value : -nodeRowId,
+                    Name = reader.GetString(2),
+                    X = reader.GetDouble(3),
+                    Y = reader.GetDouble(4),
+                    Security = null,
+                    SunTypeId = null,
+                    StarTypeName = null,
+                    SpectralClass = null,
+                    HasJoveObservatory = false,
+                    IceFieldCount = 0,
+                    RegionId = effectiveRegionId,
+                    RegionName = layoutName,
+                    ConstellationId = null,
+                    ConstellationName = null,
+                    StormEffects = [],
+                    HubWormholeConnections = []
+                };
+
+                nodeById[nodeRowId] = node;
+                nodes.Add(node);
+            }
+        }
+
+        var links = new List<MapLink>();
+        var linkCommand = connection.CreateCommand();
+        linkCommand.CommandText = """
+            SELECT l.FromNodeId, l.ToNodeId
+            FROM MapLayoutLink l
+            WHERE l.RegionLayoutId = $layoutId;
+            """;
+        linkCommand.Parameters.AddWithValue("$layoutId", layoutRegionId);
+        await using (var reader = await linkCommand.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var fromNodeId = reader.GetInt64(0);
+                var toNodeId = reader.GetInt64(1);
+                if (!nodeById.TryGetValue(fromNodeId, out var fromNode) || !nodeById.TryGetValue(toNodeId, out var toNode))
+                {
+                    continue;
+                }
+
+                links.Add(new MapLink
+                {
+                    FromId = fromNode.Id,
+                    ToId = toNode.Id
+                });
+            }
+        }
+
+        if (nodes.Count == 0)
+        {
+            return null;
+        }
+
+        return NormalizeGraph(nodes, links);
     }
 }
