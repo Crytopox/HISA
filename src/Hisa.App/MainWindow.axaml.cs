@@ -27,9 +27,11 @@ public partial class MainWindow : Window
     private readonly ContextMenu _mapNodeContextMenu;
     private readonly MenuItem _copySystemNameMenuItem;
     private readonly MenuItem _openInDotlanMenuItem;
+    private readonly MenuItem _openInZkillboardMenuItem;
     private Point? _mapRightPressPoint;
     private bool _mapRightMoved;
     private string? _contextSystemName;
+    private long? _contextSystemId;
 
     public MainWindow()
     {
@@ -46,14 +48,22 @@ public partial class MainWindow : Window
             Header = "Open in Dotlan",
             FontSize = 11,
             Padding = new Thickness(8, 3),
-            Icon = BuildDotlanMenuIcon()
+            Icon = BuildMenuIcon("dotlan.ico")
         };
         _openInDotlanMenuItem.Click += OnOpenInDotlanClicked;
+        _openInZkillboardMenuItem = new MenuItem
+        {
+            Header = "Open in zKillboard",
+            FontSize = 11,
+            Padding = new Thickness(8, 3),
+            Icon = BuildMenuIcon("zkillboard.png")
+        };
+        _openInZkillboardMenuItem.Click += OnOpenInZkillboardClicked;
         _mapNodeContextMenu = new ContextMenu
         {
             MinWidth = 0,
             FontSize = 11,
-            ItemsSource = new object[] { _copySystemNameMenuItem, _openInDotlanMenuItem }
+            ItemsSource = new object[] { _copySystemNameMenuItem, _openInDotlanMenuItem, _openInZkillboardMenuItem }
         };
         MainMapControl.UniverseRegionNodeDoubleClicked += OnUniverseRegionNodeClicked;
         Opened += OnOpened;
@@ -309,6 +319,7 @@ public partial class MainWindow : Window
             }
 
             _contextSystemName = node.Name.Trim();
+            _contextSystemId = node.Id;
             _copySystemNameMenuItem.Header = $"Copy '{_contextSystemName}'";
             ConfigureMapNodeMenuPlacement(point);
             _mapNodeContextMenu.Open(MainMapControl);
@@ -360,10 +371,32 @@ public partial class MainWindow : Window
         }
     }
 
+    private void OnOpenInZkillboardClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_contextSystemId is null)
+        {
+            return;
+        }
+
+        var url = $"https://zkillboard.com/system/{_contextSystemId.Value}/";
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = url,
+                UseShellExecute = true
+            });
+        }
+        catch
+        {
+            // Ignore failures from shell/browser launch.
+        }
+    }
+
     private void ConfigureMapNodeMenuPlacement(Point clickPoint)
     {
         const double estimatedMenuWidth = 210;
-        const double estimatedMenuHeight = 58;
+        const double estimatedMenuHeight = 84;
         const double offset = 3;
         const double margin = 10;
 
@@ -382,11 +415,11 @@ public partial class MainWindow : Window
         _mapNodeContextMenu.VerticalOffset = offset;
     }
 
-    private static Control? BuildDotlanMenuIcon()
+    private static Control? BuildMenuIcon(string fileName)
     {
         try
         {
-            var uri = new Uri("avares://Hisa.App/Assets/Icons/dotlan.ico");
+            var uri = new Uri($"avares://Hisa.App/Assets/Icons/{fileName}");
             using var stream = AssetLoader.Open(uri);
             var bitmap = new Bitmap(stream);
             return new Image
