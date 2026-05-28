@@ -55,6 +55,25 @@
                   </DataTemplate>
                 </ComboBox.ItemTemplate>
               </ComboBox>
+              <Border Padding="4,3" Background="#0D1522" BorderBrush="#2B3C55" BorderThickness="1" CornerRadius="4" VerticalAlignment="Center">
+                <Grid Width="44" Height="20">
+                  <Grid IsVisible="{Binding IsWormholePreviewBadge}">
+                    <Ellipse Width="10" Height="10" Fill="#93A8C0" Stroke="#1A2536" StrokeThickness="1.0" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="4,0,0,0" />
+                    <Border Background="#6BC1B5" BorderBrush="#0D131D" BorderThickness="1" CornerRadius="2"
+                            Padding="2,0" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="11,-6,0,0">
+                      <TextBlock Text="T" FontSize="7" FontWeight="SemiBold" Foreground="#0D131D" />
+                    </Border>
+                  </Grid>
+                  <Grid IsVisible="{Binding IsWormholePreviewRing}">
+                    <Ellipse Width="10" Height="10" Fill="#93A8C0" Stroke="#1A2536" StrokeThickness="1.0" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="4,0,0,0" />
+                    <Ellipse Width="15" Height="15" Stroke="#6BC1B5" StrokeThickness="1.6" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="1,0,0,0" />
+                  </Grid>
+                  <Grid IsVisible="{Binding IsWormholePreviewHalo}">
+                    <Ellipse Width="15" Height="15" Fill="#4C6BC1B5" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="1,0,0,0" />
+                    <Ellipse Width="10" Height="10" Fill="#93A8C0" Stroke="#1A2536" StrokeThickness="1.0" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="4,0,0,0" />
+                  </Grid>
+                </Grid>
+              </Border>
             </StackPanel>
           </StackPanel>
         </Border>

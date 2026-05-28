@@ -458,8 +458,16 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             {
                 _ = _settingsService.SetAsync(HubWormholeMarkerModeKey, value);
             }
+
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsWormholePreviewBadge)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsWormholePreviewRing)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsWormholePreviewHalo)));
         }
     }
+
+    public bool IsWormholePreviewBadge => HubWormholeMarkerMode == HubWormholeMarkerMode.Badge;
+    public bool IsWormholePreviewRing => HubWormholeMarkerMode == HubWormholeMarkerMode.Ring;
+    public bool IsWormholePreviewHalo => HubWormholeMarkerMode == HubWormholeMarkerMode.Halo;
 
     public bool ShowMissingConnectionMarkers
     {
