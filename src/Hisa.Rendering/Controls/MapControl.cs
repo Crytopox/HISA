@@ -246,6 +246,8 @@ public sealed class MapControl : Control
     private double _typicalLinkSpacing;
     private const double BasePadding = 0.0;
     private const double FitPadding = 30.0;
+    private const double EditorFitPadding = 60.0;
+    private const double EditorFitPaddingWide = 40.0;
     public event EventHandler<int>? UniverseRegionNodeDoubleClicked;
 
     public MapGraph? Graph
@@ -546,32 +548,79 @@ public sealed class MapControl : Control
         RebuildGraphCaches();
 
         var plot = GetPlotMetrics();
-        var plotWidth = plot.Width;
-        var plotHeight = plot.Height;
+        var fitPadding = ShowEditorGrid
+            ? GetEditorFitPadding(Math.Max(1e-9, _graphMaxX - _graphMinX), Math.Max(1e-9, _graphMaxY - _graphMinY))
+            : FitPadding;
+        var worldCenterX = (_graphMinX + _graphMaxX) * 0.5;
+        var worldCenterY = (_graphMinY + _graphMaxY) * 0.5;
+        var maxZoom = GetMaxZoom();
+        var minZoom = AllowFitBeyondMinZoom ? 0.0001 : GetMinZoom();
+        var low = minZoom;
+        var high = maxZoom;
+        for (var i = 0; i < 28; i++)
+        {
+            var mid = (low + high) * 0.5;
+            if (DoesFitAtZoom(plot, worldCenterX, worldCenterY, mid, fitPadding))
+            {
+                low = mid;
+            }
+            else
+            {
+                high = mid;
+            }
+        }
 
-        var graphWidthPx = Math.Max(1e-9, (_graphMaxX - _graphMinX) * plotWidth);
-        var graphHeightPx = Math.Max(1e-9, (_graphMaxY - _graphMinY) * plotHeight);
-
-        var availableWidth = Math.Max(1.0, plotWidth - (FitPadding * 2));
-        var availableHeight = Math.Max(1.0, plotHeight - (FitPadding * 2));
-
-        var zoomX = availableWidth / graphWidthPx;
-        var zoomY = availableHeight / graphHeightPx;
-        var targetZoom = Math.Min(zoomX, zoomY);
         _zoom = AllowFitBeyondMinZoom
-            ? Math.Min(targetZoom, GetMaxZoom())
-            : Math.Clamp(targetZoom, GetMinZoom(), GetMaxZoom());
+            ? Math.Min(low, maxZoom)
+            : Math.Clamp(low, GetMinZoom(), maxZoom);
+        _panOffset = ComputePanForWorldCenter(plot, worldCenterX, worldCenterY, _zoom);
 
-        var baseCenterX = plot.OriginX + (((_graphMinX + _graphMaxX) * 0.5) * plotWidth);
-        var baseCenterY = plot.OriginY + (((_graphMinY + _graphMaxY) * 0.5) * plotHeight);
+        InvalidateVisual();
+    }
+
+    private static double GetEditorFitPadding(double graphWidth, double graphHeight)
+    {
+        // Wide maps need tighter side padding to avoid excessive empty space.
+        var aspect = graphWidth / Math.Max(1e-9, graphHeight);
+        return aspect >= 1.35 ? EditorFitPaddingWide : EditorFitPadding;
+    }
+
+    private bool DoesFitAtZoom(PlotMetrics plot, double worldCenterX, double worldCenterY, double zoom, double padding)
+    {
+        var oldZoom = _zoom;
+        var oldPan = _panOffset;
+        _zoom = zoom;
+        _panOffset = ComputePanForWorldCenter(plot, worldCenterX, worldCenterY, zoom);
+        UpdateScreenPositions(plot, Bounds.Width * 0.5, Bounds.Height * 0.5);
+
+        var fits = _screenPositions.Length == 0;
+        if (_screenPositions.Length > 0)
+        {
+            var minX = _screenPositions.Min(p => p.X);
+            var maxX = _screenPositions.Max(p => p.X);
+            var minY = _screenPositions.Min(p => p.Y);
+            var maxY = _screenPositions.Max(p => p.Y);
+            fits = minX >= padding &&
+                   maxX <= Bounds.Width - padding &&
+                   minY >= padding &&
+                   maxY <= Bounds.Height - padding;
+        }
+
+        _zoom = oldZoom;
+        _panOffset = oldPan;
+        return fits;
+    }
+
+    private Point ComputePanForWorldCenter(PlotMetrics plot, double worldCenterX, double worldCenterY, double zoom)
+    {
+        var baseCenterX = plot.OriginX + (worldCenterX * plot.Width);
+        var baseCenterY = plot.OriginY + (worldCenterY * plot.Height);
         var viewCenterX = Bounds.Width * 0.5;
         var viewCenterY = Bounds.Height * 0.5;
 
-        _panOffset = new Point(
-            viewCenterX - (((baseCenterX - viewCenterX) * _zoom) + viewCenterX),
-            viewCenterY - (((baseCenterY - viewCenterY) * _zoom) + viewCenterY));
-
-        InvalidateVisual();
+        return new Point(
+            viewCenterX - (((baseCenterX - viewCenterX) * zoom) + viewCenterX),
+            viewCenterY - (((baseCenterY - viewCenterY) * zoom) + viewCenterY));
     }
 
 
