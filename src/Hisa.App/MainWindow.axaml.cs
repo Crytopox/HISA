@@ -26,12 +26,15 @@ public partial class MainWindow : Window
     private SovUpgradesWindow? _sovUpgradesWindow;
     private readonly ContextMenu _mapNodeContextMenu;
     private readonly MenuItem _copySystemNameMenuItem;
+    private readonly MenuItem _openInViewMenuItem;
     private readonly MenuItem _openInDotlanMenuItem;
     private readonly MenuItem _openInZkillboardMenuItem;
     private Point? _mapRightPressPoint;
     private bool _mapRightMoved;
     private string? _contextSystemName;
     private long? _contextSystemId;
+    private int? _contextRegionId;
+    private int? _contextConstellationId;
 
     public MainWindow()
     {
@@ -48,6 +51,15 @@ public partial class MainWindow : Window
         };
         _copySystemNameMenuItem.Classes.Add("map-node-menu-item");
         _copySystemNameMenuItem.Click += OnCopySystemNameClicked;
+        _openInViewMenuItem = new MenuItem
+        {
+            Header = "Open in Universe",
+            FontSize = subMenufontSize,
+            FontWeight = Avalonia.Media.FontWeight.SemiBold,
+            Padding = new Thickness(8, 3)
+        };
+        _openInViewMenuItem.Classes.Add("map-node-menu-item");
+        _openInViewMenuItem.Click += OnOpenInViewClicked;
         _openInDotlanMenuItem = new MenuItem
         {
             Header = "Open in Dotlan",
@@ -72,7 +84,7 @@ public partial class MainWindow : Window
         {
             MinWidth = 0,
             FontSize = subMenufontSize,
-            ItemsSource = new object[] { _copySystemNameMenuItem, _openInDotlanMenuItem, _openInZkillboardMenuItem }
+            ItemsSource = new object[] { _copySystemNameMenuItem, _openInViewMenuItem, new Separator(), _openInDotlanMenuItem, _openInZkillboardMenuItem }
         };
         _mapNodeContextMenu.Classes.Add("map-node-menu");
         MainMapControl.UniverseRegionNodeDoubleClicked += OnUniverseRegionNodeClicked;
@@ -331,6 +343,11 @@ public partial class MainWindow : Window
             vm.SelectedNodeId = node.Id;
             _contextSystemName = node.Name.Trim();
             _contextSystemId = node.Id;
+            _contextRegionId = node.RegionId;
+            _contextConstellationId = node.ConstellationId;
+            _openInViewMenuItem.Header = vm.SelectedViewMode == Hisa.Core.Models.MapViewMode.Universe
+                ? "Open in Region"
+                : "Open in Universe";
             _copySystemNameMenuItem.Header = $"Copy '{_contextSystemName}'";
             ConfigureMapNodeMenuPlacement(point);
             _mapNodeContextMenu.Open(MainMapControl);
@@ -404,10 +421,49 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void OnOpenInViewClicked(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel vm || _contextSystemId is null || string.IsNullOrWhiteSpace(_contextSystemName))
+        {
+            return;
+        }
+
+        var systemId = _contextSystemId.Value;
+        if (vm.SelectedViewMode == Hisa.Core.Models.MapViewMode.Universe)
+        {
+            if (_contextRegionId is null)
+            {
+                return;
+            }
+
+            await vm.OpenRegionFromUniverseRegionsNodeAsync(_contextRegionId.Value);
+        }
+        else if (vm.SelectedViewMode == Hisa.Core.Models.MapViewMode.Region)
+        {
+            vm.SelectedViewMode = Hisa.Core.Models.MapViewMode.Universe;
+            await WaitForNodeInGraphAsync(vm, systemId, 1200);
+        }
+        else
+        {
+            return;
+        }
+
+        var focus = new Hisa.Core.Models.MapSearchFocus
+        {
+            Kind = Hisa.Core.Models.MapSearchKind.SolarSystem,
+            SolarSystemId = systemId,
+            RegionId = _contextRegionId,
+            ConstellationId = _contextConstellationId
+        };
+        vm.SelectedNodeId = systemId;
+        MainMapControl.FocusOnSearch(focus);
+        await FocusSelectedNodeNearCenterAsync(focus, systemId);
+    }
+
     private void ConfigureMapNodeMenuPlacement(Point clickPoint)
     {
         const double estimatedMenuWidth = 210;
-        const double estimatedMenuHeight = 84;
+        const double estimatedMenuHeight = 120;
         const double offset = 3;
         const double margin = 10;
 
@@ -424,6 +480,36 @@ public partial class MainWindow : Window
         _mapNodeContextMenu.PlacementRect = new Rect(clickPoint, new Size(1, 1));
         _mapNodeContextMenu.HorizontalOffset = offset;
         _mapNodeContextMenu.VerticalOffset = offset;
+    }
+
+    private static async Task WaitForNodeInGraphAsync(MainWindowViewModel vm, long nodeId, int timeoutMs)
+    {
+        var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (vm.CurrentGraph?.Nodes.Any(n => n.Id == nodeId) == true)
+            {
+                return;
+            }
+
+            await Task.Delay(30);
+        }
+    }
+
+    private async Task FocusSelectedNodeNearCenterAsync(Hisa.Core.Models.MapSearchFocus focus, long nodeId)
+    {
+        // Re-apply focus after UI/layout settles so the selected node lands near center reliably.
+        for (var i = 0; i < 3; i++)
+        {
+            await Dispatcher.UIThread.InvokeAsync(async () =>
+            {
+                await Task.Delay(40);
+                if (_boundVm?.CurrentGraph?.Nodes.Any(n => n.Id == nodeId) == true)
+                {
+                    MainMapControl.FocusOnSearch(focus);
+                }
+            });
+        }
     }
 
     private static Control? BuildMenuIcon(string fileName)
