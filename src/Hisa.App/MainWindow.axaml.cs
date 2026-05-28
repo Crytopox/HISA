@@ -36,35 +36,45 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+
+        int subMenufontSize = 13;
+
         _copySystemNameMenuItem = new MenuItem
         {
             Header = "Copy System Name",
-            FontSize = 11,
+            FontSize = subMenufontSize,
+            FontWeight = Avalonia.Media.FontWeight.SemiBold,
             Padding = new Thickness(8, 3)
         };
+        _copySystemNameMenuItem.Classes.Add("map-node-menu-item");
         _copySystemNameMenuItem.Click += OnCopySystemNameClicked;
         _openInDotlanMenuItem = new MenuItem
         {
             Header = "Open in Dotlan",
-            FontSize = 11,
+            FontSize = subMenufontSize,
+            FontWeight = Avalonia.Media.FontWeight.SemiBold,
             Padding = new Thickness(8, 3),
             Icon = BuildMenuIcon("dotlan.ico")
         };
+        _openInDotlanMenuItem.Classes.Add("map-node-menu-item");
         _openInDotlanMenuItem.Click += OnOpenInDotlanClicked;
         _openInZkillboardMenuItem = new MenuItem
         {
             Header = "Open in zKillboard",
-            FontSize = 11,
+            FontSize = subMenufontSize,
+            FontWeight = Avalonia.Media.FontWeight.SemiBold,
             Padding = new Thickness(8, 3),
             Icon = BuildMenuIcon("zkillboard.png")
         };
+        _openInZkillboardMenuItem.Classes.Add("map-node-menu-item");
         _openInZkillboardMenuItem.Click += OnOpenInZkillboardClicked;
         _mapNodeContextMenu = new ContextMenu
         {
             MinWidth = 0,
-            FontSize = 11,
+            FontSize = subMenufontSize,
             ItemsSource = new object[] { _copySystemNameMenuItem, _openInDotlanMenuItem, _openInZkillboardMenuItem }
         };
+        _mapNodeContextMenu.Classes.Add("map-node-menu");
         MainMapControl.UniverseRegionNodeDoubleClicked += OnUniverseRegionNodeClicked;
         Opened += OnOpened;
         Closing += (_, _) =>
@@ -318,6 +328,7 @@ public partial class MainWindow : Window
                 return;
             }
 
+            vm.SelectedNodeId = node.Id;
             _contextSystemName = node.Name.Trim();
             _contextSystemId = node.Id;
             _copySystemNameMenuItem.Header = $"Copy '{_contextSystemName}'";

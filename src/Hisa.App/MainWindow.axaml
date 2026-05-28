@@ -30,6 +30,29 @@
       <Setter Property="BorderBrush" Value="#5D83B5" />
       <Setter Property="Foreground" Value="#EAF2FF" />
     </Style>
+    <Style Selector="ContextMenu.map-node-menu">
+      <Setter Property="Background" Value="#EC0A0D12" />
+      <Setter Property="BorderBrush" Value="#7FB8DCFF" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="4" />
+    </Style>
+    <Style Selector="ContextMenu.map-node-menu MenuItem.map-node-menu-item">
+      <Setter Property="Foreground" Value="#EAF3FF" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Margin" Value="0,1" />
+      <Setter Property="Padding" Value="8,4" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="ContextMenu.map-node-menu MenuItem.map-node-menu-item:pointerover">
+      <Setter Property="Background" Value="#4C8EC9FF" />
+      <Setter Property="Foreground" Value="#FFFFFF" />
+    </Style>
+    <Style Selector="ContextMenu.map-node-menu MenuItem.map-node-menu-item:pressed">
+      <Setter Property="Background" Value="#6695CCFF" />
+    </Style>
   </Window.Styles>
   <Grid RowDefinitions="Auto,*,Auto">
     <Border Padding="10,10" Background="#121A26" BorderBrush="#263244" BorderThickness="0,0,0,1">
