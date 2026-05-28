@@ -109,6 +109,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public ObservableCollection<HubWormholeMarkerMode> HubWormholeMarkerModes { get; }
     public ObservableCollection<RegionOption> Regions { get; }
     public ObservableCollection<MapSearchCandidate> SearchSuggestions { get; } = [];
+    public IEnumerable<long> MissingConnectionNodeIdsForView { get; private set; } = [];
 
     public MapViewMode SelectedViewMode
     {
@@ -650,6 +651,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             };
 
             CurrentGraph = graph;
+            await RefreshRegionMissingConnectionMarkersAsync(graph);
             SelectedNodeId = null;
             StatusText = $"Mode: {SelectedViewMode} | Coordinates: {SelectedCoordinateMode} | Nodes: {graph.Nodes.Count} | Links: {graph.Links.Count}";
             _ = _settingsService.SetAsync(ViewModeKey, SelectedViewMode);
@@ -659,6 +661,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         {
             StatusText = $"Map load error: {ex.Message}";
             CurrentGraph = new MapGraph { Nodes = [], Links = [] };
+            MissingConnectionNodeIdsForView = [];
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MissingConnectionNodeIdsForView)));
         }
         finally
         {
@@ -889,6 +893,61 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         {
             ClearSearchSuggestions();
         }
+    }
+
+    private async Task RefreshRegionMissingConnectionMarkersAsync(MapGraph graph)
+    {
+        if (SelectedViewMode != MapViewMode.Region)
+        {
+            if (MissingConnectionNodeIdsForView.Any())
+            {
+                MissingConnectionNodeIdsForView = [];
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MissingConnectionNodeIdsForView)));
+            }
+
+            return;
+        }
+
+        var presentById = graph.Nodes.ToDictionary(n => n.Id);
+        var presentSystemIds = presentById.Keys.Where(id => id > 0).ToHashSet();
+        if (presentSystemIds.Count == 0)
+        {
+            MissingConnectionNodeIdsForView = [];
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MissingConnectionNodeIdsForView)));
+            return;
+        }
+
+        var neighborCounts = await _mapDataService.GetSystemNeighborCountsAsync(presentSystemIds);
+        var presentNeighborCounts = presentSystemIds.ToDictionary(id => id, _ => 0);
+        foreach (var link in graph.Links)
+        {
+            if (link.FromId > 0 && link.ToId > 0)
+            {
+                if (presentNeighborCounts.ContainsKey(link.FromId))
+                {
+                    presentNeighborCounts[link.FromId]++;
+                }
+
+                if (presentNeighborCounts.ContainsKey(link.ToId))
+                {
+                    presentNeighborCounts[link.ToId]++;
+                }
+            }
+        }
+
+        var missing = new List<long>();
+        foreach (var id in presentSystemIds)
+        {
+            var total = neighborCounts.TryGetValue(id, out var totalCount) ? totalCount : 0;
+            var present = presentNeighborCounts.TryGetValue(id, out var presentCount) ? presentCount : 0;
+            if (total > present)
+            {
+                missing.Add(id);
+            }
+        }
+
+        MissingConnectionNodeIdsForView = missing;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MissingConnectionNodeIdsForView)));
     }
 
     private IReadOnlyList<MapSearchCandidate> FilterCandidatesForCurrentMode(IReadOnlyList<MapSearchCandidate> candidates)

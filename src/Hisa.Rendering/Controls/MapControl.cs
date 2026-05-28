@@ -77,6 +77,7 @@ public sealed class MapControl : Control
     private static readonly IBrush HoveredBrush = new ImmutableSolidColorBrush(Color.Parse("#7CC8FF"));
     private static readonly IBrush RegionSelectedBrush = new ImmutableSolidColorBrush(Color.Parse("#6BC1B5"));
     private static readonly IBrush EditorMissingConnectionBrush = new ImmutableSolidColorBrush(Color.Parse("#FF6B6B"));
+    private static readonly Pen MissingConnectionRingPen = new(new ImmutableSolidColorBrush(Color.Parse("#FF6B6B")), 1.8);
     private static readonly IBrush EditorCrossRegionConnectorBrush = new ImmutableSolidColorBrush(Color.Parse("#8E74D8"));
     private static readonly IBrush NodeHoleBrush = new ImmutableSolidColorBrush(Color.Parse("#0D131D"));
     private static readonly IBrush NodeLabelBackgroundBrush = new ImmutableSolidColorBrush(Color.Parse("#B5000000"));
@@ -903,12 +904,15 @@ public sealed class MapControl : Control
                                 ? SelectedBrush
                                 : isInActiveRegion
                                     ? RegionSelectedBrush
-                                : ShowEditorGrid && (missingConnectionSet?.Contains(node.Id) ?? false)
-                                    ? EditorMissingConnectionBrush
-                                    : ShowEditorGrid && (crossRegionConnectorSet?.Contains(node.Id) ?? false)
+                                : ShowEditorGrid && (crossRegionConnectorSet?.Contains(node.Id) ?? false)
                                         ? EditorCrossRegionConnectorBrush
                                         : GetCachedBrush(GetNodeBaseColor(node, NodeColorMode));
             context.DrawEllipse(brush, NodeOutlinePen, p, radius, radius);
+            if ((missingConnectionSet?.Contains(node.Id) ?? false) && (ViewMode == MapViewMode.Region || ShowEditorGrid))
+            {
+                var ringRadius = radius + 2.7;
+                context.DrawEllipse(null, MissingConnectionRingPen, p, ringRadius, ringRadius);
+            }
             if (AlwaysShowHubWormholes && node.HubWormholeConnections.Count > 0)
             {
                 switch (HubWormholeMarkerMode)

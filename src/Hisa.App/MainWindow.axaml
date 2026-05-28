@@ -122,6 +122,7 @@
                             InfoBoxShowWormholeIcon="{Binding InfoBoxShowWormholeIcon}"
                             AlwaysShowHubWormholes="{Binding AlwaysShowHubWormholes}"
                             HubWormholeMarkerMode="{Binding HubWormholeMarkerMode}"
+                            MissingConnectionNodeIds="{Binding MissingConnectionNodeIdsForView}"
                             SelectedNodeId="{Binding SelectedNodeId, Mode=TwoWay}" />
 
       <Border Grid.Column="1"

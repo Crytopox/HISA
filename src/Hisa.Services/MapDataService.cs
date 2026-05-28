@@ -210,9 +210,9 @@ public sealed class MapDataService : IMapDataService
                 X = n.X,
                 Y = n.Y,
                 Security = m.Security,
-                SunTypeId = n.SunTypeId,
-                StarTypeName = n.StarTypeName,
-                SpectralClass = n.SpectralClass,
+                SunTypeId = m.SunTypeId,
+                StarTypeName = m.StarTypeName,
+                SpectralClass = m.SpectralClass,
                 HasJoveObservatory = staticData?.HasJoveObservatory ?? false,
                 IceFieldCount = staticData?.IceFieldCount ?? 0,
                 RegionId = m.RegionId,
@@ -231,14 +231,14 @@ public sealed class MapDataService : IMapDataService
         return new MapGraph { Nodes = nodes, Links = layoutGraph.Links };
     }
 
-    private async Task<Dictionary<int, (double? Security, int? RegionId, string? RegionName, int? ConstellationId, string? ConstellationName)>> LoadSdeNodeMetadataBySystemIdAsync(
+    private async Task<Dictionary<int, (double? Security, int? SunTypeId, string? StarTypeName, string? SpectralClass, int? RegionId, string? RegionName, int? ConstellationId, string? ConstellationName)>> LoadSdeNodeMetadataBySystemIdAsync(
         IReadOnlyList<int> systemIds,
         CancellationToken cancellationToken)
     {
         await using var connection = _sdeDatabase.CreateConnection();
         await connection.OpenAsync(cancellationToken);
 
-        var result = new Dictionary<int, (double? Security, int? RegionId, string? RegionName, int? ConstellationId, string? ConstellationName)>(systemIds.Count);
+        var result = new Dictionary<int, (double? Security, int? SunTypeId, string? StarTypeName, string? SpectralClass, int? RegionId, string? RegionName, int? ConstellationId, string? ConstellationName)>(systemIds.Count);
         const int chunkSize = 500;
         for (var i = 0; i < systemIds.Count; i += chunkSize)
         {
@@ -258,8 +258,11 @@ public sealed class MapDataService : IMapDataService
             }
 
             command.CommandText = $"""
-                SELECT s.solarSystemID, s.security, s.regionID, r.regionName, s.constellationID, c.constellationName
+                SELECT s.solarSystemID, s.security, star.typeID, st.typeName, cs.spectralClass, s.regionID, r.regionName, s.constellationID, c.constellationName
                 FROM mapSolarSystems s
+                LEFT JOIN mapDenormalize star ON star.solarSystemID = s.solarSystemID AND star.groupID = 6
+                LEFT JOIN mapCelestialStatistics cs ON cs.celestialID = star.itemID
+                LEFT JOIN invTypes st ON st.typeID = star.typeID
                 LEFT JOIN mapRegions r ON r.regionID = s.regionID
                 LEFT JOIN mapConstellations c ON c.constellationID = s.constellationID
                 WHERE s.solarSystemID IN ({string.Join(", ", parameters)});
@@ -273,8 +276,11 @@ public sealed class MapDataService : IMapDataService
                     reader.IsDBNull(1) ? null : reader.GetDouble(1),
                     reader.IsDBNull(2) ? null : reader.GetInt32(2),
                     reader.IsDBNull(3) ? null : reader.GetString(3),
-                    reader.IsDBNull(4) ? null : reader.GetInt32(4),
-                    reader.IsDBNull(5) ? null : reader.GetString(5));
+                    reader.IsDBNull(4) ? null : reader.GetString(4),
+                    reader.IsDBNull(5) ? null : reader.GetInt32(5),
+                    reader.IsDBNull(6) ? null : reader.GetString(6),
+                    reader.IsDBNull(7) ? null : reader.GetInt32(7),
+                    reader.IsDBNull(8) ? null : reader.GetString(8));
             }
         }
 
@@ -360,6 +366,57 @@ public sealed class MapDataService : IMapDataService
             """, MapSearchKind.SolarSystem);
 
         return results;
+    }
+
+    public async Task<IReadOnlyDictionary<long, int>> GetSystemNeighborCountsAsync(IReadOnlyCollection<long> systemIds, CancellationToken cancellationToken = default)
+    {
+        var result = systemIds.ToDictionary(id => id, _ => 0);
+        var filtered = systemIds.Where(id => id > 0).Distinct().ToList();
+        if (filtered.Count == 0)
+        {
+            return result;
+        }
+
+        await using var connection = _sdeDatabase.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        const int chunkSize = 500;
+        for (var offset = 0; offset < filtered.Count; offset += chunkSize)
+        {
+            var chunk = filtered.Skip(offset).Take(chunkSize).ToList();
+            var command = connection.CreateCommand();
+            var names = new List<string>(chunk.Count);
+            for (var i = 0; i < chunk.Count; i++)
+            {
+                var name = $"$id{i}";
+                names.Add(name);
+                command.Parameters.AddWithValue(name, chunk[i]);
+            }
+
+            command.CommandText = $"""
+                SELECT solarSystemId, COUNT(DISTINCT neighborSystemId) AS cnt
+                FROM (
+                    SELECT fromSolarSystemID AS solarSystemId, toSolarSystemID AS neighborSystemId
+                    FROM mapSolarSystemJumps
+                    WHERE fromSolarSystemID IN ({string.Join(", ", names)})
+                    UNION ALL
+                    SELECT toSolarSystemID AS solarSystemId, fromSolarSystemID AS neighborSystemId
+                    FROM mapSolarSystemJumps
+                    WHERE toSolarSystemID IN ({string.Join(", ", names)})
+                )
+                GROUP BY solarSystemId;
+                """;
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var id = reader.GetInt64(0);
+                var count = reader.GetInt32(1);
+                result[id] = count;
+            }
+        }
+
+        return result;
     }
 
     private async Task<List<MapNode>> QuerySystemsAsync(int? regionId, MapCoordinateMode coordinateMode, CancellationToken cancellationToken)
