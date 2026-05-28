@@ -1,5 +1,7 @@
 using Hisa.Data.Database;
 using Hisa.Core.Abstractions;
+using Hisa.Esi;
+using Hisa.Services.Incursions;
 using Hisa.Services.Storm;
 using Hisa.Services.Wormholes;
 using Microsoft.Extensions.Configuration;
@@ -37,7 +39,12 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddHisaServices(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddHostedService<DatabaseInitializationHostedService>();
+        services.AddHisaEsi();
         services.Configure<StormRefreshOptions>(configuration.GetSection("Hisa:Storms"));
+        services.Configure<IncursionRefreshOptions>(options =>
+        {
+            options.RefreshIntervalMinutes = 5;
+        });
         services.AddHttpClient<IStormCenterSource, EveScoutStormCenterSource>(client =>
         {
             client.BaseAddress = new Uri("https://api.eve-scout.com/");
@@ -52,6 +59,8 @@ public static class ServiceCollectionExtensions
         });
         services.AddSingleton<IHubWormholeStateService, HubWormholeStateService>();
         services.AddHostedService<HubWormholeRefreshHostedService>();
+        services.AddSingleton<IIncursionStateService, IncursionStateService>();
+        services.AddHostedService<IncursionRefreshHostedService>();
         services.AddSingleton<ISovUpgradeStateService, SovUpgradeStateService>();
         return services;
     }

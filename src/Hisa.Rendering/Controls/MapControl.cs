@@ -112,6 +112,7 @@ public sealed class MapControl : Control
     private static readonly Lazy<Bitmap?> StormPlasmaWeakIcon = new(() => LoadIcon("storm_plasma_weak.png"));
     private static readonly Lazy<Bitmap?> StormUnknownIcon = new(() => LoadIcon("storm_unknown.png"));
     private static readonly Lazy<Bitmap?> WormholeIcon = new(() => LoadIcon("wormhole.png"));
+    private static readonly Lazy<Bitmap?> IncursionIcon = new(() => LoadIcon("incursion.png"));
     private static readonly Dictionary<string, Lazy<Bitmap?>> SovUpgradeIcons = new(StringComparer.OrdinalIgnoreCase);
     private static readonly HashSet<string> SingleLevelSovUpgrades = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -158,6 +159,8 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorWormholeIcon), true);
     public static readonly StyledProperty<bool> ShowIndicatorSovUpgradeIconProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorSovUpgradeIcon), true);
+    public static readonly StyledProperty<bool> ShowIndicatorIncursionIconProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorIncursionIcon), true);
     public static readonly StyledProperty<IEnumerable<string>?> IndicatorSovUpgradeFilterKeysProperty =
         AvaloniaProperty.Register<MapControl, IEnumerable<string>?>(nameof(IndicatorSovUpgradeFilterKeys));
     public static readonly StyledProperty<bool> InfoBoxShowRegionProperty =
@@ -180,6 +183,8 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowWormholeIcon), true);
     public static readonly StyledProperty<bool> InfoBoxShowSovUpgradeIconProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowSovUpgradeIcon), true);
+    public static readonly StyledProperty<bool> InfoBoxShowIncursionIconProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowIncursionIcon), true);
     public static readonly StyledProperty<IEnumerable<string>?> OverlaySovUpgradeFilterKeysProperty =
         AvaloniaProperty.Register<MapControl, IEnumerable<string>?>(nameof(OverlaySovUpgradeFilterKeys));
     public static readonly StyledProperty<bool> AlwaysShowHubWormholesProperty =
@@ -357,6 +362,12 @@ public sealed class MapControl : Control
         set => SetValue(ShowIndicatorSovUpgradeIconProperty, value);
     }
 
+    public bool ShowIndicatorIncursionIcon
+    {
+        get => GetValue(ShowIndicatorIncursionIconProperty);
+        set => SetValue(ShowIndicatorIncursionIconProperty, value);
+    }
+
     public IEnumerable<string>? IndicatorSovUpgradeFilterKeys
     {
         get => GetValue(IndicatorSovUpgradeFilterKeysProperty);
@@ -421,6 +432,12 @@ public sealed class MapControl : Control
     {
         get => GetValue(InfoBoxShowSovUpgradeIconProperty);
         set => SetValue(InfoBoxShowSovUpgradeIconProperty, value);
+    }
+
+    public bool InfoBoxShowIncursionIcon
+    {
+        get => GetValue(InfoBoxShowIncursionIconProperty);
+        set => SetValue(InfoBoxShowIncursionIconProperty, value);
     }
 
     public IEnumerable<string>? OverlaySovUpgradeFilterKeys
@@ -523,6 +540,7 @@ public sealed class MapControl : Control
             ShowIndicatorStormIconProperty,
             ShowIndicatorWormholeIconProperty,
             ShowIndicatorSovUpgradeIconProperty,
+            ShowIndicatorIncursionIconProperty,
             IndicatorSovUpgradeFilterKeysProperty,
             InfoBoxShowRegionProperty,
             InfoBoxShowConstellationProperty,
@@ -534,6 +552,7 @@ public sealed class MapControl : Control
             InfoBoxShowStormIconProperty,
             InfoBoxShowWormholeIconProperty,
             InfoBoxShowSovUpgradeIconProperty,
+            InfoBoxShowIncursionIconProperty,
             OverlaySovUpgradeFilterKeysProperty,
             AlwaysShowHubWormholesProperty,
             HubWormholeMarkerModeProperty,
@@ -2605,6 +2624,10 @@ public sealed class MapControl : Control
                 return;
             }
         }
+        if (NodeBackgroundColorMode == MapNodeColorMode.Incursions && !node.HasActiveIncursion)
+        {
+            return;
+        }
 
         var color = GetNodeBaseColor(node, NodeBackgroundColorMode);
         var tuned = BrightenForBackground(color);
@@ -2626,6 +2649,7 @@ public sealed class MapControl : Control
             MapNodeColorMode.Storms => GetStormColor(node),
             MapNodeColorMode.Wormholes => GetHubWormholeColor(node),
             MapNodeColorMode.SovUpgrades => GetSovUpgradeColor(GetVisibleSovUpgrades(node.SovUpgrades, IndicatorSovUpgradeFilterKeys).ToList()),
+            MapNodeColorMode.Incursions => node.HasActiveIncursion ? Color.Parse("#A77BFF") : Color.Parse("#98A6B8"),
             _ => Color.Parse("#98A6B8")
         };
     }
@@ -3217,6 +3241,13 @@ public sealed class MapControl : Control
             DrawHubWormholeIcon(context, node, new Point(iconX, iconY), IconSize);
             indicatorIconSlot++;
         }
+        if (ShowIndicatorIncursionIcon && node.HasActiveIncursion)
+        {
+            var iconX = rect.X + IndicatorIconLeftPadding + (indicatorIconSlot * (IconSize + IndicatorIconSlotGap));
+            var iconY = rect.Bottom;
+            DrawIncursionIcon(context, new Point(iconX, iconY), IconSize);
+            indicatorIconSlot++;
+        }
 
         // Keep SOV icons on a dedicated second row, but collapse up if first row is empty.
         var primaryRowHasIcons = indicatorIconSlot > 0;
@@ -3406,6 +3437,10 @@ public sealed class MapControl : Control
         if (InfoBoxShowStarClass && !string.IsNullOrWhiteSpace(starClass))
         {
             detailLines.Add(starClass);
+        }
+        if (InfoBoxShowIncursionIcon && node.HasActiveIncursion)
+        {
+            detailLines.Add("Incursion: Active");
         }
         if (node.StormEffects.Count > 0)
         {
@@ -3620,6 +3655,13 @@ public sealed class MapControl : Control
             var iconX = rect.X + IndicatorIconLeftPadding + (overlayIconSlot * (IconSize + IndicatorIconSlotGap));
             var iconY = rect.Bottom + 3;
             DrawHubWormholeIcon(context, node, new Point(iconX, iconY), IconSize);
+            overlayIconSlot++;
+        }
+        if (InfoBoxShowIncursionIcon && node.HasActiveIncursion)
+        {
+            var iconX = rect.X + IndicatorIconLeftPadding + (overlayIconSlot * (IconSize + IndicatorIconSlotGap));
+            var iconY = rect.Bottom + 3;
+            DrawIncursionIcon(context, new Point(iconX, iconY), IconSize);
             overlayIconSlot++;
         }
         // SOV upgrades are rendered inline in the overlay body with icon + label rows.
@@ -3857,6 +3899,19 @@ public sealed class MapControl : Control
     private static void DrawHubWormholeIcon(DrawingContext context, MapNode node, Point topLeft, double size)
     {
         var icon = WormholeIcon.Value;
+        if (icon is null)
+        {
+            return;
+        }
+
+        var src = new Rect(0, 0, icon.Size.Width, icon.Size.Height);
+        var dst = new Rect(topLeft.X, topLeft.Y, size, size);
+        context.DrawImage(icon, src, dst);
+    }
+
+    private static void DrawIncursionIcon(DrawingContext context, Point topLeft, double size)
+    {
+        var icon = IncursionIcon.Value;
         if (icon is null)
         {
             return;

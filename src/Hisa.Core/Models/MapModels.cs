@@ -24,7 +24,8 @@ public enum MapNodeColorMode
     IceBelts = 6,
     Storms = 7,
     Wormholes = 8,
-    SovUpgrades = 9
+    SovUpgrades = 9,
+    Incursions = 10
 }
 
 public sealed class MapGraph
@@ -52,6 +53,7 @@ public sealed class MapNode
     public IReadOnlyList<StormEffect> StormEffects { get; init; } = [];
     public IReadOnlyList<HubWormholeConnection> HubWormholeConnections { get; init; } = [];
     public IReadOnlyList<SovUpgradeEntry> SovUpgrades { get; init; } = [];
+    public bool HasActiveIncursion { get; init; }
 }
 
 public sealed class SovUpgradeEntry

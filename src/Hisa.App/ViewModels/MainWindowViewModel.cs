@@ -23,6 +23,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly IStormStateService _stormStateService;
     private readonly IHubWormholeStateService _hubWormholeStateService;
     private readonly ISovUpgradeStateService _sovUpgradeStateService;
+    private readonly IIncursionStateService _incursionStateService;
     private List<RegionOption> _allRegions = [];
     private bool _isBusy;
     private MapViewMode _selectedViewMode;
@@ -48,6 +49,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _showIndicatorStormIcon = true;
     private bool _showIndicatorWormholeIcon = true;
     private bool _showIndicatorSovUpgradeIcon = true;
+    private bool _showIndicatorIncursionIcon = true;
     private bool _infoBoxShowRegion = true;
     private bool _infoBoxShowConstellation = true;
     private bool _infoBoxShowSecurityStatus = true;
@@ -58,6 +60,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _infoBoxShowStormIcon = true;
     private bool _infoBoxShowWormholeIcon = true;
     private bool _infoBoxShowSovUpgradeIcon = true;
+    private bool _infoBoxShowIncursionIcon = true;
     private bool _alwaysShowHubWormholes = true;
     private bool _showMissingConnectionMarkers = true;
     private HubWormholeMarkerMode _hubWormholeMarkerMode = HubWormholeMarkerMode.Badge;
@@ -80,6 +83,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string ShowIndicatorStormIconKey = "Map.ShowIndicatorStormIcon";
     private const string ShowIndicatorWormholeIconKey = "Map.ShowIndicatorWormholeIcon";
     private const string ShowIndicatorSovUpgradeIconKey = "Map.ShowIndicatorSovUpgradeIcon";
+    private const string ShowIndicatorIncursionIconKey = "Map.ShowIndicatorIncursionIcon";
     private const string InfoBoxShowRegionKey = "Map.InfoBoxShowRegion";
     private const string InfoBoxShowConstellationKey = "Map.InfoBoxShowConstellation";
     private const string InfoBoxShowSecurityStatusKey = "Map.InfoBoxShowSecurityStatus";
@@ -90,6 +94,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string InfoBoxShowStormIconKey = "Map.InfoBoxShowStormIcon";
     private const string InfoBoxShowWormholeIconKey = "Map.InfoBoxShowWormholeIcon";
     private const string InfoBoxShowSovUpgradeIconKey = "Map.InfoBoxShowSovUpgradeIcon";
+    private const string InfoBoxShowIncursionIconKey = "Map.InfoBoxShowIncursionIcon";
     private const string IndicatorSovFilterKeysKey = "Map.IndicatorSovFilter.Keys";
     private const string OverlaySovFilterKeysKey = "Map.OverlaySovFilter.Keys";
     private const string IndicatorSovFilterConfiguredKey = "Map.IndicatorSovFilter.Configured";
@@ -106,13 +111,15 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         ISettingsService settingsService,
         IStormStateService stormStateService,
         IHubWormholeStateService hubWormholeStateService,
-        ISovUpgradeStateService sovUpgradeStateService)
+        ISovUpgradeStateService sovUpgradeStateService,
+        IIncursionStateService incursionStateService)
     {
         _mapDataService = mapDataService;
         _settingsService = settingsService;
         _stormStateService = stormStateService;
         _hubWormholeStateService = hubWormholeStateService;
         _sovUpgradeStateService = sovUpgradeStateService;
+        _incursionStateService = incursionStateService;
         ViewModes = new ObservableCollection<MapViewMode>(Enum.GetValues<MapViewMode>());
         CoordinateModes = new ObservableCollection<MapCoordinateMode>(Enum.GetValues<MapCoordinateMode>());
         NodeColorModes = new ObservableCollection<MapNodeColorMode>(Enum.GetValues<MapNodeColorMode>());
@@ -121,6 +128,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _stormStateService.StormSnapshotUpdated += OnStormSnapshotUpdated;
         _hubWormholeStateService.HubWormholeSnapshotUpdated += OnHubWormholeSnapshotUpdated;
         _sovUpgradeStateService.SnapshotUpdated += OnSovUpgradesSnapshotUpdated;
+        _incursionStateService.IncursionSnapshotUpdated += OnIncursionSnapshotUpdated;
         _initialLoadTask = LoadAsync();
     }
 
@@ -364,6 +372,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
+    public bool ShowIndicatorIncursionIcon
+    {
+        get => _showIndicatorIncursionIcon;
+        set
+        {
+            if (SetProperty(ref _showIndicatorIncursionIcon, value) && !_isInitializing)
+            {
+                _ = _settingsService.SetAsync(ShowIndicatorIncursionIconKey, value);
+            }
+        }
+    }
+
     public bool InfoBoxShowRegion
     {
         get => _infoBoxShowRegion;
@@ -480,6 +500,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             if (SetProperty(ref _infoBoxShowSovUpgradeIcon, value) && !_isInitializing)
             {
                 _ = _settingsService.SetAsync(InfoBoxShowSovUpgradeIconKey, value);
+            }
+        }
+    }
+
+    public bool InfoBoxShowIncursionIcon
+    {
+        get => _infoBoxShowIncursionIcon;
+        set
+        {
+            if (SetProperty(ref _infoBoxShowIncursionIcon, value) && !_isInitializing)
+            {
+                _ = _settingsService.SetAsync(InfoBoxShowIncursionIconKey, value);
             }
         }
     }
@@ -707,6 +739,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         ShowIndicatorStormIcon = await _settingsService.GetAsync<bool?>(ShowIndicatorStormIconKey) ?? true;
         ShowIndicatorWormholeIcon = await _settingsService.GetAsync<bool?>(ShowIndicatorWormholeIconKey) ?? true;
         ShowIndicatorSovUpgradeIcon = await _settingsService.GetAsync<bool?>(ShowIndicatorSovUpgradeIconKey) ?? true;
+        ShowIndicatorIncursionIcon = await _settingsService.GetAsync<bool?>(ShowIndicatorIncursionIconKey) ?? true;
         InfoBoxShowRegion = await _settingsService.GetAsync<bool?>(InfoBoxShowRegionKey) ?? true;
         InfoBoxShowConstellation = await _settingsService.GetAsync<bool?>(InfoBoxShowConstellationKey) ?? true;
         InfoBoxShowSecurityStatus = await _settingsService.GetAsync<bool?>(InfoBoxShowSecurityStatusKey) ?? true;
@@ -717,6 +750,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         InfoBoxShowStormIcon = await _settingsService.GetAsync<bool?>(InfoBoxShowStormIconKey) ?? true;
         InfoBoxShowWormholeIcon = await _settingsService.GetAsync<bool?>(InfoBoxShowWormholeIconKey) ?? true;
         InfoBoxShowSovUpgradeIcon = await _settingsService.GetAsync<bool?>(InfoBoxShowSovUpgradeIconKey) ?? true;
+        InfoBoxShowIncursionIcon = await _settingsService.GetAsync<bool?>(InfoBoxShowIncursionIconKey) ?? true;
         await _sovUpgradeStateService.InitializeAsync();
         InitializeSovFilterOptions();
         var indicatorKeys = await _settingsService.GetAsync<List<string>>(IndicatorSovFilterKeysKey) ?? [];
@@ -809,6 +843,19 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     }
 
     private void OnSovUpgradesSnapshotUpdated(object? sender, EventArgs e)
+    {
+        if (_isInitializing)
+        {
+            return;
+        }
+
+        Dispatcher.UIThread.Post(async () =>
+        {
+            await ReloadGraphAsync();
+        });
+    }
+
+    private void OnIncursionSnapshotUpdated(object? sender, IncursionSnapshot snapshot)
     {
         if (_isInitializing)
         {

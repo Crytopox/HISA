@@ -24,6 +24,7 @@ public sealed class MapNodeColorModeDisplayConverter : IValueConverter
             MapNodeColorMode.Storms => "Metaliminal Storms",
             MapNodeColorMode.Wormholes => "Thera/Turnur Wormholes",
             MapNodeColorMode.SovUpgrades => "SOV Upgrades",
+            MapNodeColorMode.Incursions => "Incursions",
             _ => mode.ToString()
         };
     }

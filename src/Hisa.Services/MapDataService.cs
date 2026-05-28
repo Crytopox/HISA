@@ -15,6 +15,7 @@ public sealed class MapDataService : IMapDataService
     private readonly IStormStateService _stormStateService;
     private readonly IHubWormholeStateService _hubWormholeStateService;
     private readonly ISovUpgradeStateService _sovUpgradeStateService;
+    private readonly IIncursionStateService _incursionStateService;
 
     private sealed record StaticSolarSystemData(bool HasJoveObservatory, int IceFieldCount);
 
@@ -23,13 +24,15 @@ public sealed class MapDataService : IMapDataService
         IMapLayoutDataService mapLayoutDataService,
         IStormStateService stormStateService,
         IHubWormholeStateService hubWormholeStateService,
-        ISovUpgradeStateService sovUpgradeStateService)
+        ISovUpgradeStateService sovUpgradeStateService,
+        IIncursionStateService incursionStateService)
     {
         _sdeDatabase = sdeDatabase;
         _mapLayoutDataService = mapLayoutDataService;
         _stormStateService = stormStateService;
         _hubWormholeStateService = hubWormholeStateService;
         _sovUpgradeStateService = sovUpgradeStateService;
+        _incursionStateService = incursionStateService;
     }
 
     public async Task<IReadOnlyList<RegionOption>> GetRegionsAsync(CancellationToken cancellationToken = default)
@@ -230,7 +233,8 @@ public sealed class MapDataService : IMapDataService
                     : [],
                 SovUpgrades = _sovUpgradeStateService.CurrentBySystemId.TryGetValue((int)n.Id, out var upgrades)
                     ? upgrades
-                    : []
+                    : [],
+                HasActiveIncursion = _incursionStateService.Current.ActiveSystemIds.Contains((int)n.Id)
             };
         }).ToList();
 
@@ -510,7 +514,8 @@ public sealed class MapDataService : IMapDataService
                     : [],
                 SovUpgrades = _sovUpgradeStateService.CurrentBySystemId.TryGetValue(solarSystemId, out var upgrades)
                     ? upgrades
-                    : []
+                    : [],
+                HasActiveIncursion = _incursionStateService.Current.ActiveSystemIds.Contains(solarSystemId)
             });
         }
 
@@ -612,7 +617,8 @@ public sealed class MapDataService : IMapDataService
                 StormEffects = n.StormEffects,
                 HubWormholeConnections = n.HubWormholeConnections
                 ,
-                SovUpgrades = n.SovUpgrades
+                SovUpgrades = n.SovUpgrades,
+                HasActiveIncursion = n.HasActiveIncursion
             })
             .ToList();
 

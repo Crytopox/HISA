@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using Hisa.App.Diagnostics;
+using Hisa.Core.Abstractions;
 using Avalonia.Threading;
 using Microsoft.Extensions.Logging;
 
@@ -10,13 +11,15 @@ namespace Hisa.App;
 public sealed class DebugWindowViewModel : INotifyPropertyChanged
 {
     private readonly AppLogStore _store;
+    private readonly IEsiMetricsStore _esiMetricsStore;
     private string _searchText = string.Empty;
     private string _categoryFilter = "All";
     private LogLevel? _selectedLevel;
 
-    public DebugWindowViewModel(AppLogStore store)
+    public DebugWindowViewModel(AppLogStore store, IEsiMetricsStore esiMetricsStore)
     {
         _store = store;
+        _esiMetricsStore = esiMetricsStore;
         LevelOptions = new ObservableCollection<LogLevelOption>(
         [
             new(null, "All"),
@@ -29,6 +32,7 @@ public sealed class DebugWindowViewModel : INotifyPropertyChanged
         ]);
         CategoryOptions = new ObservableCollection<string>(["All"]);
         Entries = [];
+        EsiEntries = [];
 
         foreach (var entry in _store.Snapshot())
         {
@@ -37,6 +41,11 @@ public sealed class DebugWindowViewModel : INotifyPropertyChanged
         Refresh();
 
         _store.EntryAdded += OnEntryAdded;
+        foreach (var metric in _esiMetricsStore.Snapshot())
+        {
+            AddEsiMetric(metric);
+        }
+        _esiMetricsStore.MetricAdded += OnEsiMetricAdded;
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -44,6 +53,8 @@ public sealed class DebugWindowViewModel : INotifyPropertyChanged
     public ObservableCollection<LogLevelOption> LevelOptions { get; }
     public ObservableCollection<string> CategoryOptions { get; }
     public ObservableCollection<DisplayLogEntry> Entries { get; }
+    public ObservableCollection<DisplayEsiMetric> EsiEntries { get; }
+    public string EsiRateSummary => BuildEsiRateSummary();
 
     public LogLevelOption? SelectedLevelOption
     {
@@ -107,6 +118,30 @@ public sealed class DebugWindowViewModel : INotifyPropertyChanged
     }
 
     private readonly List<DisplayLogEntry> _allEntries = [];
+    private void OnEsiMetricAdded(object? sender, Hisa.Core.Models.EsiRequestMetric metric)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            AddEsiMetric(metric);
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(EsiRateSummary)));
+        });
+    }
+
+    private void AddEsiMetric(Hisa.Core.Models.EsiRequestMetric metric)
+    {
+        EsiEntries.Add(new DisplayEsiMetric(metric));
+        while (EsiEntries.Count > 500)
+        {
+            EsiEntries.RemoveAt(0);
+        }
+    }
+
+    private string BuildEsiRateSummary()
+    {
+        var rate = _esiMetricsStore.CurrentRateState;
+        var next = rate.NextAllowedAtUtc?.ToLocalTime().ToString("HH:mm:ss") ?? "-";
+        return $"Last15m: {rate.RequestsLast15Minutes}/{rate.RouteTokenLimit15Minutes} | Next: {next}";
+    }
 
     private void Refresh()
     {
@@ -169,4 +204,15 @@ public sealed record DisplayLogEntry(AppLogEntry Raw)
         ? Raw.Message
         : $"{Raw.Message} | {Raw.Exception}";
     public string Line => $"{Time} [{Raw.Level}] {Raw.Category}: {Message}";
+}
+
+public sealed record DisplayEsiMetric(Hisa.Core.Models.EsiRequestMetric Raw)
+{
+    public string Time => Raw.TimestampUtc.ToLocalTime().ToString("HH:mm:ss.fff");
+    public string Route => Raw.Route;
+    public string Source => Raw.FromCache ? "cache" : "network";
+    public int Status => Raw.StatusCode;
+    public string Limits => $"remain={Raw.RateLimitRemain?.ToString() ?? "-"} reset={Raw.RateLimitResetSeconds?.ToString() ?? "-"} err={Raw.ErrorLimitRemain?.ToString() ?? "-"}";
+    public string Duration => $"{Raw.Duration.TotalMilliseconds:0}ms";
+    public string Message => Raw.Message;
 }

@@ -139,6 +139,7 @@
                               ShowIndicatorStormIcon="{Binding ShowIndicatorStormIcon}"
                               ShowIndicatorWormholeIcon="{Binding ShowIndicatorWormholeIcon}"
                               ShowIndicatorSovUpgradeIcon="{Binding ShowIndicatorSovUpgradeIcon}"
+                              ShowIndicatorIncursionIcon="{Binding ShowIndicatorIncursionIcon}"
                               IndicatorSovUpgradeFilterKeys="{Binding SelectedIndicatorSovUpgradeKeys}"
                               InfoBoxShowRegion="{Binding InfoBoxShowRegion}"
                               InfoBoxShowConstellation="{Binding InfoBoxShowConstellation}"
@@ -150,6 +151,7 @@
                               InfoBoxShowStormIcon="{Binding InfoBoxShowStormIcon}"
                               InfoBoxShowWormholeIcon="{Binding InfoBoxShowWormholeIcon}"
                               InfoBoxShowSovUpgradeIcon="{Binding InfoBoxShowSovUpgradeIcon}"
+                              InfoBoxShowIncursionIcon="{Binding InfoBoxShowIncursionIcon}"
                               OverlaySovUpgradeFilterKeys="{Binding SelectedOverlaySovUpgradeKeys}"
                               AlwaysShowHubWormholes="{Binding AlwaysShowHubWormholes}"
                               HubWormholeMarkerMode="{Binding HubWormholeMarkerMode}"
@@ -290,6 +292,7 @@
             <CheckBox IsChecked="{Binding ShowIndicatorIceBeltsIcon}" Content="Ice Belts" />
             <CheckBox IsChecked="{Binding ShowIndicatorStormIcon}" Content="Metaliminal Storms" />
             <CheckBox IsChecked="{Binding ShowIndicatorWormholeIcon}" Content="Thera/Turnur Wormholes" />
+            <CheckBox IsChecked="{Binding ShowIndicatorIncursionIcon}" Content="Incursions" />
             <StackPanel Orientation="Horizontal" Spacing="6">
               <CheckBox IsChecked="{Binding ShowIndicatorSovUpgradeIcon}" Content="SOV Upgrades" />
               <Button Width="24" Height="24" Padding="0">
@@ -338,6 +341,7 @@
             <CheckBox IsChecked="{Binding InfoBoxShowIceBeltsIcon}" Content="Ice Belts" />
             <CheckBox IsChecked="{Binding InfoBoxShowStormIcon}" Content="Metaliminal Storms" />
             <CheckBox IsChecked="{Binding InfoBoxShowWormholeIcon}" Content="Thera/Turnur Wormholes" />
+            <CheckBox IsChecked="{Binding InfoBoxShowIncursionIcon}" Content="Incursions" />
             <StackPanel Orientation="Horizontal" Spacing="6">
               <CheckBox IsChecked="{Binding InfoBoxShowSovUpgradeIcon}" Content="SOV Upgrades" />
               <Button Width="24" Height="24" Padding="0">
