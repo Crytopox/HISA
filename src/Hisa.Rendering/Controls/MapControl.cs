@@ -233,6 +233,10 @@ public sealed class MapControl : Control
     private readonly Dictionary<long, int> _nodeIndexById = [];
     private readonly Dictionary<long, StreamGeometry> _voronoiWorldGeometriesByNodeId = [];
     private readonly Dictionary<uint, IBrush> _brushCache = [];
+    private Dictionary<long, int> _indicatorExplorationOverlapByNodeId = [];
+    private HashSet<long> _indicatorExplorationSourceNodeIds = [];
+    private Dictionary<long, int> _overlayExplorationOverlapByNodeId = [];
+    private HashSet<long> _overlayExplorationSourceNodeIds = [];
     private Point[] _screenPositions = [];
     private double _graphMinX;
     private double _graphMaxX;
@@ -851,6 +855,11 @@ public sealed class MapControl : Control
             DrawCenteredText(context, "No map data loaded", bounds);
             return;
         }
+
+        (_indicatorExplorationOverlapByNodeId, _indicatorExplorationSourceNodeIds) =
+            BuildExplorationDetectorOverlap(IndicatorSovUpgradeFilterKeys);
+        (_overlayExplorationOverlapByNodeId, _overlayExplorationSourceNodeIds) =
+            BuildExplorationDetectorOverlap(OverlaySovUpgradeFilterKeys);
 
         var plot = GetPlotMetrics();
         var viewCenterX = Bounds.Width / 2.0;
@@ -3083,6 +3092,27 @@ public sealed class MapControl : Control
                 indicatorIconSlot++;
             }
         }
+        if (ShowIndicatorSovUpgradeIcon &&
+            _indicatorExplorationOverlapByNodeId.TryGetValue(node.Id, out var overlapCount) &&
+            overlapCount > 0)
+        {
+            var iconX = rect.X + IndicatorIconLeftPadding + (indicatorIconSlot * (IconSize + IndicatorIconSlotGap));
+            var iconY = rect.Bottom;
+            var sourceUpgrade = GetNodeExplorationDetector(node, IndicatorSovUpgradeFilterKeys)
+                ?? new SovUpgradeEntry { UpgradeName = "Exploration Detector", Tier = 1 };
+            var isDirectSource = _indicatorExplorationSourceNodeIds.Contains(node.Id);
+            DrawSovUpgradeIcon(context, sourceUpgrade, new Point(iconX, iconY), IconSize, isDirectSource ? 1.0 : 0.5);
+
+            var counterText = new FormattedText(
+                $"x{overlapCount}",
+                CultureInfo.InvariantCulture,
+                FlowDirection.LeftToRight,
+                NodeLabelTypeface,
+                10.5,
+                Brushes.White);
+            context.DrawText(counterText, new Point(iconX + IconSize + 1, iconY + ((IconSize - counterText.Height) / 2)));
+            indicatorIconSlot += 2;
+        }
     }
 
     private static void DrawCenteredText(DrawingContext context, string message, Rect bounds)
@@ -3282,6 +3312,7 @@ public sealed class MapControl : Control
             .Select(sov => new
             {
                 Upgrade = sov,
+                Opacity = 1.0,
                 Text = new FormattedText(
                     IsSingleLevelSovUpgrade(sov.UpgradeName) ? sov.UpgradeName : $"{sov.UpgradeName} {sov.Tier}",
                     CultureInfo.InvariantCulture,
@@ -3291,6 +3322,26 @@ public sealed class MapControl : Control
                     Brushes.White)
             })
             .ToList();
+        if (InfoBoxShowSovUpgradeIcon &&
+            _overlayExplorationOverlapByNodeId.TryGetValue(node.Id, out var overlayExplorationCount) &&
+            overlayExplorationCount > 0)
+        {
+            var sourceUpgrade = GetNodeExplorationDetector(node, OverlaySovUpgradeFilterKeys)
+                ?? new SovUpgradeEntry { UpgradeName = "Exploration Detector", Tier = 1 };
+            var isDirectSource = _overlayExplorationSourceNodeIds.Contains(node.Id);
+            sovLineTexts.Add(new
+            {
+                Upgrade = sourceUpgrade,
+                Opacity = isDirectSource ? 1.0 : 0.5,
+                Text = new FormattedText(
+                    $"Exploration overlap x{overlayExplorationCount}",
+                    CultureInfo.InvariantCulture,
+                    FlowDirection.LeftToRight,
+                    new Typeface("Inter"),
+                    12,
+                    Brushes.White)
+            });
+        }
         var regionConstellationText = regionConstellationLine is null
             ? null
             : new FormattedText(
@@ -3362,7 +3413,7 @@ public sealed class MapControl : Control
 
         foreach (var sovLine in sovLineTexts)
         {
-            DrawSovUpgradeIcon(context, sovLine.Upgrade, new Point(headerOrigin.X, detailsStartY), IconSize);
+            DrawSovUpgradeIcon(context, sovLine.Upgrade, new Point(headerOrigin.X, detailsStartY), IconSize, sovLine.Opacity);
             context.DrawText(sovLine.Text, new Point(headerOrigin.X + IconSize + 4, detailsStartY + ((sovLineHeight - sovLine.Text.Height) / 2)));
             detailsStartY += sovLineHeight + 1;
         }
@@ -3473,7 +3524,7 @@ public sealed class MapControl : Control
         }
     }
 
-    private static void DrawSovUpgradeIcon(DrawingContext context, SovUpgradeEntry upgrade, Point topLeft, double size)
+    private static void DrawSovUpgradeIcon(DrawingContext context, SovUpgradeEntry upgrade, Point topLeft, double size, double opacity = 1.0)
     {
         var icon = GetSovUpgradeIcon(upgrade);
         if (icon is null)
@@ -3483,7 +3534,16 @@ public sealed class MapControl : Control
 
         var src = new Rect(0, 0, icon.Size.Width, icon.Size.Height);
         var dst = new Rect(topLeft.X, topLeft.Y, size, size);
-        context.DrawImage(icon, src, dst);
+        if (opacity >= 0.999)
+        {
+            context.DrawImage(icon, src, dst);
+            return;
+        }
+
+        using (context.PushOpacity(Math.Clamp(opacity, 0.0, 1.0)))
+        {
+            context.DrawImage(icon, src, dst);
+        }
     }
 
     private static Bitmap? GetSovUpgradeIcon(SovUpgradeEntry upgrade)
@@ -3514,6 +3574,79 @@ public sealed class MapControl : Control
         }
 
         return upgrades.Where(x => set.Contains(BuildSovFilterKey(x))).ToList();
+    }
+
+    private (Dictionary<long, int> CountsByNodeId, HashSet<long> SourceNodeIds) BuildExplorationDetectorOverlap(IEnumerable<string>? selectedKeys)
+    {
+        if (Graph is null || Graph.Nodes.Count == 0)
+        {
+            return ([], []);
+        }
+
+        var sourceNodeIds = Graph.Nodes
+            .Where(n => GetVisibleSovUpgrades(n.SovUpgrades, selectedKeys)
+                .Any(u => u.UpgradeName.Equals("Exploration Detector", StringComparison.OrdinalIgnoreCase)))
+            .Select(n => n.Id)
+            .ToHashSet();
+        if (sourceNodeIds.Count == 0)
+        {
+            return ([], []);
+        }
+
+        var adjacency = new Dictionary<long, List<long>>();
+        foreach (var node in Graph.Nodes)
+        {
+            adjacency[node.Id] = [];
+        }
+
+        foreach (var link in Graph.Links)
+        {
+            if (!adjacency.ContainsKey(link.FromId) || !adjacency.ContainsKey(link.ToId))
+            {
+                continue;
+            }
+
+            adjacency[link.FromId].Add(link.ToId);
+            adjacency[link.ToId].Add(link.FromId);
+        }
+
+        var counts = new Dictionary<long, int>();
+        foreach (var source in sourceNodeIds)
+        {
+            var visited = new HashSet<long> { source };
+            var queue = new Queue<(long NodeId, int Depth)>();
+            queue.Enqueue((source, 0));
+
+            while (queue.Count > 0)
+            {
+                var (current, depth) = queue.Dequeue();
+                counts[current] = counts.TryGetValue(current, out var existing) ? existing + 1 : 1;
+                if (depth >= 5)
+                {
+                    continue;
+                }
+
+                foreach (var next in adjacency[current])
+                {
+                    if (!visited.Add(next))
+                    {
+                        continue;
+                    }
+
+                    queue.Enqueue((next, depth + 1));
+                }
+            }
+        }
+
+        return (counts, sourceNodeIds);
+    }
+
+    private static SovUpgradeEntry? GetNodeExplorationDetector(MapNode node, IEnumerable<string>? selectedKeys)
+    {
+        return GetVisibleSovUpgrades(node.SovUpgrades, selectedKeys)
+            .Where(u => u.UpgradeName.Equals("Exploration Detector", StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(u => u.Tier)
+            .FirstOrDefault();
     }
 
     private static string BuildSovFilterKey(SovUpgradeEntry upgrade)
