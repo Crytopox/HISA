@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Hisa.App;
 
@@ -15,6 +16,7 @@ public partial class MainWindow : Window
     private readonly DebugWindowViewModel? _debugWindowViewModel;
     private DebugWindow? _debugWindow;
     private PreferencesWindow? _preferencesWindow;
+    private MapEditorWindow? _mapEditorWindow;
 
     public MainWindow()
     {
@@ -69,6 +71,24 @@ public partial class MainWindow : Window
 
         _preferencesWindow.Show();
         _preferencesWindow.Activate();
+    }
+
+    private void OnOpenMapEditorClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_mapEditorWindow is null)
+        {
+            var vm = Program.Host?.Services.GetRequiredService<MapEditorViewModel>();
+            if (vm is null)
+            {
+                return;
+            }
+
+            _mapEditorWindow = new MapEditorWindow(vm);
+            _mapEditorWindow.Closed += (_, _) => _mapEditorWindow = null;
+        }
+
+        _mapEditorWindow.Show();
+        _mapEditorWindow.Activate();
     }
 
     private void OnFitCenterClicked(object? sender, RoutedEventArgs e)

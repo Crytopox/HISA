@@ -463,8 +463,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         get => _selectedRegion;
         set
         {
+            if (value?.IsHeader == true)
+            {
+                return;
+            }
+
             if (SetProperty(ref _selectedRegion, value) && SelectedViewMode == MapViewMode.Region)
             {
+                EnforceCoordinateModeForSelectedRegion();
                 if (!_isInitializing)
                 {
                     _ = _settingsService.SetAsync(RegionIdKey, value?.RegionId);
@@ -479,6 +485,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         get => _selectedCoordinateMode;
         set
         {
+            if (SelectedViewMode == MapViewMode.Region && SelectedRegion is { Kind: not RegionOptionKind.Regular })
+            {
+                value = MapCoordinateMode.SdePlanarXY;
+            }
+
             if (SelectedViewMode == MapViewMode.UniverseRegions && value != MapCoordinateMode.SdePlanarXY)
             {
                 value = MapCoordinateMode.SdePlanarXY;
@@ -613,7 +624,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         EnforceCoordinateModeForView();
 
         var savedRegionId = await _settingsService.GetAsync<int?>(RegionIdKey);
-        SelectedRegion = _allRegions.FirstOrDefault(r => r.RegionId == savedRegionId) ?? Regions.FirstOrDefault();
+        SelectedRegion = _allRegions.FirstOrDefault(r => r.RegionId == savedRegionId) ?? Regions.FirstOrDefault(r => !r.IsHeader);
 
         _isInitializing = false;
         await ReloadGraphAsync();
@@ -763,18 +774,42 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
         var selectedId = SelectedRegion?.RegionId;
         Regions.Clear();
-        foreach (var region in filtered)
-        {
-            Regions.Add(region);
-        }
+        AddRegionGroup(RegionOptionKind.Custom, "Custom Regions", filtered);
+        AddRegionGroup(RegionOptionKind.Combined, "Combined Regions", filtered);
+        AddRegionGroup(RegionOptionKind.Regular, "Regular Regions", filtered);
 
         if (selectedId is not null)
         {
-            SelectedRegion = Regions.FirstOrDefault(r => r.RegionId == selectedId.Value) ?? Regions.FirstOrDefault();
+            SelectedRegion = Regions.FirstOrDefault(r => r.RegionId == selectedId.Value) ?? Regions.FirstOrDefault(r => !r.IsHeader);
         }
         else if (SelectedRegion is null)
         {
-            SelectedRegion = Regions.FirstOrDefault();
+            SelectedRegion = Regions.FirstOrDefault(r => !r.IsHeader);
+        }
+    }
+
+    private void AddRegionGroup(RegionOptionKind kind, string header, IReadOnlyCollection<RegionOption> source)
+    {
+        var items = source
+            .Where(r => !r.IsHeader && r.Kind == kind)
+            .OrderBy(r => r.RegionName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (items.Count == 0)
+        {
+            return;
+        }
+
+        Regions.Add(new RegionOption
+        {
+            RegionId = int.MinValue + (int)kind,
+            RegionName = $"--- {header} ---",
+            Kind = kind,
+            IsHeader = true
+        });
+
+        foreach (var item in items)
+        {
+            Regions.Add(item);
         }
     }
 
@@ -798,6 +833,25 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedCoordinateMode)));
             _ = _settingsService.SetAsync(CoordinateModeKey, MapCoordinateMode.SdePlanarXY);
         }
+
+        EnforceCoordinateModeForSelectedRegion();
+    }
+
+    private void EnforceCoordinateModeForSelectedRegion()
+    {
+        if (SelectedViewMode != MapViewMode.Region || SelectedRegion is not { Kind: not RegionOptionKind.Regular })
+        {
+            return;
+        }
+
+        if (SelectedCoordinateMode == MapCoordinateMode.SdePlanarXY)
+        {
+            return;
+        }
+
+        _selectedCoordinateMode = MapCoordinateMode.SdePlanarXY;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedCoordinateMode)));
+        _ = _settingsService.SetAsync(CoordinateModeKey, MapCoordinateMode.SdePlanarXY);
     }
 
     private async Task UpdateSearchSuggestionsAsync(string rawText)

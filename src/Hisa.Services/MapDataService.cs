@@ -8,8 +8,10 @@ namespace Hisa.Services;
 
 public sealed class MapDataService : IMapDataService
 {
+    private const int LayoutRegionSyntheticBase = 2_000_000_000;
     private static readonly Lazy<IReadOnlyDictionary<int, StaticSolarSystemData>> StaticSolarSystemDataById = new(LoadStaticSolarSystemDataById);
     private readonly ISdeDatabase _sdeDatabase;
+    private readonly IMapLayoutDataService _mapLayoutDataService;
     private readonly IStormStateService _stormStateService;
     private readonly IHubWormholeStateService _hubWormholeStateService;
 
@@ -17,10 +19,12 @@ public sealed class MapDataService : IMapDataService
 
     public MapDataService(
         ISdeDatabase sdeDatabase,
+        IMapLayoutDataService mapLayoutDataService,
         IStormStateService stormStateService,
         IHubWormholeStateService hubWormholeStateService)
     {
         _sdeDatabase = sdeDatabase;
+        _mapLayoutDataService = mapLayoutDataService;
         _stormStateService = stormStateService;
         _hubWormholeStateService = hubWormholeStateService;
     }
@@ -49,11 +53,34 @@ public sealed class MapDataService : IMapDataService
             result.Add(new RegionOption
             {
                 RegionId = reader.GetInt32(0),
-                RegionName = reader.GetString(1)
+                RegionName = reader.GetString(1),
+                Kind = RegionOptionKind.Regular
             });
         }
 
-        return result;
+        var layoutRegions = await _mapLayoutDataService.GetLayoutRegionsAsync(cancellationToken);
+        foreach (var layoutRegion in layoutRegions.OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            if (layoutRegion.IsGameRegion && layoutRegion.SourceRegionId is int sourceRegionId &&
+                result.Any(x => x.RegionId == sourceRegionId))
+            {
+                continue;
+            }
+
+            if (layoutRegion.Id >= LayoutRegionSyntheticBase)
+            {
+                continue;
+            }
+
+            result.Add(new RegionOption
+            {
+                RegionId = -LayoutRegionSyntheticBase + (int)layoutRegion.Id,
+                RegionName = layoutRegion.Name,
+                Kind = layoutRegion.IsReadOnly ? RegionOptionKind.Combined : RegionOptionKind.Custom
+            });
+        }
+
+        return result.OrderBy(x => x.RegionName, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
     public async Task<MapGraph> GetUniverseGraphAsync(MapCoordinateMode coordinateMode, CancellationToken cancellationToken = default)
@@ -129,9 +156,146 @@ public sealed class MapDataService : IMapDataService
 
     public async Task<MapGraph> GetRegionGraphAsync(int regionId, MapCoordinateMode coordinateMode, CancellationToken cancellationToken = default)
     {
+        if (TryGetLayoutRegionId(regionId, out var layoutRegionId))
+        {
+            var layoutGraph = await _mapLayoutDataService.TryGetLayoutRegionGraphAsync(layoutRegionId, cancellationToken);
+            if (layoutGraph is not null)
+            {
+                return await EnrichLayoutGraphFromSdeAsync(layoutGraph, cancellationToken);
+            }
+        }
+
+        if (coordinateMode == MapCoordinateMode.SdePlanarXY)
+        {
+            var customLayoutGraph = await _mapLayoutDataService.TryGetRegionLayoutGraphAsync(regionId, cancellationToken);
+            if (customLayoutGraph is not null)
+            {
+                return await EnrichLayoutGraphFromSdeAsync(customLayoutGraph, cancellationToken);
+            }
+        }
+
         var systems = await QuerySystemsAsync(regionId, coordinateMode, cancellationToken);
         var links = await QuerySystemLinksAsync(regionId, cancellationToken);
         return BuildNormalizedGraph(systems, links);
+    }
+
+    private async Task<MapGraph> EnrichLayoutGraphFromSdeAsync(MapGraph layoutGraph, CancellationToken cancellationToken)
+    {
+        var systemIds = layoutGraph.Nodes
+            .Where(n => n.Id > 0)
+            .Select(n => (int)n.Id)
+            .Distinct()
+            .ToList();
+        if (systemIds.Count == 0)
+        {
+            return layoutGraph;
+        }
+
+        var sdeBySystemId = await LoadSdeNodeMetadataBySystemIdAsync(systemIds, cancellationToken);
+        var nodes = layoutGraph.Nodes.Select(n =>
+        {
+            if (n.Id <= 0 || !sdeBySystemId.TryGetValue((int)n.Id, out var m))
+            {
+                return n;
+            }
+
+            var staticData = StaticSolarSystemDataById.Value.TryGetValue((int)n.Id, out var loadedStaticData)
+                ? loadedStaticData
+                : null;
+
+            return new MapNode
+            {
+                Id = n.Id,
+                Name = n.Name,
+                X = n.X,
+                Y = n.Y,
+                Security = m.Security,
+                SunTypeId = n.SunTypeId,
+                StarTypeName = n.StarTypeName,
+                SpectralClass = n.SpectralClass,
+                HasJoveObservatory = staticData?.HasJoveObservatory ?? false,
+                IceFieldCount = staticData?.IceFieldCount ?? 0,
+                RegionId = m.RegionId,
+                RegionName = m.RegionName,
+                ConstellationId = m.ConstellationId,
+                ConstellationName = m.ConstellationName,
+                StormEffects = _stormStateService.Current.EffectsBySystemId.TryGetValue((int)n.Id, out var effects)
+                    ? effects
+                    : [],
+                HubWormholeConnections = _hubWormholeStateService.Current.ConnectionsBySystemId.TryGetValue((int)n.Id, out var wormholes)
+                    ? wormholes
+                    : []
+            };
+        }).ToList();
+
+        return new MapGraph { Nodes = nodes, Links = layoutGraph.Links };
+    }
+
+    private async Task<Dictionary<int, (double? Security, int? RegionId, string? RegionName, int? ConstellationId, string? ConstellationName)>> LoadSdeNodeMetadataBySystemIdAsync(
+        IReadOnlyList<int> systemIds,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = _sdeDatabase.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        var result = new Dictionary<int, (double? Security, int? RegionId, string? RegionName, int? ConstellationId, string? ConstellationName)>(systemIds.Count);
+        const int chunkSize = 500;
+        for (var i = 0; i < systemIds.Count; i += chunkSize)
+        {
+            var chunk = systemIds.Skip(i).Take(chunkSize).ToList();
+            if (chunk.Count == 0)
+            {
+                continue;
+            }
+
+            var parameters = new List<string>(chunk.Count);
+            var command = connection.CreateCommand();
+            for (var p = 0; p < chunk.Count; p++)
+            {
+                var param = $"$id{p}";
+                parameters.Add(param);
+                command.Parameters.AddWithValue(param, chunk[p]);
+            }
+
+            command.CommandText = $"""
+                SELECT s.solarSystemID, s.security, s.regionID, r.regionName, s.constellationID, c.constellationName
+                FROM mapSolarSystems s
+                LEFT JOIN mapRegions r ON r.regionID = s.regionID
+                LEFT JOIN mapConstellations c ON c.constellationID = s.constellationID
+                WHERE s.solarSystemID IN ({string.Join(", ", parameters)});
+                """;
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var systemId = reader.GetInt32(0);
+                result[systemId] = (
+                    reader.IsDBNull(1) ? null : reader.GetDouble(1),
+                    reader.IsDBNull(2) ? null : reader.GetInt32(2),
+                    reader.IsDBNull(3) ? null : reader.GetString(3),
+                    reader.IsDBNull(4) ? null : reader.GetInt32(4),
+                    reader.IsDBNull(5) ? null : reader.GetString(5));
+            }
+        }
+
+        return result;
+    }
+
+    private static bool TryGetLayoutRegionId(int regionId, out long layoutRegionId)
+    {
+        layoutRegionId = 0;
+        if (regionId <= -LayoutRegionSyntheticBase)
+        {
+            return false;
+        }
+
+        if (regionId >= 0)
+        {
+            return false;
+        }
+
+        layoutRegionId = regionId + LayoutRegionSyntheticBase;
+        return layoutRegionId > 0;
     }
 
     public async Task<IReadOnlyList<MapSearchCandidate>> SearchAsync(string term, CancellationToken cancellationToken = default)

@@ -11,6 +11,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Collections.Generic;
 using NetTopologySuite.Triangulate;
 using NetTopologySuite.Precision;
 using NtsCoordinate = NetTopologySuite.Geometries.Coordinate;
@@ -75,6 +76,8 @@ public sealed class MapControl : Control
     private static readonly IBrush SelectedBrush = new ImmutableSolidColorBrush(Color.Parse("#E8B75E"));
     private static readonly IBrush HoveredBrush = new ImmutableSolidColorBrush(Color.Parse("#7CC8FF"));
     private static readonly IBrush RegionSelectedBrush = new ImmutableSolidColorBrush(Color.Parse("#6BC1B5"));
+    private static readonly IBrush EditorMissingConnectionBrush = new ImmutableSolidColorBrush(Color.Parse("#FF6B6B"));
+    private static readonly IBrush EditorCrossRegionConnectorBrush = new ImmutableSolidColorBrush(Color.Parse("#8E74D8"));
     private static readonly IBrush NodeHoleBrush = new ImmutableSolidColorBrush(Color.Parse("#0D131D"));
     private static readonly IBrush NodeLabelBackgroundBrush = new ImmutableSolidColorBrush(Color.Parse("#B5000000"));
     private static readonly IBrush TooltipBackgroundBrush = new ImmutableSolidColorBrush(Color.Parse("#1A2536"));
@@ -155,6 +158,24 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, bool>(nameof(AlwaysShowHubWormholes), false);
     public static readonly StyledProperty<HubWormholeMarkerMode> HubWormholeMarkerModeProperty =
         AvaloniaProperty.Register<MapControl, HubWormholeMarkerMode>(nameof(HubWormholeMarkerMode), HubWormholeMarkerMode.Badge);
+    public static readonly StyledProperty<bool> ShowEditorGridProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(ShowEditorGrid), false);
+    public static readonly StyledProperty<double> EditorGridStepProperty =
+        AvaloniaProperty.Register<MapControl, double>(nameof(EditorGridStep), 0.01);
+    public static readonly StyledProperty<double> MinZoomProperty =
+        AvaloniaProperty.Register<MapControl, double>(nameof(MinZoom), 0.4);
+    public static readonly StyledProperty<double> MaxZoomOverrideProperty =
+        AvaloniaProperty.Register<MapControl, double>(nameof(MaxZoomOverride), 0.0);
+    public static readonly StyledProperty<bool> AllowFitBeyondMinZoomProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(AllowFitBeyondMinZoom), false);
+    public static readonly StyledProperty<bool> UseBuiltInSelectionProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(UseBuiltInSelection), true);
+    public static readonly StyledProperty<IEnumerable<long>?> AdditionalSelectedNodeIdsProperty =
+        AvaloniaProperty.Register<MapControl, IEnumerable<long>?>(nameof(AdditionalSelectedNodeIds));
+    public static readonly StyledProperty<IEnumerable<long>?> MissingConnectionNodeIdsProperty =
+        AvaloniaProperty.Register<MapControl, IEnumerable<long>?>(nameof(MissingConnectionNodeIds));
+    public static readonly StyledProperty<IEnumerable<long>?> CrossRegionConnectorNodeIdsProperty =
+        AvaloniaProperty.Register<MapControl, IEnumerable<long>?>(nameof(CrossRegionConnectorNodeIds));
 
     private Point? _lastPanPoint;
     private Point _panOffset = new(0, 0);
@@ -348,6 +369,60 @@ public sealed class MapControl : Control
         set => SetValue(HubWormholeMarkerModeProperty, value);
     }
 
+    public bool ShowEditorGrid
+    {
+        get => GetValue(ShowEditorGridProperty);
+        set => SetValue(ShowEditorGridProperty, value);
+    }
+
+    public double EditorGridStep
+    {
+        get => GetValue(EditorGridStepProperty);
+        set => SetValue(EditorGridStepProperty, value);
+    }
+
+    public bool UseBuiltInSelection
+    {
+        get => GetValue(UseBuiltInSelectionProperty);
+        set => SetValue(UseBuiltInSelectionProperty, value);
+    }
+
+    public double MinZoom
+    {
+        get => GetValue(MinZoomProperty);
+        set => SetValue(MinZoomProperty, value);
+    }
+
+    public double MaxZoomOverride
+    {
+        get => GetValue(MaxZoomOverrideProperty);
+        set => SetValue(MaxZoomOverrideProperty, value);
+    }
+
+    public bool AllowFitBeyondMinZoom
+    {
+        get => GetValue(AllowFitBeyondMinZoomProperty);
+        set => SetValue(AllowFitBeyondMinZoomProperty, value);
+    }
+
+    public IEnumerable<long>? AdditionalSelectedNodeIds
+    {
+        get => GetValue(AdditionalSelectedNodeIdsProperty);
+        set => SetValue(AdditionalSelectedNodeIdsProperty, value);
+    }
+
+    public IEnumerable<long>? MissingConnectionNodeIds
+    {
+        get => GetValue(MissingConnectionNodeIdsProperty);
+        set => SetValue(MissingConnectionNodeIdsProperty, value);
+    }
+
+    public IEnumerable<long>? CrossRegionConnectorNodeIds
+    {
+        get => GetValue(CrossRegionConnectorNodeIdsProperty);
+        set => SetValue(CrossRegionConnectorNodeIdsProperty, value);
+    }
+
     public MapControl()
     {
         AffectsRender<MapControl>(GraphProperty, SelectedNodeIdProperty, ViewModeProperty, StretchToWindowProperty);
@@ -373,7 +448,16 @@ public sealed class MapControl : Control
             InfoBoxShowStormIconProperty,
             InfoBoxShowWormholeIconProperty,
             AlwaysShowHubWormholesProperty,
-            HubWormholeMarkerModeProperty);
+            HubWormholeMarkerModeProperty,
+            ShowEditorGridProperty,
+            EditorGridStepProperty,
+            MinZoomProperty,
+            MaxZoomOverrideProperty,
+            AllowFitBeyondMinZoomProperty,
+            UseBuiltInSelectionProperty,
+            AdditionalSelectedNodeIdsProperty,
+            MissingConnectionNodeIdsProperty,
+            CrossRegionConnectorNodeIdsProperty);
         ClipToBounds = true;
     }
 
@@ -387,10 +471,9 @@ public sealed class MapControl : Control
             return;
         }
 
-        if (_nodeById.Count != Graph.Nodes.Count)
-        {
-            RebuildGraphCaches();
-        }
+        // Node positions can change without node count changing (editor drag/move),
+        // so always rebuild bounds before fitting.
+        RebuildGraphCaches();
 
         var plot = GetPlotMetrics();
         var plotWidth = plot.Width;
@@ -404,7 +487,10 @@ public sealed class MapControl : Control
 
         var zoomX = availableWidth / graphWidthPx;
         var zoomY = availableHeight / graphHeightPx;
-        _zoom = Math.Clamp(Math.Min(zoomX, zoomY), 0.4, GetMaxZoom());
+        var targetZoom = Math.Min(zoomX, zoomY);
+        _zoom = AllowFitBeyondMinZoom
+            ? Math.Min(targetZoom, GetMaxZoom())
+            : Math.Clamp(targetZoom, GetMinZoom(), GetMaxZoom());
 
         var baseCenterX = plot.OriginX + (((_graphMinX + _graphMaxX) * 0.5) * plotWidth);
         var baseCenterY = plot.OriginY + (((_graphMinY + _graphMaxY) * 0.5) * plotHeight);
@@ -428,7 +514,7 @@ public sealed class MapControl : Control
 
     public void SetViewportState(MapViewportState state)
     {
-        _zoom = Math.Clamp(state.Zoom, 0.4, GetMaxZoom());
+        _zoom = Math.Clamp(state.Zoom, GetMinZoom(), GetMaxZoom());
         _panOffset = new Point(state.PanOffsetX, state.PanOffsetY);
         InvalidateVisual();
     }
@@ -534,6 +620,108 @@ public sealed class MapControl : Control
         return bestId;
     }
 
+    public long? HitTestNode(Point point, double threshold = 10.0)
+    {
+        if (Graph is null || Graph.Nodes.Count == 0)
+        {
+            return null;
+        }
+
+        var plot = GetPlotMetrics();
+        UpdateScreenPositions(plot, Bounds.Width / 2.0, Bounds.Height / 2.0);
+        return FindClosestNodeAt(point, threshold);
+    }
+
+    public IReadOnlyList<long> GetNodeIdsInScreenRect(Rect screenRect)
+    {
+        if (Graph is null || Graph.Nodes.Count == 0)
+        {
+            return [];
+        }
+
+        var plot = GetPlotMetrics();
+        UpdateScreenPositions(plot, Bounds.Width / 2.0, Bounds.Height / 2.0);
+        var normalizedRect = new Rect(
+            Math.Min(screenRect.X, screenRect.X + screenRect.Width),
+            Math.Min(screenRect.Y, screenRect.Y + screenRect.Height),
+            Math.Abs(screenRect.Width),
+            Math.Abs(screenRect.Height));
+
+        var result = new List<long>();
+        for (var i = 0; i < Graph.Nodes.Count; i++)
+        {
+            if (normalizedRect.Contains(_screenPositions[i]))
+            {
+                result.Add(Graph.Nodes[i].Id);
+            }
+        }
+
+        return result;
+    }
+
+    public bool TryScreenToWorld(Point screenPoint, out Point worldPoint)
+    {
+        worldPoint = default;
+        if (Graph is null || Bounds.Width <= 1 || Bounds.Height <= 1)
+        {
+            return false;
+        }
+
+        var plot = GetPlotMetrics();
+        var viewCenterX = Bounds.Width / 2.0;
+        var viewCenterY = Bounds.Height / 2.0;
+        var baseX = ((screenPoint.X - viewCenterX - _panOffset.X) / _zoom) + viewCenterX;
+        var baseY = ((screenPoint.Y - viewCenterY - _panOffset.Y) / _zoom) + viewCenterY;
+        var worldX = (baseX - plot.OriginX) / plot.Width;
+        var worldY = (baseY - plot.OriginY) / plot.Height;
+        worldPoint = new Point(worldX, worldY);
+        return true;
+    }
+
+    public Point WorldToScreen(Point worldPoint)
+    {
+        var plot = GetPlotMetrics();
+        return ToScreenPointFast(worldPoint.X, worldPoint.Y, plot, Bounds.Width / 2.0, Bounds.Height / 2.0);
+    }
+
+    public void PanBy(double dxPixels, double dyPixels)
+    {
+        _panOffset = new Point(_panOffset.X + dxPixels, _panOffset.Y + dyPixels);
+        InvalidateVisual();
+    }
+
+    public void ZoomBy(double factor)
+    {
+        if (factor <= 0)
+        {
+            return;
+        }
+
+        var oldZoom = _zoom;
+        var newZoom = Math.Clamp(_zoom * factor, GetMinZoom(), GetMaxZoom());
+        if (Math.Abs(newZoom - oldZoom) < 1e-9)
+        {
+            return;
+        }
+
+        var center = new Point(Bounds.Width * 0.5, Bounds.Height * 0.5);
+        var plot = GetPlotMetrics();
+        var viewCenterX = Bounds.Width / 2.0;
+        var viewCenterY = Bounds.Height / 2.0;
+        var baseX = ((center.X - viewCenterX - _panOffset.X) / oldZoom) + viewCenterX;
+        var baseY = ((center.Y - viewCenterY - _panOffset.Y) / oldZoom) + viewCenterY;
+        var worldX = (baseX - plot.OriginX) / plot.Width;
+        var worldY = (baseY - plot.OriginY) / plot.Height;
+        var newBaseX = plot.OriginX + (worldX * plot.Width);
+        var newBaseY = plot.OriginY + (worldY * plot.Height);
+
+        _zoom = newZoom;
+        _panOffset = new Point(
+            center.X - (((newBaseX - viewCenterX) * _zoom) + viewCenterX),
+            center.Y - (((newBaseY - viewCenterY) * _zoom) + viewCenterY));
+        InvalidateVisual();
+    }
+
     private IBrush GetCachedBrush(Color color, double alpha01 = 1.0)
     {
         var a = (byte)Math.Clamp((int)(alpha01 * 255), 0, 255);
@@ -585,6 +773,10 @@ public sealed class MapControl : Control
         var viewCenterX = Bounds.Width / 2.0;
         var viewCenterY = Bounds.Height / 2.0;
         UpdateScreenPositions(plot, viewCenterX, viewCenterY);
+        if (ShowEditorGrid)
+        {
+            DrawEditorGrid(context, plot, viewCenterX, viewCenterY);
+        }
 
         var renderVoronoiBackground = NodeBackgroundColorMode != MapNodeColorMode.None && _zoom >= GetVoronoiZoomThreshold();
         if (renderVoronoiBackground && _voronoiWorldGeometriesByNodeId.Count == 0)
@@ -672,6 +864,15 @@ public sealed class MapControl : Control
 
         var labelBudget = GetLabelBudget();
         var labelsDrawn = 0;
+        var additionalSelectedSet = AdditionalSelectedNodeIds is not null
+            ? new HashSet<long>(AdditionalSelectedNodeIds)
+            : null;
+        var missingConnectionSet = MissingConnectionNodeIds is not null
+            ? new HashSet<long>(MissingConnectionNodeIds)
+            : null;
+        var crossRegionConnectorSet = CrossRegionConnectorNodeIds is not null
+            ? new HashSet<long>(CrossRegionConnectorNodeIds)
+            : null;
         for (var i = 0; i < Graph.Nodes.Count; i++)
         {
             var node = Graph.Nodes[i];
@@ -682,7 +883,7 @@ public sealed class MapControl : Control
                 continue;
             }
 
-            var isSelected = SelectedNodeId == node.Id;
+            var isSelected = SelectedNodeId == node.Id || (additionalSelectedSet?.Contains(node.Id) ?? false);
             var isHovered = _hoveredNodeId == node.Id;
             var isSearchHighlighted = _searchHighlightedNodeId == node.Id ||
                                       (_searchHighlightedConstellationId is not null && node.ConstellationId == _searchHighlightedConstellationId.Value) ||
@@ -698,11 +899,15 @@ public sealed class MapControl : Control
                     ? HoveredBrush
                     : isSearchHighlighted
                         ? SelectedBrush
-                        : isSelectedRegionNode
-                            ? SelectedBrush
-                            : isInActiveRegion
-                                ? RegionSelectedBrush
-                                : GetCachedBrush(GetNodeBaseColor(node, NodeColorMode));
+                            : isSelectedRegionNode
+                                ? SelectedBrush
+                                : isInActiveRegion
+                                    ? RegionSelectedBrush
+                                : ShowEditorGrid && (missingConnectionSet?.Contains(node.Id) ?? false)
+                                    ? EditorMissingConnectionBrush
+                                    : ShowEditorGrid && (crossRegionConnectorSet?.Contains(node.Id) ?? false)
+                                        ? EditorCrossRegionConnectorBrush
+                                        : GetCachedBrush(GetNodeBaseColor(node, NodeColorMode));
             context.DrawEllipse(brush, NodeOutlinePen, p, radius, radius);
             if (AlwaysShowHubWormholes && node.HubWormholeConnections.Count > 0)
             {
@@ -724,8 +929,9 @@ public sealed class MapControl : Control
             var suppressInlineLabel =
                 (SelectedNodeId is not null && node.Id == SelectedNodeId.Value) ||
                 (_hoveredNodeId is not null && node.Id == _hoveredNodeId.Value);
+            var alwaysShowEditorLabels = ShowEditorGrid;
             if (!suppressInlineLabel &&
-                (_zoom >= GetLabelZoomThreshold() || isSelected || isHovered) &&
+                (alwaysShowEditorLabels || _zoom >= GetLabelZoomThreshold() || isSelected || isHovered) &&
                 labelsDrawn < labelBudget &&
                 IsPointVisible(p, bounds, labelVisibilityMargin))
             {
@@ -868,6 +1074,11 @@ public sealed class MapControl : Control
         base.OnPointerPressed(e);
 
         Focus();
+        if (!UseBuiltInSelection)
+        {
+            return;
+        }
+
         var point = e.GetPosition(this);
         var props = e.GetCurrentPoint(this).Properties;
 
@@ -950,7 +1161,7 @@ public sealed class MapControl : Control
         var factor = delta > 0 ? 1.1 : 0.9;
         var mouse = e.GetPosition(this);
         var oldZoom = _zoom;
-        var newZoom = Math.Clamp(_zoom * factor, 0.4, GetMaxZoom());
+        var newZoom = Math.Clamp(_zoom * factor, GetMinZoom(), GetMaxZoom());
         if (Math.Abs(newZoom - oldZoom) < 1e-9)
         {
             return;
@@ -1176,7 +1387,7 @@ public sealed class MapControl : Control
 
         var zoomX = availableWidth / graphWidthPx;
         var zoomY = availableHeight / graphHeightPx;
-        _zoom = Math.Clamp(Math.Min(zoomX, zoomY), 0.4, GetMaxZoom());
+        _zoom = Math.Clamp(Math.Min(zoomX, zoomY), GetMinZoom(), GetMaxZoom());
 
         var centerX = (minX + maxX) * 0.5;
         var centerY = (minY + maxY) * 0.5;
@@ -1185,7 +1396,7 @@ public sealed class MapControl : Control
 
     private void CenterOnWorld(double worldX, double worldY, double zoom)
     {
-        _zoom = Math.Clamp(zoom, 0.4, GetMaxZoom());
+        _zoom = Math.Clamp(zoom, GetMinZoom(), GetMaxZoom());
         var plot = GetPlotMetrics();
         var baseX = plot.OriginX + (worldX * plot.Width);
         var baseY = plot.OriginY + (worldY * plot.Height);
@@ -1247,15 +1458,70 @@ public sealed class MapControl : Control
             offsetX, offsetY);
     }
 
+    private void DrawEditorGrid(DrawingContext context, PlotMetrics plot, double viewCenterX, double viewCenterY)
+    {
+        var step = Math.Max(0.0001, EditorGridStep);
+        var worldScale = Math.Max(1e-9, ((plot.Width + plot.Height) * 0.5) * _zoom);
+        var minorPen = new Pen(new ImmutableSolidColorBrush(Color.Parse("#1E6A8A9E")), 1.0 / worldScale);
+        var majorPen = new Pen(new ImmutableSolidColorBrush(Color.Parse("#32AFD5F2")), 1.25 / worldScale);
+
+        if (!TryScreenToWorld(new Point(0, 0), out var worldTopLeft) ||
+            !TryScreenToWorld(new Point(Bounds.Width, Bounds.Height), out var worldBottomRight))
+        {
+            return;
+        }
+
+        var minX = Math.Min(worldTopLeft.X, worldBottomRight.X);
+        var maxX = Math.Max(worldTopLeft.X, worldBottomRight.X);
+        var minY = Math.Min(worldTopLeft.Y, worldBottomRight.Y);
+        var maxY = Math.Max(worldTopLeft.Y, worldBottomRight.Y);
+
+        var firstX = Math.Floor(minX / step) * step;
+        var firstY = Math.Floor(minY / step) * step;
+
+        using (context.PushTransform(GetWorldToScreenMatrix(plot)))
+        {
+            for (var wx = firstX; wx <= maxX + (step * 0.5); wx += step)
+            {
+                var ix = (long)Math.Round(wx / step, MidpointRounding.AwayFromZero);
+                var isMajor = Math.Abs(ix % 6) == 0;
+                context.DrawLine(
+                    isMajor ? majorPen : minorPen,
+                    new Point(wx, minY),
+                    new Point(wx, maxY));
+            }
+
+            for (var wy = firstY; wy <= maxY + (step * 0.5); wy += step)
+            {
+                var iy = (long)Math.Round(wy / step, MidpointRounding.AwayFromZero);
+                var isMajor = Math.Abs(iy % 6) == 0;
+                context.DrawLine(
+                    isMajor ? majorPen : minorPen,
+                    new Point(minX, wy),
+                    new Point(maxX, wy));
+            }
+        }
+    }
+
 
     private double GetMaxZoom()
     {
+        if (MaxZoomOverride > 0)
+        {
+            return Math.Max(GetMinZoom() + 0.01, MaxZoomOverride);
+        }
+
         return ViewMode switch
         {
             MapViewMode.Universe => 60.0,
             MapViewMode.Region => 3.0,
             _ => 12.0
         };
+    }
+
+    private double GetMinZoom()
+    {
+        return Math.Clamp(MinZoom, 0.01, 1000.0);
     }
 
     private PlotMetrics GetPlotMetrics()
@@ -2489,7 +2755,7 @@ public sealed class MapControl : Control
 
         FormattedText? region = null;
         FormattedText? regionHalo = null;
-        if (ShowIndicatorRegion && !string.IsNullOrWhiteSpace(node.RegionName))
+        if ((ShowIndicatorRegion || ShowEditorGrid) && !string.IsNullOrWhiteSpace(node.RegionName))
         {
             region = new FormattedText(
                 node.RegionName,

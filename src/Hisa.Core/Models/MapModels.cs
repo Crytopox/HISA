@@ -106,6 +106,15 @@ public sealed class RegionOption
 {
     public required int RegionId { get; init; }
     public required string RegionName { get; init; }
+    public RegionOptionKind Kind { get; init; } = RegionOptionKind.Regular;
+    public bool IsHeader { get; init; }
 
     public override string ToString() => RegionName;
+}
+
+public enum RegionOptionKind
+{
+    Regular = 0,
+    Combined = 1,
+    Custom = 2
 }

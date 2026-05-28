@@ -1,0 +1,95 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:Hisa.App"
+        xmlns:rendering="clr-namespace:Hisa.Rendering.Controls;assembly=Hisa.Rendering"
+        mc:Ignorable="d"
+        d:DesignWidth="1400"
+        d:DesignHeight="900"
+        x:Class="Hisa.App.MapEditorWindow"
+        x:DataType="vm:MapEditorViewModel"
+        Title="HISA Map Editor"
+        Background="#0D131D">
+  <Grid RowDefinitions="Auto,*,Auto">
+    <Border Padding="10" Background="#121A26" BorderBrush="#263244" BorderThickness="0,0,0,1">
+      <TextBlock Text="Map Editor" FontSize="16" FontWeight="SemiBold" Foreground="#D8E5F8" />
+    </Border>
+
+    <Grid Grid.Row="1" ColumnDefinitions="320,*">
+      <Border Grid.Column="0" BorderBrush="#263244" BorderThickness="0,0,1,0" Padding="8" Background="#101826">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel Spacing="8">
+            <TextBlock Text="Custom Region Name" Foreground="#8A96A8" />
+            <TextBox Text="{Binding NewRegionName}" Watermark="My Custom Region" />
+            <Button Content="Create Custom Region" Click="OnCreateCustomRegionClicked" />
+
+            <Separator />
+            <TextBlock Text="Layout Regions" Foreground="#8A96A8" />
+            <ListBox x:Name="LayoutRegionsList"
+                     ItemsSource="{Binding LayoutRegions}"
+                     SelectedItem="{Binding SelectedLayoutRegion, Mode=TwoWay}"
+                     SelectionChanged="OnLayoutRegionsSelectionChanged"
+                     MinHeight="140"
+                     MaxHeight="180" />
+            <Button Content="Delete Selected Layout Region" Click="OnDeleteLayoutRegionClicked" />
+
+            <TextBlock Text="Game Regions (multi-select import)" Foreground="#8A96A8" />
+            <ListBox x:Name="GameRegionsList"
+                     ItemsSource="{Binding GameRegions}"
+                     SelectionMode="Multiple"
+                     MinHeight="160"
+                     MaxHeight="220" />
+            <Button Content="Import Selected Game Regions" Click="OnImportGameRegionsClicked" />
+
+            <Separator />
+            <TextBlock Text="{Binding SelectionStatus}" Foreground="#8A96A8" />
+            <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="6" RowSpacing="6">
+              <Button Grid.Row="0" Grid.Column="0" Content="Fit View" Click="OnFitViewClicked" />
+              <Button Grid.Row="0" Grid.Column="1" Content="Delete Node" Click="OnDeleteSelectedNodeClicked" />
+              <Button Grid.Row="1" Grid.ColumnSpan="2" Content="Save Current Region" Click="OnSaveCurrentRegionClicked" />
+            </Grid>
+            <TextBlock Text="Mouse: left-drag selected nodes (snap), hold Alt while dragging for free move, Ctrl+click add selection, Shift+drag box select, right/middle drag pan, wheel zoom."
+                       TextWrapping="Wrap"
+                       FontSize="11"
+                       Foreground="#8A96A8" />
+          </StackPanel>
+        </ScrollViewer>
+      </Border>
+
+      <Grid Grid.Column="1">
+        <rendering:MapControl x:Name="EditorMapControl"
+                              Graph="{Binding CurrentGraph}"
+                              ViewMode="Region"
+                              StretchToWindow="False"
+                              ShowEditorGrid="True"
+                              EditorGridStep="0.01"
+                              MinZoom="0.10"
+                              MaxZoomOverride="12.0"
+                              AllowFitBeyondMinZoom="True"
+                              UseBuiltInSelection="False"
+                              SelectedNodeId="{Binding SelectedNodeId, Mode=TwoWay}"
+                              AdditionalSelectedNodeIds="{Binding SelectedNodeIdsForView}"
+                              MissingConnectionNodeIds="{Binding MissingConnectionNodeIdsForView}"
+                              CrossRegionConnectorNodeIds="{Binding CrossRegionConnectorNodeIdsForView}"
+                              PointerPressed="OnEditorMapPointerPressed"
+                              PointerMoved="OnEditorMapPointerMoved"
+                              PointerReleased="OnEditorMapPointerReleased"
+                              PointerWheelChanged="OnEditorMapPointerWheelChanged"
+                              KeyDown="OnEditorMapKeyDown"
+                              SizeChanged="OnEditorMapSizeChanged" />
+        <Canvas IsHitTestVisible="False">
+          <Border x:Name="SelectionRect"
+                  IsVisible="False"
+                  BorderBrush="#88A5C7F0"
+                  BorderThickness="1"
+                  Background="#223A6EA8" />
+        </Canvas>
+      </Grid>
+    </Grid>
+
+    <Border Grid.Row="2" Padding="8" Background="#121A26">
+      <TextBlock Text="{Binding StatusText}" Foreground="#8A96A8" />
+    </Border>
+  </Grid>
+</Window>

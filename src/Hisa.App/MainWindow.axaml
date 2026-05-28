@@ -52,7 +52,7 @@
         </StackPanel>
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" IsVisible="{Binding IsRegionSelectorVisible}">
           <TextBlock VerticalAlignment="Center" Text="Region" Foreground="#8A96A8" />
-          <ComboBox Width="220" ItemsSource="{Binding Regions}" SelectedItem="{Binding SelectedRegion}" />
+          <ComboBox Width="260" ItemsSource="{Binding Regions}" SelectedItem="{Binding SelectedRegion}" />
         </StackPanel>
         <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
           <TextBox Width="280"
@@ -85,6 +85,7 @@
         <Button Grid.Column="7" Content="Settings" MinWidth="90">
           <Button.Flyout>
             <MenuFlyout>
+              <MenuItem Header="Map Editor" Click="OnOpenMapEditorClicked" />
               <MenuItem Header="Preferences" Click="OnOpenPreferencesClicked" />
               <MenuItem Header="Debug Window" Click="OnOpenDebugConsoleClicked" />
             </MenuFlyout>

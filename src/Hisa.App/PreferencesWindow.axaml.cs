@@ -1,5 +1,4 @@
 using Avalonia.Controls;
-
 namespace Hisa.App;
 
 public partial class PreferencesWindow : Window
