@@ -21,7 +21,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        MainMapControl.UniverseRegionNodeDoubleClicked += OnUniverseRegionNodeDoubleClicked;
+        MainMapControl.UniverseRegionNodeDoubleClicked += OnUniverseRegionNodeClicked;
         Opened += OnOpened;
         Closing += (_, _) =>
         {
@@ -146,7 +146,7 @@ public partial class MainWindow : Window
         _clearSearchOnNextFocus = false;
     }
 
-    private async void OnUniverseRegionNodeDoubleClicked(object? sender, int regionId)
+    private async void OnUniverseRegionNodeClicked(object? sender, int regionId)
     {
         if (DataContext is not MainWindowViewModel vm)
         {

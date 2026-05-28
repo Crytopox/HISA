@@ -46,6 +46,7 @@ public sealed class MapControl : Control
 
     private static readonly Point NodeLabelOffset = new(9, 3);
     private static readonly Typeface NodeLabelTypeface = new("Inter", FontStyle.Normal, FontWeight.Medium);
+    private static readonly Typeface RegionCardTypeface = new("Inter", FontStyle.Normal, FontWeight.SemiBold);
     private const double NodeLabelFontSize = 11.5;
     private const double NodeRegionConstellationFontSize = 10.5;
     private const double UniverseMinNodeScale = 0.55;
@@ -606,6 +607,24 @@ public sealed class MapControl : Control
             return null;
         }
 
+        if (ViewMode == MapViewMode.UniverseRegions)
+        {
+            if (_screenPositions.Length != Graph.Nodes.Count)
+            {
+                var plot = GetPlotMetrics();
+                UpdateScreenPositions(plot, Bounds.Width / 2.0, Bounds.Height / 2.0);
+            }
+
+            for (var i = 0; i < Graph.Nodes.Count; i++)
+            {
+                var rect = GetUniverseRegionNodeRect(Graph.Nodes[i], _screenPositions[i], 1.0);
+                if (rect.Contains(point))
+                {
+                    return Graph.Nodes[i].Id;
+                }
+            }
+        }
+
         if (_screenPositions.Length != Graph.Nodes.Count)
         {
             var plot = GetPlotMetrics();
@@ -919,6 +938,38 @@ public sealed class MapControl : Control
                                 : ShowEditorGrid && (crossRegionConnectorSet?.Contains(node.Id) ?? false)
                                         ? EditorCrossRegionConnectorBrush
                                         : GetCachedBrush(GetNodeBaseColor(node, NodeColorMode));
+
+            if (ViewMode == MapViewMode.UniverseRegions)
+            {
+                var text = new FormattedText(
+                    node.Name,
+                    CultureInfo.InvariantCulture,
+                    FlowDirection.LeftToRight,
+                    RegionCardTypeface,
+                    12.5,
+                    Brushes.White);
+                var baseColor = GetUniverseRegionOwnerColor(node.RegionName ?? node.Name);
+                var fillColor = isSelected
+                    ? BlendColors(baseColor, Color.Parse("#FFFFFF"), 0.24)
+                    : isHovered
+                        ? BlendColors(baseColor, Color.Parse("#FFFFFF"), 0.14)
+                        : baseColor;
+                var bgColor = BlendColors(fillColor, Color.Parse("#0B1220"), 0.68);
+                var borderColor = isSelected
+                    ? BlendColors(baseColor, Color.Parse("#FFFFFF"), 0.48)
+                    : isHovered
+                        ? BlendColors(baseColor, Color.Parse("#FFFFFF"), 0.32)
+                        : BlendColors(baseColor, Color.Parse("#000000"), 0.16);
+                var rect = GetUniverseRegionNodeRect(node, p, isHovered ? 1.04 : 1.0);
+
+                var outer = new Rect(rect.X - 1, rect.Y - 1, rect.Width + 2, rect.Height + 2);
+                context.FillRectangle(GetCachedBrush(Color.FromArgb(110, bgColor.R, bgColor.G, bgColor.B)), outer, 6);
+                context.FillRectangle(GetCachedBrush(bgColor), rect, 5);
+                context.DrawRectangle(new Pen(GetCachedBrush(borderColor), isSelected ? 1.9 : 1.35), rect, 5);
+                context.DrawText(text, new Point(rect.X + ((rect.Width - text.Width) / 2), rect.Y + ((rect.Height - text.Height) / 2)));
+                continue;
+            }
+
             context.DrawEllipse(brush, NodeOutlinePen, p, radius, radius);
             if (ShowMissingConnectionMarkers &&
                 (missingConnectionSet?.Contains(node.Id) ?? false) &&
@@ -1670,7 +1721,18 @@ public sealed class MapControl : Control
     {
         if (ViewMode == MapViewMode.UniverseRegions)
         {
-            return defaultPen;
+            if (!nodeById.TryGetValue(link.FromId, out var fromRegionNode) || !nodeById.TryGetValue(link.ToId, out var toRegionNode))
+            {
+                return defaultPen;
+            }
+
+            var fromColor = GetUniverseRegionOwnerColor(fromRegionNode.RegionName ?? fromRegionNode.Name);
+            var toColor = GetUniverseRegionOwnerColor(toRegionNode.RegionName ?? toRegionNode.Name);
+            var finalColor = fromColor == toColor
+                ? fromColor
+                : BlendColors(fromColor, toColor, 0.5);
+            var linkColor = Color.FromArgb(196, finalColor.R, finalColor.G, finalColor.B);
+            return new Pen(GetCachedBrush(linkColor), 1.15);
         }
 
         if (!nodeById.TryGetValue(link.FromId, out var fromNode) || !nodeById.TryGetValue(link.ToId, out var toNode))
@@ -2926,6 +2988,94 @@ public sealed class MapControl : Control
 
         var origin = new Point((bounds.Width - text.Width) / 2, (bounds.Height - text.Height) / 2);
         context.DrawText(text, origin);
+    }
+
+    private static Rect GetUniverseRegionNodeRect(MapNode node, Point center, double scale = 1.0)
+    {
+        var text = new FormattedText(
+            node.Name,
+            CultureInfo.InvariantCulture,
+            FlowDirection.LeftToRight,
+            RegionCardTypeface,
+            12.5,
+            Brushes.White);
+        const double padX = 11.5;
+        const double padY = 5.8;
+        var width = (text.Width + (padX * 2)) * scale;
+        var height = (text.Height + (padY * 2)) * scale;
+        return new Rect(center.X - (width / 2.0), center.Y - (height / 2.0), width, height);
+    }
+
+    private static Color BlendColors(Color a, Color b, double t)
+    {
+        t = Math.Clamp(t, 0, 1);
+        byte Mix(byte x, byte y) => (byte)Math.Clamp((int)Math.Round((x * (1 - t)) + (y * t)), 0, 255);
+        return Color.FromArgb(Mix(a.A, b.A), Mix(a.R, b.R), Mix(a.G, b.G), Mix(a.B, b.B));
+    }
+
+    private static Color GetUniverseRegionOwnerColor(string? regionName)
+    {
+        if (string.IsNullOrWhiteSpace(regionName))
+        {
+            return Color.Parse("#7A5BAA");
+        }
+
+        var name = regionName.Trim();
+        if (name.Equals("Pochven", StringComparison.OrdinalIgnoreCase) ||
+            name.Equals("Yasna Zakh", StringComparison.OrdinalIgnoreCase))
+        {
+            return Color.Parse("#C44A5A");
+        }
+
+        if (IsRegionNameIn(name, "The Forge", "Lonetrek", "The Citadel", "Black Rise"))
+        {
+            return Color.Parse("#4B87D9"); // Caldari
+        }
+
+        if (IsRegionNameIn(name, "Heimatar", "Metropolis", "Molden Heath"))
+        {
+            return Color.Parse("#D9823B"); // Minmatar
+        }
+
+        if (IsRegionNameIn(name, "Domain", "Tash-Murkon", "Kador", "Kor-Azor", "Devoid", "Khanid", "The Bleak Lands", "Aridia"))
+        {
+            return Color.Parse("#D6B94A"); // Amarr
+        }
+
+        if (IsRegionNameIn(name, "Essence", "Sinq Laison", "Verge Vendor", "Placid", "Solitude", "Everyshore"))
+        {
+            return Color.Parse("#4FAE67"); // Gallente
+        }
+
+        if (name.Equals("Genesis", StringComparison.OrdinalIgnoreCase))
+        {
+            return Color.Parse("#D6B94A"); // Amarr override
+        }
+
+        if (name.Equals("Derelik", StringComparison.OrdinalIgnoreCase))
+        {
+            return Color.Parse("#D9823B"); // Minmatar override
+        }
+
+        if (name.Equals("Exordium", StringComparison.OrdinalIgnoreCase))
+        {
+            return Color.Parse("#DCE6F5"); // White override
+        }
+
+        return Color.Parse("#7A5BAA"); // Nullsec/default
+    }
+
+    private static bool IsRegionNameIn(string value, params string[] names)
+    {
+        foreach (var n in names)
+        {
+            if (value.Equals(n, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static void DrawTooltip(DrawingContext context, Point anchor, string text)
