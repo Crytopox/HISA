@@ -45,12 +45,12 @@ public sealed class MapControl : Control
     private static readonly JsonSerializerOptions VoronoiJsonOptions = new() { WriteIndented = false };
 
     private static readonly Point NodeLabelOffset = new(9, 3);
-    private static readonly Typeface NodeLabelTypeface = new("Inter", FontStyle.Normal, FontWeight.Medium);
+    private static readonly Typeface NodeLabelTypeface = new("Inter", FontStyle.Normal, FontWeight.SemiBold);
     private static readonly Typeface RegionCardTypeface = new("Inter", FontStyle.Normal, FontWeight.SemiBold);
-    private const double NodeLabelFontSize = 11.5;
+    private const double NodeLabelFontSize = 12.5;
     private const double NodeRegionConstellationFontSize = 10.5;
     private const double UniverseMinNodeScale = 0.55;
-    private const double IconSize = 18.0;
+    private const double IconSize = 22.0;
     private const double IndicatorIconLeftPadding = 4.0;
     private const double IndicatorIconSlotGap = 3.0;
     private const string A0BlueSmallName = "Sun A0 (Blue Small)";
