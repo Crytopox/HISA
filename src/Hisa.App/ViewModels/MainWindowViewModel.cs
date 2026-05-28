@@ -66,11 +66,17 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _alwaysShowHubWormholes = true;
     private bool _alwaysShowIncursions = true;
     private bool _showMissingConnectionMarkers = true;
+    private bool _isHubWormholesOverlayOpen;
+    private bool _isIncursionsOverlayOpen;
+    private bool _isStormsOverlayOpen;
     private HubWormholeMarkerMode _hubWormholeMarkerMode = HubWormholeMarkerMode.Badge;
     private readonly Dictionary<long, double> _jumpRangeOriginsLyByNodeId = [];
     private readonly Dictionary<long, uint> _jumpRangeOriginColorByNodeId = [];
     private List<long> _jumpRangeInRangeNodeIdsForView = [];
     private IReadOnlyList<JumpRangeOriginDisplay> _jumpRangeOriginsDisplayForView = [];
+    private IReadOnlyList<WormholeOverlayCard> _hubWormholeCardsForView = [];
+    private IReadOnlyList<IncursionOverlayCard> _incursionCardsForView = [];
+    private IReadOnlyList<StormOverlayCard> _stormCardsForView = [];
     private readonly Dictionary<long, List<long>> _jumpRangeMembershipByNodeId = [];
     private readonly Dictionary<long, List<JumpRangeDistanceDisplay>> _jumpRangeDistancesByNodeId = [];
     private CancellationTokenSource? _searchSuggestionsCts;
@@ -158,6 +164,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public IEnumerable<long> JumpRangeOriginNodeIdsForView => _jumpRangeOriginsLyByNodeId.Keys;
     public IEnumerable<long> JumpRangeInRangeNodeIdsForView => _jumpRangeInRangeNodeIdsForView;
     public IReadOnlyList<JumpRangeOriginDisplay> JumpRangeOriginsDisplayForView => _jumpRangeOriginsDisplayForView;
+    public IReadOnlyList<WormholeOverlayCard> HubWormholeCardsForView => _hubWormholeCardsForView;
+    public IReadOnlyList<IncursionOverlayCard> IncursionCardsForView => _incursionCardsForView;
+    public IReadOnlyList<StormOverlayCard> StormCardsForView => _stormCardsForView;
+    public string HubWormholeOverlayTitle => $"Thera/Turnur Wormholes ({_hubWormholeCardsForView.Count})";
+    public string IncursionOverlayTitle => $"Incursions ({_incursionCardsForView.Count})";
+    public string StormOverlayTitle => $"Metaliminal Storms ({_stormCardsForView.Count})";
     public IReadOnlyDictionary<long, IReadOnlyList<long>> JumpRangeMembershipByNodeIdForView =>
         _jumpRangeMembershipByNodeId.ToDictionary(kvp => kvp.Key, kvp => (IReadOnlyList<long>)kvp.Value);
     public IReadOnlyDictionary<long, IReadOnlyList<JumpRangeDistanceDisplay>> JumpRangeDistancesByNodeIdForView =>
@@ -720,7 +732,85 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public bool HasSearchSuggestions => SearchSuggestions.Count > 0;
     public bool HasJumpRangeOverlay => _jumpRangeOriginsLyByNodeId.Count > 0;
+    public bool HasHubWormholeOverlayData => _hubWormholeCardsForView.Count > 0;
+    public bool HasIncursionOverlayData => _incursionCardsForView.Count > 0;
+    public bool HasStormOverlayData => _stormCardsForView.Count > 0;
+    public bool HasNoHubWormholeOverlayData => _hubWormholeCardsForView.Count == 0;
+    public bool HasNoIncursionOverlayData => _incursionCardsForView.Count == 0;
+    public bool HasNoStormOverlayData => _stormCardsForView.Count == 0;
     public Task InitialLoadTask => _initialLoadTask;
+
+    public bool IsHubWormholesOverlayOpen
+    {
+        get => _isHubWormholesOverlayOpen;
+        set
+        {
+            if (!SetProperty(ref _isHubWormholesOverlayOpen, value) || !value)
+            {
+                return;
+            }
+
+            if (_isIncursionsOverlayOpen)
+            {
+                _isIncursionsOverlayOpen = false;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsIncursionsOverlayOpen)));
+            }
+
+            if (_isStormsOverlayOpen)
+            {
+                _isStormsOverlayOpen = false;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsStormsOverlayOpen)));
+            }
+        }
+    }
+
+    public bool IsIncursionsOverlayOpen
+    {
+        get => _isIncursionsOverlayOpen;
+        set
+        {
+            if (!SetProperty(ref _isIncursionsOverlayOpen, value) || !value)
+            {
+                return;
+            }
+
+            if (_isHubWormholesOverlayOpen)
+            {
+                _isHubWormholesOverlayOpen = false;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsHubWormholesOverlayOpen)));
+            }
+
+            if (_isStormsOverlayOpen)
+            {
+                _isStormsOverlayOpen = false;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsStormsOverlayOpen)));
+            }
+        }
+    }
+
+    public bool IsStormsOverlayOpen
+    {
+        get => _isStormsOverlayOpen;
+        set
+        {
+            if (!SetProperty(ref _isStormsOverlayOpen, value) || !value)
+            {
+                return;
+            }
+
+            if (_isHubWormholesOverlayOpen)
+            {
+                _isHubWormholesOverlayOpen = false;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsHubWormholesOverlayOpen)));
+            }
+
+            if (_isIncursionsOverlayOpen)
+            {
+                _isIncursionsOverlayOpen = false;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsIncursionsOverlayOpen)));
+            }
+        }
+    }
 
     public bool TrySetJumpRangeOrigin(long nodeId, double lightYears)
     {
@@ -899,6 +989,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             CurrentGraph = graph;
             await RefreshRegionMissingConnectionMarkersAsync(graph);
             RebuildJumpRangeOverlay();
+            await RebuildActivityCardsAsync(graph);
             SelectedNodeId = null;
             StatusText = $"Mode: {SelectedViewMode} | Coordinates: {SelectedCoordinateMode} | Nodes: {graph.Nodes.Count} | Links: {graph.Links.Count}";
             _ = _settingsService.SetAsync(ViewModeKey, SelectedViewMode);
@@ -912,6 +1003,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             MissingConnectionNodeIdsForView = [];
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MissingConnectionNodeIdsForView)));
             RebuildJumpRangeOverlay();
+            await RebuildActivityCardsAsync(CurrentGraph);
         }
         finally
         {
@@ -1458,6 +1550,214 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(JumpRangeMembershipByNodeIdForView)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(JumpRangeDistancesByNodeIdForView)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasJumpRangeOverlay)));
+    }
+
+    private async Task RebuildActivityCardsAsync(MapGraph? graph)
+    {
+        var wormholeBySystem = _hubWormholeStateService.Current.ConnectionsBySystemId;
+        var incursions = _incursionStateService.Current.Incursions;
+        var storms = _stormStateService.Current;
+        var allSystemIds = new HashSet<long>(wormholeBySystem.Keys);
+        foreach (var inc in incursions)
+        {
+            allSystemIds.Add(inc.StagingSolarSystemId);
+            foreach (var id in inc.InfestedSolarSystems)
+            {
+                allSystemIds.Add(id);
+            }
+        }
+        foreach (var center in storms.Centers)
+        {
+            allSystemIds.Add(center.SolarSystemId);
+        }
+
+        if (allSystemIds.Count == 0)
+        {
+            _hubWormholeCardsForView = [];
+            _incursionCardsForView = [];
+            _stormCardsForView = [];
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HubWormholeCardsForView)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IncursionCardsForView)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StormCardsForView)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HubWormholeOverlayTitle)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IncursionOverlayTitle)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StormOverlayTitle)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasHubWormholeOverlayData)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasIncursionOverlayData)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasStormOverlayData)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasNoHubWormholeOverlayData)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasNoIncursionOverlayData)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasNoStormOverlayData)));
+            return;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var metadataById = await _mapDataService.GetSystemMetadataByIdsAsync(allSystemIds);
+
+        _hubWormholeCardsForView = wormholeBySystem
+            .Where(kvp => kvp.Value.Count > 0)
+            .SelectMany(kvp =>
+            {
+                var systemId = kvp.Key;
+                metadataById.TryGetValue(systemId, out var meta);
+                return kvp.Value.Select(link =>
+                {
+                    var hubIsThera = link.HubType == WormholeHubType.Thera;
+                    var accent = hubIsThera ? "#44D19D" : "#FFB34D";
+                    var hubs = hubIsThera ? "Thera" : "Turnur";
+                    var hubLabelColor = hubIsThera ? "#00FF00" : "#FF9C1A";
+                    var inSig = string.IsNullOrWhiteSpace(link.InSignature) ? "?" : link.InSignature.Trim().ToUpperInvariant();
+                    var outSig = string.IsNullOrWhiteSpace(link.OutSignature) ? "?" : link.OutSignature.Trim().ToUpperInvariant();
+                    var expiry = link.ExpiresAtUtc.HasValue ? link.ExpiresAtUtc.Value - now : default;
+                    var expiryLabel = !link.ExpiresAtUtc.HasValue
+                        ? "Unknown expiry"
+                        : expiry <= TimeSpan.Zero ? "Now" : BuildExpiryHoursLabel(expiry);
+                    var expiryColor = !link.ExpiresAtUtc.HasValue ? "#BED5F2" : GetExpiryColorHex(expiry);
+                    var reportedLabel = link.ReportedAtUtc.HasValue ? $"{link.ReportedAtUtc.Value:yyyy-MM-dd HH:mm} UTC" : "n/a";
+                    var updatedLabel = link.LastUpdatedAtUtc.HasValue ? $"{link.LastUpdatedAtUtc.Value:yyyy-MM-dd HH:mm} UTC" : "n/a";
+
+                    return new WormholeOverlayCard
+                    {
+                        SystemName = meta?.SolarSystemName ?? $"System {systemId}",
+                        RegionName = meta?.RegionName ?? "Unknown Region",
+                        ConstellationName = meta?.ConstellationName ?? "Unknown Constellation",
+                        HubSummary = hubs,
+                        HubLabelColorHex = hubLabelColor,
+                        ShipSizeSummary = string.IsNullOrWhiteSpace(link.MaxShipSize)
+                            ? "?"
+                            : link.MaxShipSize.Trim().ToUpperInvariant(),
+                        SignatureSummary = $"In {inSig}  |  Out {outSig}",
+                        ReportedUpdatedSummary = $"Reported {reportedLabel}  |  Updated {updatedLabel}",
+                        ExpirySummary = expiryLabel,
+                        ExpiryColorHex = expiryColor,
+                        ConnectionCount = 1,
+                        AccentHex = accent
+                    };
+                });
+            })
+            .OrderBy(c => c.SystemName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        _incursionCardsForView = incursions
+            .Select(i =>
+            {
+                metadataById.TryGetValue(i.StagingSolarSystemId, out var stagingMeta);
+                var affectedKnown = i.InfestedSolarSystems.Count(id => metadataById.ContainsKey(id));
+                var isMobilizing = i.State.Equals("mobilizing", StringComparison.OrdinalIgnoreCase);
+                var isWithdrawing = i.State.Equals("withdrawing", StringComparison.OrdinalIgnoreCase);
+                var isEstablished = i.State.Equals("established", StringComparison.OrdinalIgnoreCase);
+                var accent = isMobilizing ? "#5BA8FF" : isWithdrawing ? "#FFA35A" : i.HasBoss ? "#FF6A7D" : "#A77BFF";
+                var stateColor = isMobilizing ? "#7CC2FF" : isWithdrawing ? "#FFB36B" : isEstablished ? "#C390FF" : "#B7A8D9";
+                var typeColor = i.Type.Contains("assault", StringComparison.OrdinalIgnoreCase)
+                    ? "#FF8F6A"
+                    : i.Type.Contains("vanguard", StringComparison.OrdinalIgnoreCase)
+                        ? "#72D3FF"
+                        : "#C8A9FF";
+                var bossColor = i.HasBoss ? "#FF6A7D" : "#7E8EA8";
+                return new IncursionOverlayCard
+                {
+                    StagingSystemName = stagingMeta?.SolarSystemName ?? $"System {i.StagingSolarSystemId}",
+                    ConstellationName = stagingMeta?.ConstellationName ?? $"Constellation {i.ConstellationId}",
+                    RegionName = stagingMeta?.RegionName ?? "Unknown Region",
+                    TypeLabel = i.Type,
+                    StateLabel = i.State,
+                    StateColorHex = stateColor,
+                    FactionLabel = $"Faction ID: {i.FactionId}",
+                    BossLabel = i.HasBoss ? "Mothership: Present" : "Mothership: Not present",
+                    InfluenceLabel = $"Influence: {i.Influence:P0}",
+                    AffectedSystemsLabel = $"Systems: {affectedKnown}/{i.InfestedSolarSystems.Count}",
+                    TypeColorHex = typeColor,
+                    BossColorHex = bossColor,
+                    AccentHex = accent
+                };
+            })
+            .OrderBy(c => c.StagingSystemName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        _stormCardsForView = storms.Centers
+            .Select(center =>
+            {
+                metadataById.TryGetValue(center.SolarSystemId, out var centerMeta);
+                var effects = storms.EffectsBySystemId
+                    .Where(kvp => kvp.Value.Any(e => e.CenterSolarSystemId == center.SolarSystemId))
+                    .SelectMany(kvp => kvp.Value.Where(e => e.CenterSolarSystemId == center.SolarSystemId))
+                    .ToList();
+                var weakCount = effects.Count(e => e.Strength == StormStrength.Weak);
+                var strongCount = effects.Count(e => e.Strength == StormStrength.Strong);
+                var centerCount = effects.Count(e => e.Strength == StormStrength.Center);
+                var totalSystems = effects.Count;
+                var (typeLabel, typeColor) = GetStormTypeDisplay(center.Type);
+                return new StormOverlayCard
+                {
+                    CenterSystemName = centerMeta?.SolarSystemName ?? center.DisplayName ?? $"System {center.SolarSystemId}",
+                    ConstellationName = centerMeta?.ConstellationName ?? "Unknown Constellation",
+                    RegionName = centerMeta?.RegionName ?? "Unknown Region",
+                    StormTypeLabel = typeLabel,
+                    StormTypeColorHex = typeColor,
+                    CoverageSummary = $"Affected systems: {totalSystems}",
+                    StrengthSummary = $"Center {centerCount} | Strong {strongCount} | Weak {weakCount}",
+                    ReportedSummary = center.ReportedAtUtc.HasValue
+                        ? $"Reported {center.ReportedAtUtc.Value:yyyy-MM-dd HH:mm} UTC"
+                        : "Reported n/a",
+                    AccentHex = typeColor
+                };
+            })
+            .OrderBy(c => c.CenterSystemName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HubWormholeCardsForView)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IncursionCardsForView)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StormCardsForView)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HubWormholeOverlayTitle)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IncursionOverlayTitle)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StormOverlayTitle)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasHubWormholeOverlayData)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasIncursionOverlayData)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasStormOverlayData)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasNoHubWormholeOverlayData)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasNoIncursionOverlayData)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasNoStormOverlayData)));
+    }
+
+    private static (string Label, string ColorHex) GetStormTypeDisplay(StormType type)
+    {
+        return type switch
+        {
+            StormType.Electrical => ("Electrical", "#4AA8FF"),
+            StormType.Gamma => ("Gamma", "#E69138"),
+            StormType.Exotic => ("Exotic", "#CFD4DC"),
+            StormType.Plasma => ("Plasma", "#DE5B52"),
+            _ => ("Unknown", "#9AA7B8")
+        };
+    }
+
+    private static string BuildExpiryHoursLabel(TimeSpan remaining)
+    {
+        var hours = Math.Max(1, (int)Math.Ceiling(remaining.TotalHours));
+        return hours > 18 ? "> 18h" : $"> {hours}h";
+    }
+
+    private static string GetExpiryColorHex(TimeSpan remaining)
+    {
+        var hours = Math.Max(0, remaining.TotalHours);
+        if (hours <= 2)
+        {
+            return "#FF5C5C";
+        }
+        if (hours <= 5)
+        {
+            return "#FF8F3D";
+        }
+        if (hours <= 9)
+        {
+            return "#FFC24A";
+        }
+        if (hours <= 14)
+        {
+            return "#B6DC61";
+        }
+
+        return "#6FE38E";
     }
 
     private void AddJumpRangeDistance(MapNode targetNode, MapNode originNode, long originId, double maxLy, double distanceLy)

@@ -19,9 +19,13 @@ public sealed class HubWormholeConnection
     public required long SolarSystemId { get; init; }
     public required WormholeHubType HubType { get; init; }
     public DateTimeOffset? ExpiresAtUtc { get; init; }
+    public DateTimeOffset? ReportedAtUtc { get; init; }
+    public DateTimeOffset? LastUpdatedAtUtc { get; init; }
     public string? OutSignature { get; init; }
     public string? InSignature { get; init; }
     public string? MaxShipSize { get; init; }
+    public long? MaxJumpMassKg { get; init; }
+    public long? MaxStableMassKg { get; init; }
 }
 
 public sealed class HubWormholeSnapshot

@@ -44,6 +44,8 @@ public sealed class EveScoutHubWormholeSource : IHubWormholeSource
             var outSignature = item.TryGetProperty("out_signature", out var outSignatureElement) ? outSignatureElement.GetString() : null;
             var inSignature = item.TryGetProperty("in_signature", out var inSignatureElement) ? inSignatureElement.GetString() : null;
             var maxShipSize = item.TryGetProperty("max_ship_size", out var maxShipSizeElement) ? maxShipSizeElement.GetString() : null;
+            var maxJumpMassKg = TryReadLong(item, "max_jump_mass", "maxJumpMass", "max_mass", "jump_mass");
+            var maxStableMassKg = TryReadLong(item, "max_stable_mass", "maxStableMass", "max_total_mass", "stable_mass");
 
             var hubType = GetHubType(outSystemName) is var outHub && outHub != WormholeHubType.Unknown
                 ? outHub
@@ -75,14 +77,42 @@ public sealed class EveScoutHubWormholeSource : IHubWormholeSource
                 expiresAtUtc = parsedExpires;
             }
 
+            DateTimeOffset? reportedAtUtc = null;
+            if (item.TryGetProperty("created_at", out var createdElement) &&
+                DateTimeOffset.TryParse(createdElement.GetString(), out var parsedCreated))
+            {
+                reportedAtUtc = parsedCreated;
+            }
+            else if (item.TryGetProperty("reported_at", out var reportedElement) &&
+                     DateTimeOffset.TryParse(reportedElement.GetString(), out var parsedReported))
+            {
+                reportedAtUtc = parsedReported;
+            }
+
+            DateTimeOffset? lastUpdatedAtUtc = null;
+            if (item.TryGetProperty("updated_at", out var updatedElement) &&
+                DateTimeOffset.TryParse(updatedElement.GetString(), out var parsedUpdated))
+            {
+                lastUpdatedAtUtc = parsedUpdated;
+            }
+            else if (item.TryGetProperty("last_modified", out var lastModifiedElement) &&
+                     DateTimeOffset.TryParse(lastModifiedElement.GetString(), out var parsedLastModified))
+            {
+                lastUpdatedAtUtc = parsedLastModified;
+            }
+
             result.Add(new HubWormholeConnection
             {
                 SolarSystemId = targetSystemId.Value,
                 HubType = hubType,
                 ExpiresAtUtc = expiresAtUtc,
+                ReportedAtUtc = reportedAtUtc,
+                LastUpdatedAtUtc = lastUpdatedAtUtc,
                 OutSignature = outSignature,
                 InSignature = inSignature,
-                MaxShipSize = maxShipSize
+                MaxShipSize = maxShipSize,
+                MaxJumpMassKg = maxJumpMassKg,
+                MaxStableMassKg = maxStableMassKg
             });
         }
 
@@ -103,5 +133,53 @@ public sealed class EveScoutHubWormholeSource : IHubWormholeSource
         }
 
         return WormholeHubType.Unknown;
+    }
+
+    private static long? TryReadLong(JsonElement item, params string[] propertyNames)
+    {
+        foreach (var propertyName in propertyNames)
+        {
+            if (!item.TryGetProperty(propertyName, out var value))
+            {
+                continue;
+            }
+
+            if (value.ValueKind == JsonValueKind.Number)
+            {
+                if (value.TryGetInt64(out var numeric))
+                {
+                    return numeric;
+                }
+
+                if (value.TryGetDouble(out var asDouble) && !double.IsNaN(asDouble) && !double.IsInfinity(asDouble))
+                {
+                    return (long)Math.Round(asDouble);
+                }
+            }
+
+            if (value.ValueKind == JsonValueKind.String)
+            {
+                var raw = value.GetString();
+                if (string.IsNullOrWhiteSpace(raw))
+                {
+                    continue;
+                }
+
+                var cleaned = raw.Trim().Replace(",", string.Empty);
+                if (long.TryParse(cleaned, out var parsedLong))
+                {
+                    return parsedLong;
+                }
+
+                if (double.TryParse(cleaned, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var parsedDouble) &&
+                    !double.IsNaN(parsedDouble) &&
+                    !double.IsInfinity(parsedDouble))
+                {
+                    return (long)Math.Round(parsedDouble);
+                }
+            }
+        }
+
+        return null;
     }
 }

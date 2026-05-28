@@ -435,6 +435,58 @@ public sealed class MapDataService : IMapDataService
         return result;
     }
 
+    public async Task<IReadOnlyDictionary<long, MapSystemMetadata>> GetSystemMetadataByIdsAsync(IReadOnlyCollection<long> systemIds, CancellationToken cancellationToken = default)
+    {
+        var filtered = systemIds.Where(id => id > 0).Distinct().ToList();
+        if (filtered.Count == 0)
+        {
+            return new Dictionary<long, MapSystemMetadata>();
+        }
+
+        await using var connection = _sdeDatabase.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        var result = new Dictionary<long, MapSystemMetadata>(filtered.Count);
+        const int chunkSize = 500;
+        for (var offset = 0; offset < filtered.Count; offset += chunkSize)
+        {
+            var chunk = filtered.Skip(offset).Take(chunkSize).ToList();
+            var command = connection.CreateCommand();
+            var names = new List<string>(chunk.Count);
+            for (var i = 0; i < chunk.Count; i++)
+            {
+                var name = $"$id{i}";
+                names.Add(name);
+                command.Parameters.AddWithValue(name, chunk[i]);
+            }
+
+            command.CommandText = $"""
+                SELECT s.solarSystemID, s.solarSystemName, s.constellationID, c.constellationName, s.regionID, r.regionName
+                FROM mapSolarSystems s
+                LEFT JOIN mapConstellations c ON c.constellationID = s.constellationID
+                LEFT JOIN mapRegions r ON r.regionID = s.regionID
+                WHERE s.solarSystemID IN ({string.Join(", ", names)});
+                """;
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var id = reader.GetInt64(0);
+                result[id] = new MapSystemMetadata
+                {
+                    SolarSystemId = id,
+                    SolarSystemName = reader.GetString(1),
+                    ConstellationId = reader.IsDBNull(2) ? null : reader.GetInt32(2),
+                    ConstellationName = reader.IsDBNull(3) ? null : reader.GetString(3),
+                    RegionId = reader.IsDBNull(4) ? null : reader.GetInt32(4),
+                    RegionName = reader.IsDBNull(5) ? null : reader.GetString(5)
+                };
+            }
+        }
+
+        return result;
+    }
+
     private async Task<List<MapNode>> QuerySystemsAsync(int? regionId, MapCoordinateMode coordinateMode, CancellationToken cancellationToken)
     {
         await using var connection = _sdeDatabase.CreateConnection();

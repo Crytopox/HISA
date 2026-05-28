@@ -10,4 +10,5 @@ public interface IMapDataService
     Task<MapGraph> GetRegionGraphAsync(int regionId, MapCoordinateMode coordinateMode, CancellationToken cancellationToken = default);
     Task<IReadOnlyDictionary<long, int>> GetSystemNeighborCountsAsync(IReadOnlyCollection<long> systemIds, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<MapSearchCandidate>> SearchAsync(string term, CancellationToken cancellationToken = default);
+    Task<IReadOnlyDictionary<long, MapSystemMetadata>> GetSystemMetadataByIdsAsync(IReadOnlyCollection<long> systemIds, CancellationToken cancellationToken = default);
 }
