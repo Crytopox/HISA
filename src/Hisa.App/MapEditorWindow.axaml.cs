@@ -5,6 +5,8 @@ using Avalonia;
 using Avalonia.Controls.Primitives;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using Avalonia.Layout;
+using Avalonia.Media;
 using Hisa.Core.Models;
 using System;
 using System.ComponentModel;
@@ -109,7 +111,39 @@ public partial class MapEditorWindow : Window
             return;
         }
 
+        if (vm.SelectedLayoutRegion is null)
+        {
+            return;
+        }
+
+        var confirmed = await ShowConfirmationDialogAsync(
+            "Delete Layout Region",
+            $"Delete '{vm.SelectedLayoutRegion.Name}'? This cannot be undone.");
+        if (!confirmed)
+        {
+            return;
+        }
+
         await ExecuteWithPreservedViewportAsync(() => vm.DeleteSelectedLayoutRegionAsync());
+    }
+
+    private async void OnRenameLayoutRegionClicked(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MapEditorViewModel vm || vm.SelectedLayoutRegion is null)
+        {
+            return;
+        }
+
+        var renamed = await ShowTextInputDialogAsync(
+            "Rename Layout Region",
+            "New name",
+            vm.SelectedLayoutRegion.Name);
+        if (string.IsNullOrWhiteSpace(renamed))
+        {
+            return;
+        }
+
+        await ExecuteWithPreservedViewportAsync(() => vm.RenameSelectedLayoutRegionAsync(renamed));
     }
 
     private async void OnExportSelectedRegionClicked(object? sender, RoutedEventArgs e)
@@ -169,6 +203,115 @@ public partial class MapEditorWindow : Window
     private void OnLayoutRegionsSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
         PrepareViewportRestoreOnNextGraphChange();
+    }
+
+    private async Task<bool> ShowConfirmationDialogAsync(string title, string message)
+    {
+        var result = false;
+        var dialog = new Window
+        {
+            Title = title,
+            Width = 340,
+            CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = new SolidColorBrush(Color.Parse("#101826")),
+            SizeToContent = SizeToContent.Height
+        };
+
+        var okButton = new Button { Content = "Delete", MinWidth = 88 };
+        var cancelButton = new Button { Content = "Cancel", MinWidth = 88 };
+
+        okButton.Click += (_, _) => { result = true; dialog.Close(); };
+        cancelButton.Click += (_, _) => dialog.Close();
+
+        dialog.Content = new Border
+        {
+            Background = new SolidColorBrush(Color.Parse("#141D2B")),
+            BorderBrush = new SolidColorBrush(Color.Parse("#263244")),
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(10),
+            Child = new StackPanel
+            {
+                Spacing = 8,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = message,
+                        TextWrapping = TextWrapping.Wrap,
+                        TextAlignment = TextAlignment.Center,
+                        MaxWidth = 300
+                    },
+                    new StackPanel
+                    {
+                        Orientation = Orientation.Horizontal,
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        Spacing = 8,
+                        Children = { cancelButton, okButton }
+                    }
+                }
+            }
+        };
+
+        await dialog.ShowDialog(this);
+        return result;
+    }
+
+    private async Task<string?> ShowTextInputDialogAsync(string title, string label, string initialValue)
+    {
+        var textBox = new TextBox { Text = initialValue };
+        textBox.Width = 300;
+        textBox.HorizontalAlignment = HorizontalAlignment.Center;
+        string? result = null;
+
+        var dialog = new Window
+        {
+            Title = title,
+            Width = 360,
+            CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = new SolidColorBrush(Color.Parse("#101826")),
+            SizeToContent = SizeToContent.Height
+        };
+
+        var okButton = new Button { Content = "Save", MinWidth = 88 };
+        var cancelButton = new Button { Content = "Cancel", MinWidth = 88 };
+
+        okButton.Click += (_, _) =>
+        {
+            result = textBox.Text;
+            dialog.Close();
+        };
+        cancelButton.Click += (_, _) => dialog.Close();
+
+        dialog.Content = new Border
+        {
+            Background = new SolidColorBrush(Color.Parse("#141D2B")),
+            BorderBrush = new SolidColorBrush(Color.Parse("#263244")),
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(10),
+            Child = new StackPanel
+            {
+                Spacing = 6,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Children =
+                {
+                    new TextBlock { Text = label, TextAlignment = TextAlignment.Center },
+                    textBox,
+                    new StackPanel
+                    {
+                        Orientation = Orientation.Horizontal,
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        Spacing = 8,
+                        Children = { cancelButton, okButton }
+                    }
+                }
+            }
+        };
+
+        await dialog.ShowDialog(this);
+        return result;
     }
 
     private void OnEditorMapPointerPressed(object? sender, PointerPressedEventArgs e)

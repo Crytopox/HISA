@@ -18,6 +18,7 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
     private long? _selectedNodeId;
     private string _newRegionName = string.Empty;
     private string _statusText = "Loading map editor data...";
+    private bool _showEditorRegionLabel = true;
     private MapGraph _currentGraph = new() { Nodes = [], Links = [] };
     private const double SnapGridStep = 0.01;
     private const string RegionExchangeFormat = "hisa-region-v1";
@@ -113,6 +114,12 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
     public string SelectionStatus => _selectedNodeIds.Count == 0
         ? "Selection: none"
         : $"Selection: {_selectedNodeIds.Count} node(s)";
+
+    public bool ShowEditorRegionLabel
+    {
+        get => _showEditorRegionLabel;
+        set => SetProperty(ref _showEditorRegionLabel, value);
+    }
 
     public bool IsSelectedLayoutRegionEditable => SelectedLayoutRegion is not null && !SelectedLayoutRegion.IsReadOnly;
     public bool IsSelectedLayoutRegionReadOnly => SelectedLayoutRegion is not null && SelectedLayoutRegion.IsReadOnly;
@@ -217,6 +224,35 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
         catch (Exception ex)
         {
             StatusText = $"Save failed: {ex.Message}";
+        }
+    }
+
+    public async Task RenameSelectedLayoutRegionAsync(string newName)
+    {
+        if (SelectedLayoutRegion is null)
+        {
+            StatusText = "Select a layout region first.";
+            return;
+        }
+
+        if (SelectedLayoutRegion.IsReadOnly)
+        {
+            StatusText = "Read-only layout region. Rename is only available for custom regions.";
+            return;
+        }
+
+        try
+        {
+            var regionId = SelectedLayoutRegion.Id;
+            var oldName = SelectedLayoutRegion.Name;
+            await _mapLayoutEditorService.RenameLayoutRegionAsync(SelectedLayoutRegion.Id, newName);
+            await ReloadAsync();
+            SelectedLayoutRegion = LayoutRegions.FirstOrDefault(r => r.Id == regionId);
+            StatusText = $"Renamed layout region: {oldName} -> {newName.Trim()}";
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Rename layout failed: {ex.Message}";
         }
     }
 

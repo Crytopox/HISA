@@ -78,6 +78,54 @@ public sealed class SqliteMapLayoutEditorService : IMapLayoutEditorService
         await tx.CommitAsync(cancellationToken);
     }
 
+    public async Task RenameLayoutRegionAsync(long layoutRegionId, string newName, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(newName))
+        {
+            throw new InvalidOperationException("Region name is required.");
+        }
+
+        var trimmedName = newName.Trim();
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var tx = connection.BeginTransaction();
+
+        await EnsureEditableRegionAsync(connection, tx, layoutRegionId, cancellationToken);
+
+        var existsCommand = connection.CreateCommand();
+        existsCommand.Transaction = tx;
+        existsCommand.CommandText = """
+            SELECT COUNT(1)
+            FROM MapLayoutRegion
+            WHERE Name = $name COLLATE NOCASE
+              AND Id <> $layoutRegionId;
+            """;
+        existsCommand.Parameters.AddWithValue("$name", trimmedName);
+        existsCommand.Parameters.AddWithValue("$layoutRegionId", layoutRegionId);
+        var exists = Convert.ToInt32(await existsCommand.ExecuteScalarAsync(cancellationToken)) > 0;
+        if (exists)
+        {
+            throw new InvalidOperationException($"A layout region named '{trimmedName}' already exists.");
+        }
+
+        var updateCommand = connection.CreateCommand();
+        updateCommand.Transaction = tx;
+        updateCommand.CommandText = """
+            UPDATE MapLayoutRegion
+            SET Name = $name
+            WHERE Id = $layoutRegionId;
+            """;
+        updateCommand.Parameters.AddWithValue("$name", trimmedName);
+        updateCommand.Parameters.AddWithValue("$layoutRegionId", layoutRegionId);
+        var rows = await updateCommand.ExecuteNonQueryAsync(cancellationToken);
+        if (rows == 0)
+        {
+            throw new InvalidOperationException("Layout region not found.");
+        }
+
+        await tx.CommitAsync(cancellationToken);
+    }
+
     public async Task<MapGraph?> GetLayoutRegionGraphAsync(long layoutRegionId, CancellationToken cancellationToken = default)
     {
         await using var connection = new SqliteConnection(_connectionString);

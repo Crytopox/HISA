@@ -63,10 +63,18 @@
                          SelectionChanged="OnLayoutRegionsSelectionChanged"
                          MinHeight="120"
                          MaxHeight="160" />
-                <Button Classes="editor-compact"
-                        Content="Delete Selected Region"
-                        Click="OnDeleteLayoutRegionClicked"
-                        IsEnabled="{Binding IsSelectedLayoutRegionEditable}" />
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="6">
+                  <Button Classes="editor-compact"
+                          Grid.Column="0"
+                          Content="Rename"
+                          Click="OnRenameLayoutRegionClicked"
+                          IsEnabled="{Binding IsSelectedLayoutRegionEditable}" />
+                  <Button Classes="editor-compact"
+                          Grid.Column="1"
+                          Content="Delete"
+                          Click="OnDeleteLayoutRegionClicked"
+                          IsEnabled="{Binding IsSelectedLayoutRegionEditable}" />
+                </Grid>
               </StackPanel>
             </Border>
 
@@ -90,10 +98,10 @@
               <StackPanel Spacing="6">
                 <TextBlock Classes="editor-section-title" Text="Map Actions" />
                 <TextBlock Classes="editor-muted" Text="{Binding SelectionStatus}" />
+                <CheckBox IsChecked="{Binding ShowEditorRegionLabel}" Content="Show Region Label" />
                 <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="6" RowSpacing="6">
                   <Button Classes="editor-compact" Grid.Row="0" Grid.Column="0" Content="Fit View" Click="OnFitViewClicked" />
-                  <Button Classes="editor-compact" Grid.Row="0" Grid.Column="1" Content="Delete Node" Click="OnDeleteSelectedNodeClicked" IsEnabled="{Binding IsSelectedLayoutRegionEditable}" />
-                  <Button Classes="editor-compact" Grid.Row="1" Grid.ColumnSpan="2" Content="Save Region" Click="OnSaveCurrentRegionClicked" IsEnabled="{Binding IsSelectedLayoutRegionEditable}" />
+                  <Button Classes="editor-compact" Grid.Row="0" Grid.Column="1" Content="Save Region" Click="OnSaveCurrentRegionClicked" IsEnabled="{Binding IsSelectedLayoutRegionEditable}" />
                 </Grid>
               </StackPanel>
             </Border>
@@ -111,6 +119,7 @@
                               ViewMode="Region"
                               StretchToWindow="False"
                               ShowEditorGrid="True"
+                              ShowEditorRegionLabel="{Binding ShowEditorRegionLabel}"
                               EditorGridStep="0.01"
                               MinZoom="0.10"
                               MaxZoomOverride="12.0"

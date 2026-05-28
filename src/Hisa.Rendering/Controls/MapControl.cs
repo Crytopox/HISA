@@ -188,6 +188,8 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, HubWormholeMarkerMode>(nameof(HubWormholeMarkerMode), HubWormholeMarkerMode.Badge);
     public static readonly StyledProperty<bool> ShowEditorGridProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowEditorGrid), false);
+    public static readonly StyledProperty<bool> ShowEditorRegionLabelProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(ShowEditorRegionLabel), true);
     public static readonly StyledProperty<double> EditorGridStepProperty =
         AvaloniaProperty.Register<MapControl, double>(nameof(EditorGridStep), 0.01);
     public static readonly StyledProperty<double> MinZoomProperty =
@@ -445,6 +447,12 @@ public sealed class MapControl : Control
         set => SetValue(ShowEditorGridProperty, value);
     }
 
+    public bool ShowEditorRegionLabel
+    {
+        get => GetValue(ShowEditorRegionLabelProperty);
+        set => SetValue(ShowEditorRegionLabelProperty, value);
+    }
+
     public double EditorGridStep
     {
         get => GetValue(EditorGridStepProperty);
@@ -530,6 +538,7 @@ public sealed class MapControl : Control
             AlwaysShowHubWormholesProperty,
             HubWormholeMarkerModeProperty,
             ShowEditorGridProperty,
+            ShowEditorRegionLabelProperty,
             EditorGridStepProperty,
             MinZoomProperty,
             MaxZoomOverrideProperty,
@@ -3068,7 +3077,7 @@ public sealed class MapControl : Control
 
         FormattedText? region = null;
         FormattedText? regionHalo = null;
-        if ((ShowIndicatorRegion || ShowEditorGrid) && !string.IsNullOrWhiteSpace(node.RegionName))
+        if ((ShowIndicatorRegion || (ShowEditorGrid && ShowEditorRegionLabel)) && !string.IsNullOrWhiteSpace(node.RegionName))
         {
             region = new FormattedText(
                 node.RegionName,
