@@ -47,8 +47,10 @@ public sealed class MapControl : Control
     private static readonly Point NodeLabelOffset = new(9, 3);
     private static readonly Typeface NodeLabelTypeface = new("Inter", FontStyle.Normal, FontWeight.SemiBold);
     private static readonly Typeface RegionCardTypeface = new("Inter", FontStyle.Normal, FontWeight.SemiBold);
-    private const double NodeLabelFontSize = 12.5;
-    private const double NodeRegionConstellationFontSize = 10.5;
+    private const double NodeLabelFontSize = 12;
+    private const double EditorNodeLabelFontSize = 10;
+    private const double NodeRegionConstellationFontSize = 10;
+    private const double EditorRegionConstellationFontSize = 9.0;
     private const double UniverseMinNodeScale = 0.55;
     private const double IconSize = 18.0;
     private const double SovIconSize = 22.0;
@@ -1108,9 +1110,8 @@ public sealed class MapControl : Control
             var suppressInlineLabel =
                 (SelectedNodeId is not null && node.Id == SelectedNodeId.Value) ||
                 (_hoveredNodeId is not null && node.Id == _hoveredNodeId.Value);
-            var alwaysShowEditorLabels = ShowEditorGrid;
             if (!suppressInlineLabel &&
-                (alwaysShowEditorLabels || _zoom >= GetLabelZoomThreshold() || isSelected || isHovered) &&
+                (_zoom >= GetLabelZoomThreshold() || isSelected || isHovered) &&
                 labelsDrawn < labelBudget &&
                 IsPointVisible(p, bounds, labelVisibilityMargin))
             {
@@ -1144,11 +1145,16 @@ public sealed class MapControl : Control
 
     private double GetLabelZoomThreshold()
     {
+        if (ShowEditorGrid)
+        {
+            return 1.5;
+        }
+
         return ViewMode switch
         {
             MapViewMode.Universe => 5.4,
             MapViewMode.UniverseRegions => 0.5,
-            MapViewMode.Region => 0.45,
+            MapViewMode.Region => 0.6,
             _ => 1.0
         };
     }
@@ -1157,9 +1163,9 @@ public sealed class MapControl : Control
     {
         return ViewMode switch
         {
-            MapViewMode.Universe => 420,
+            MapViewMode.Universe => 620,
             MapViewMode.UniverseRegions => 180,
-            MapViewMode.Region => 420,
+            MapViewMode.Region => 1240,
             _ => 300
         };
     }
@@ -1908,7 +1914,8 @@ public sealed class MapControl : Control
 
     private FormattedText GetNodeLabel(long nodeId, string name)
     {
-        var key = $"{nodeId}:{name}";
+        var fontSize = ShowEditorGrid ? EditorNodeLabelFontSize : NodeLabelFontSize;
+        var key = $"{nodeId}:{name}:{fontSize:F1}";
         if (_nodeLabelCache.TryGetValue(key, out var text))
         {
             return text;
@@ -1919,7 +1926,7 @@ public sealed class MapControl : Control
             System.Globalization.CultureInfo.InvariantCulture,
             FlowDirection.LeftToRight,
             NodeLabelTypeface,
-            NodeLabelFontSize,
+            fontSize,
             new SolidColorBrush(Color.Parse("#EEF6FF")));
         _nodeLabelCache[key] = text;
         return text;
@@ -1927,7 +1934,8 @@ public sealed class MapControl : Control
 
     private FormattedText GetNodeLabelHalo(long nodeId, string name)
     {
-        var key = $"{nodeId}:{name}";
+        var fontSize = ShowEditorGrid ? EditorNodeLabelFontSize : NodeLabelFontSize;
+        var key = $"{nodeId}:{name}:{fontSize:F1}";
         if (_nodeLabelHaloCache.TryGetValue(key, out var text))
         {
             return text;
@@ -1938,7 +1946,7 @@ public sealed class MapControl : Control
             System.Globalization.CultureInfo.InvariantCulture,
             FlowDirection.LeftToRight,
             NodeLabelTypeface,
-            NodeLabelFontSize,
+            fontSize,
             new ImmutableSolidColorBrush(Color.Parse("#AA0A111A")));
         _nodeLabelHaloCache[key] = text;
         return text;
@@ -1946,7 +1954,8 @@ public sealed class MapControl : Control
 
     private FormattedText GetNodeSecondaryLabel(long nodeId, string name)
     {
-        var key = $"{nodeId}:{name}";
+        var fontSize = ShowEditorGrid ? EditorNodeLabelFontSize : NodeLabelFontSize;
+        var key = $"{nodeId}:{name}:{fontSize:F1}";
         if (_nodeSecondaryLabelCache.TryGetValue(key, out var text))
         {
             return text;
@@ -1957,7 +1966,7 @@ public sealed class MapControl : Control
             CultureInfo.InvariantCulture,
             FlowDirection.LeftToRight,
             NodeLabelTypeface,
-            NodeLabelFontSize,
+            fontSize,
             new SolidColorBrush(Color.Parse("#E6F0FF")));
         _nodeSecondaryLabelCache[key] = text;
         return text;
@@ -1965,7 +1974,8 @@ public sealed class MapControl : Control
 
     private FormattedText GetNodeSecondaryLabelHalo(long nodeId, string name)
     {
-        var key = $"{nodeId}:{name}";
+        var fontSize = ShowEditorGrid ? EditorNodeLabelFontSize : NodeLabelFontSize;
+        var key = $"{nodeId}:{name}:{fontSize:F1}";
         if (_nodeSecondaryLabelHaloCache.TryGetValue(key, out var text))
         {
             return text;
@@ -1976,7 +1986,7 @@ public sealed class MapControl : Control
             CultureInfo.InvariantCulture,
             FlowDirection.LeftToRight,
             NodeLabelTypeface,
-            NodeLabelFontSize,
+            fontSize,
             new ImmutableSolidColorBrush(Color.Parse("#AA0A111A")));
         _nodeSecondaryLabelHaloCache[key] = text;
         return text;
@@ -2964,6 +2974,8 @@ public sealed class MapControl : Control
     {
         const double gap = 7.0;
         const double lineGap = 1.0;
+        var labelFontSize = ShowEditorGrid ? EditorNodeLabelFontSize : NodeLabelFontSize;
+        var regionLabelFontSize = ShowEditorGrid ? EditorRegionConstellationFontSize : (NodeRegionConstellationFontSize - 1);
         var nameText = BuildIndicatorLabel(node);
         var name = GetNodeLabel(node.Id, nameText);
         var nameHalo = GetNodeLabelHalo(node.Id, nameText);
@@ -2979,14 +2991,14 @@ public sealed class MapControl : Control
                 CultureInfo.InvariantCulture,
                 FlowDirection.LeftToRight,
                 NodeLabelTypeface,
-                NodeLabelFontSize,
+                labelFontSize,
                 GetCachedBrush(GetSecurityColor(node)));
             secHalo = new FormattedText(
                 securityLabel,
                 CultureInfo.InvariantCulture,
                 FlowDirection.LeftToRight,
                 NodeLabelTypeface,
-                NodeLabelFontSize,
+                labelFontSize,
                 new ImmutableSolidColorBrush(Color.Parse("#AA0A111A")));
         }
 
@@ -2999,14 +3011,14 @@ public sealed class MapControl : Control
                 CultureInfo.InvariantCulture,
                 FlowDirection.LeftToRight,
                 NodeLabelTypeface,
-                NodeRegionConstellationFontSize-1,
+                regionLabelFontSize,
                 new SolidColorBrush(Color.Parse("#E6F0FF")));
             regionHalo = new FormattedText(
                 node.RegionName,
                 CultureInfo.InvariantCulture,
                 FlowDirection.LeftToRight,
                 NodeLabelTypeface,
-                NodeRegionConstellationFontSize-1,
+                regionLabelFontSize,
                 new ImmutableSolidColorBrush(Color.Parse("#AA0A111A")));
         }
 
@@ -3019,14 +3031,14 @@ public sealed class MapControl : Control
                 CultureInfo.InvariantCulture,
                 FlowDirection.LeftToRight,
                 NodeLabelTypeface,
-                NodeRegionConstellationFontSize-1,
+                regionLabelFontSize,
                 new SolidColorBrush(Color.Parse("#E6F0FF")));
             constellationHalo = new FormattedText(
                 node.ConstellationName,
                 CultureInfo.InvariantCulture,
                 FlowDirection.LeftToRight,
                 NodeLabelTypeface,
-                NodeRegionConstellationFontSize-1,
+                regionLabelFontSize,
                 new ImmutableSolidColorBrush(Color.Parse("#AA0A111A")));
         }
 
