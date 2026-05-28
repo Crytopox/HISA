@@ -77,6 +77,16 @@
             </StackPanel>
           </StackPanel>
         </Border>
+
+        <Border Padding="10" Background="#101826" BorderBrush="#243247" BorderThickness="1" CornerRadius="5">
+          <StackPanel Spacing="6">
+            <TextBlock Text="Incursions" FontWeight="SemiBold" Foreground="#C9D9EE" />
+            <CheckBox IsChecked="{Binding AlwaysShowIncursions}" Content="Always show active incursion systems" />
+            <TextBlock Text="Shows an incursion badge independent of map color and icon filters."
+                       Foreground="#8A96A8"
+                       TextWrapping="Wrap" />
+          </StackPanel>
+        </Border>
       </StackPanel>
     </ScrollViewer>
   </Border>

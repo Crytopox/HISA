@@ -203,6 +203,8 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, IEnumerable<string>?>(nameof(OverlaySovUpgradeFilterKeys));
     public static readonly StyledProperty<bool> AlwaysShowHubWormholesProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(AlwaysShowHubWormholes), false);
+    public static readonly StyledProperty<bool> AlwaysShowIncursionsProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(AlwaysShowIncursions), false);
     public static readonly StyledProperty<HubWormholeMarkerMode> HubWormholeMarkerModeProperty =
         AvaloniaProperty.Register<MapControl, HubWormholeMarkerMode>(nameof(HubWormholeMarkerMode), HubWormholeMarkerMode.Badge);
     public static readonly StyledProperty<bool> ShowEditorGridProperty =
@@ -491,6 +493,12 @@ public sealed class MapControl : Control
         set => SetValue(AlwaysShowHubWormholesProperty, value);
     }
 
+    public bool AlwaysShowIncursions
+    {
+        get => GetValue(AlwaysShowIncursionsProperty);
+        set => SetValue(AlwaysShowIncursionsProperty, value);
+    }
+
     public HubWormholeMarkerMode HubWormholeMarkerMode
     {
         get => GetValue(HubWormholeMarkerModeProperty);
@@ -626,6 +634,7 @@ public sealed class MapControl : Control
             InfoBoxShowJumpRangeLyProperty,
             OverlaySovUpgradeFilterKeysProperty,
             AlwaysShowHubWormholesProperty,
+            AlwaysShowIncursionsProperty,
             HubWormholeMarkerModeProperty,
             ShowEditorGridProperty,
             ShowEditorRegionLabelProperty,
@@ -1247,6 +1256,10 @@ public sealed class MapControl : Control
                         DrawHubWormholeBeacon(context, p, node);
                         break;
                 }
+            }
+            if (AlwaysShowIncursions && node.HasActiveIncursion)
+            {
+                DrawIncursionBeacon(context, p);
             }
 
             var labelVisibilityMargin = ViewMode == MapViewMode.Universe ? 180 : 96;
@@ -4204,6 +4217,23 @@ public sealed class MapControl : Control
         var src = new Rect(0, 0, icon.Size.Width, icon.Size.Height);
         var dst = new Rect(topLeft.X, topLeft.Y, size, size);
         context.DrawImage(icon, src, dst);
+    }
+
+    private static void DrawIncursionBeacon(DrawingContext context, Point nodePoint)
+    {
+        var icon = IncursionIcon.Value;
+        if (icon is null)
+        {
+            return;
+        }
+
+        var size = 12.0;
+        var rect = new Rect(nodePoint.X + 7.0, nodePoint.Y - 14.0, size, size);
+        var bg = new ImmutableSolidColorBrush(Color.FromArgb(178, 74, 46, 120));
+        var border = new Pen(new ImmutableSolidColorBrush(Color.FromArgb(255, 58, 110, 168)), 1);
+        context.FillRectangle(bg, rect, 3);
+        context.DrawRectangle(border, rect, 3);
+        DrawBitmap(context, icon, new Point(rect.X + 1, rect.Y + 1), size - 2);
     }
 
     private static void DrawBitmap(DrawingContext context, Bitmap icon, Point topLeft, double size)

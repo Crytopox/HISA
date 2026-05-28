@@ -64,6 +64,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _infoBoxShowIncursionIcon = true;
     private bool _infoBoxShowJumpRangeLy = true;
     private bool _alwaysShowHubWormholes = true;
+    private bool _alwaysShowIncursions = true;
     private bool _showMissingConnectionMarkers = true;
     private HubWormholeMarkerMode _hubWormholeMarkerMode = HubWormholeMarkerMode.Badge;
     private readonly Dictionary<long, double> _jumpRangeOriginsLyByNodeId = [];
@@ -110,6 +111,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string IndicatorSovFilterConfiguredKey = "Map.IndicatorSovFilter.Configured";
     private const string OverlaySovFilterConfiguredKey = "Map.OverlaySovFilter.Configured";
     private const string AlwaysShowHubWormholesKey = "Map.AlwaysShowHubWormholes";
+    private const string AlwaysShowIncursionsKey = "Map.AlwaysShowIncursions";
     private const string HubWormholeMarkerModeKey = "Map.HubWormholeMarkerMode";
     private const string ShowMissingConnectionMarkersKey = "Map.ShowMissingConnectionMarkers";
     private const string WindowPlacementKey = "Window.Main.Placement";
@@ -601,6 +603,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
+    public bool AlwaysShowIncursions
+    {
+        get => _alwaysShowIncursions;
+        set
+        {
+            if (SetProperty(ref _alwaysShowIncursions, value) && !_isInitializing)
+            {
+                _ = _settingsService.SetAsync(AlwaysShowIncursionsKey, value);
+            }
+        }
+    }
+
     public IEnumerable<string> SelectedIndicatorSovUpgradeKeys =>
         IndicatorSovUpgradeOptions.Where(x => x.IsSelected).Select(x => x.Key).ToList();
 
@@ -846,6 +860,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         ApplySelectedSovKeys(IndicatorSovUpgradeOptions, indicatorKeys, indicatorConfigured);
         ApplySelectedSovKeys(OverlaySovUpgradeOptions, overlayKeys, overlayConfigured);
         AlwaysShowHubWormholes = await _settingsService.GetAsync<bool?>(AlwaysShowHubWormholesKey) ?? true;
+        AlwaysShowIncursions = await _settingsService.GetAsync<bool?>(AlwaysShowIncursionsKey) ?? true;
         HubWormholeMarkerMode = await _settingsService.GetAsync<HubWormholeMarkerMode?>(HubWormholeMarkerModeKey) ?? HubWormholeMarkerMode.Badge;
         ShowMissingConnectionMarkers = await _settingsService.GetAsync<bool?>(ShowMissingConnectionMarkersKey) ?? true;
         SelectedViewMode = await _settingsService.GetAsync<MapViewMode?>(ViewModeKey) ?? MapViewMode.Universe;
