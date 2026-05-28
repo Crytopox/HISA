@@ -2149,9 +2149,9 @@ public sealed class MapControl : Control
         var maxBufferedLinkLength = spacing * 3.5;
         var envelopePad = Math.Clamp(spacing * 5.0, 0.04, 0.20);
 
-        var nodeKeyToId = graph.Nodes.ToDictionary(
-            n => $"{Math.Round(n.X, 8)}:{Math.Round(n.Y, 8)}",
-            n => n.Id);
+        var nodeIdsByKey = graph.Nodes
+            .GroupBy(n => $"{Math.Round(n.X, 8)}:{Math.Round(n.Y, 8)}")
+            .ToDictionary(g => g.Key, g => g.Select(n => n.Id).Distinct().ToList());
 
         var sites = graph.Nodes
             .Select(n => new NtsCoordinate(n.X, n.Y))
@@ -2198,7 +2198,7 @@ public sealed class MapControl : Control
                 continue;
             }
 
-            var nodeId = ResolveVoronoiOwnerNodeId(polygon, nodeKeyToId, graph);
+            var nodeId = ResolveVoronoiOwnerNodeId(polygon, nodeIdsByKey, graph);
             if (nodeId is null)
             {
                 continue;
@@ -2408,15 +2408,37 @@ public sealed class MapControl : Control
 
     private static long? ResolveVoronoiOwnerNodeId(
     NtsPolygon polygon,
-    IReadOnlyDictionary<string, long> nodeKeyToId,
+    IReadOnlyDictionary<string, List<long>> nodeIdsByKey,
     MapGraph graph)
     {
         if (polygon.UserData is NtsCoordinate site)
         {
             var key = $"{Math.Round(site.X, 8)}:{Math.Round(site.Y, 8)}";
-            if (nodeKeyToId.TryGetValue(key, out var nodeId))
+            if (nodeIdsByKey.TryGetValue(key, out var nodeIds) && nodeIds.Count > 0)
             {
-                return nodeId;
+                if (nodeIds.Count == 1)
+                {
+                    return nodeIds[0];
+                }
+
+                // Duplicate coordinates: pick deterministically by nearest to centroid,
+                // with stable tie-break on node id.
+                var centroidForDuplicate = polygon.Centroid;
+                return nodeIds
+                    .OrderBy(id =>
+                    {
+                        var node = graph.Nodes.FirstOrDefault(n => n.Id == id);
+                        if (node is null)
+                        {
+                            return double.MaxValue;
+                        }
+
+                        var dx = node.X - centroidForDuplicate.X;
+                        var dy = node.Y - centroidForDuplicate.Y;
+                        return (dx * dx) + (dy * dy);
+                    })
+                    .ThenBy(id => id)
+                    .First();
             }
         }
 
