@@ -47,7 +47,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _infoBoxShowIceBeltsIcon = true;
     private bool _infoBoxShowStormIcon = true;
     private bool _infoBoxShowWormholeIcon = true;
-    private bool _alwaysShowHubWormholes;
+    private bool _alwaysShowHubWormholes = true;
     private bool _showMissingConnectionMarkers = true;
     private HubWormholeMarkerMode _hubWormholeMarkerMode = HubWormholeMarkerMode.Badge;
     private CancellationTokenSource? _searchSuggestionsCts;
@@ -633,7 +633,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         InfoBoxShowIceBeltsIcon = await _settingsService.GetAsync<bool?>(InfoBoxShowIceBeltsIconKey) ?? true;
         InfoBoxShowStormIcon = await _settingsService.GetAsync<bool?>(InfoBoxShowStormIconKey) ?? true;
         InfoBoxShowWormholeIcon = await _settingsService.GetAsync<bool?>(InfoBoxShowWormholeIconKey) ?? true;
-        AlwaysShowHubWormholes = await _settingsService.GetAsync<bool?>(AlwaysShowHubWormholesKey) ?? false;
+        AlwaysShowHubWormholes = await _settingsService.GetAsync<bool?>(AlwaysShowHubWormholesKey) ?? true;
         HubWormholeMarkerMode = await _settingsService.GetAsync<HubWormholeMarkerMode?>(HubWormholeMarkerModeKey) ?? HubWormholeMarkerMode.Badge;
         ShowMissingConnectionMarkers = await _settingsService.GetAsync<bool?>(ShowMissingConnectionMarkersKey) ?? true;
         SelectedViewMode = await _settingsService.GetAsync<MapViewMode?>(ViewModeKey) ?? MapViewMode.Universe;
