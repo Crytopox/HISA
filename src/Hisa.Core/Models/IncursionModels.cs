@@ -32,6 +32,7 @@ public sealed class EsiRequestMetric
 {
     public required DateTimeOffset TimestampUtc { get; init; }
     public required string Route { get; init; }
+    public required string RateLimitGroup { get; init; }
     public required bool FromCache { get; init; }
     public required int StatusCode { get; init; }
     public required int? ErrorLimitRemain { get; init; }
@@ -45,8 +46,11 @@ public sealed class EsiRequestMetric
 
 public sealed class EsiRateState
 {
+    public required string RateLimitGroup { get; init; }
     public required DateTimeOffset LastRequestAtUtc { get; init; }
     public required DateTimeOffset? NextAllowedAtUtc { get; init; }
     public required int RequestsLast15Minutes { get; init; }
     public required int RouteTokenLimit15Minutes { get; init; }
+    public required int? HeaderRateLimitRemaining { get; init; }
+    public required int? HeaderRateLimitResetSeconds { get; init; }
 }

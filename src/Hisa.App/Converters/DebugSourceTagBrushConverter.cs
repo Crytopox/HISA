@@ -14,14 +14,20 @@ public sealed class DebugSourceTagBrushConverter : IValueConverter
 
         if (string.Equals(mode, "Bg", StringComparison.OrdinalIgnoreCase))
         {
-            return new SolidColorBrush(string.Equals(tag, "NET", StringComparison.OrdinalIgnoreCase)
-                ? Color.Parse("#0B3A2E")
-                : Color.Parse("#1E293B"));
+            return new SolidColorBrush(tag.ToUpperInvariant() switch
+            {
+                "NET" => Color.Parse("#0B3A2E"),
+                "ESI" => Color.Parse("#3A2A0B"),
+                _ => Color.Parse("#1E293B")
+            });
         }
 
-        return new SolidColorBrush(string.Equals(tag, "NET", StringComparison.OrdinalIgnoreCase)
-            ? Color.Parse("#34D399")
-            : Color.Parse("#93C5FD"));
+        return new SolidColorBrush(tag.ToUpperInvariant() switch
+        {
+            "NET" => Color.Parse("#34D399"),
+            "ESI" => Color.Parse("#FCD34D"),
+            _ => Color.Parse("#93C5FD")
+        });
     }
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)

@@ -22,11 +22,13 @@ internal static class AppHostBuilder
             .AddEnvironmentVariables(prefix: "HISA_");
 
         builder.Logging.ClearProviders();
+        builder.Logging.SetMinimumLevel(LogLevel.Trace);
         builder.Logging.AddConsole();
         var appLogStore = new AppLogStore();
         builder.Logging.AddProvider(new InMemoryLoggerProvider(appLogStore));
 
         builder.Services.AddSingleton(appLogStore);
+        builder.Services.AddSingleton<IAppLogFileService, AppLogFileService>();
         builder.Services.AddSingleton<MainWindowViewModel>();
         builder.Services.AddSingleton<MainWindow>();
         builder.Services.AddSingleton<MapEditorViewModel>();

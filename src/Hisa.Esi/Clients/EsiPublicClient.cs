@@ -55,6 +55,7 @@ public sealed class EsiPublicClient : IEsiPublicClient
                 {
                     TimestampUtc = now,
                     Route = "/incursions/",
+                    RateLimitGroup = "incursions.public.local",
                     FromCache = true,
                     StatusCode = 200,
                     ErrorLimitRemain = null,
@@ -81,10 +82,13 @@ public sealed class EsiPublicClient : IEsiPublicClient
                 var next = oldest.AddMinutes(15);
                 _metricsStore.UpdateRateState(new EsiRateState
                 {
+                    RateLimitGroup = "incursions.public.local",
                     LastRequestAtUtc = now,
                     NextAllowedAtUtc = next,
                     RequestsLast15Minutes = _incursionRequests.Count,
-                    RouteTokenLimit15Minutes = limit
+                    RouteTokenLimit15Minutes = limit,
+                    HeaderRateLimitRemaining = null,
+                    HeaderRateLimitResetSeconds = null
                 });
                 _logger.LogWarning("Incursion request skipped due to local token guard. Next attempt at {Next}.", next);
                 return _cachedIncursions;
@@ -115,10 +119,13 @@ public sealed class EsiPublicClient : IEsiPublicClient
 
             _metricsStore.UpdateRateState(new EsiRateState
             {
+                RateLimitGroup = "incursions.public.local",
                 LastRequestAtUtc = now,
                 NextAllowedAtUtc = now.AddSeconds(Math.Max(1, options.Incursions.CacheSeconds)),
                 RequestsLast15Minutes = _incursionRequests.Count,
-                RouteTokenLimit15Minutes = limit
+                RouteTokenLimit15Minutes = limit,
+                HeaderRateLimitRemaining = rateRemain,
+                HeaderRateLimitResetSeconds = rateReset
             });
 
             if (response.StatusCode == HttpStatusCode.NotModified)
@@ -128,6 +135,7 @@ public sealed class EsiPublicClient : IEsiPublicClient
                 {
                     TimestampUtc = now,
                     Route = "/incursions/",
+                    RateLimitGroup = "incursions.public.local",
                     FromCache = true,
                     StatusCode = (int)response.StatusCode,
                     ErrorLimitRemain = errorRemain,
@@ -151,6 +159,7 @@ public sealed class EsiPublicClient : IEsiPublicClient
             {
                 TimestampUtc = now,
                 Route = "/incursions/",
+                RateLimitGroup = "incursions.public.local",
                 FromCache = false,
                 StatusCode = (int)response.StatusCode,
                 ErrorLimitRemain = errorRemain,

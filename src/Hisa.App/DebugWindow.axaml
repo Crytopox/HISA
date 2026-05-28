@@ -14,25 +14,92 @@
     <converters:DebugLogLevelBrushConverter x:Key="DebugLogLevelBrushConverter" />
     <converters:DebugSourceTagBrushConverter x:Key="DebugSourceTagBrushConverter" />
   </Window.Resources>
+  <Window.Styles>
+    <Style Selector="dg|DataGrid#DebugLogGrid">
+      <Setter Property="Background" Value="#040404" />
+      <Setter Property="BorderBrush" Value="#1F2937" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Foreground" Value="#D1D5DB" />
+      <Setter Property="RowHeight" Value="24" />
+      <Setter Property="HeadersVisibility" Value="Column" />
+      <Setter Property="GridLinesVisibility" Value="None" />
+    </Style>
+    <Style Selector="dg|DataGrid#DebugLogGrid dg|DataGridColumnHeader">
+      <Setter Property="Background" Value="#090909" />
+      <Setter Property="Foreground" Value="#6B7280" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Padding" Value="4,0" />
+      <Setter Property="MinHeight" Value="24" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="BorderBrush" Value="#141414" />
+      <Setter Property="BorderThickness" Value="0,0,1,1" />
+    </Style>
+    <Style Selector="dg|DataGrid#DebugLogGrid dg|DataGridCell">
+      <Setter Property="Padding" Value="2,0" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Background" Value="#090909" />
+    </Style>
+    <Style Selector="dg|DataGrid#DebugLogGrid dg|DataGridRow:selected dg|DataGridCell">
+      <Setter Property="Background" Value="#0F172A" />
+    </Style>
+  </Window.Styles>
   <Grid Margin="12">
     <TabControl>
       <TabItem Header="Logs">
         <Grid RowDefinitions="Auto,*" RowSpacing="10">
           <Border Background="#050505" BorderBrush="#1F2937" BorderThickness="1" CornerRadius="8" Padding="10">
-            <Grid ColumnDefinitions="Auto,170,Auto,260,*" ColumnSpacing="10">
+            <Grid ColumnDefinitions="Auto,150,Auto,190,Auto,120,*,Auto,Auto" ColumnSpacing="10">
               <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="Level" Foreground="#9CA3AF" />
               <ComboBox Grid.Column="1" ItemsSource="{Binding LevelOptions}" SelectedItem="{Binding SelectedLevelOption}" />
               <TextBlock Grid.Column="2" VerticalAlignment="Center" Text="Category" Foreground="#9CA3AF" />
               <ComboBox Grid.Column="3" ItemsSource="{Binding CategoryOptions}" SelectedItem="{Binding CategoryFilter}" />
-              <TextBox Grid.Column="4" Watermark="Search logs..." Text="{Binding SearchText}" />
+              <TextBlock Grid.Column="4" VerticalAlignment="Center" Text="Src" Foreground="#9CA3AF" />
+              <ComboBox Grid.Column="5" ItemsSource="{Binding SourceOptions}" SelectedItem="{Binding SourceFilter}" />
+              <TextBox Grid.Column="6" Watermark="Search logs..." Text="{Binding SearchText}" />
+              <Button Grid.Column="7" Content="Export Logs" Click="OnExportLogsClicked" />
+              <Button Grid.Column="8" Content="Open Logs Folder" Click="OnOpenLogsFolderClicked" />
             </Grid>
           </Border>
           <Border Grid.Row="1" BorderBrush="#1F2937" BorderThickness="1" Background="#040404" CornerRadius="8" Padding="4">
-            <dg:DataGrid ItemsSource="{Binding Entries}" FontFamily="Consolas" FontSize="12" IsReadOnly="True" SelectionMode="Single">
+            <dg:DataGrid x:Name="DebugLogGrid"
+                         ItemsSource="{Binding Entries}"
+                         FontFamily="Consolas"
+                         FontSize="12"
+                         CanUserResizeColumns="True"
+                         CanUserReorderColumns="False"
+                         CanUserSortColumns="True"
+                         IsReadOnly="True"
+                         SelectionMode="Single">
               <dg:DataGrid.Columns>
                 <dg:DataGridTextColumn Header="TIME" Binding="{Binding Time}" Width="95" />
-                <dg:DataGridTextColumn Header="LEVEL" Binding="{Binding LevelText}" Width="110" />
-                <dg:DataGridTextColumn Header="SRC" Binding="{Binding SourceTag}" Width="80" />
+                <dg:DataGridTemplateColumn Header="LEVEL" Width="115" MinWidth="90">
+                  <dg:DataGridTemplateColumn.CellTemplate>
+                    <DataTemplate>
+                      <Border Background="{Binding Level, Converter={StaticResource DebugLogLevelBrushConverter}, ConverterParameter=ChipBg}"
+                              CornerRadius="2" Padding="2,0" Margin="1,0" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding LevelText}"
+                                   Foreground="{Binding Level, Converter={StaticResource DebugLogLevelBrushConverter}}"
+                                   FontWeight="SemiBold"
+                                   VerticalAlignment="Center"/>
+                      </Border>
+                    </DataTemplate>
+                  </dg:DataGridTemplateColumn.CellTemplate>
+                </dg:DataGridTemplateColumn>
+                <dg:DataGridTemplateColumn Header="SRC" Width="70" MinWidth="56">
+                  <dg:DataGridTemplateColumn.CellTemplate>
+                    <DataTemplate>
+                      <Border Background="{Binding SourceTag, Converter={StaticResource DebugSourceTagBrushConverter}, ConverterParameter=Bg}"
+                              CornerRadius="2" Padding="2,0" Margin="1,0" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding SourceTag}"
+                                   Foreground="{Binding SourceTag, Converter={StaticResource DebugSourceTagBrushConverter}}"
+                                   FontWeight="SemiBold"
+                                   VerticalAlignment="Center"/>
+                      </Border>
+                    </DataTemplate>
+                  </dg:DataGridTemplateColumn.CellTemplate>
+                </dg:DataGridTemplateColumn>
                 <dg:DataGridTextColumn Header="CATEGORY" Binding="{Binding Category}" Width="240"/>
                 <dg:DataGridTextColumn Header="MESSAGE" Binding="{Binding Message}" Width="*"/>
               </dg:DataGrid.Columns>
@@ -42,14 +109,31 @@
       </TabItem>
       <TabItem Header="ESI">
         <Grid RowDefinitions="Auto,*" RowSpacing="10">
-          <Border Background="#050505" BorderBrush="#1F2937" BorderThickness="1" CornerRadius="8" Padding="10">
-            <TextBlock Text="{Binding EsiRateSummary}" Foreground="#9CA3AF" />
+          <Border Background="#060A12" BorderBrush="#2A3A52" BorderThickness="1" CornerRadius="8" Padding="10">
+            <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="4">
+              <TextBlock Text="ESI Rate Window (15m)" Foreground="#93A4BF" FontWeight="SemiBold" />
+              <TextBlock Grid.Row="1" Text="{Binding EsiTokenBar}" Foreground="#88D2FF" FontFamily="Consolas" FontSize="13" />
+              <TextBlock Grid.Row="2" Text="{Binding EsiTokenStats}" Foreground="#D1D9E6" FontFamily="Consolas" />
+              <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="14">
+                <TextBlock Text="{Binding EsiNextRefresh}" Foreground="#A5B4C8" FontFamily="Consolas" />
+                <TextBlock Text="{Binding EsiRateGroup}" Foreground="#8B9EB8" FontFamily="Consolas" />
+              </StackPanel>
+            </Grid>
           </Border>
           <Border Grid.Row="1" BorderBrush="#1F2937" BorderThickness="1" Background="#040404" CornerRadius="8" Padding="4">
-            <dg:DataGrid ItemsSource="{Binding EsiEntries}" FontFamily="Consolas" FontSize="12" IsReadOnly="True" SelectionMode="Single">
+            <dg:DataGrid x:Name="DebugEsiGrid"
+                         ItemsSource="{Binding EsiEntries}"
+                         FontFamily="Consolas"
+                         FontSize="12"
+                         CanUserResizeColumns="True"
+                         CanUserReorderColumns="False"
+                         CanUserSortColumns="True"
+                         IsReadOnly="True"
+                         SelectionMode="Single">
               <dg:DataGrid.Columns>
                 <dg:DataGridTextColumn Header="TIME" Binding="{Binding Time}" Width="95" />
                 <dg:DataGridTextColumn Header="ROUTE" Binding="{Binding Route}" Width="120" />
+                <dg:DataGridTextColumn Header="GROUP" Binding="{Binding Group}" Width="170" />
                 <dg:DataGridTextColumn Header="SOURCE" Binding="{Binding Source}" Width="80" />
                 <dg:DataGridTextColumn Header="STATUS" Binding="{Binding Status}" Width="80" />
                 <dg:DataGridTextColumn Header="LIMITS" Binding="{Binding Limits}" Width="240" />

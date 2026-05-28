@@ -12,14 +12,18 @@ public sealed class DebugWindowViewModel : INotifyPropertyChanged
 {
     private readonly AppLogStore _store;
     private readonly IEsiMetricsStore _esiMetricsStore;
+    private readonly IAppLogFileService _logFileService;
     private string _searchText = string.Empty;
     private string _categoryFilter = "All";
+    private string _sourceFilter = "All";
     private LogLevel? _selectedLevel;
+    private readonly DispatcherTimer _esiUiTimer;
 
-    public DebugWindowViewModel(AppLogStore store, IEsiMetricsStore esiMetricsStore)
+    public DebugWindowViewModel(AppLogStore store, IEsiMetricsStore esiMetricsStore, IAppLogFileService logFileService)
     {
         _store = store;
         _esiMetricsStore = esiMetricsStore;
+        _logFileService = logFileService;
         LevelOptions = new ObservableCollection<LogLevelOption>(
         [
             new(null, "All"),
@@ -31,6 +35,7 @@ public sealed class DebugWindowViewModel : INotifyPropertyChanged
             new(LogLevel.Critical, "Critical")
         ]);
         CategoryOptions = new ObservableCollection<string>(["All"]);
+        SourceOptions = new ObservableCollection<string>(["All"]);
         Entries = [];
         EsiEntries = [];
 
@@ -46,15 +51,31 @@ public sealed class DebugWindowViewModel : INotifyPropertyChanged
             AddEsiMetric(metric);
         }
         _esiMetricsStore.MetricAdded += OnEsiMetricAdded;
+
+        _esiUiTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        _esiUiTimer.Tick += (_, _) =>
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(EsiRateSummary)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(EsiTokenBar)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(EsiTokenStats)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(EsiNextRefresh)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(EsiRateGroup)));
+        };
+        _esiUiTimer.Start();
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public ObservableCollection<LogLevelOption> LevelOptions { get; }
     public ObservableCollection<string> CategoryOptions { get; }
+    public ObservableCollection<string> SourceOptions { get; }
     public ObservableCollection<DisplayLogEntry> Entries { get; }
     public ObservableCollection<DisplayEsiMetric> EsiEntries { get; }
     public string EsiRateSummary => BuildEsiRateSummary();
+    public string EsiTokenBar => BuildEsiTokenBar();
+    public string EsiTokenStats => BuildEsiTokenStats();
+    public string EsiNextRefresh => BuildEsiNextRefresh();
+    public string EsiRateGroup => $"Group: {_esiMetricsStore.CurrentRateState.RateLimitGroup}";
 
     public LogLevelOption? SelectedLevelOption
     {
@@ -75,6 +96,18 @@ public sealed class DebugWindowViewModel : INotifyPropertyChanged
         set
         {
             if (SetProperty(ref _categoryFilter, value))
+            {
+                Refresh();
+            }
+        }
+    }
+
+    public string SourceFilter
+    {
+        get => _sourceFilter;
+        set
+        {
+            if (SetProperty(ref _sourceFilter, value))
             {
                 Refresh();
             }
@@ -104,6 +137,10 @@ public sealed class DebugWindowViewModel : INotifyPropertyChanged
         {
             CategoryOptions.Add(entry.Category);
         }
+        if (!SourceOptions.Contains(entry.SourceTag))
+        {
+            SourceOptions.Add(entry.SourceTag);
+        }
 
         _allEntries.Add(new DisplayLogEntry(entry));
         if (_allEntries.Count > 5000)
@@ -124,6 +161,9 @@ public sealed class DebugWindowViewModel : INotifyPropertyChanged
         {
             AddEsiMetric(metric);
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(EsiRateSummary)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(EsiTokenBar)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(EsiTokenStats)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(EsiNextRefresh)));
         });
     }
 
@@ -141,6 +181,51 @@ public sealed class DebugWindowViewModel : INotifyPropertyChanged
         var rate = _esiMetricsStore.CurrentRateState;
         var next = rate.NextAllowedAtUtc?.ToLocalTime().ToString("HH:mm:ss") ?? "-";
         return $"Last15m: {rate.RequestsLast15Minutes}/{rate.RouteTokenLimit15Minutes} | Next: {next}";
+    }
+
+    private string BuildEsiTokenBar()
+    {
+        var rate = _esiMetricsStore.CurrentRateState;
+        var total = Math.Max(1, rate.RouteTokenLimit15Minutes);
+        var remaining = rate.HeaderRateLimitRemaining is int hdrRemain
+            ? Math.Clamp(hdrRemain, 0, total)
+            : Math.Max(0, total - Math.Clamp(rate.RequestsLast15Minutes, 0, total));
+        var used = Math.Clamp(total - remaining, 0, total);
+        var width = 24;
+        var usedSlots = (int)Math.Round((used / (double)total) * width, MidpointRounding.AwayFromZero);
+        usedSlots = Math.Clamp(usedSlots, 0, width);
+        var remainingSlots = width - usedSlots;
+        return $"[{new string('#', usedSlots)}{new string('-', remainingSlots)}]";
+    }
+
+    private string BuildEsiTokenStats()
+    {
+        var rate = _esiMetricsStore.CurrentRateState;
+        var total = Math.Max(1, rate.RouteTokenLimit15Minutes);
+        var remaining = rate.HeaderRateLimitRemaining is int hdrRemain
+            ? Math.Clamp(hdrRemain, 0, total)
+            : Math.Max(0, total - Math.Clamp(rate.RequestsLast15Minutes, 0, total));
+        var used = Math.Clamp(total - remaining, 0, total);
+        var source = rate.HeaderRateLimitRemaining is null ? "local-fallback" : "esi-header";
+        return $"Used {used} / Remaining {remaining} / Total {total} [{source}]";
+    }
+
+    private string BuildEsiNextRefresh()
+    {
+        var next = _esiMetricsStore.CurrentRateState.NextAllowedAtUtc;
+        if (next is null)
+        {
+            return "Next refresh: -";
+        }
+
+        var local = next.Value.ToLocalTime().ToString("HH:mm:ss");
+        var delta = next.Value - DateTimeOffset.UtcNow;
+        if (delta < TimeSpan.Zero)
+        {
+            delta = TimeSpan.Zero;
+        }
+
+        return $"Next refresh: {local} (in {delta:mm\\:ss})";
     }
 
     private void Refresh()
@@ -165,6 +250,11 @@ public sealed class DebugWindowViewModel : INotifyPropertyChanged
         {
             return false;
         }
+        if (!string.Equals(_sourceFilter, "All", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(entry.Raw.SourceTag, _sourceFilter, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
 
         if (!string.IsNullOrWhiteSpace(_searchText)
             && entry.Line.IndexOf(_searchText, StringComparison.OrdinalIgnoreCase) < 0)
@@ -173,6 +263,16 @@ public sealed class DebugWindowViewModel : INotifyPropertyChanged
         }
 
         return true;
+    }
+
+    public Task<string> ExportLogsAsync(CancellationToken cancellationToken = default)
+    {
+        return _logFileService.ExportSnapshotAsync(_store.Snapshot(), cancellationToken);
+    }
+
+    public void OpenLogsFolder()
+    {
+        _logFileService.OpenLogsFolder();
     }
 
     private bool SetProperty<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
@@ -210,6 +310,7 @@ public sealed record DisplayEsiMetric(Hisa.Core.Models.EsiRequestMetric Raw)
 {
     public string Time => Raw.TimestampUtc.ToLocalTime().ToString("HH:mm:ss.fff");
     public string Route => Raw.Route;
+    public string Group => Raw.RateLimitGroup;
     public string Source => Raw.FromCache ? "cache" : "network";
     public int Status => Raw.StatusCode;
     public string Limits => $"remain={Raw.RateLimitRemain?.ToString() ?? "-"} reset={Raw.RateLimitResetSeconds?.ToString() ?? "-"} err={Raw.ErrorLimitRemain?.ToString() ?? "-"}";

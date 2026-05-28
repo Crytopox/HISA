@@ -9,10 +9,13 @@ public sealed class EsiMetricsStore : IEsiMetricsStore
     private readonly object _sync = new();
     private EsiRateState _rateState = new()
     {
+        RateLimitGroup = "incursions.public.local",
         LastRequestAtUtc = DateTimeOffset.MinValue,
         NextAllowedAtUtc = null,
         RequestsLast15Minutes = 0,
-        RouteTokenLimit15Minutes = 150
+        RouteTokenLimit15Minutes = 150,
+        HeaderRateLimitRemaining = null,
+        HeaderRateLimitResetSeconds = null
     };
 
     public event EventHandler<EsiRequestMetric>? MetricAdded;

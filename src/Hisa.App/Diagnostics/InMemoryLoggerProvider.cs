@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using System.Text.RegularExpressions;
 
 namespace Hisa.App.Diagnostics;
 
@@ -19,6 +20,9 @@ public sealed class InMemoryLoggerProvider : ILoggerProvider
 
     private sealed class InMemoryLogger : ILogger
     {
+        private static readonly Regex SensitiveTokenRegex = new(
+            "(access_token|refresh_token|client_secret|authorization)\\s*[:=]\\s*([^\r\n\\s,;]+)",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private readonly string _categoryName;
         private readonly AppLogStore _store;
 
@@ -44,29 +48,51 @@ public sealed class InMemoryLoggerProvider : ILoggerProvider
                 return;
             }
 
-            var message = formatter(state, exception);
-            var sourceTag = IsNetworkLog(_categoryName, message) ? "NET" : "APP";
+            var message = RedactSensitiveValues(formatter(state, exception));
+            var sourceTag = GetSourceTag(_categoryName, message);
             _store.Add(new AppLogEntry(
                 DateTimeOffset.UtcNow,
                 logLevel,
                 sourceTag,
                 _categoryName,
                 message,
-                exception?.ToString()));
+                exception is null ? null : RedactSensitiveValues(exception.ToString())));
         }
 
-        private static bool IsNetworkLog(string categoryName, string message)
+        private static string GetSourceTag(string categoryName, string message)
         {
             if (categoryName.Contains("System.Net.Http", StringComparison.OrdinalIgnoreCase) ||
                 categoryName.Contains("SocketsHttpHandler", StringComparison.OrdinalIgnoreCase) ||
                 categoryName.Contains("HttpClient", StringComparison.OrdinalIgnoreCase))
             {
-                return true;
+                return "NET";
             }
 
-            return message.Contains("http://", StringComparison.OrdinalIgnoreCase) ||
-                   message.Contains("https://", StringComparison.OrdinalIgnoreCase) ||
-                   message.Contains("request", StringComparison.OrdinalIgnoreCase) && message.Contains("response", StringComparison.OrdinalIgnoreCase);
+            if (categoryName.Contains("Hisa.Esi", StringComparison.OrdinalIgnoreCase))
+            {
+                return "ESI";
+            }
+
+            if (message.Contains("http://", StringComparison.OrdinalIgnoreCase) ||
+                message.Contains("https://", StringComparison.OrdinalIgnoreCase) ||
+                message.Contains("request", StringComparison.OrdinalIgnoreCase) && message.Contains("response", StringComparison.OrdinalIgnoreCase))
+            {
+                return "NET";
+            }
+
+            return "APP";
+        }
+
+        private static string RedactSensitiveValues(string input)
+        {
+            if (string.IsNullOrWhiteSpace(input))
+            {
+                return input;
+            }
+
+            var redacted = SensitiveTokenRegex.Replace(input, m => $"{m.Groups[1].Value}=***REDACTED***");
+            redacted = redacted.Replace("Bearer ", "Bearer ***REDACTED***", StringComparison.OrdinalIgnoreCase);
+            return redacted;
         }
     }
 }
