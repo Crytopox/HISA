@@ -66,6 +66,8 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
         {
             if (SetProperty(ref _selectedLayoutRegion, value))
             {
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelectedLayoutRegionEditable)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelectedLayoutRegionReadOnly)));
                 _ = LoadSelectedLayoutRegionAsync();
             }
         }
@@ -110,6 +112,9 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
         ? "Selection: none"
         : $"Selection: {_selectedNodeIds.Count} node(s)";
 
+    public bool IsSelectedLayoutRegionEditable => SelectedLayoutRegion is not null && !SelectedLayoutRegion.IsReadOnly;
+    public bool IsSelectedLayoutRegionReadOnly => SelectedLayoutRegion is not null && SelectedLayoutRegion.IsReadOnly;
+
     public async Task ReloadAsync(CancellationToken cancellationToken = default)
     {
         await LoadAsync(cancellationToken);
@@ -139,6 +144,12 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
             return;
         }
 
+        if (SelectedLayoutRegion.IsReadOnly)
+        {
+            StatusText = "Read-only layout region. Create or select a custom region to edit.";
+            return;
+        }
+
         try
         {
             var regionName = SelectedLayoutRegion.Name;
@@ -157,6 +168,12 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
         if (SelectedLayoutRegion is null)
         {
             StatusText = "Select a layout region first.";
+            return;
+        }
+
+        if (SelectedLayoutRegion.IsReadOnly)
+        {
+            StatusText = "Read-only layout region. Import into a custom region instead.";
             return;
         }
 
@@ -183,6 +200,12 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
             return;
         }
 
+        if (SelectedLayoutRegion.IsReadOnly)
+        {
+            StatusText = "Read-only layout region. Save is only available for custom regions.";
+            return;
+        }
+
         try
         {
             await RebuildAutoLinksAsync();
@@ -197,6 +220,12 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
 
     public bool MoveSelectedNodeAsync(double dx, double dy, bool freeMove = false)
     {
+        if (!IsSelectedLayoutRegionEditable)
+        {
+            StatusText = "Read-only layout region. Node movement is disabled.";
+            return false;
+        }
+
         if (_selectedNodeIds.Count == 0)
         {
             StatusText = "Select a node first.";
@@ -232,6 +261,12 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
 
     public async Task DeleteSelectedNodeAsync()
     {
+        if (!IsSelectedLayoutRegionEditable)
+        {
+            StatusText = "Read-only layout region. Node deletion is disabled.";
+            return;
+        }
+
         if (_selectedNodeIds.Count == 0)
         {
             StatusText = "Select a node first.";
@@ -256,6 +291,12 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
 
     public async Task AddMissingConnectedNodesForSelectionAsync()
     {
+        if (!IsSelectedLayoutRegionEditable)
+        {
+            StatusText = "Read-only layout region. Add missing connected nodes is disabled.";
+            return;
+        }
+
         var selectedSystemIds = _selectedNodeIds.Where(id => id > 0).ToList();
         if (selectedSystemIds.Count == 0)
         {
@@ -545,6 +586,8 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
         _selectedNodeId = _selectedNodeIds.Count > 0 ? _selectedNodeIds.First() : null;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedNodeId)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectionStatus)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelectedLayoutRegionEditable)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelectedLayoutRegionReadOnly)));
         RefreshSelectedNodeIdsForView();
     }
 
@@ -559,6 +602,8 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
         _selectedNodeId = nodeId;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedNodeId)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectionStatus)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelectedLayoutRegionEditable)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelectedLayoutRegionReadOnly)));
         RefreshSelectedNodeIdsForView();
     }
 
@@ -581,6 +626,8 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
         _selectedNodeId = _selectedNodeIds.Count > 0 ? _selectedNodeIds.First() : null;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedNodeId)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectionStatus)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelectedLayoutRegionEditable)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelectedLayoutRegionReadOnly)));
         RefreshSelectedNodeIdsForView();
     }
 
@@ -597,6 +644,8 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
         _selectedNodeId = _selectedNodeIds.Count > 0 ? _selectedNodeIds.First() : null;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedNodeId)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectionStatus)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelectedLayoutRegionEditable)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelectedLayoutRegionReadOnly)));
         RefreshSelectedNodeIdsForView();
     }
 
