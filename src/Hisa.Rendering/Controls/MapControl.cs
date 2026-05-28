@@ -109,6 +109,18 @@ public sealed class MapControl : Control
     private static readonly Lazy<Bitmap?> StormPlasmaWeakIcon = new(() => LoadIcon("storm_plasma_weak.png"));
     private static readonly Lazy<Bitmap?> StormUnknownIcon = new(() => LoadIcon("storm_unknown.png"));
     private static readonly Lazy<Bitmap?> WormholeIcon = new(() => LoadIcon("wormhole.png"));
+    private static readonly Dictionary<string, Lazy<Bitmap?>> SovUpgradeIcons = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly HashSet<string> SingleLevelSovUpgrades = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Advanced Logistics Network",
+        "Cynosural Navigation",
+        "Cynosural Suppression",
+        "Electric Stability Generator",
+        "Exotic Stability Generator",
+        "Gamma Stability Generator",
+        "Plasma Stability Generator",
+        "Supercapital Construction Facilities"
+    };
 
     public static readonly StyledProperty<MapGraph?> GraphProperty =
         AvaloniaProperty.Register<MapControl, MapGraph?>(nameof(Graph));
@@ -141,6 +153,10 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorStormIcon), true);
     public static readonly StyledProperty<bool> ShowIndicatorWormholeIconProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorWormholeIcon), true);
+    public static readonly StyledProperty<bool> ShowIndicatorSovUpgradeIconProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorSovUpgradeIcon), true);
+    public static readonly StyledProperty<IEnumerable<string>?> IndicatorSovUpgradeFilterKeysProperty =
+        AvaloniaProperty.Register<MapControl, IEnumerable<string>?>(nameof(IndicatorSovUpgradeFilterKeys));
     public static readonly StyledProperty<bool> InfoBoxShowRegionProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowRegion), true);
     public static readonly StyledProperty<bool> InfoBoxShowConstellationProperty =
@@ -159,6 +175,10 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowStormIcon), true);
     public static readonly StyledProperty<bool> InfoBoxShowWormholeIconProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowWormholeIcon), true);
+    public static readonly StyledProperty<bool> InfoBoxShowSovUpgradeIconProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowSovUpgradeIcon), true);
+    public static readonly StyledProperty<IEnumerable<string>?> OverlaySovUpgradeFilterKeysProperty =
+        AvaloniaProperty.Register<MapControl, IEnumerable<string>?>(nameof(OverlaySovUpgradeFilterKeys));
     public static readonly StyledProperty<bool> AlwaysShowHubWormholesProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(AlwaysShowHubWormholes), false);
     public static readonly StyledProperty<HubWormholeMarkerMode> HubWormholeMarkerModeProperty =
@@ -313,6 +333,18 @@ public sealed class MapControl : Control
         set => SetValue(ShowIndicatorWormholeIconProperty, value);
     }
 
+    public bool ShowIndicatorSovUpgradeIcon
+    {
+        get => GetValue(ShowIndicatorSovUpgradeIconProperty);
+        set => SetValue(ShowIndicatorSovUpgradeIconProperty, value);
+    }
+
+    public IEnumerable<string>? IndicatorSovUpgradeFilterKeys
+    {
+        get => GetValue(IndicatorSovUpgradeFilterKeysProperty);
+        set => SetValue(IndicatorSovUpgradeFilterKeysProperty, value);
+    }
+
     public bool InfoBoxShowRegion
     {
         get => GetValue(InfoBoxShowRegionProperty);
@@ -365,6 +397,18 @@ public sealed class MapControl : Control
     {
         get => GetValue(InfoBoxShowWormholeIconProperty);
         set => SetValue(InfoBoxShowWormholeIconProperty, value);
+    }
+
+    public bool InfoBoxShowSovUpgradeIcon
+    {
+        get => GetValue(InfoBoxShowSovUpgradeIconProperty);
+        set => SetValue(InfoBoxShowSovUpgradeIconProperty, value);
+    }
+
+    public IEnumerable<string>? OverlaySovUpgradeFilterKeys
+    {
+        get => GetValue(OverlaySovUpgradeFilterKeysProperty);
+        set => SetValue(OverlaySovUpgradeFilterKeysProperty, value);
     }
 
     public bool AlwaysShowHubWormholes
@@ -454,6 +498,8 @@ public sealed class MapControl : Control
             ShowIndicatorIceBeltsIconProperty,
             ShowIndicatorStormIconProperty,
             ShowIndicatorWormholeIconProperty,
+            ShowIndicatorSovUpgradeIconProperty,
+            IndicatorSovUpgradeFilterKeysProperty,
             InfoBoxShowRegionProperty,
             InfoBoxShowConstellationProperty,
             InfoBoxShowSecurityStatusProperty,
@@ -463,6 +509,8 @@ public sealed class MapControl : Control
             InfoBoxShowIceBeltsIconProperty,
             InfoBoxShowStormIconProperty,
             InfoBoxShowWormholeIconProperty,
+            InfoBoxShowSovUpgradeIconProperty,
+            OverlaySovUpgradeFilterKeysProperty,
             AlwaysShowHubWormholesProperty,
             HubWormholeMarkerModeProperty,
             ShowEditorGridProperty,
@@ -2407,6 +2455,14 @@ public sealed class MapControl : Control
         {
             return;
         }
+        if (NodeBackgroundColorMode == MapNodeColorMode.SovUpgrades)
+        {
+            var visibleSov = GetVisibleSovUpgrades(node.SovUpgrades, IndicatorSovUpgradeFilterKeys);
+            if (!visibleSov.Any())
+            {
+                return;
+            }
+        }
 
         var color = GetNodeBaseColor(node, NodeBackgroundColorMode);
         var tuned = BrightenForBackground(color);
@@ -2427,8 +2483,34 @@ public sealed class MapControl : Control
             MapNodeColorMode.IceBelts => node.IceFieldCount > 0 ? Color.Parse("#58B9FF") : Color.Parse("#98A6B8"),
             MapNodeColorMode.Storms => GetStormColor(node),
             MapNodeColorMode.Wormholes => GetHubWormholeColor(node),
+            MapNodeColorMode.SovUpgrades => GetSovUpgradeColor(GetVisibleSovUpgrades(node.SovUpgrades, IndicatorSovUpgradeFilterKeys).ToList()),
             _ => Color.Parse("#98A6B8")
         };
+    }
+
+    private static Color GetSovUpgradeColor(IReadOnlyList<SovUpgradeEntry> upgrades)
+    {
+        if (upgrades.Count == 0)
+        {
+            return Color.Parse("#98A6B8");
+        }
+
+        if (upgrades.Any(x => x.UpgradeName.Contains("Major Threat Detection Array", StringComparison.OrdinalIgnoreCase)))
+        {
+            return Color.Parse("#D06A4A");
+        }
+
+        if (upgrades.Any(x => x.UpgradeName.Contains("Minor Threat Detection Array", StringComparison.OrdinalIgnoreCase)))
+        {
+            return Color.Parse("#E7A95D");
+        }
+
+        if (upgrades.Any(x => x.UpgradeName.Contains("Exploration Detector", StringComparison.OrdinalIgnoreCase)))
+        {
+            return Color.Parse("#58B9FF");
+        }
+
+        return Color.Parse("#8CC8A5");
     }
 
     private static Color GetHubWormholeColor(MapNode node)
@@ -2989,6 +3071,17 @@ public sealed class MapControl : Control
             var iconX = rect.X + IndicatorIconLeftPadding + (indicatorIconSlot * (IconSize + IndicatorIconSlotGap));
             var iconY = rect.Bottom;
             DrawHubWormholeIcon(context, node, new Point(iconX, iconY), IconSize);
+            indicatorIconSlot++;
+        }
+        if (ShowIndicatorSovUpgradeIcon && node.SovUpgrades.Count > 0)
+        {
+            foreach (var sov in GetVisibleSovUpgrades(node.SovUpgrades, IndicatorSovUpgradeFilterKeys))
+            {
+                var iconX = rect.X + IndicatorIconLeftPadding + (indicatorIconSlot * (IconSize + IndicatorIconSlotGap));
+                var iconY = rect.Bottom;
+                DrawSovUpgradeIcon(context, sov, new Point(iconX, iconY), IconSize);
+                indicatorIconSlot++;
+            }
         }
     }
 
@@ -3149,6 +3242,11 @@ public sealed class MapControl : Control
                 detailLines.Add($"Storm: {storm.Strength} {storm.Type}");
             }
         }
+        var visibleOverlaySovUpgrades = InfoBoxShowSovUpgradeIcon
+            ? GetVisibleSovUpgrades(node.SovUpgrades, OverlaySovUpgradeFilterKeys)
+                .OrderBy(x => x.UpgradeName, StringComparer.OrdinalIgnoreCase)
+                .ToList()
+            : [];
         var wormholes = node.HubWormholeConnections
             .OrderBy(c => c.HubType)
             .ToList();
@@ -3180,6 +3278,19 @@ public sealed class MapControl : Control
                 new Typeface("Inter"),
                 12,
                 Brushes.White);
+        var sovLineTexts = visibleOverlaySovUpgrades
+            .Select(sov => new
+            {
+                Upgrade = sov,
+                Text = new FormattedText(
+                    IsSingleLevelSovUpgrade(sov.UpgradeName) ? sov.UpgradeName : $"{sov.UpgradeName} {sov.Tier}",
+                    CultureInfo.InvariantCulture,
+                    FlowDirection.LeftToRight,
+                    new Typeface("Inter"),
+                    12,
+                    Brushes.White)
+            })
+            .ToList();
         var regionConstellationText = regionConstellationLine is null
             ? null
             : new FormattedText(
@@ -3203,16 +3314,24 @@ public sealed class MapControl : Control
             wormholeMaxWidth = Math.Max(wormholeMaxWidth, width);
             wormholeLineHeight = Math.Max(wormholeLineHeight, Math.Max(hub.Height, Math.Max(inSig.Height, outSig.Height)));
         }
+        var sovLineHeight = 0.0;
+        var sovMaxWidth = 0.0;
+        foreach (var sovLine in sovLineTexts)
+        {
+            sovLineHeight = Math.Max(sovLineHeight, Math.Max(IconSize, sovLine.Text.Height));
+            sovMaxWidth = Math.Max(sovMaxWidth, IconSize + 4 + sovLine.Text.Width);
+        }
 
         var start = GetNodeLabelOrigin(anchor);
         var padX = 8.0;
         var padY = 6.0;
         var headerWidth = headerText.Width + (securityText is null ? 0 : (8 + securityText.Width));
-        var bodyWidth = Math.Max(Math.Max(regionConstellationText?.Width ?? 0, detailsText?.Width ?? 0), wormholeMaxWidth);
+        var bodyWidth = Math.Max(Math.Max(Math.Max(regionConstellationText?.Width ?? 0, detailsText?.Width ?? 0), wormholeMaxWidth), sovMaxWidth);
         var contentWidth = Math.Max(headerWidth, bodyWidth);
         var contentHeight = headerText.Height
             + (regionConstellationText is null ? 0 : regionConstellationText.Height + 2)
             + (detailsText is null ? 0 : detailsText.Height + 2)
+            + (sovLineTexts.Count == 0 ? 0 : (sovLineTexts.Count * (sovLineHeight + 1)))
             + (wormholes.Count == 0 ? 0 : (wormholes.Count * (wormholeLineHeight + 1)));
         var rect = new Rect(
             start.X - 2,
@@ -3239,6 +3358,13 @@ public sealed class MapControl : Control
         {
             context.DrawText(detailsText, new Point(headerOrigin.X, detailsStartY));
             detailsStartY += detailsText.Height;
+        }
+
+        foreach (var sovLine in sovLineTexts)
+        {
+            DrawSovUpgradeIcon(context, sovLine.Upgrade, new Point(headerOrigin.X, detailsStartY), IconSize);
+            context.DrawText(sovLine.Text, new Point(headerOrigin.X + IconSize + 4, detailsStartY + ((sovLineHeight - sovLine.Text.Height) / 2)));
+            detailsStartY += sovLineHeight + 1;
         }
 
         var wormholeStartY = detailsStartY;
@@ -3301,7 +3427,9 @@ public sealed class MapControl : Control
             var iconX = rect.X + IndicatorIconLeftPadding + (overlayIconSlot * (IconSize + IndicatorIconSlotGap));
             var iconY = rect.Bottom + 3;
             DrawHubWormholeIcon(context, node, new Point(iconX, iconY), IconSize);
+            overlayIconSlot++;
         }
+        // SOV upgrades are rendered inline in the overlay body with icon + label rows.
     }
 
     private static string GetWormholeMassShort(string? maxShipSize)
@@ -3336,6 +3464,82 @@ public sealed class MapControl : Control
         try
         {
             var uri = new Uri($"avares://Hisa.App/Assets/Icons/{fileName}");
+            using var stream = AssetLoader.Open(uri);
+            return new Bitmap(stream);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static void DrawSovUpgradeIcon(DrawingContext context, SovUpgradeEntry upgrade, Point topLeft, double size)
+    {
+        var icon = GetSovUpgradeIcon(upgrade);
+        if (icon is null)
+        {
+            return;
+        }
+
+        var src = new Rect(0, 0, icon.Size.Width, icon.Size.Height);
+        var dst = new Rect(topLeft.X, topLeft.Y, size, size);
+        context.DrawImage(icon, src, dst);
+    }
+
+    private static Bitmap? GetSovUpgradeIcon(SovUpgradeEntry upgrade)
+    {
+        var fileName = BuildSovIconFileName(upgrade);
+        if (!SovUpgradeIcons.TryGetValue(fileName, out var lazy))
+        {
+            lazy = new Lazy<Bitmap?>(() => LoadSovUpgradeIcon(fileName));
+            SovUpgradeIcons[fileName] = lazy;
+        }
+
+        return lazy.Value;
+    }
+
+    private static IEnumerable<SovUpgradeEntry> GetVisibleSovUpgrades(
+        IReadOnlyList<SovUpgradeEntry> upgrades,
+        IEnumerable<string>? selectedKeys)
+    {
+        if (selectedKeys is null)
+        {
+            return upgrades;
+        }
+
+        var set = selectedKeys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (set.Count == 0)
+        {
+            return [];
+        }
+
+        return upgrades.Where(x => set.Contains(BuildSovFilterKey(x))).ToList();
+    }
+
+    private static string BuildSovFilterKey(SovUpgradeEntry upgrade)
+    {
+        return IsSingleLevelSovUpgrade(upgrade.UpgradeName)
+            ? upgrade.UpgradeName
+            : $"{upgrade.UpgradeName}|{Math.Clamp(upgrade.Tier, 1, 3)}";
+    }
+
+    private static string BuildSovIconFileName(SovUpgradeEntry upgrade)
+    {
+        return IsSingleLevelSovUpgrade(upgrade.UpgradeName)
+            ? $"{upgrade.UpgradeName}.png"
+            : $"{upgrade.UpgradeName} {Math.Clamp(upgrade.Tier, 1, 3)}.png";
+    }
+
+    private static bool IsSingleLevelSovUpgrade(string upgradeName)
+    {
+        return SingleLevelSovUpgrades.Contains(upgradeName);
+    }
+
+    private static Bitmap? LoadSovUpgradeIcon(string fileName)
+    {
+        try
+        {
+            var uri = new Uri($"avares://Hisa.App/Assets/Icons/SOV Upgrades/{fileName}");
             using var stream = AssetLoader.Open(uri);
             return new Bitmap(stream);
         }

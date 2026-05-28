@@ -87,6 +87,7 @@
             <MenuFlyout>
               <MenuItem Header="Map Editor" Click="OnOpenMapEditorClicked" />
               <MenuItem Header="Preferences" Click="OnOpenPreferencesClicked" />
+              <MenuItem Header="SOV Upgrades" Click="OnOpenSovUpgradesClicked" />
               <MenuItem Header="Debug Window" Click="OnOpenDebugConsoleClicked" />
             </MenuFlyout>
           </Button.Flyout>
@@ -111,6 +112,8 @@
                               ShowIndicatorIceBeltsIcon="{Binding ShowIndicatorIceBeltsIcon}"
                               ShowIndicatorStormIcon="{Binding ShowIndicatorStormIcon}"
                               ShowIndicatorWormholeIcon="{Binding ShowIndicatorWormholeIcon}"
+                              ShowIndicatorSovUpgradeIcon="{Binding ShowIndicatorSovUpgradeIcon}"
+                              IndicatorSovUpgradeFilterKeys="{Binding SelectedIndicatorSovUpgradeKeys}"
                               InfoBoxShowRegion="{Binding InfoBoxShowRegion}"
                               InfoBoxShowConstellation="{Binding InfoBoxShowConstellation}"
                               InfoBoxShowSecurityStatus="{Binding InfoBoxShowSecurityStatus}"
@@ -120,6 +123,8 @@
                               InfoBoxShowIceBeltsIcon="{Binding InfoBoxShowIceBeltsIcon}"
                               InfoBoxShowStormIcon="{Binding InfoBoxShowStormIcon}"
                               InfoBoxShowWormholeIcon="{Binding InfoBoxShowWormholeIcon}"
+                              InfoBoxShowSovUpgradeIcon="{Binding InfoBoxShowSovUpgradeIcon}"
+                              OverlaySovUpgradeFilterKeys="{Binding SelectedOverlaySovUpgradeKeys}"
                               AlwaysShowHubWormholes="{Binding AlwaysShowHubWormholes}"
                               HubWormholeMarkerMode="{Binding HubWormholeMarkerMode}"
                               MissingConnectionNodeIds="{Binding MissingConnectionNodeIdsForView}"
@@ -259,6 +264,41 @@
             <CheckBox IsChecked="{Binding ShowIndicatorIceBeltsIcon}" Content="Ice Belts" />
             <CheckBox IsChecked="{Binding ShowIndicatorStormIcon}" Content="Metaliminal Storms" />
             <CheckBox IsChecked="{Binding ShowIndicatorWormholeIcon}" Content="Thera/Turnur Wormholes" />
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <CheckBox IsChecked="{Binding ShowIndicatorSovUpgradeIcon}" Content="SOV Upgrades" />
+              <Button Width="24" Height="24" Padding="0">
+                <Image Source="avares://Hisa.App/Assets/Icons/settings.png" Width="14" Height="14" />
+                <Button.Flyout>
+                  <Flyout Placement="BottomEdgeAlignedRight">
+                    <Border Width="360" Padding="8" Background="#101826" BorderBrush="#243247" BorderThickness="1" CornerRadius="4">
+                      <StackPanel Spacing="8">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                          <Button Content="Select All" Click="OnSelectAllIndicatorSovFilterClicked" />
+                          <Button Content="Unselect All" Click="OnUnselectAllIndicatorSovFilterClicked" />
+                        </StackPanel>
+                        <ItemsControl ItemsSource="{Binding IndicatorSovUpgradeOptions}">
+                          <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                              <WrapPanel />
+                            </ItemsPanelTemplate>
+                          </ItemsControl.ItemsPanel>
+                          <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:SovUpgradeDisplayOption">
+                              <ToggleButton IsChecked="{Binding IsSelected, Mode=TwoWay}" Padding="6,4" Margin="2" BorderThickness="1" BorderBrush="#2B3C55">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                  <Image Source="{Binding Icon}" Width="16" Height="16" />
+                                  <TextBlock Text="{Binding DisplayName}" />
+                                </StackPanel>
+                              </ToggleButton>
+                            </DataTemplate>
+                          </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                      </StackPanel>
+                    </Border>
+                  </Flyout>
+                </Button.Flyout>
+              </Button>
+            </StackPanel>
 
             <Separator />
 
@@ -272,6 +312,41 @@
             <CheckBox IsChecked="{Binding InfoBoxShowIceBeltsIcon}" Content="Ice Belts" />
             <CheckBox IsChecked="{Binding InfoBoxShowStormIcon}" Content="Metaliminal Storms" />
             <CheckBox IsChecked="{Binding InfoBoxShowWormholeIcon}" Content="Thera/Turnur Wormholes" />
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <CheckBox IsChecked="{Binding InfoBoxShowSovUpgradeIcon}" Content="SOV Upgrades" />
+              <Button Width="24" Height="24" Padding="0">
+                <Image Source="avares://Hisa.App/Assets/Icons/settings.png" Width="14" Height="14" />
+                <Button.Flyout>
+                  <Flyout Placement="BottomEdgeAlignedRight">
+                    <Border Width="360" Padding="8" Background="#101826" BorderBrush="#243247" BorderThickness="1" CornerRadius="4">
+                      <StackPanel Spacing="8">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                          <Button Content="Select All" Click="OnSelectAllOverlaySovFilterClicked" />
+                          <Button Content="Unselect All" Click="OnUnselectAllOverlaySovFilterClicked" />
+                        </StackPanel>
+                        <ItemsControl ItemsSource="{Binding OverlaySovUpgradeOptions}">
+                          <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                              <WrapPanel />
+                            </ItemsPanelTemplate>
+                          </ItemsControl.ItemsPanel>
+                          <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:SovUpgradeDisplayOption">
+                              <ToggleButton IsChecked="{Binding IsSelected, Mode=TwoWay}" Padding="6,4" Margin="2" BorderThickness="1" BorderBrush="#2B3C55">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                  <Image Source="{Binding Icon}" Width="16" Height="16" />
+                                  <TextBlock Text="{Binding DisplayName}" />
+                                </StackPanel>
+                              </ToggleButton>
+                            </DataTemplate>
+                          </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                      </StackPanel>
+                    </Border>
+                  </Flyout>
+                </Button.Flyout>
+              </Button>
+            </StackPanel>
 
           </StackPanel>
         </ScrollViewer>

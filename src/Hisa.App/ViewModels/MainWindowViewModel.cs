@@ -3,6 +3,8 @@ using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using Avalonia.Threading;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using Hisa.Core.Abstractions;
 using Hisa.Core.Models;
 
@@ -14,6 +16,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly ISettingsService _settingsService;
     private readonly IStormStateService _stormStateService;
     private readonly IHubWormholeStateService _hubWormholeStateService;
+    private readonly ISovUpgradeStateService _sovUpgradeStateService;
     private List<RegionOption> _allRegions = [];
     private bool _isBusy;
     private MapViewMode _selectedViewMode;
@@ -38,6 +41,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _showIndicatorIceBeltsIcon = true;
     private bool _showIndicatorStormIcon = true;
     private bool _showIndicatorWormholeIcon = true;
+    private bool _showIndicatorSovUpgradeIcon = true;
     private bool _infoBoxShowRegion = true;
     private bool _infoBoxShowConstellation = true;
     private bool _infoBoxShowSecurityStatus = true;
@@ -47,6 +51,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _infoBoxShowIceBeltsIcon = true;
     private bool _infoBoxShowStormIcon = true;
     private bool _infoBoxShowWormholeIcon = true;
+    private bool _infoBoxShowSovUpgradeIcon = true;
     private bool _alwaysShowHubWormholes = true;
     private bool _showMissingConnectionMarkers = true;
     private HubWormholeMarkerMode _hubWormholeMarkerMode = HubWormholeMarkerMode.Badge;
@@ -67,6 +72,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string ShowIndicatorIceBeltsIconKey = "Map.ShowIndicatorIceBeltsIcon";
     private const string ShowIndicatorStormIconKey = "Map.ShowIndicatorStormIcon";
     private const string ShowIndicatorWormholeIconKey = "Map.ShowIndicatorWormholeIcon";
+    private const string ShowIndicatorSovUpgradeIconKey = "Map.ShowIndicatorSovUpgradeIcon";
     private const string InfoBoxShowRegionKey = "Map.InfoBoxShowRegion";
     private const string InfoBoxShowConstellationKey = "Map.InfoBoxShowConstellation";
     private const string InfoBoxShowSecurityStatusKey = "Map.InfoBoxShowSecurityStatus";
@@ -76,6 +82,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string InfoBoxShowIceBeltsIconKey = "Map.InfoBoxShowIceBeltsIcon";
     private const string InfoBoxShowStormIconKey = "Map.InfoBoxShowStormIcon";
     private const string InfoBoxShowWormholeIconKey = "Map.InfoBoxShowWormholeIcon";
+    private const string InfoBoxShowSovUpgradeIconKey = "Map.InfoBoxShowSovUpgradeIcon";
+    private const string IndicatorSovFilterKeysKey = "Map.IndicatorSovFilter.Keys";
+    private const string OverlaySovFilterKeysKey = "Map.OverlaySovFilter.Keys";
+    private const string IndicatorSovFilterConfiguredKey = "Map.IndicatorSovFilter.Configured";
+    private const string OverlaySovFilterConfiguredKey = "Map.OverlaySovFilter.Configured";
     private const string AlwaysShowHubWormholesKey = "Map.AlwaysShowHubWormholes";
     private const string HubWormholeMarkerModeKey = "Map.HubWormholeMarkerMode";
     private const string ShowMissingConnectionMarkersKey = "Map.ShowMissingConnectionMarkers";
@@ -87,12 +98,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         IMapDataService mapDataService,
         ISettingsService settingsService,
         IStormStateService stormStateService,
-        IHubWormholeStateService hubWormholeStateService)
+        IHubWormholeStateService hubWormholeStateService,
+        ISovUpgradeStateService sovUpgradeStateService)
     {
         _mapDataService = mapDataService;
         _settingsService = settingsService;
         _stormStateService = stormStateService;
         _hubWormholeStateService = hubWormholeStateService;
+        _sovUpgradeStateService = sovUpgradeStateService;
         ViewModes = new ObservableCollection<MapViewMode>(Enum.GetValues<MapViewMode>());
         CoordinateModes = new ObservableCollection<MapCoordinateMode>(Enum.GetValues<MapCoordinateMode>());
         NodeColorModes = new ObservableCollection<MapNodeColorMode>(Enum.GetValues<MapNodeColorMode>());
@@ -100,6 +113,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         Regions = [];
         _stormStateService.StormSnapshotUpdated += OnStormSnapshotUpdated;
         _hubWormholeStateService.HubWormholeSnapshotUpdated += OnHubWormholeSnapshotUpdated;
+        _sovUpgradeStateService.SnapshotUpdated += OnSovUpgradesSnapshotUpdated;
         _initialLoadTask = LoadAsync();
     }
 
@@ -111,6 +125,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public ObservableCollection<HubWormholeMarkerMode> HubWormholeMarkerModes { get; }
     public ObservableCollection<RegionOption> Regions { get; }
     public ObservableCollection<MapSearchCandidate> SearchSuggestions { get; } = [];
+    public ObservableCollection<SovUpgradeDisplayOption> IndicatorSovUpgradeOptions { get; } = [];
+    public ObservableCollection<SovUpgradeDisplayOption> OverlaySovUpgradeOptions { get; } = [];
     public IEnumerable<long> MissingConnectionNodeIdsForView { get; private set; } = [];
 
     public MapViewMode SelectedViewMode
@@ -329,6 +345,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
+    public bool ShowIndicatorSovUpgradeIcon
+    {
+        get => _showIndicatorSovUpgradeIcon;
+        set
+        {
+            if (SetProperty(ref _showIndicatorSovUpgradeIcon, value) && !_isInitializing)
+            {
+                _ = _settingsService.SetAsync(ShowIndicatorSovUpgradeIconKey, value);
+            }
+        }
+    }
+
     public bool InfoBoxShowRegion
     {
         get => _infoBoxShowRegion;
@@ -437,6 +465,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
+    public bool InfoBoxShowSovUpgradeIcon
+    {
+        get => _infoBoxShowSovUpgradeIcon;
+        set
+        {
+            if (SetProperty(ref _infoBoxShowSovUpgradeIcon, value) && !_isInitializing)
+            {
+                _ = _settingsService.SetAsync(InfoBoxShowSovUpgradeIconKey, value);
+            }
+        }
+    }
+
     public bool AlwaysShowHubWormholes
     {
         get => _alwaysShowHubWormholes;
@@ -480,6 +520,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             }
         }
     }
+
+    public IEnumerable<string> SelectedIndicatorSovUpgradeKeys =>
+        IndicatorSovUpgradeOptions.Where(x => x.IsSelected).Select(x => x.Key).ToList();
+
+    public IEnumerable<string> SelectedOverlaySovUpgradeKeys =>
+        OverlaySovUpgradeOptions.Where(x => x.IsSelected).Select(x => x.Key).ToList();
 
     public RegionOption? SelectedRegion
     {
@@ -632,6 +678,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         ShowIndicatorIceBeltsIcon = await _settingsService.GetAsync<bool?>(ShowIndicatorIceBeltsIconKey) ?? true;
         ShowIndicatorStormIcon = await _settingsService.GetAsync<bool?>(ShowIndicatorStormIconKey) ?? true;
         ShowIndicatorWormholeIcon = await _settingsService.GetAsync<bool?>(ShowIndicatorWormholeIconKey) ?? true;
+        ShowIndicatorSovUpgradeIcon = await _settingsService.GetAsync<bool?>(ShowIndicatorSovUpgradeIconKey) ?? true;
         InfoBoxShowRegion = await _settingsService.GetAsync<bool?>(InfoBoxShowRegionKey) ?? true;
         InfoBoxShowConstellation = await _settingsService.GetAsync<bool?>(InfoBoxShowConstellationKey) ?? true;
         InfoBoxShowSecurityStatus = await _settingsService.GetAsync<bool?>(InfoBoxShowSecurityStatusKey) ?? true;
@@ -641,6 +688,15 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         InfoBoxShowIceBeltsIcon = await _settingsService.GetAsync<bool?>(InfoBoxShowIceBeltsIconKey) ?? true;
         InfoBoxShowStormIcon = await _settingsService.GetAsync<bool?>(InfoBoxShowStormIconKey) ?? true;
         InfoBoxShowWormholeIcon = await _settingsService.GetAsync<bool?>(InfoBoxShowWormholeIconKey) ?? true;
+        InfoBoxShowSovUpgradeIcon = await _settingsService.GetAsync<bool?>(InfoBoxShowSovUpgradeIconKey) ?? true;
+        await _sovUpgradeStateService.InitializeAsync();
+        InitializeSovFilterOptions();
+        var indicatorKeys = await _settingsService.GetAsync<List<string>>(IndicatorSovFilterKeysKey) ?? [];
+        var overlayKeys = await _settingsService.GetAsync<List<string>>(OverlaySovFilterKeysKey) ?? [];
+        var indicatorConfigured = await _settingsService.GetAsync<bool?>(IndicatorSovFilterConfiguredKey) ?? false;
+        var overlayConfigured = await _settingsService.GetAsync<bool?>(OverlaySovFilterConfiguredKey) ?? false;
+        ApplySelectedSovKeys(IndicatorSovUpgradeOptions, indicatorKeys, indicatorConfigured);
+        ApplySelectedSovKeys(OverlaySovUpgradeOptions, overlayKeys, overlayConfigured);
         AlwaysShowHubWormholes = await _settingsService.GetAsync<bool?>(AlwaysShowHubWormholesKey) ?? true;
         HubWormholeMarkerMode = await _settingsService.GetAsync<HubWormholeMarkerMode?>(HubWormholeMarkerModeKey) ?? HubWormholeMarkerMode.Badge;
         ShowMissingConnectionMarkers = await _settingsService.GetAsync<bool?>(ShowMissingConnectionMarkersKey) ?? true;
@@ -717,6 +773,175 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         {
             await ReloadGraphAsync();
         });
+    }
+
+    private void OnSovUpgradesSnapshotUpdated(object? sender, EventArgs e)
+    {
+        if (_isInitializing)
+        {
+            return;
+        }
+
+        Dispatcher.UIThread.Post(async () =>
+        {
+            await ReloadGraphAsync();
+        });
+    }
+
+    public Task<SovImportResult> ImportSovUpgradesAsync(string rawText, SovImportMode mode, CancellationToken cancellationToken = default)
+    {
+        return _sovUpgradeStateService.ImportFromTextAsync(rawText, mode, cancellationToken);
+    }
+
+    public Task AddOrUpdateSovUpgradeAsync(string systemName, string upgradeName, int tier, CancellationToken cancellationToken = default)
+    {
+        return _sovUpgradeStateService.AddOrUpdateUpgradeAsync(systemName, upgradeName, tier, cancellationToken);
+    }
+
+    public Task RemoveSovSystemAsync(string systemName, CancellationToken cancellationToken = default)
+    {
+        return _sovUpgradeStateService.RemoveSystemAsync(systemName, cancellationToken);
+    }
+
+    public Task<IReadOnlyList<SovSystemUpgradeRecord>> GetSovUpgradeSnapshotAsync(CancellationToken cancellationToken = default)
+    {
+        return _sovUpgradeStateService.GetSnapshotAsync(cancellationToken);
+    }
+
+    public async Task SaveIndicatorSovFilterAsync()
+    {
+        await _settingsService.SetAsync(IndicatorSovFilterKeysKey, SelectedIndicatorSovUpgradeKeys.ToList());
+        await _settingsService.SetAsync(IndicatorSovFilterConfiguredKey, true);
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedIndicatorSovUpgradeKeys)));
+    }
+
+    public async Task SaveOverlaySovFilterAsync()
+    {
+        await _settingsService.SetAsync(OverlaySovFilterKeysKey, SelectedOverlaySovUpgradeKeys.ToList());
+        await _settingsService.SetAsync(OverlaySovFilterConfiguredKey, true);
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedOverlaySovUpgradeKeys)));
+    }
+
+    private void InitializeSovFilterOptions()
+    {
+        if (IndicatorSovUpgradeOptions.Count > 0 || OverlaySovUpgradeOptions.Count > 0)
+        {
+            return;
+        }
+
+        var known = new[]
+        {
+            ("Advanced Logistics Network", 0), ("Cynosural Navigation", 0), ("Cynosural Suppression", 0),
+            ("Electric Stability Generator", 0), ("Exotic Stability Generator", 0), ("Gamma Stability Generator", 0),
+            ("Plasma Stability Generator", 0), ("Supercapital Construction Facilities", 0),
+            ("Exploration Detector", 1), ("Exploration Detector", 2), ("Exploration Detector", 3),
+            ("Isogen Prospecting Array", 1), ("Isogen Prospecting Array", 2), ("Isogen Prospecting Array", 3),
+            ("Major Threat Detection Array", 1), ("Major Threat Detection Array", 2), ("Major Threat Detection Array", 3),
+            ("Megacyte Prospecting Array", 1), ("Megacyte Prospecting Array", 2), ("Megacyte Prospecting Array", 3),
+            ("Mexallon Prospecting Array", 1), ("Mexallon Prospecting Array", 2), ("Mexallon Prospecting Array", 3),
+            ("Minor Threat Detection Array", 1), ("Minor Threat Detection Array", 2), ("Minor Threat Detection Array", 3),
+            ("Nocxium Prospecting Array", 1), ("Nocxium Prospecting Array", 2), ("Nocxium Prospecting Array", 3),
+            ("Power Monitoring Division", 1), ("Power Monitoring Division", 2), ("Power Monitoring Division", 3),
+            ("Pyerite Prospecting Array", 1), ("Pyerite Prospecting Array", 2), ("Pyerite Prospecting Array", 3),
+            ("Tritanium Prospecting Array", 1), ("Tritanium Prospecting Array", 2), ("Tritanium Prospecting Array", 3),
+            ("Workforce Mecha-Tooling", 1), ("Workforce Mecha-Tooling", 2), ("Workforce Mecha-Tooling", 3),
+            ("Zydrine Prospecting Array", 1), ("Zydrine Prospecting Array", 2), ("Zydrine Prospecting Array", 3)
+        };
+
+        foreach (var (name, tier) in known)
+        {
+            var key = BuildSovFilterKey(name, tier);
+            var icon = LoadSovIcon(name, tier);
+            var display = tier <= 0 ? name : $"{name} {tier}";
+            var indicatorOption = new SovUpgradeDisplayOption { Key = key, DisplayName = display, Icon = icon, IsSelected = true };
+            indicatorOption.PropertyChanged += async (_, e) =>
+            {
+                if (e.PropertyName == nameof(SovUpgradeDisplayOption.IsSelected))
+                {
+                    await SaveIndicatorSovFilterAsync();
+                }
+            };
+            IndicatorSovUpgradeOptions.Add(indicatorOption);
+
+            var overlayOption = new SovUpgradeDisplayOption { Key = key, DisplayName = display, Icon = icon, IsSelected = true };
+            overlayOption.PropertyChanged += async (_, e) =>
+            {
+                if (e.PropertyName == nameof(SovUpgradeDisplayOption.IsSelected))
+                {
+                    await SaveOverlaySovFilterAsync();
+                }
+            };
+            OverlaySovUpgradeOptions.Add(overlayOption);
+        }
+    }
+
+    private static void ApplySelectedSovKeys(IEnumerable<SovUpgradeDisplayOption> options, IEnumerable<string> selected, bool configured)
+    {
+        var set = selected.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var option in options)
+        {
+            option.IsSelected = !configured || set.Contains(option.Key);
+        }
+    }
+
+    public async Task SelectAllIndicatorSovFilterAsync()
+    {
+        foreach (var option in IndicatorSovUpgradeOptions)
+        {
+            option.IsSelected = true;
+        }
+
+        await SaveIndicatorSovFilterAsync();
+    }
+
+    public async Task UnselectAllIndicatorSovFilterAsync()
+    {
+        foreach (var option in IndicatorSovUpgradeOptions)
+        {
+            option.IsSelected = false;
+        }
+
+        await SaveIndicatorSovFilterAsync();
+    }
+
+    public async Task SelectAllOverlaySovFilterAsync()
+    {
+        foreach (var option in OverlaySovUpgradeOptions)
+        {
+            option.IsSelected = true;
+        }
+
+        await SaveOverlaySovFilterAsync();
+    }
+
+    public async Task UnselectAllOverlaySovFilterAsync()
+    {
+        foreach (var option in OverlaySovUpgradeOptions)
+        {
+            option.IsSelected = false;
+        }
+
+        await SaveOverlaySovFilterAsync();
+    }
+
+    private static Bitmap? LoadSovIcon(string upgradeName, int tier)
+    {
+        try
+        {
+            var fileName = tier <= 0 ? $"{upgradeName}.png" : $"{upgradeName} {tier}.png";
+            var uri = new Uri($"avares://Hisa.App/Assets/Icons/SOV Upgrades/{fileName}");
+            using var stream = AssetLoader.Open(uri);
+            return new Bitmap(stream);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string BuildSovFilterKey(string upgradeName, int tier)
+    {
+        return tier <= 0 ? upgradeName : $"{upgradeName}|{tier}";
     }
 
     public async Task<MapSearchFocus?> ExecuteSearchAsync(MapSearchCandidate? explicitCandidate = null)

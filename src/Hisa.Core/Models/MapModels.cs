@@ -23,7 +23,8 @@ public enum MapNodeColorMode
     JoveObservatory = 5,
     IceBelts = 6,
     Storms = 7,
-    Wormholes = 8
+    Wormholes = 8,
+    SovUpgrades = 9
 }
 
 public sealed class MapGraph
@@ -50,6 +51,34 @@ public sealed class MapNode
     public string? ConstellationName { get; init; }
     public IReadOnlyList<StormEffect> StormEffects { get; init; } = [];
     public IReadOnlyList<HubWormholeConnection> HubWormholeConnections { get; init; } = [];
+    public IReadOnlyList<SovUpgradeEntry> SovUpgrades { get; init; } = [];
+}
+
+public sealed class SovUpgradeEntry
+{
+    public required string UpgradeName { get; init; }
+    public int Tier { get; init; }
+}
+
+public enum SovImportMode
+{
+    Replace = 0,
+    UpdateOnChange = 1,
+    Append = 2
+}
+
+public sealed class SovImportResult
+{
+    public required int ParsedSystems { get; init; }
+    public required int ParsedUpgrades { get; init; }
+    public required int TotalSystemsAfterImport { get; init; }
+}
+
+public sealed class SovSystemUpgradeRecord
+{
+    public required int SolarSystemId { get; init; }
+    public required string SolarSystemName { get; init; }
+    public required IReadOnlyList<SovUpgradeEntry> Upgrades { get; init; }
 }
 
 public enum MapSearchKind

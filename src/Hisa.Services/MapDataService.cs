@@ -14,6 +14,7 @@ public sealed class MapDataService : IMapDataService
     private readonly IMapLayoutDataService _mapLayoutDataService;
     private readonly IStormStateService _stormStateService;
     private readonly IHubWormholeStateService _hubWormholeStateService;
+    private readonly ISovUpgradeStateService _sovUpgradeStateService;
 
     private sealed record StaticSolarSystemData(bool HasJoveObservatory, int IceFieldCount);
 
@@ -21,12 +22,14 @@ public sealed class MapDataService : IMapDataService
         ISdeDatabase sdeDatabase,
         IMapLayoutDataService mapLayoutDataService,
         IStormStateService stormStateService,
-        IHubWormholeStateService hubWormholeStateService)
+        IHubWormholeStateService hubWormholeStateService,
+        ISovUpgradeStateService sovUpgradeStateService)
     {
         _sdeDatabase = sdeDatabase;
         _mapLayoutDataService = mapLayoutDataService;
         _stormStateService = stormStateService;
         _hubWormholeStateService = hubWormholeStateService;
+        _sovUpgradeStateService = sovUpgradeStateService;
     }
 
     public async Task<IReadOnlyList<RegionOption>> GetRegionsAsync(CancellationToken cancellationToken = default)
@@ -224,6 +227,9 @@ public sealed class MapDataService : IMapDataService
                     : [],
                 HubWormholeConnections = _hubWormholeStateService.Current.ConnectionsBySystemId.TryGetValue((int)n.Id, out var wormholes)
                     ? wormholes
+                    : [],
+                SovUpgrades = _sovUpgradeStateService.CurrentBySystemId.TryGetValue((int)n.Id, out var upgrades)
+                    ? upgrades
                     : []
             };
         }).ToList();
@@ -501,6 +507,9 @@ public sealed class MapDataService : IMapDataService
                     : [],
                 HubWormholeConnections = _hubWormholeStateService.Current.ConnectionsBySystemId.TryGetValue(solarSystemId, out var wormholes)
                     ? wormholes
+                    : [],
+                SovUpgrades = _sovUpgradeStateService.CurrentBySystemId.TryGetValue(solarSystemId, out var upgrades)
+                    ? upgrades
                     : []
             });
         }
@@ -602,6 +611,8 @@ public sealed class MapDataService : IMapDataService
                 ConstellationName = n.ConstellationName,
                 StormEffects = n.StormEffects,
                 HubWormholeConnections = n.HubWormholeConnections
+                ,
+                SovUpgrades = n.SovUpgrades
             })
             .ToList();
 

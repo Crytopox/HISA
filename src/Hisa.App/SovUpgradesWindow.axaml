@@ -1,0 +1,72 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:app="clr-namespace:Hisa.App"
+        mc:Ignorable="d"
+        x:Class="Hisa.App.SovUpgradesWindow"
+        Width="860"
+        Height="700"
+        Title="SOV Upgrades"
+        Background="#0D131D">
+  <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" Margin="12">
+    <TextBlock Text="SOV Upgrades" Foreground="#D8E5F8" FontSize="16" FontWeight="SemiBold" />
+    <Border Grid.Row="1" Background="#101826" BorderBrush="#243247" BorderThickness="1" CornerRadius="4" Padding="10" Margin="0,8,0,0">
+      <StackPanel Spacing="8">
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <TextBlock Text="Import mode" VerticalAlignment="Center" Foreground="#8A96A8" />
+          <ComboBox x:Name="ImportModeCombo" Width="190" SelectedIndex="0">
+            <ComboBoxItem Content="Delete Previous (Default)" />
+            <ComboBoxItem Content="Update on Change" />
+            <ComboBoxItem Content="Append" />
+          </ComboBox>
+          <Button Content="Import / Apply" Click="OnImportClicked" />
+        </StackPanel>
+        <TextBlock Text="Paste Input" Foreground="#8A96A8" />
+        <TextBox x:Name="ImportTextBox"
+                 Watermark="Supported: RIFT SOV upgrades format (SYSTEM &lt;- Upgrade 3, Upgrade 2)&#10;Example: 1-PGSG &lt;- Major Threat Detection Array 3, Exploration Detector 3"
+                 AcceptsReturn="True"
+                 TextWrapping="Wrap"
+                 VerticalAlignment="Stretch"
+                 Height="210" />
+      </StackPanel>
+    </Border>
+
+    <Border Grid.Row="2" Background="#101826" BorderBrush="#243247" BorderThickness="1" CornerRadius="4" Padding="10" Margin="0,10,0,0">
+      <StackPanel Spacing="8">
+        <TextBlock Text="Manual Add / Update" Foreground="#8A96A8" />
+        <Grid ColumnDefinitions="140,230,80,Auto" ColumnSpacing="6">
+          <TextBox Grid.Column="0" x:Name="ManualSystemBox" Watermark="System" />
+          <ComboBox Grid.Column="1" x:Name="ManualUpgradeCombo" />
+          <ComboBox Grid.Column="2" x:Name="ManualTierCombo" SelectedIndex="0">
+            <ComboBoxItem Content="T1" />
+            <ComboBoxItem Content="T2" />
+            <ComboBoxItem Content="T3" />
+          </ComboBox>
+          <Button Grid.Column="3" Content="Add / Update" Click="OnAddManualClicked" />
+        </Grid>
+        <Grid ColumnDefinitions="180,Auto" ColumnSpacing="6">
+          <TextBox Grid.Column="0" x:Name="RemoveSystemBox" Watermark="System to remove" />
+          <Button Grid.Column="1" Content="Remove System" Click="OnRemoveSystemClicked" />
+        </Grid>
+      </StackPanel>
+    </Border>
+
+    <TextBlock Grid.Row="3" Text="Saved Upgrades" Foreground="#8A96A8" Margin="0,10,0,6" />
+    <Border Grid.Row="4" Background="#101826" BorderBrush="#243247" BorderThickness="1" CornerRadius="4" Padding="6">
+      <ListBox x:Name="SavedUpgradesList" Height="220" BorderThickness="0" Background="Transparent">
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="app:SovUpgradeListRow">
+            <StackPanel Orientation="Horizontal" Spacing="8" Margin="2">
+              <Image Source="{Binding Icon}" Width="18" Height="18" />
+              <TextBlock Text="{Binding SystemName}" Width="130" Foreground="#D8E5F8" />
+              <TextBlock Text="{Binding UpgradeName}" Width="260" Foreground="#D8E5F8" />
+              <TextBlock Text="{Binding TierText}" Foreground="#9DB1CC" />
+            </StackPanel>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+    </Border>
+    <TextBlock x:Name="StatusText" Grid.Row="5" Foreground="#8A96A8" Margin="0,8,0,0" TextWrapping="Wrap" />
+  </Grid>
+</Window>

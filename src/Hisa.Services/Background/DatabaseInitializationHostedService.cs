@@ -52,6 +52,7 @@ public static class ServiceCollectionExtensions
         });
         services.AddSingleton<IHubWormholeStateService, HubWormholeStateService>();
         services.AddHostedService<HubWormholeRefreshHostedService>();
+        services.AddSingleton<ISovUpgradeStateService, SovUpgradeStateService>();
         return services;
     }
 }

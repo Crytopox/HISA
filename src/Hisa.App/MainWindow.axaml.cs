@@ -17,6 +17,7 @@ public partial class MainWindow : Window
     private DebugWindow? _debugWindow;
     private PreferencesWindow? _preferencesWindow;
     private MapEditorWindow? _mapEditorWindow;
+    private SovUpgradesWindow? _sovUpgradesWindow;
 
     public MainWindow()
     {
@@ -91,9 +92,66 @@ public partial class MainWindow : Window
         _mapEditorWindow.Activate();
     }
 
+    private void OnOpenSovUpgradesClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_sovUpgradesWindow is null)
+        {
+            if (_boundVm is null)
+            {
+                return;
+            }
+
+            _sovUpgradesWindow = new SovUpgradesWindow(_boundVm);
+            _sovUpgradesWindow.Closed += (_, _) => _sovUpgradesWindow = null;
+        }
+
+        _sovUpgradesWindow.Show();
+        _sovUpgradesWindow.Activate();
+    }
+
     private void OnFitCenterClicked(object? sender, RoutedEventArgs e)
     {
         MainMapControl.FitToView();
+    }
+
+    private async void OnSelectAllIndicatorSovFilterClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_boundVm is null)
+        {
+            return;
+        }
+
+        await _boundVm.SelectAllIndicatorSovFilterAsync();
+    }
+
+    private async void OnUnselectAllIndicatorSovFilterClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_boundVm is null)
+        {
+            return;
+        }
+
+        await _boundVm.UnselectAllIndicatorSovFilterAsync();
+    }
+
+    private async void OnSelectAllOverlaySovFilterClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_boundVm is null)
+        {
+            return;
+        }
+
+        await _boundVm.SelectAllOverlaySovFilterAsync();
+    }
+
+    private async void OnUnselectAllOverlaySovFilterClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_boundVm is null)
+        {
+            return;
+        }
+
+        await _boundVm.UnselectAllOverlaySovFilterAsync();
     }
 
     private async void OnSearchKeyDown(object? sender, KeyEventArgs e)

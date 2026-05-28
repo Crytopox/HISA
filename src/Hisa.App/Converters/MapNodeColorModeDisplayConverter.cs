@@ -23,6 +23,7 @@ public sealed class MapNodeColorModeDisplayConverter : IValueConverter
             MapNodeColorMode.IceBelts => "Ice Belts",
             MapNodeColorMode.Storms => "Metaliminal Storms",
             MapNodeColorMode.Wormholes => "Thera/Turnur Wormholes",
+            MapNodeColorMode.SovUpgrades => "SOV Upgrades",
             _ => mode.ToString()
         };
     }
