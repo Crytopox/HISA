@@ -48,6 +48,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _infoBoxShowStormIcon = true;
     private bool _infoBoxShowWormholeIcon = true;
     private bool _alwaysShowHubWormholes;
+    private bool _showMissingConnectionMarkers = true;
     private HubWormholeMarkerMode _hubWormholeMarkerMode = HubWormholeMarkerMode.Badge;
     private CancellationTokenSource? _searchSuggestionsCts;
     private bool _isInitializing = true;
@@ -77,6 +78,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string InfoBoxShowWormholeIconKey = "Map.InfoBoxShowWormholeIcon";
     private const string AlwaysShowHubWormholesKey = "Map.AlwaysShowHubWormholes";
     private const string HubWormholeMarkerModeKey = "Map.HubWormholeMarkerMode";
+    private const string ShowMissingConnectionMarkersKey = "Map.ShowMissingConnectionMarkers";
     private const string WindowPlacementKey = "Window.Main.Placement";
     private const string MapViewportPrefixKey = "Map.Viewport";
     private readonly Task _initialLoadTask;
@@ -459,6 +461,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
+    public bool ShowMissingConnectionMarkers
+    {
+        get => _showMissingConnectionMarkers;
+        set
+        {
+            if (SetProperty(ref _showMissingConnectionMarkers, value) && !_isInitializing)
+            {
+                _ = _settingsService.SetAsync(ShowMissingConnectionMarkersKey, value);
+            }
+        }
+    }
+
     public RegionOption? SelectedRegion
     {
         get => _selectedRegion;
@@ -621,6 +635,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         InfoBoxShowWormholeIcon = await _settingsService.GetAsync<bool?>(InfoBoxShowWormholeIconKey) ?? true;
         AlwaysShowHubWormholes = await _settingsService.GetAsync<bool?>(AlwaysShowHubWormholesKey) ?? false;
         HubWormholeMarkerMode = await _settingsService.GetAsync<HubWormholeMarkerMode?>(HubWormholeMarkerModeKey) ?? HubWormholeMarkerMode.Badge;
+        ShowMissingConnectionMarkers = await _settingsService.GetAsync<bool?>(ShowMissingConnectionMarkersKey) ?? true;
         SelectedViewMode = await _settingsService.GetAsync<MapViewMode?>(ViewModeKey) ?? MapViewMode.Universe;
         EnforceCoordinateModeForView();
 

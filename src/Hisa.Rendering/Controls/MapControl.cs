@@ -178,6 +178,8 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, IEnumerable<long>?>(nameof(AdditionalSelectedNodeIds));
     public static readonly StyledProperty<IEnumerable<long>?> MissingConnectionNodeIdsProperty =
         AvaloniaProperty.Register<MapControl, IEnumerable<long>?>(nameof(MissingConnectionNodeIds));
+    public static readonly StyledProperty<bool> ShowMissingConnectionMarkersProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(ShowMissingConnectionMarkers), true);
     public static readonly StyledProperty<IEnumerable<long>?> CrossRegionConnectorNodeIdsProperty =
         AvaloniaProperty.Register<MapControl, IEnumerable<long>?>(nameof(CrossRegionConnectorNodeIds));
 
@@ -421,6 +423,12 @@ public sealed class MapControl : Control
         set => SetValue(MissingConnectionNodeIdsProperty, value);
     }
 
+    public bool ShowMissingConnectionMarkers
+    {
+        get => GetValue(ShowMissingConnectionMarkersProperty);
+        set => SetValue(ShowMissingConnectionMarkersProperty, value);
+    }
+
     public IEnumerable<long>? CrossRegionConnectorNodeIds
     {
         get => GetValue(CrossRegionConnectorNodeIdsProperty);
@@ -461,6 +469,7 @@ public sealed class MapControl : Control
             UseBuiltInSelectionProperty,
             AdditionalSelectedNodeIdsProperty,
             MissingConnectionNodeIdsProperty,
+            ShowMissingConnectionMarkersProperty,
             CrossRegionConnectorNodeIdsProperty);
         ClipToBounds = true;
     }
@@ -911,7 +920,9 @@ public sealed class MapControl : Control
                                         ? EditorCrossRegionConnectorBrush
                                         : GetCachedBrush(GetNodeBaseColor(node, NodeColorMode));
             context.DrawEllipse(brush, NodeOutlinePen, p, radius, radius);
-            if ((missingConnectionSet?.Contains(node.Id) ?? false) && (ViewMode == MapViewMode.Region || ShowEditorGrid))
+            if (ShowMissingConnectionMarkers &&
+                (missingConnectionSet?.Contains(node.Id) ?? false) &&
+                (ViewMode == MapViewMode.Region || ShowEditorGrid))
             {
                 var ringRadius = radius + 2.7;
                 context.DrawEllipse(null, MissingConnectionRingPen, p, ringRadius, ringRadius);

@@ -123,6 +123,7 @@
                             AlwaysShowHubWormholes="{Binding AlwaysShowHubWormholes}"
                             HubWormholeMarkerMode="{Binding HubWormholeMarkerMode}"
                             MissingConnectionNodeIds="{Binding MissingConnectionNodeIdsForView}"
+                            ShowMissingConnectionMarkers="{Binding ShowMissingConnectionMarkers}"
                             SelectedNodeId="{Binding SelectedNodeId, Mode=TwoWay}" />
 
       <Border Grid.Column="1"
