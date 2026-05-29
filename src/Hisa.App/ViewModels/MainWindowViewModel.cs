@@ -1796,7 +1796,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
         var originColorPalette = new uint[]
         {
-            0xFFFF4D4D, 0xFF3DE1FF, 0xFFFFC233, 0xFF7BFF4D, 0xFFFF66D6, 0xFF8C7BFF, 0xFFFF8F3D, 0xFF53FFB8
+            0xFF3DE1FF, 0xFFFFC233, 0xFF7BFF4D, 0xFFFF66D6, 0xFF8C7BFF, 0xFFFF8F3D, 0xFF53FFB8, 0xFFFF4D4D
         };
         var sortedOrigins = _jumpRangeOriginsLyByNodeId.Keys.OrderBy(x => x).ToList();
         for (var i = 0; i < sortedOrigins.Count; i++)
