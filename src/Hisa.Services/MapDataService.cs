@@ -167,7 +167,10 @@ public sealed class MapDataService : IMapDataService
             var layoutGraph = await _mapLayoutDataService.TryGetLayoutRegionGraphAsync(layoutRegionId, cancellationToken);
             if (layoutGraph is not null)
             {
-                return await EnrichLayoutGraphFromSdeAsync(layoutGraph, cancellationToken);
+                var layoutRegions = await _mapLayoutDataService.GetLayoutRegionsAsync(cancellationToken);
+                var isReadOnlyCombined = layoutRegions.FirstOrDefault(r => r.Id == layoutRegionId)?.IsReadOnly == true;
+                var orientationAligned = isReadOnlyCombined ? FlipGraphYAxis(layoutGraph) : layoutGraph;
+                return await EnrichLayoutGraphFromSdeAsync(orientationAligned, cancellationToken);
             }
         }
 
@@ -176,7 +179,8 @@ public sealed class MapDataService : IMapDataService
             var customLayoutGraph = await _mapLayoutDataService.TryGetRegionLayoutGraphAsync(regionId, cancellationToken);
             if (customLayoutGraph is not null)
             {
-                return await EnrichLayoutGraphFromSdeAsync(customLayoutGraph, cancellationToken);
+                var orientationAligned = FlipGraphYAxis(customLayoutGraph);
+                return await EnrichLayoutGraphFromSdeAsync(orientationAligned, cancellationToken);
             }
         }
 
@@ -301,6 +305,47 @@ public sealed class MapDataService : IMapDataService
         }
 
         return result;
+    }
+
+    private static MapGraph FlipGraphYAxis(MapGraph graph)
+    {
+        if (graph.Nodes.Count == 0)
+        {
+            return graph;
+        }
+
+        var nodes = graph.Nodes
+            .Select(n => new MapNode
+            {
+                Id = n.Id,
+                Name = n.Name,
+                X = n.X,
+                Y = 1.0 - n.Y,
+                PositionX = n.PositionX,
+                PositionY = n.PositionY,
+                PositionZ = n.PositionZ,
+                Security = n.Security,
+                SunTypeId = n.SunTypeId,
+                StarTypeName = n.StarTypeName,
+                SpectralClass = n.SpectralClass,
+                HasJoveObservatory = n.HasJoveObservatory,
+                IceFieldCount = n.IceFieldCount,
+                RegionId = n.RegionId,
+                RegionName = n.RegionName,
+                ConstellationId = n.ConstellationId,
+                ConstellationName = n.ConstellationName,
+                StormEffects = n.StormEffects,
+                HubWormholeConnections = n.HubWormholeConnections,
+                SovUpgrades = n.SovUpgrades,
+                HasActiveIncursion = n.HasActiveIncursion
+            })
+            .ToList();
+
+        return new MapGraph
+        {
+            Nodes = nodes,
+            Links = graph.Links
+        };
     }
 
     private static bool TryGetLayoutRegionId(int regionId, out long layoutRegionId)
