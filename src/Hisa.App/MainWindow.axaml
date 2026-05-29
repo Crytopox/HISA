@@ -108,6 +108,7 @@
           <Button.Flyout>
             <MenuFlyout>
               <MenuItem Header="LY Coverage Planner" Click="OnOpenLyCoveragePlannerClicked" />
+              <MenuItem Header="Jump Route Optimizer" Click="OnOpenJumpRouteOptimizerClicked" />
             </MenuFlyout>
           </Button.Flyout>
         </Button>
@@ -172,6 +173,8 @@
                               JumpRangeDistancesByNodeId="{Binding JumpRangeDistancesByNodeIdForView}"
                               LyCoverageCoveredNodeIds="{Binding LyCoverageCoveredNodeIdsForView}"
                               LyCoverageUncoveredNodeIds="{Binding LyCoverageUncoveredNodeIdsForView}"
+                              JumpRouteNodeIds="{Binding JumpRouteNodeIdsForView}"
+                              JumpRouteSkippedNodeIds="{Binding JumpRouteSkippedNodeIdsForView}"
                               ShowIndicatorJumpRangeLy="{Binding ShowIndicatorJumpRangeLy}"
                               InfoBoxShowJumpRangeLy="{Binding InfoBoxShowJumpRangeLy}"
                               SelectedNodeId="{Binding SelectedNodeId, Mode=TwoWay}" />

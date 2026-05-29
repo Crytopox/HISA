@@ -7,6 +7,20 @@ namespace Hisa.App;
 
 public partial class LyCoveragePlannerWindow : Window
 {
+    private sealed class SessionState
+    {
+        public string RangeLyText { get; set; } = "7.0";
+        public string TopResultsText { get; set; } = "50";
+        public bool InputOnlyCenters { get; set; }
+        public string InputSystemsText { get; set; } = string.Empty;
+        public IReadOnlyList<LyCoverageCandidateRow> Candidates { get; set; } = [];
+        public int SelectedIndex { get; set; } = -1;
+        public string SummaryText { get; set; } = "Run analysis to see candidate center systems.";
+        public string StatusText { get; set; } = string.Empty;
+        public double LastRangeLy { get; set; } = 7.0;
+    }
+
+    private static SessionState? s_sessionState;
     private readonly MainWindowViewModel _vm;
     private double _lastRangeLy = 7.0;
 
@@ -19,6 +33,8 @@ public partial class LyCoveragePlannerWindow : Window
     public LyCoveragePlannerWindow(MainWindowViewModel vm) : this()
     {
         _vm = vm;
+        RestoreSessionState();
+        Closed += (_, _) => CaptureSessionState();
     }
 
     private async void OnAnalyzeClicked(object? sender, RoutedEventArgs e)
@@ -87,5 +103,54 @@ public partial class LyCoveragePlannerWindow : Window
 
         _vm.SelectedNodeId = row.CenterSystemId;
         StatusTextBlock.Text = $"Applied center '{row.CenterSystemName}' at {_lastRangeLy:0.00} LY to map jump range.";
+    }
+
+    private void OnClearMapClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_vm is null)
+        {
+            return;
+        }
+
+        _vm.ClearJumpRangeOrigins();
+        StatusTextBlock.Text = "Cleared LY coverage highlights from map.";
+    }
+
+    private void RestoreSessionState()
+    {
+        if (s_sessionState is null)
+        {
+            return;
+        }
+
+        RangeLyTextBox.Text = s_sessionState.RangeLyText;
+        TopResultsTextBox.Text = s_sessionState.TopResultsText;
+        InputOnlyCentersCheckBox.IsChecked = s_sessionState.InputOnlyCenters;
+        InputSystemsTextBox.Text = s_sessionState.InputSystemsText;
+        CandidatesListBox.ItemsSource = s_sessionState.Candidates;
+        SummaryTextBlock.Text = s_sessionState.SummaryText;
+        StatusTextBlock.Text = s_sessionState.StatusText;
+        _lastRangeLy = s_sessionState.LastRangeLy;
+        if (s_sessionState.SelectedIndex >= 0 && s_sessionState.SelectedIndex < s_sessionState.Candidates.Count)
+        {
+            CandidatesListBox.SelectedIndex = s_sessionState.SelectedIndex;
+        }
+    }
+
+    private void CaptureSessionState()
+    {
+        var rows = (CandidatesListBox.ItemsSource as IEnumerable<LyCoverageCandidateRow>)?.ToList() ?? [];
+        s_sessionState = new SessionState
+        {
+            RangeLyText = RangeLyTextBox.Text ?? "7.0",
+            TopResultsText = TopResultsTextBox.Text ?? "50",
+            InputOnlyCenters = InputOnlyCentersCheckBox.IsChecked == true,
+            InputSystemsText = InputSystemsTextBox.Text ?? string.Empty,
+            Candidates = rows,
+            SelectedIndex = CandidatesListBox.SelectedIndex,
+            SummaryText = SummaryTextBlock.Text ?? "Run analysis to see candidate center systems.",
+            StatusText = StatusTextBlock.Text ?? string.Empty,
+            LastRangeLy = _lastRangeLy
+        };
     }
 }

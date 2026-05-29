@@ -26,6 +26,7 @@ public partial class MainWindow : Window
     private MapEditorWindow? _mapEditorWindow;
     private SovUpgradesWindow? _sovUpgradesWindow;
     private LyCoveragePlannerWindow? _lyCoveragePlannerWindow;
+    private JumpRouteOptimizerWindow? _jumpRouteOptimizerWindow;
     private readonly ContextMenu _mapNodeContextMenu;
     private readonly MenuItem _copySystemNameMenuItem;
     private readonly MenuItem _openInViewMenuItem;
@@ -200,6 +201,23 @@ public partial class MainWindow : Window
 
         _lyCoveragePlannerWindow.Show();
         _lyCoveragePlannerWindow.Activate();
+    }
+
+    private void OnOpenJumpRouteOptimizerClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_jumpRouteOptimizerWindow is null)
+        {
+            if (_boundVm is null)
+            {
+                return;
+            }
+
+            _jumpRouteOptimizerWindow = new JumpRouteOptimizerWindow(_boundVm);
+            _jumpRouteOptimizerWindow.Closed += (_, _) => _jumpRouteOptimizerWindow = null;
+        }
+
+        _jumpRouteOptimizerWindow.Show();
+        _jumpRouteOptimizerWindow.Activate();
     }
 
     private void OnFitCenterClicked(object? sender, RoutedEventArgs e)

@@ -101,6 +101,14 @@ public sealed class MapControl : Control
         new ImmutableSolidColorBrush(Color.Parse("#FF6A6A")),
         2.0,
         dashStyle: new DashStyle([1.6, 1.6], 0));
+    private static readonly Pen JumpRoutePathPen = new(new ImmutableSolidColorBrush(Color.Parse("#63D3FF")), 2.2);
+    private static readonly Pen JumpRouteStopRingPen = new(
+        new ImmutableSolidColorBrush(Color.Parse("#63D3FF")),
+        1.8,
+        dashStyle: new DashStyle([2.0, 2.0], 0));
+    private static readonly Pen JumpRouteSkippedRingPen = new(new ImmutableSolidColorBrush(Color.Parse("#FF6A6A")), 2.1);
+    private static readonly IBrush JumpRouteNumberFillBrush = new ImmutableSolidColorBrush(Color.Parse("#63D3FF"));
+    private static readonly IBrush JumpRouteNumberTextBrush = new ImmutableSolidColorBrush(Color.Parse("#0D131D"));
     private static readonly IBrush EditorCrossRegionConnectorBrush = new ImmutableSolidColorBrush(Color.Parse("#8E74D8"));
     private static readonly IBrush NodeHoleBrush = new ImmutableSolidColorBrush(Color.Parse("#0D131D"));
     private static readonly IBrush NodeLabelBackgroundBrush = new ImmutableSolidColorBrush(Color.Parse("#B5000000"));
@@ -251,6 +259,10 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, IEnumerable<long>?>(nameof(LyCoverageCoveredNodeIds));
     public static readonly StyledProperty<IEnumerable<long>?> LyCoverageUncoveredNodeIdsProperty =
         AvaloniaProperty.Register<MapControl, IEnumerable<long>?>(nameof(LyCoverageUncoveredNodeIds));
+    public static readonly StyledProperty<IEnumerable<long>?> JumpRouteNodeIdsProperty =
+        AvaloniaProperty.Register<MapControl, IEnumerable<long>?>(nameof(JumpRouteNodeIds));
+    public static readonly StyledProperty<IEnumerable<long>?> JumpRouteSkippedNodeIdsProperty =
+        AvaloniaProperty.Register<MapControl, IEnumerable<long>?>(nameof(JumpRouteSkippedNodeIds));
 
     private Point? _lastPanPoint;
     private Point? _leftPressPoint;
@@ -625,6 +637,18 @@ public sealed class MapControl : Control
         set => SetValue(LyCoverageUncoveredNodeIdsProperty, value);
     }
 
+    public IEnumerable<long>? JumpRouteNodeIds
+    {
+        get => GetValue(JumpRouteNodeIdsProperty);
+        set => SetValue(JumpRouteNodeIdsProperty, value);
+    }
+
+    public IEnumerable<long>? JumpRouteSkippedNodeIds
+    {
+        get => GetValue(JumpRouteSkippedNodeIdsProperty);
+        set => SetValue(JumpRouteSkippedNodeIdsProperty, value);
+    }
+
     public MapControl()
     {
         AffectsRender<MapControl>(GraphProperty, SelectedNodeIdProperty, ViewModeProperty, StretchToWindowProperty);
@@ -677,7 +701,9 @@ public sealed class MapControl : Control
             JumpRangeMembershipByNodeIdProperty,
             JumpRangeDistancesByNodeIdProperty,
             LyCoverageCoveredNodeIdsProperty,
-            LyCoverageUncoveredNodeIdsProperty);
+            LyCoverageUncoveredNodeIdsProperty,
+            JumpRouteNodeIdsProperty,
+            JumpRouteSkippedNodeIdsProperty);
         ClipToBounds = true;
     }
 
@@ -1157,6 +1183,36 @@ public sealed class MapControl : Control
 
         var labelBudget = GetLabelBudget();
         var shouldShowInlineLabels = ShouldShowInlineLabels(plot);
+        var jumpRouteOrderedIds = JumpRouteNodeIds?.ToList() ?? [];
+        var jumpRouteSkippedSet = JumpRouteSkippedNodeIds is not null
+            ? new HashSet<long>(JumpRouteSkippedNodeIds)
+            : null;
+        var jumpRouteOrderByNodeId = new Dictionary<long, int>();
+        var jumpRouteColorByNodeId = new Dictionary<long, Color>();
+        for (var i = 0; i < jumpRouteOrderedIds.Count; i++)
+        {
+            if (!jumpRouteOrderByNodeId.ContainsKey(jumpRouteOrderedIds[i]))
+            {
+                jumpRouteOrderByNodeId[jumpRouteOrderedIds[i]] = i + 1;
+                jumpRouteColorByNodeId[jumpRouteOrderedIds[i]] = GetJumpRouteStepColor(i, Math.Max(1, jumpRouteOrderedIds.Count - 1));
+            }
+        }
+        if (jumpRouteOrderedIds.Count >= 2)
+        {
+            for (var i = 0; i < jumpRouteOrderedIds.Count - 1; i++)
+            {
+                if (!_nodeIndexById.TryGetValue(jumpRouteOrderedIds[i], out var fromIdx) ||
+                    !_nodeIndexById.TryGetValue(jumpRouteOrderedIds[i + 1], out var toIdx))
+                {
+                    continue;
+                }
+
+                var legColor = GetJumpRouteStepColor(i, jumpRouteOrderedIds.Count - 1);
+                var legPen = new Pen(new ImmutableSolidColorBrush(legColor), 2.5);
+                context.DrawLine(legPen, _screenPositions[fromIdx], _screenPositions[toIdx]);
+            }
+        }
+
         var labelsDrawn = 0;
         var additionalSelectedSet = AdditionalSelectedNodeIds is not null
             ? new HashSet<long>(AdditionalSelectedNodeIds)
@@ -1283,6 +1339,36 @@ public sealed class MapControl : Control
             {
                 var uncoveredRadius = radius + 16.9;
                 context.DrawEllipse(null, LyCoverageUncoveredRingPen, p, uncoveredRadius, uncoveredRadius);
+            }
+            if (jumpRouteOrderByNodeId.ContainsKey(node.Id))
+            {
+                var routeRadius = radius + 20.2;
+                var routeColor = jumpRouteColorByNodeId.TryGetValue(node.Id, out var nodeRouteColor) ? nodeRouteColor : Color.Parse("#63D3FF");
+                var routePen = new Pen(new ImmutableSolidColorBrush(routeColor), 1.9, dashStyle: new DashStyle([2.0, 2.0], 0));
+                context.DrawEllipse(null, routePen, p, routeRadius, routeRadius);
+                if (jumpRouteOrderByNodeId.TryGetValue(node.Id, out var order))
+                {
+                    var numberLabel = new FormattedText(
+                        order.ToString(CultureInfo.InvariantCulture),
+                        CultureInfo.InvariantCulture,
+                        FlowDirection.LeftToRight,
+                        NodeLabelTypeface,
+                        9.5,
+                        JumpRouteNumberTextBrush);
+                    var bubbleRadius = 7.2;
+                    var bubbleCenter = new Point(p.X + routeRadius + 5.0, p.Y - routeRadius - 4.0);
+                    context.DrawEllipse(GetCachedBrush(routeColor), null, bubbleCenter, bubbleRadius, bubbleRadius);
+                    context.DrawText(
+                        numberLabel,
+                        new Point(
+                            bubbleCenter.X - (numberLabel.Width / 2),
+                            bubbleCenter.Y - (numberLabel.Height / 2)));
+                }
+            }
+            if (jumpRouteSkippedSet?.Contains(node.Id) == true)
+            {
+                var skippedRadius = radius + 23.4;
+                context.DrawEllipse(null, JumpRouteSkippedRingPen, p, skippedRadius, skippedRadius);
             }
             if (AlwaysShowHubWormholes && node.HubWormholeConnections.Count > 0)
             {
@@ -4246,6 +4332,39 @@ public sealed class MapControl : Control
         }
 
         context.DrawGeometry(null, pen, geometry);
+    }
+
+    private static Color GetJumpRouteStepColor(int stepIndex, int stepCount)
+    {
+        if (stepCount <= 1)
+        {
+            return Color.Parse("#63D3FF");
+        }
+
+        var t = Math.Clamp(stepIndex / (double)Math.Max(1, stepCount - 1), 0.0, 1.0);
+        var hue = 195.0 - (t * 95.0); // cyan -> green/yellow for visual progression
+        return ColorFromHsv(hue, 0.72, 0.98);
+    }
+
+    private static Color ColorFromHsv(double hue, double saturation, double value)
+    {
+        var h = ((hue % 360.0) + 360.0) % 360.0;
+        var c = value * saturation;
+        var x = c * (1.0 - Math.Abs(((h / 60.0) % 2.0) - 1.0));
+        var m = value - c;
+
+        double rp, gp, bp;
+        if (h < 60.0) { rp = c; gp = x; bp = 0.0; }
+        else if (h < 120.0) { rp = x; gp = c; bp = 0.0; }
+        else if (h < 180.0) { rp = 0.0; gp = c; bp = x; }
+        else if (h < 240.0) { rp = 0.0; gp = x; bp = c; }
+        else if (h < 300.0) { rp = x; gp = 0.0; bp = c; }
+        else { rp = c; gp = 0.0; bp = x; }
+
+        byte r = (byte)Math.Clamp((rp + m) * 255.0, 0.0, 255.0);
+        byte g = (byte)Math.Clamp((gp + m) * 255.0, 0.0, 255.0);
+        byte b = (byte)Math.Clamp((bp + m) * 255.0, 0.0, 255.0);
+        return Color.FromRgb(r, g, b);
     }
 
     private static void DrawIncursionIcon(DrawingContext context, Point topLeft, double size)

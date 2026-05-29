@@ -76,6 +76,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private IReadOnlyList<JumpRangeOriginDisplay> _jumpRangeOriginsDisplayForView = [];
     private List<long> _lyCoverageCoveredNodeIdsForView = [];
     private List<long> _lyCoverageUncoveredNodeIdsForView = [];
+    private List<long> _jumpRouteNodeIdsForView = [];
+    private List<long> _jumpRouteSkippedNodeIdsForView = [];
     private IReadOnlyList<WormholeOverlayCard> _hubWormholeCardsForView = [];
     private IReadOnlyList<IncursionOverlayCard> _incursionCardsForView = [];
     private IReadOnlyList<StormOverlayCard> _stormCardsForView = [];
@@ -168,6 +170,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public IReadOnlyList<JumpRangeOriginDisplay> JumpRangeOriginsDisplayForView => _jumpRangeOriginsDisplayForView;
     public IEnumerable<long> LyCoverageCoveredNodeIdsForView => _lyCoverageCoveredNodeIdsForView;
     public IEnumerable<long> LyCoverageUncoveredNodeIdsForView => _lyCoverageUncoveredNodeIdsForView;
+    public IEnumerable<long> JumpRouteNodeIdsForView => _jumpRouteNodeIdsForView;
+    public IEnumerable<long> JumpRouteSkippedNodeIdsForView => _jumpRouteSkippedNodeIdsForView;
     public IReadOnlyList<WormholeOverlayCard> HubWormholeCardsForView => _hubWormholeCardsForView;
     public IReadOnlyList<IncursionOverlayCard> IncursionCardsForView => _incursionCardsForView;
     public IReadOnlyList<StormOverlayCard> StormCardsForView => _stormCardsForView;
@@ -1021,6 +1025,180 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _lyCoverageUncoveredNodeIdsForView = [];
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LyCoverageCoveredNodeIdsForView)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LyCoverageUncoveredNodeIdsForView)));
+    }
+
+    public async Task<JumpRouteAnalysisResult> AnalyzeJumpRoutesAsync(
+        string inputSystems,
+        bool followInputOrder,
+        double maxJumpLy,
+        string? startSystem,
+        string? endSystem,
+        bool returnToStart,
+        int topResults = 5,
+        CancellationToken cancellationToken = default)
+    {
+        if (maxJumpLy <= 0)
+        {
+            return new JumpRouteAnalysisResult { Candidates = [], InvalidTokens = [], TargetCount = 0 };
+        }
+
+        var systems = await _mapDataService.GetSystemsWithSdeCoordinatesAsync(cancellationToken);
+        var byName = systems
+            .GroupBy(s => s.SolarSystemName, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+        var tokens = ParseSystemTokens(inputSystems);
+        var invalid = new List<string>();
+        var targets = new List<MapSystemPosition>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var token in tokens)
+        {
+            if (!byName.TryGetValue(token, out var sys))
+            {
+                invalid.Add(token);
+                continue;
+            }
+            if (seen.Add(sys.SolarSystemName))
+            {
+                targets.Add(sys);
+            }
+        }
+
+        if (targets.Count == 0)
+        {
+            return new JumpRouteAnalysisResult { Candidates = [], InvalidTokens = invalid, TargetCount = 0 };
+        }
+
+        var priorities = new HashSet<long>();
+
+        MapSystemPosition? fixedStart = null;
+        if (!string.IsNullOrWhiteSpace(startSystem) && byName.TryGetValue(startSystem.Trim(), out var startMatch))
+        {
+            fixedStart = startMatch;
+        }
+
+        MapSystemPosition? fixedEnd = null;
+        if (!string.IsNullOrWhiteSpace(endSystem) && byName.TryGetValue(endSystem.Trim(), out var endMatch))
+        {
+            fixedEnd = endMatch;
+        }
+
+        var candidates = new List<JumpRouteCandidateRow>();
+        string? orderingMessage = null;
+        var orderingFailed = false;
+
+        if (followInputOrder)
+        {
+            if (TryBuildStrictInputOrderedRoute(targets, fixedStart, fixedEnd, maxJumpLy, returnToStart, out var orderedRoute, out var orderFailureReason))
+            {
+                var orderedSkipped = targets.Where(t => orderedRoute.All(r => r.SolarSystemId != t.SolarSystemId)).ToList();
+                var orderedLegs = BuildRouteLegs(orderedRoute, maxJumpLy);
+                candidates.Add(new JumpRouteCandidateRow
+                {
+                    RouteText = string.Join(" -> ", orderedRoute.Select(x => x.SolarSystemName)),
+                    RouteSystemIds = orderedRoute.Select(x => x.SolarSystemId).ToList(),
+                    RouteSystemNames = orderedRoute.Select(x => x.SolarSystemName).ToList(),
+                    VisitedCount = orderedRoute.Select(x => x.SolarSystemId).Distinct().Count(id => targets.Any(t => t.SolarSystemId == id)),
+                    TargetCount = targets.Count,
+                    TotalDistanceLy = orderedLegs.Sum(l => l.DistanceLy),
+                    MaxLegLy = orderedLegs.Count == 0 ? 0 : orderedLegs.Max(l => l.DistanceLy),
+                    SkippedSystems = orderedSkipped.Select(x => x.SolarSystemName).OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToList(),
+                    SkippedReasonLines = BuildSkippedReasonLines(orderedRoute, orderedSkipped, maxJumpLy),
+                    SkippedSystemIds = orderedSkipped.Select(x => x.SolarSystemId).Distinct().ToList(),
+                    Legs = orderedLegs
+                });
+                orderingMessage = "Input order followed.";
+            }
+            else
+            {
+                orderingMessage = $"Input order could not be followed exactly: {orderFailureReason}";
+                orderingFailed = true;
+            }
+        }
+
+        var seeds = fixedStart is not null
+            ? new List<MapSystemPosition> { fixedStart }
+            : targets.Take(Math.Min(12, targets.Count)).ToList();
+        foreach (var seed in seeds)
+        {
+            var route = BuildGreedyRoute(seed, targets, maxJumpLy, priorities, fixedEnd, returnToStart);
+            if (route.Route.Count == 0)
+            {
+                continue;
+            }
+
+            var repairedRoute = ExpandRouteWithFeasibleInsertions(route.Route, targets, maxJumpLy, priorities, fixedStart, fixedEnd, returnToStart);
+            var improvedRoute = TwoOptImprove(repairedRoute, maxJumpLy);
+            var skippedSystems = targets
+                .Where(t => improvedRoute.All(r => r.SolarSystemId != t.SolarSystemId))
+                .ToList();
+            var skippedReasonLines = BuildSkippedReasonLines(improvedRoute, skippedSystems, maxJumpLy);
+            var legs = BuildRouteLegs(improvedRoute, maxJumpLy);
+            var totalLy = legs.Sum(l => l.DistanceLy);
+            var maxLegLy = legs.Count == 0 ? 0 : legs.Max(l => l.DistanceLy);
+
+            candidates.Add(new JumpRouteCandidateRow
+            {
+                RouteText = string.Join(" -> ", improvedRoute.Select(x => x.SolarSystemName)),
+                RouteSystemIds = improvedRoute.Select(x => x.SolarSystemId).ToList(),
+                RouteSystemNames = improvedRoute.Select(x => x.SolarSystemName).ToList(),
+                VisitedCount = improvedRoute.Select(x => x.SolarSystemId).Distinct().Count(id => targets.Any(t => t.SolarSystemId == id)),
+                TargetCount = targets.Count,
+                TotalDistanceLy = totalLy,
+                MaxLegLy = maxLegLy,
+                SkippedSystems = skippedSystems.Select(x => x.SolarSystemName).OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToList(),
+                SkippedReasonLines = skippedReasonLines,
+                SkippedSystemIds = skippedSystems.Select(x => x.SolarSystemId).Distinct().ToList(),
+                Legs = legs
+            });
+        }
+
+        var ranked = candidates
+            .OrderByDescending(c => c.VisitedCount)
+            .ThenBy(c => c.TotalDistanceLy)
+            .ThenBy(c => c.MaxLegLy)
+            .Take(Math.Max(1, topResults))
+            .ToList();
+
+        if (followInputOrder && orderingFailed)
+        {
+            orderingMessage = ranked.Count > 0
+                ? $"{orderingMessage} Showing best alternate routes."
+                : $"{orderingMessage} No alternate route satisfies current max jump constraints.";
+        }
+
+        return new JumpRouteAnalysisResult
+        {
+            Candidates = ranked,
+            InvalidTokens = invalid,
+            TargetCount = targets.Count,
+            OrderingMessage = orderingMessage,
+            OrderingFailed = orderingFailed
+        };
+    }
+
+    public void ApplyJumpRouteCandidate(JumpRouteCandidateRow row)
+    {
+        _jumpRouteNodeIdsForView = row.RouteSystemIds.ToList();
+        _jumpRouteSkippedNodeIdsForView = row.SkippedSystemIds.ToList();
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(JumpRouteNodeIdsForView)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(JumpRouteSkippedNodeIdsForView)));
+        if (row.RouteSystemIds.Count > 0)
+        {
+            SelectedNodeId = row.RouteSystemIds[0];
+        }
+    }
+
+    public void ClearJumpRouteHighlights()
+    {
+        if (_jumpRouteNodeIdsForView.Count == 0 && _jumpRouteSkippedNodeIdsForView.Count == 0)
+        {
+            return;
+        }
+        _jumpRouteNodeIdsForView = [];
+        _jumpRouteSkippedNodeIdsForView = [];
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(JumpRouteNodeIdsForView)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(JumpRouteSkippedNodeIdsForView)));
     }
 
     public async Task<WindowPlacementState?> GetWindowPlacementAsync()
@@ -1980,6 +2158,352 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             .Select(s => s.Trim())
             .Where(s => s.Length > 0)
             .ToList();
+    }
+
+    private static (List<MapSystemPosition> Route, List<MapSystemPosition> Skipped, double TotalLy, double MaxLegLy) BuildGreedyRoute(
+        MapSystemPosition seed,
+        IReadOnlyList<MapSystemPosition> targets,
+        double maxJumpLy,
+        ISet<long> priorities,
+        MapSystemPosition? fixedEnd,
+        bool returnToStart)
+    {
+        var remaining = targets.ToDictionary(t => t.SolarSystemId, t => t);
+        var route = new List<MapSystemPosition>();
+        var skipped = new List<MapSystemPosition>();
+        var total = 0.0;
+        var maxLeg = 0.0;
+        var current = seed;
+
+        route.Add(seed);
+        remaining.Remove(seed.SolarSystemId);
+
+        while (remaining.Count > 0)
+        {
+            if (fixedEnd is not null &&
+                remaining.Count == 1 &&
+                remaining.TryGetValue(fixedEnd.SolarSystemId, out var lastTarget))
+            {
+                var lastDist = GetDistanceLy(current, lastTarget);
+                if (lastDist <= maxJumpLy)
+                {
+                    route.Add(lastTarget);
+                    remaining.Remove(lastTarget.SolarSystemId);
+                    total += lastDist;
+                    maxLeg = Math.Max(maxLeg, lastDist);
+                    current = lastTarget;
+                    continue;
+                }
+            }
+
+            var candidates = remaining.Values
+                .Where(candidate => fixedEnd is null || candidate.SolarSystemId != fixedEnd.SolarSystemId || remaining.Count == 1);
+
+            var next = candidates
+                .Select(candidate =>
+                {
+                    var d = GetDistanceLy(current, candidate);
+                    var priorityBoost = priorities.Contains(candidate.SolarSystemId) ? -0.35 : 0.0;
+                    return new { candidate, d, score = d + priorityBoost };
+                })
+                .Where(x => x.d <= maxJumpLy)
+                .OrderBy(x => x.score)
+                .ThenBy(x => x.d)
+                .FirstOrDefault();
+
+            if (next is null)
+            {
+                skipped.AddRange(remaining.Values);
+                break;
+            }
+
+            route.Add(next.candidate);
+            remaining.Remove(next.candidate.SolarSystemId);
+            total += next.d;
+            maxLeg = Math.Max(maxLeg, next.d);
+            current = next.candidate;
+        }
+
+        if (fixedEnd is not null && route.All(x => x.SolarSystemId != fixedEnd.SolarSystemId))
+        {
+            var endDist = GetDistanceLy(current, fixedEnd);
+            if (endDist <= maxJumpLy)
+            {
+                route.Add(fixedEnd);
+                total += endDist;
+                maxLeg = Math.Max(maxLeg, endDist);
+                current = fixedEnd;
+            }
+        }
+
+        if (returnToStart && route.Count > 1)
+        {
+            var start = route[0];
+            var backDist = GetDistanceLy(current, start);
+            if (backDist <= maxJumpLy)
+            {
+                route.Add(start);
+                total += backDist;
+                maxLeg = Math.Max(maxLeg, backDist);
+            }
+        }
+
+        return (route, skipped, total, maxLeg);
+    }
+
+    private static List<string> BuildSkippedReasonLines(
+        IReadOnlyList<MapSystemPosition> route,
+        IReadOnlyList<MapSystemPosition> skippedSystems,
+        double maxJumpLy)
+    {
+        var lines = new List<string>();
+        foreach (var skipped in skippedSystems.OrderBy(x => x.SolarSystemName, StringComparer.OrdinalIgnoreCase))
+        {
+            var feasible = false;
+            for (var i = 0; i <= route.Count; i++)
+            {
+                MapSystemPosition? prev = i > 0 ? route[i - 1] : null;
+                MapSystemPosition? next = i < route.Count ? route[i] : null;
+                if (prev is not null && GetDistanceLy(prev, skipped) > maxJumpLy)
+                {
+                    continue;
+                }
+
+                if (next is not null && GetDistanceLy(skipped, next) > maxJumpLy)
+                {
+                    continue;
+                }
+
+                feasible = true;
+                break;
+            }
+
+            lines.Add(feasible
+                ? $"{skipped.SolarSystemName}: deferred by optimizer ordering"
+                : $"{skipped.SolarSystemName}: no feasible insertion <= {maxJumpLy:0.00} LY");
+        }
+
+        return lines;
+    }
+
+    public async Task<IReadOnlyList<string>> GetSystemNameSuggestionsAsync(string query, int maxCount = 8, CancellationToken cancellationToken = default)
+    {
+        var term = query?.Trim() ?? string.Empty;
+        if (term.Length == 0)
+        {
+            return [];
+        }
+
+        var candidates = await _mapDataService.SearchAsync(term, cancellationToken);
+        return candidates
+            .Where(c => c.Kind == MapSearchKind.SolarSystem && !string.IsNullOrWhiteSpace(c.Name))
+            .Select(c => c.Name)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+            .Take(Math.Max(1, maxCount))
+            .ToList();
+    }
+
+    private static List<MapSystemPosition> TwoOptImprove(List<MapSystemPosition> route, double maxJumpLy)
+    {
+        if (route.Count < 4)
+        {
+            return route;
+        }
+
+        var improved = route.ToList();
+        var changed = true;
+        var guard = 0;
+        while (changed && guard++ < 20)
+        {
+            changed = false;
+            for (var i = 1; i < improved.Count - 2; i++)
+            {
+                for (var k = i + 1; k < improved.Count - 1; k++)
+                {
+                    var a = improved[i - 1];
+                    var b = improved[i];
+                    var c = improved[k];
+                    var d = improved[k + 1];
+                    var current = GetDistanceLy(a, b) + GetDistanceLy(c, d);
+                    var candidate = GetDistanceLy(a, c) + GetDistanceLy(b, d);
+                    if (GetDistanceLy(a, c) > maxJumpLy || GetDistanceLy(b, d) > maxJumpLy)
+                    {
+                        continue;
+                    }
+
+                    if (candidate + 0.000001 < current)
+                    {
+                        improved.Reverse(i, (k - i) + 1);
+                        changed = true;
+                    }
+                }
+            }
+        }
+
+        return improved;
+    }
+
+    private static List<MapSystemPosition> ExpandRouteWithFeasibleInsertions(
+        List<MapSystemPosition> route,
+        IReadOnlyList<MapSystemPosition> targets,
+        double maxJumpLy,
+        ISet<long> priorities,
+        MapSystemPosition? fixedStart,
+        MapSystemPosition? fixedEnd,
+        bool returnToStart)
+    {
+        var result = route.ToList();
+        var remaining = targets
+            .Where(t => result.All(r => r.SolarSystemId != t.SolarSystemId))
+            .OrderByDescending(t => priorities.Contains(t.SolarSystemId))
+            .ThenBy(t => t.SolarSystemName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        // Keep retrying skipped systems because earlier insertions can create new feasible slots.
+        var progress = true;
+        while (progress && remaining.Count > 0)
+        {
+            progress = false;
+            for (var i = remaining.Count - 1; i >= 0; i--)
+            {
+                var candidate = remaining[i];
+                var bestIdx = -1;
+                var bestAdded = double.MaxValue;
+                for (var insertIdx = 0; insertIdx <= result.Count; insertIdx++)
+                {
+                    if (fixedStart is not null && insertIdx == 0)
+                    {
+                        continue;
+                    }
+
+                    if (fixedEnd is not null && !returnToStart && insertIdx == result.Count)
+                    {
+                        continue;
+                    }
+
+                    MapSystemPosition? prev = insertIdx > 0 ? result[insertIdx - 1] : null;
+                    MapSystemPosition? next = insertIdx < result.Count ? result[insertIdx] : null;
+                    if (prev is not null && GetDistanceLy(prev, candidate) > maxJumpLy)
+                    {
+                        continue;
+                    }
+                    if (next is not null && GetDistanceLy(candidate, next) > maxJumpLy)
+                    {
+                        continue;
+                    }
+
+                    var removed = (prev is not null && next is not null) ? GetDistanceLy(prev, next) : 0.0;
+                    var added = (prev is not null ? GetDistanceLy(prev, candidate) : 0.0) +
+                                (next is not null ? GetDistanceLy(candidate, next) : 0.0) -
+                                removed;
+                    if (added < bestAdded)
+                    {
+                        bestAdded = added;
+                        bestIdx = insertIdx;
+                    }
+                }
+
+                if (bestIdx >= 0)
+                {
+                    result.Insert(bestIdx, candidate);
+                    remaining.RemoveAt(i);
+                    progress = true;
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private static List<JumpRouteLegRow> BuildRouteLegs(List<MapSystemPosition> route, double maxJumpLy)
+    {
+        var legs = new List<JumpRouteLegRow>();
+        for (var i = 0; i < route.Count - 1; i++)
+        {
+            var d = GetDistanceLy(route[i], route[i + 1]);
+            if (d > maxJumpLy)
+            {
+                continue;
+            }
+
+            legs.Add(new JumpRouteLegRow
+            {
+                From = route[i].SolarSystemName,
+                To = route[i + 1].SolarSystemName,
+                DistanceLy = d
+            });
+        }
+
+        return legs;
+    }
+
+    private static bool TryBuildStrictInputOrderedRoute(
+        IReadOnlyList<MapSystemPosition> targetsInInputOrder,
+        MapSystemPosition? fixedStart,
+        MapSystemPosition? fixedEnd,
+        double maxJumpLy,
+        bool returnToStart,
+        out List<MapSystemPosition> route,
+        out string failureReason)
+    {
+        route = [];
+        failureReason = string.Empty;
+
+        if (targetsInInputOrder.Count == 0)
+        {
+            failureReason = "no valid target systems";
+            return false;
+        }
+
+        var ordered = targetsInInputOrder.ToList();
+        if (fixedStart is not null)
+        {
+            ordered.RemoveAll(x => x.SolarSystemId == fixedStart.SolarSystemId);
+            route.Add(fixedStart);
+        }
+
+        if (fixedEnd is not null)
+        {
+            ordered.RemoveAll(x => x.SolarSystemId == fixedEnd.SolarSystemId);
+        }
+
+        route.AddRange(ordered);
+
+        if (fixedEnd is not null)
+        {
+            route.Add(fixedEnd);
+        }
+
+        if (route.Count == 0)
+        {
+            failureReason = "empty route after start/end constraints";
+            return false;
+        }
+
+        for (var i = 0; i < route.Count - 1; i++)
+        {
+            var d = GetDistanceLy(route[i], route[i + 1]);
+            if (d > maxJumpLy)
+            {
+                failureReason = $"{route[i].SolarSystemName} -> {route[i + 1].SolarSystemName} requires {d:0.00} LY (> {maxJumpLy:0.00})";
+                return false;
+            }
+        }
+
+        if (returnToStart && route.Count > 1)
+        {
+            var back = GetDistanceLy(route[^1], route[0]);
+            if (back > maxJumpLy)
+            {
+                failureReason = $"return leg {route[^1].SolarSystemName} -> {route[0].SolarSystemName} requires {back:0.00} LY (> {maxJumpLy:0.00})";
+                return false;
+            }
+
+            route.Add(route[0]);
+        }
+
+        return true;
     }
 
     private static bool HasSdePosition(MapNode node)
