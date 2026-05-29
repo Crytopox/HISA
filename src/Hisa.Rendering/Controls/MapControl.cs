@@ -1488,19 +1488,22 @@ public sealed class MapControl : Control
             }
         }
 
-        if (SelectedNodeId is not null &&
-            _nodeIndexById.TryGetValue(SelectedNodeId.Value, out var selectedIndex) &&
-            _nodeById.TryGetValue(SelectedNodeId.Value, out var selectedNode))
+        if (ViewMode != MapViewMode.UniverseRegions)
         {
-            DrawHoverOverlay(context, _screenPositions[selectedIndex], selectedNode);
-        }
+            if (SelectedNodeId is not null &&
+                _nodeIndexById.TryGetValue(SelectedNodeId.Value, out var selectedIndex) &&
+                _nodeById.TryGetValue(SelectedNodeId.Value, out var selectedNode))
+            {
+                DrawHoverOverlay(context, _screenPositions[selectedIndex], selectedNode);
+            }
 
-        if (_hoveredNodeId is not null &&
-            _hoveredNodeId != SelectedNodeId &&
-            _nodeIndexById.TryGetValue(_hoveredNodeId.Value, out var hoverIndex) &&
-            _nodeById.TryGetValue(_hoveredNodeId.Value, out var hoverNode))
-        {
-            DrawHoverOverlay(context, _screenPositions[hoverIndex], hoverNode);
+            if (_hoveredNodeId is not null &&
+                _hoveredNodeId != SelectedNodeId &&
+                _nodeIndexById.TryGetValue(_hoveredNodeId.Value, out var hoverIndex) &&
+                _nodeById.TryGetValue(_hoveredNodeId.Value, out var hoverNode))
+            {
+                DrawHoverOverlay(context, _screenPositions[hoverIndex], hoverNode);
+            }
         }
 
         if (ShouldShowUniverseRegionLabels())

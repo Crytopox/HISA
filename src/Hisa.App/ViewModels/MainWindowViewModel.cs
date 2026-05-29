@@ -87,11 +87,15 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly Dictionary<long, List<long>> _jumpRangeMembershipByNodeId = [];
     private readonly Dictionary<long, List<JumpRangeDistanceDisplay>> _jumpRangeDistancesByNodeId = [];
     private CancellationTokenSource? _searchSuggestionsCts;
+    private MapCoordinateMode _savedUniverseCoordinateMode = MapCoordinateMode.SdePlanarXY;
+    private MapCoordinateMode _savedRegionCoordinateMode = MapCoordinateMode.SdePlanarXY;
     private bool _isInitializing = true;
     private const string ViewModeKey = "Map.SelectedViewMode";
     private const string RegionIdKey = "Map.SelectedRegionId";
     private const string RegionTokenKey = "Map.SelectedRegionToken";
     private const string CoordinateModeKey = "Map.SelectedCoordinateMode";
+    private const string CoordinateModeUniverseKey = "Map.SelectedCoordinateMode.Universe";
+    private const string CoordinateModeRegionKey = "Map.SelectedCoordinateMode.Region";
     private const string StretchMapToWindowKey = "Map.StretchToWindow";
     private const string NodeColorModeKey = "Map.NodeColorMode";
     private const string NodeBackgroundColorModeKey = "Map.NodeBackgroundColorMode";
@@ -706,21 +710,27 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         get => _selectedCoordinateMode;
         set
         {
+            var persistByMode = true;
             if (SelectedViewMode == MapViewMode.Region && SelectedRegion is { Kind: not RegionOptionKind.Regular })
             {
                 value = MapCoordinateMode.SdePlanarXY;
+                persistByMode = false;
             }
 
             if (SelectedViewMode == MapViewMode.UniverseRegions && value != MapCoordinateMode.SdePlanarXY)
             {
                 value = MapCoordinateMode.SdePlanarXY;
+                persistByMode = false;
             }
 
             if (SetProperty(ref _selectedCoordinateMode, value))
             {
                 if (!_isInitializing)
                 {
-                    _ = _settingsService.SetAsync(CoordinateModeKey, value);
+                    if (persistByMode)
+                    {
+                        PersistCoordinateModeForCurrentView(value);
+                    }
                     _ = ReloadGraphAsync();
                 }
             }
@@ -1297,7 +1307,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _allRegions = (await _mapDataService.GetRegionsAsync()).ToList();
         ApplyRegionFilter();
 
-        SelectedCoordinateMode = await _settingsService.GetAsync<MapCoordinateMode?>(CoordinateModeKey) ?? MapCoordinateMode.SdePlanarXY;
+        var legacyCoordinateMode = await _settingsService.GetAsync<MapCoordinateMode?>(CoordinateModeKey) ?? MapCoordinateMode.SdePlanarXY;
+        _savedUniverseCoordinateMode = await _settingsService.GetAsync<MapCoordinateMode?>(CoordinateModeUniverseKey) ?? legacyCoordinateMode;
+        _savedRegionCoordinateMode = await _settingsService.GetAsync<MapCoordinateMode?>(CoordinateModeRegionKey) ?? legacyCoordinateMode;
+        SelectedCoordinateMode = _savedUniverseCoordinateMode;
         StretchMapToWindow = await _settingsService.GetAsync<bool?>(StretchMapToWindowKey) ?? false;
         NodeColorMode = await _settingsService.GetAsync<MapNodeColorMode?>(NodeColorModeKey) ?? MapNodeColorMode.None;
         NodeBackgroundColorMode = await _settingsService.GetAsync<MapNodeColorMode?>(NodeBackgroundColorModeKey) ?? MapNodeColorMode.None;
@@ -2602,14 +2615,32 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     private void EnforceCoordinateModeForView()
     {
-        if (SelectedViewMode == MapViewMode.UniverseRegions && SelectedCoordinateMode != MapCoordinateMode.SdePlanarXY)
+        if (SelectedViewMode == MapViewMode.Universe)
+        {
+            if (SelectedCoordinateMode != _savedUniverseCoordinateMode)
+            {
+                _selectedCoordinateMode = _savedUniverseCoordinateMode;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedCoordinateMode)));
+            }
+            return;
+        }
+
+        if (SelectedViewMode == MapViewMode.Region)
+        {
+            if (SelectedCoordinateMode != _savedRegionCoordinateMode)
+            {
+                _selectedCoordinateMode = _savedRegionCoordinateMode;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedCoordinateMode)));
+            }
+            EnforceCoordinateModeForSelectedRegion();
+            return;
+        }
+
+        if (SelectedCoordinateMode != MapCoordinateMode.SdePlanarXY)
         {
             _selectedCoordinateMode = MapCoordinateMode.SdePlanarXY;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedCoordinateMode)));
-            _ = _settingsService.SetAsync(CoordinateModeKey, MapCoordinateMode.SdePlanarXY);
         }
-
-        EnforceCoordinateModeForSelectedRegion();
     }
 
     private void EnforceCoordinateModeForSelectedRegion()
@@ -2626,7 +2657,23 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
         _selectedCoordinateMode = MapCoordinateMode.SdePlanarXY;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedCoordinateMode)));
-        _ = _settingsService.SetAsync(CoordinateModeKey, MapCoordinateMode.SdePlanarXY);
+    }
+
+    private void PersistCoordinateModeForCurrentView(MapCoordinateMode value)
+    {
+        switch (SelectedViewMode)
+        {
+            case MapViewMode.Universe:
+                _savedUniverseCoordinateMode = value;
+                _ = _settingsService.SetAsync(CoordinateModeUniverseKey, value);
+                break;
+            case MapViewMode.Region:
+                _savedRegionCoordinateMode = value;
+                _ = _settingsService.SetAsync(CoordinateModeRegionKey, value);
+                break;
+            default:
+                break;
+        }
     }
 
     private async Task UpdateSearchSuggestionsAsync(string rawText)
