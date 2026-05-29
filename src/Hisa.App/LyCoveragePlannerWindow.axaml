@@ -1,0 +1,102 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:app="clr-namespace:Hisa.App"
+        mc:Ignorable="d"
+        x:Class="Hisa.App.LyCoveragePlannerWindow"
+        Width="980"
+        Height="740"
+        Title="LY Coverage Planner"
+        Background="#0D131D">
+  <Grid RowDefinitions="Auto,Auto,Auto,Auto,*,Auto" Margin="12">
+    <StackPanel Spacing="3">
+      <TextBlock Text="LY Coverage Planner" Foreground="#D8E5F8" FontSize="16" FontWeight="SemiBold" />
+      <TextBlock Text="Find center candidates that cover as many target systems as possible in selected jump range."
+                 Foreground="#8FA5C4" />
+    </StackPanel>
+
+    <Border Grid.Row="1" Margin="0,10,0,0" Background="#101826" BorderBrush="#243247" BorderThickness="1" CornerRadius="4" Padding="10">
+      <Grid ColumnDefinitions="Auto,88,Auto,84,Auto,Auto,*" ColumnSpacing="8">
+        <TextBlock Grid.Column="0" Text="Jump Range (LY)" VerticalAlignment="Center" Foreground="#8FA5C4" />
+        <TextBox Grid.Column="1" x:Name="RangeLyTextBox" Text="7.0" />
+        <TextBlock Grid.Column="2" Text="Top Results" VerticalAlignment="Center" Foreground="#8FA5C4" />
+        <TextBox Grid.Column="3" x:Name="TopResultsTextBox" Width="64" Text="50" />
+        <CheckBox Grid.Column="4" x:Name="InputOnlyCentersCheckBox" Content="Input systems as centers only" VerticalAlignment="Center" />
+        <Button Grid.Column="5" Content="Analyze" Click="OnAnalyzeClicked" />
+        <Button Grid.Column="6" Content="Apply Selected To Map" Click="OnApplySelectedClicked" HorizontalAlignment="Left" />
+      </Grid>
+    </Border>
+
+    <Border Grid.Row="2" Margin="0,10,0,0" Background="#101826" BorderBrush="#243247" BorderThickness="1" CornerRadius="4" Padding="10">
+      <StackPanel Spacing="6">
+        <TextBlock Text="Input target systems (space/comma/newline separated)" Foreground="#8FA5C4" />
+        <TextBox x:Name="InputSystemsTextBox" AcceptsReturn="True" Height="120" TextWrapping="Wrap" />
+      </StackPanel>
+    </Border>
+
+    <Border Grid.Row="3" Margin="0,10,0,0" Background="#101826" BorderBrush="#243247" BorderThickness="1" CornerRadius="4" Padding="8">
+      <StackPanel Spacing="6">
+        <TextBlock Text="Map Legend (LY Coverage Planner)" Foreground="#D8E5F8" FontWeight="SemiBold" />
+        <StackPanel Orientation="Horizontal" Spacing="14">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <Canvas Width="16" Height="16">
+              <Ellipse Width="12" Height="12" Stroke="#59D38C" StrokeThickness="2" StrokeDashArray="2,2" Fill="Transparent" Canvas.Left="2" Canvas.Top="2" />
+            </Canvas>
+            <TextBlock Text="Covered target system" Foreground="#BFD4EC" VerticalAlignment="Center" />
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <Canvas Width="16" Height="16">
+              <Ellipse Width="12" Height="12" Stroke="#FF6A6A" StrokeThickness="2" StrokeDashArray="1.6,1.6" Fill="Transparent" Canvas.Left="2" Canvas.Top="2" />
+            </Canvas>
+            <TextBlock Text="Uncovered target system" Foreground="#BFD4EC" VerticalAlignment="Center" />
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <Canvas Width="16" Height="16">
+              <Ellipse Width="12" Height="12" Stroke="#F3BE5E" StrokeThickness="2" StrokeDashArray="3.2,2.0" Fill="Transparent" Canvas.Left="2" Canvas.Top="2" />
+            </Canvas>
+            <TextBlock Text="Selected center (jump origin)" Foreground="#BFD4EC" VerticalAlignment="Center" />
+          </StackPanel>
+        </StackPanel>
+      </StackPanel>
+    </Border>
+
+    <Border Grid.Row="4" Margin="0,10,0,0" Background="#101826" BorderBrush="#243247" BorderThickness="1" CornerRadius="4" Padding="8">
+      <Grid RowDefinitions="Auto,*,Auto">
+        <TextBlock x:Name="SummaryTextBlock" Foreground="#8FA5C4" Margin="0,0,0,6" Text="Run analysis to see candidate center systems." />
+        <Grid Grid.Row="1" RowDefinitions="Auto,*">
+          <Border Grid.Row="0" Background="#18263A" BorderBrush="#2C425F" BorderThickness="1" CornerRadius="4" Padding="6,5">
+            <Grid ColumnDefinitions="180,110,80,90,90,*" ColumnSpacing="8">
+              <TextBlock Grid.Column="0" Text="Center" Foreground="#CFE4FF" FontWeight="SemiBold" />
+              <TextBlock Grid.Column="1" Text="Covered" Foreground="#CFE4FF" FontWeight="SemiBold" />
+              <TextBlock Grid.Column="2" Text="Coverage %" Foreground="#CFE4FF" FontWeight="SemiBold" />
+              <TextBlock Grid.Column="3" Text="Avg LY" Foreground="#CFE4FF" FontWeight="SemiBold" />
+              <TextBlock Grid.Column="4" Text="Max LY" Foreground="#CFE4FF" FontWeight="SemiBold" />
+              <TextBlock Grid.Column="5" Text="Uncovered" Foreground="#CFE4FF" FontWeight="SemiBold" />
+            </Grid>
+          </Border>
+          <ListBox Grid.Row="1" x:Name="CandidatesListBox" BorderThickness="0" Background="Transparent" Margin="0,6,0,0">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="app:LyCoverageCandidateRow">
+              <Grid ColumnDefinitions="180,110,80,90,90,*" ColumnSpacing="8" Margin="2">
+                <StackPanel Grid.Column="0">
+                  <TextBlock Text="{Binding CenterSystemName}" Foreground="#D8E5F8" FontWeight="SemiBold" />
+                  <TextBlock Text="{Binding RegionName}" Foreground="#8FA5C4" FontSize="11" />
+                </StackPanel>
+                <TextBlock Grid.Column="1" Text="{Binding CoveredText}" Foreground="#CFE4FF" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="2" Text="{Binding CoveragePercentText}" Foreground="#CFE4FF" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="3" Text="{Binding AverageDistanceLyText}" Foreground="#CFE4FF" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="4" Text="{Binding MaxDistanceLyText}" Foreground="#CFE4FF" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="5" Text="{Binding UncoveredPreview}" Foreground="#AFC6E2" TextWrapping="Wrap" />
+              </Grid>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+          </ListBox>
+        </Grid>
+        
+      </Grid>
+    </Border>
+
+    <TextBlock Grid.Row="5" x:Name="StatusTextBlock" Foreground="#8FA5C4" Margin="0,10,0,0" TextWrapping="Wrap" />
+  </Grid>
+</Window>

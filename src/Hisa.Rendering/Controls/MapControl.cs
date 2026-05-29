@@ -93,6 +93,14 @@ public sealed class MapControl : Control
         new ImmutableSolidColorBrush(Color.Parse("#F3BE5E")),
         2.2,
         dashStyle: new DashStyle([3.2, 2.0], 0));
+    private static readonly Pen LyCoverageCoveredRingPen = new(
+        new ImmutableSolidColorBrush(Color.Parse("#59D38C")),
+        2.0,
+        dashStyle: new DashStyle([2.0, 2.2], 0));
+    private static readonly Pen LyCoverageUncoveredRingPen = new(
+        new ImmutableSolidColorBrush(Color.Parse("#FF6A6A")),
+        2.0,
+        dashStyle: new DashStyle([1.6, 1.6], 0));
     private static readonly IBrush EditorCrossRegionConnectorBrush = new ImmutableSolidColorBrush(Color.Parse("#8E74D8"));
     private static readonly IBrush NodeHoleBrush = new ImmutableSolidColorBrush(Color.Parse("#0D131D"));
     private static readonly IBrush NodeLabelBackgroundBrush = new ImmutableSolidColorBrush(Color.Parse("#B5000000"));
@@ -239,6 +247,10 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, IReadOnlyDictionary<long, IReadOnlyList<long>>?>(nameof(JumpRangeMembershipByNodeId));
     public static readonly StyledProperty<IReadOnlyDictionary<long, IReadOnlyList<JumpRangeDistanceDisplay>>?> JumpRangeDistancesByNodeIdProperty =
         AvaloniaProperty.Register<MapControl, IReadOnlyDictionary<long, IReadOnlyList<JumpRangeDistanceDisplay>>?>(nameof(JumpRangeDistancesByNodeId));
+    public static readonly StyledProperty<IEnumerable<long>?> LyCoverageCoveredNodeIdsProperty =
+        AvaloniaProperty.Register<MapControl, IEnumerable<long>?>(nameof(LyCoverageCoveredNodeIds));
+    public static readonly StyledProperty<IEnumerable<long>?> LyCoverageUncoveredNodeIdsProperty =
+        AvaloniaProperty.Register<MapControl, IEnumerable<long>?>(nameof(LyCoverageUncoveredNodeIds));
 
     private Point? _lastPanPoint;
     private Point? _leftPressPoint;
@@ -601,6 +613,18 @@ public sealed class MapControl : Control
         set => SetValue(JumpRangeDistancesByNodeIdProperty, value);
     }
 
+    public IEnumerable<long>? LyCoverageCoveredNodeIds
+    {
+        get => GetValue(LyCoverageCoveredNodeIdsProperty);
+        set => SetValue(LyCoverageCoveredNodeIdsProperty, value);
+    }
+
+    public IEnumerable<long>? LyCoverageUncoveredNodeIds
+    {
+        get => GetValue(LyCoverageUncoveredNodeIdsProperty);
+        set => SetValue(LyCoverageUncoveredNodeIdsProperty, value);
+    }
+
     public MapControl()
     {
         AffectsRender<MapControl>(GraphProperty, SelectedNodeIdProperty, ViewModeProperty, StretchToWindowProperty);
@@ -651,7 +675,9 @@ public sealed class MapControl : Control
             JumpRangeInRangeNodeIdsProperty,
             JumpRangeOriginsDisplayProperty,
             JumpRangeMembershipByNodeIdProperty,
-            JumpRangeDistancesByNodeIdProperty);
+            JumpRangeDistancesByNodeIdProperty,
+            LyCoverageCoveredNodeIdsProperty,
+            LyCoverageUncoveredNodeIdsProperty);
         ClipToBounds = true;
     }
 
@@ -1138,6 +1164,12 @@ public sealed class MapControl : Control
         var missingConnectionSet = MissingConnectionNodeIds is not null
             ? new HashSet<long>(MissingConnectionNodeIds)
             : null;
+        var lyCoveredSet = LyCoverageCoveredNodeIds is not null
+            ? new HashSet<long>(LyCoverageCoveredNodeIds)
+            : null;
+        var lyUncoveredSet = LyCoverageUncoveredNodeIds is not null
+            ? new HashSet<long>(LyCoverageUncoveredNodeIds)
+            : null;
         var crossRegionConnectorSet = CrossRegionConnectorNodeIds is not null
             ? new HashSet<long>(CrossRegionConnectorNodeIds)
             : null;
@@ -1241,6 +1273,16 @@ public sealed class MapControl : Control
                 {
                     context.DrawEllipse(null, JumpRangeOriginRingPen, p, originRadius, originRadius);
                 }
+            }
+            if (lyCoveredSet?.Contains(node.Id) == true)
+            {
+                var coveredRadius = radius + 13.6;
+                context.DrawEllipse(null, LyCoverageCoveredRingPen, p, coveredRadius, coveredRadius);
+            }
+            if (lyUncoveredSet?.Contains(node.Id) == true)
+            {
+                var uncoveredRadius = radius + 16.9;
+                context.DrawEllipse(null, LyCoverageUncoveredRingPen, p, uncoveredRadius, uncoveredRadius);
             }
             if (AlwaysShowHubWormholes && node.HubWormholeConnections.Count > 0)
             {

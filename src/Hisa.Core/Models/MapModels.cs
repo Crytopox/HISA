@@ -146,6 +146,17 @@ public sealed class MapSystemMetadata
     public string? RegionName { get; init; }
 }
 
+public sealed class MapSystemPosition
+{
+    public required long SolarSystemId { get; init; }
+    public required string SolarSystemName { get; init; }
+    public string? ConstellationName { get; init; }
+    public string? RegionName { get; init; }
+    public required double PositionX { get; init; }
+    public required double PositionY { get; init; }
+    public required double PositionZ { get; init; }
+}
+
 public sealed class JumpRangeOriginDisplay
 {
     public required long NodeId { get; init; }

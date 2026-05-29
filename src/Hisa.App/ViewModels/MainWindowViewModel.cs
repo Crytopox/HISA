@@ -74,6 +74,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly Dictionary<long, uint> _jumpRangeOriginColorByNodeId = [];
     private List<long> _jumpRangeInRangeNodeIdsForView = [];
     private IReadOnlyList<JumpRangeOriginDisplay> _jumpRangeOriginsDisplayForView = [];
+    private List<long> _lyCoverageCoveredNodeIdsForView = [];
+    private List<long> _lyCoverageUncoveredNodeIdsForView = [];
     private IReadOnlyList<WormholeOverlayCard> _hubWormholeCardsForView = [];
     private IReadOnlyList<IncursionOverlayCard> _incursionCardsForView = [];
     private IReadOnlyList<StormOverlayCard> _stormCardsForView = [];
@@ -164,6 +166,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public IEnumerable<long> JumpRangeOriginNodeIdsForView => _jumpRangeOriginsLyByNodeId.Keys;
     public IEnumerable<long> JumpRangeInRangeNodeIdsForView => _jumpRangeInRangeNodeIdsForView;
     public IReadOnlyList<JumpRangeOriginDisplay> JumpRangeOriginsDisplayForView => _jumpRangeOriginsDisplayForView;
+    public IEnumerable<long> LyCoverageCoveredNodeIdsForView => _lyCoverageCoveredNodeIdsForView;
+    public IEnumerable<long> LyCoverageUncoveredNodeIdsForView => _lyCoverageUncoveredNodeIdsForView;
     public IReadOnlyList<WormholeOverlayCard> HubWormholeCardsForView => _hubWormholeCardsForView;
     public IReadOnlyList<IncursionOverlayCard> IncursionCardsForView => _incursionCardsForView;
     public IReadOnlyList<StormOverlayCard> StormCardsForView => _stormCardsForView;
@@ -851,7 +855,172 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
         _jumpRangeOriginsLyByNodeId.Clear();
         _jumpRangeOriginColorByNodeId.Clear();
+        ClearLyCoverageHighlights();
         RebuildJumpRangeOverlay();
+    }
+
+    public async Task<LyCoverageAnalysisResult> AnalyzeLyCoverageAsync(
+        string inputSystems,
+        double lyRange,
+        bool inputOnlyCenters,
+        int maxResults = 250,
+        CancellationToken cancellationToken = default)
+    {
+        if (lyRange <= 0)
+        {
+            return new LyCoverageAnalysisResult
+            {
+                Candidates = [],
+                InvalidTokens = [],
+                TargetCount = 0,
+                CandidateCountTested = 0
+            };
+        }
+
+        var tokens = ParseSystemTokens(inputSystems);
+        if (tokens.Count == 0)
+        {
+            return new LyCoverageAnalysisResult
+            {
+                Candidates = [],
+                InvalidTokens = [],
+                TargetCount = 0,
+                CandidateCountTested = 0
+            };
+        }
+
+        var systems = await _mapDataService.GetSystemsWithSdeCoordinatesAsync(cancellationToken);
+        var byName = systems
+            .GroupBy(s => s.SolarSystemName, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+        var targets = new List<MapSystemPosition>();
+        var invalidTokens = new List<string>();
+        var seenTargetNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var token in tokens)
+        {
+            if (!byName.TryGetValue(token, out var match))
+            {
+                invalidTokens.Add(token);
+                continue;
+            }
+
+            if (seenTargetNames.Add(match.SolarSystemName))
+            {
+                targets.Add(match);
+            }
+        }
+
+        if (targets.Count == 0)
+        {
+            return new LyCoverageAnalysisResult
+            {
+                Candidates = [],
+                InvalidTokens = invalidTokens,
+                TargetCount = 0,
+                CandidateCountTested = 0
+            };
+        }
+
+        var candidateCenters = inputOnlyCenters ? targets : systems;
+        var rows = new List<LyCoverageCandidateRow>(candidateCenters.Count);
+        foreach (var center in candidateCenters)
+        {
+            var coveredDistances = new List<double>(targets.Count);
+            var coveredSystemIds = new List<long>(targets.Count);
+            var uncovered = new List<string>();
+            var uncoveredSystemIds = new List<long>();
+            foreach (var target in targets)
+            {
+                var dist = center.SolarSystemId == target.SolarSystemId ? 0 : GetDistanceLy(center, target);
+                if (dist <= lyRange)
+                {
+                    coveredDistances.Add(dist);
+                    coveredSystemIds.Add(target.SolarSystemId);
+                }
+                else
+                {
+                    uncovered.Add(target.SolarSystemName);
+                    uncoveredSystemIds.Add(target.SolarSystemId);
+                }
+            }
+
+            if (coveredDistances.Count == 0)
+            {
+                continue;
+            }
+
+            var coveragePercent = (coveredDistances.Count * 100.0) / targets.Count;
+            var avg = coveredDistances.Average();
+            var max = coveredDistances.Max();
+            rows.Add(new LyCoverageCandidateRow
+            {
+                CenterSystemId = center.SolarSystemId,
+                CenterSystemName = center.SolarSystemName,
+                RegionName = center.RegionName ?? "Unknown",
+                CoveredCount = coveredDistances.Count,
+                TargetCount = targets.Count,
+                CoveragePercent = coveragePercent,
+                AverageDistanceLy = avg,
+                MaxDistanceLy = max,
+                UncoveredSystems = uncovered.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToList(),
+                CoveredSystemIds = coveredSystemIds,
+                UncoveredSystemIds = uncoveredSystemIds
+            });
+        }
+
+        var ranked = rows
+            .OrderByDescending(r => r.CoveredCount)
+            .ThenBy(r => r.AverageDistanceLy)
+            .ThenBy(r => r.MaxDistanceLy)
+            .ThenBy(r => r.CenterSystemName, StringComparer.OrdinalIgnoreCase)
+            .Take(Math.Max(1, maxResults))
+            .ToList();
+
+        return new LyCoverageAnalysisResult
+        {
+            Candidates = ranked,
+            InvalidTokens = invalidTokens,
+            TargetCount = targets.Count,
+            CandidateCountTested = candidateCenters.Count
+        };
+    }
+
+    public bool ApplyLyCoverageCenter(long centerSystemId, double lyRange, bool clearExisting = true)
+    {
+        if (clearExisting)
+        {
+            ClearJumpRangeOrigins();
+        }
+
+        return TrySetJumpRangeOrigin(centerSystemId, lyRange);
+    }
+
+    public bool ApplyLyCoverageCandidate(LyCoverageCandidateRow row, double lyRange, bool clearExisting = true)
+    {
+        if (!ApplyLyCoverageCenter(row.CenterSystemId, lyRange, clearExisting))
+        {
+            return false;
+        }
+
+        _lyCoverageCoveredNodeIdsForView = row.CoveredSystemIds.Distinct().ToList();
+        _lyCoverageUncoveredNodeIdsForView = row.UncoveredSystemIds.Distinct().ToList();
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LyCoverageCoveredNodeIdsForView)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LyCoverageUncoveredNodeIdsForView)));
+        return true;
+    }
+
+    public void ClearLyCoverageHighlights()
+    {
+        if (_lyCoverageCoveredNodeIdsForView.Count == 0 && _lyCoverageUncoveredNodeIdsForView.Count == 0)
+        {
+            return;
+        }
+
+        _lyCoverageCoveredNodeIdsForView = [];
+        _lyCoverageUncoveredNodeIdsForView = [];
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LyCoverageCoveredNodeIdsForView)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LyCoverageUncoveredNodeIdsForView)));
     }
 
     public async Task<WindowPlacementState?> GetWindowPlacementAsync()
@@ -1794,6 +1963,23 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
 
         return -1;
+    }
+
+    private static double GetDistanceLy(MapSystemPosition from, MapSystemPosition to)
+    {
+        var dx = to.PositionX - from.PositionX;
+        var dy = to.PositionY - from.PositionY;
+        var dz = to.PositionZ - from.PositionZ;
+        return Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz)) / 9_460_000_000_000_000.0;
+    }
+
+    private static List<string> ParseSystemTokens(string input)
+    {
+        return input
+            .Split(['\r', '\n', ',', ';', '\t', ' '], StringSplitOptions.RemoveEmptyEntries)
+            .Select(s => s.Trim())
+            .Where(s => s.Length > 0)
+            .ToList();
     }
 
     private static bool HasSdePosition(MapNode node)

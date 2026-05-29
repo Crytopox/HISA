@@ -487,6 +487,39 @@ public sealed class MapDataService : IMapDataService
         return result;
     }
 
+    public async Task<IReadOnlyList<MapSystemPosition>> GetSystemsWithSdeCoordinatesAsync(CancellationToken cancellationToken = default)
+    {
+        await using var connection = _sdeDatabase.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT s.solarSystemID, s.solarSystemName, c.constellationName, r.regionName, s.x, s.y, s.z
+            FROM mapSolarSystems s
+            LEFT JOIN mapConstellations c ON c.constellationID = s.constellationID
+            LEFT JOIN mapRegions r ON r.regionID = s.regionID
+            WHERE s.x IS NOT NULL AND s.y IS NOT NULL AND s.z IS NOT NULL;
+            """;
+
+        var result = new List<MapSystemPosition>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            result.Add(new MapSystemPosition
+            {
+                SolarSystemId = reader.GetInt64(0),
+                SolarSystemName = reader.GetString(1),
+                ConstellationName = reader.IsDBNull(2) ? null : reader.GetString(2),
+                RegionName = reader.IsDBNull(3) ? null : reader.GetString(3),
+                PositionX = reader.GetDouble(4),
+                PositionY = reader.GetDouble(5),
+                PositionZ = reader.GetDouble(6)
+            });
+        }
+
+        return result;
+    }
+
     private async Task<List<MapNode>> QuerySystemsAsync(int? regionId, MapCoordinateMode coordinateMode, CancellationToken cancellationToken)
     {
         await using var connection = _sdeDatabase.CreateConnection();

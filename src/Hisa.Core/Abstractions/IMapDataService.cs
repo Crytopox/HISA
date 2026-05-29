@@ -11,4 +11,5 @@ public interface IMapDataService
     Task<IReadOnlyDictionary<long, int>> GetSystemNeighborCountsAsync(IReadOnlyCollection<long> systemIds, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<MapSearchCandidate>> SearchAsync(string term, CancellationToken cancellationToken = default);
     Task<IReadOnlyDictionary<long, MapSystemMetadata>> GetSystemMetadataByIdsAsync(IReadOnlyCollection<long> systemIds, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<MapSystemPosition>> GetSystemsWithSdeCoordinatesAsync(CancellationToken cancellationToken = default);
 }
