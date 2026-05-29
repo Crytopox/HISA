@@ -23,6 +23,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly IStormStateService _stormStateService;
     private readonly IHubWormholeStateService _hubWormholeStateService;
     private readonly ISovUpgradeStateService _sovUpgradeStateService;
+    private readonly IAnsiblexNetworkStateService _ansiblexNetworkStateService;
     private readonly IIncursionStateService _incursionStateService;
     private List<RegionOption> _allRegions = [];
     private bool _isBusy;
@@ -51,6 +52,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _showIndicatorSovUpgradeIcon = true;
     private bool _showIndicatorIncursionIcon = true;
     private bool _showIndicatorJumpRangeLy = true;
+    private bool _showAnsiblexNetwork = true;
     private bool _infoBoxShowRegion = true;
     private bool _infoBoxShowConstellation = true;
     private bool _infoBoxShowSecurityStatus = true;
@@ -104,6 +106,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string ShowIndicatorSovUpgradeIconKey = "Map.ShowIndicatorSovUpgradeIcon";
     private const string ShowIndicatorIncursionIconKey = "Map.ShowIndicatorIncursionIcon";
     private const string ShowIndicatorJumpRangeLyKey = "Map.ShowIndicatorJumpRangeLy";
+    private const string ShowAnsiblexNetworkKey = "Map.ShowAnsiblexNetwork";
     private const string InfoBoxShowRegionKey = "Map.InfoBoxShowRegion";
     private const string InfoBoxShowConstellationKey = "Map.InfoBoxShowConstellation";
     private const string InfoBoxShowSecurityStatusKey = "Map.InfoBoxShowSecurityStatus";
@@ -134,6 +137,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         IStormStateService stormStateService,
         IHubWormholeStateService hubWormholeStateService,
         ISovUpgradeStateService sovUpgradeStateService,
+        IAnsiblexNetworkStateService ansiblexNetworkStateService,
         IIncursionStateService incursionStateService)
     {
         _mapDataService = mapDataService;
@@ -141,6 +145,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _stormStateService = stormStateService;
         _hubWormholeStateService = hubWormholeStateService;
         _sovUpgradeStateService = sovUpgradeStateService;
+        _ansiblexNetworkStateService = ansiblexNetworkStateService;
         _incursionStateService = incursionStateService;
         ViewModes = new ObservableCollection<MapViewMode>(Enum.GetValues<MapViewMode>());
         CoordinateModes = new ObservableCollection<MapCoordinateMode>(Enum.GetValues<MapCoordinateMode>());
@@ -150,6 +155,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _stormStateService.StormSnapshotUpdated += OnStormSnapshotUpdated;
         _hubWormholeStateService.HubWormholeSnapshotUpdated += OnHubWormholeSnapshotUpdated;
         _sovUpgradeStateService.SnapshotUpdated += OnSovUpgradesSnapshotUpdated;
+        _ansiblexNetworkStateService.SnapshotUpdated += OnAnsiblexNetworkSnapshotUpdated;
         _incursionStateService.IncursionSnapshotUpdated += OnIncursionSnapshotUpdated;
         _initialLoadTask = LoadAsync();
     }
@@ -172,6 +178,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public IEnumerable<long> LyCoverageUncoveredNodeIdsForView => _lyCoverageUncoveredNodeIdsForView;
     public IEnumerable<long> JumpRouteNodeIdsForView => _jumpRouteNodeIdsForView;
     public IEnumerable<long> JumpRouteSkippedNodeIdsForView => _jumpRouteSkippedNodeIdsForView;
+    public IReadOnlyList<MapLink> AnsiblexLinksForView { get; private set; } = [];
     public IReadOnlyList<WormholeOverlayCard> HubWormholeCardsForView => _hubWormholeCardsForView;
     public IReadOnlyList<IncursionOverlayCard> IncursionCardsForView => _incursionCardsForView;
     public IReadOnlyList<StormOverlayCard> StormCardsForView => _stormCardsForView;
@@ -196,6 +203,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsCoordinateSelectorVisible)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsRegionSelectorVisible)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SearchWatermark)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsAnsiblexLegendVisible)));
                 EnforceCoordinateModeForView();
                 if (!_isInitializing)
                 {
@@ -434,6 +442,21 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             }
         }
     }
+
+    public bool ShowAnsiblexNetwork
+    {
+        get => _showAnsiblexNetwork;
+        set
+        {
+            if (SetProperty(ref _showAnsiblexNetwork, value) && !_isInitializing)
+            {
+                _ = _settingsService.SetAsync(ShowAnsiblexNetworkKey, value);
+            }
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsAnsiblexLegendVisible)));
+        }
+    }
+
+    public bool IsAnsiblexLegendVisible => ShowAnsiblexNetwork && SelectedViewMode != MapViewMode.UniverseRegions;
 
     public bool InfoBoxShowRegion
     {
@@ -1276,6 +1299,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         ShowIndicatorSovUpgradeIcon = await _settingsService.GetAsync<bool?>(ShowIndicatorSovUpgradeIconKey) ?? true;
         ShowIndicatorIncursionIcon = await _settingsService.GetAsync<bool?>(ShowIndicatorIncursionIconKey) ?? true;
         ShowIndicatorJumpRangeLy = await _settingsService.GetAsync<bool?>(ShowIndicatorJumpRangeLyKey) ?? true;
+        ShowAnsiblexNetwork = await _settingsService.GetAsync<bool?>(ShowAnsiblexNetworkKey) ?? true;
         InfoBoxShowRegion = await _settingsService.GetAsync<bool?>(InfoBoxShowRegionKey) ?? true;
         InfoBoxShowConstellation = await _settingsService.GetAsync<bool?>(InfoBoxShowConstellationKey) ?? true;
         InfoBoxShowSecurityStatus = await _settingsService.GetAsync<bool?>(InfoBoxShowSecurityStatusKey) ?? true;
@@ -1289,6 +1313,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         InfoBoxShowIncursionIcon = await _settingsService.GetAsync<bool?>(InfoBoxShowIncursionIconKey) ?? true;
         InfoBoxShowJumpRangeLy = await _settingsService.GetAsync<bool?>(InfoBoxShowJumpRangeLyKey) ?? true;
         await _sovUpgradeStateService.InitializeAsync();
+        await _ansiblexNetworkStateService.InitializeAsync();
         InitializeSovFilterOptions();
         var indicatorKeys = await _settingsService.GetAsync<List<string>>(IndicatorSovFilterKeysKey) ?? [];
         var overlayKeys = await _settingsService.GetAsync<List<string>>(OverlaySovFilterKeysKey) ?? [];
@@ -1334,6 +1359,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             };
 
             CurrentGraph = graph;
+            RebuildAnsiblexLinksForView(graph);
             await RefreshRegionMissingConnectionMarkersAsync(graph);
             RebuildJumpRangeOverlay();
             await RebuildActivityCardsAsync(graph);
@@ -1349,6 +1375,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             CurrentGraph = new MapGraph { Nodes = [], Links = [] };
             MissingConnectionNodeIdsForView = [];
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MissingConnectionNodeIdsForView)));
+            AnsiblexLinksForView = [];
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AnsiblexLinksForView)));
             RebuildJumpRangeOverlay();
             await RebuildActivityCardsAsync(CurrentGraph);
         }
@@ -1410,6 +1438,32 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         });
     }
 
+    private void OnAnsiblexNetworkSnapshotUpdated(object? sender, EventArgs e)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            RebuildAnsiblexLinksForView(CurrentGraph);
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AnsiblexLinksForView)));
+        });
+    }
+
+    private void RebuildAnsiblexLinksForView(MapGraph? graph)
+    {
+        if (graph is null || graph.Nodes.Count == 0)
+        {
+            AnsiblexLinksForView = [];
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AnsiblexLinksForView)));
+            return;
+        }
+
+        var nodeSet = graph.Nodes.Select(x => x.Id).ToHashSet();
+        AnsiblexLinksForView = _ansiblexNetworkStateService.CurrentLinks
+            .Where(x => nodeSet.Contains(x.FromSolarSystemId) && nodeSet.Contains(x.ToSolarSystemId))
+            .Select(x => new MapLink { FromId = x.FromSolarSystemId, ToId = x.ToSolarSystemId })
+            .ToList();
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AnsiblexLinksForView)));
+    }
+
     public Task<SovImportResult> ImportSovUpgradesAsync(string rawText, SovImportMode mode, CancellationToken cancellationToken = default)
     {
         return _sovUpgradeStateService.ImportFromTextAsync(rawText, mode, cancellationToken);
@@ -1428,6 +1482,26 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public Task<IReadOnlyList<SovSystemUpgradeRecord>> GetSovUpgradeSnapshotAsync(CancellationToken cancellationToken = default)
     {
         return _sovUpgradeStateService.GetSnapshotAsync(cancellationToken);
+    }
+
+    public Task<AnsiblexImportResult> ImportAnsiblexNetworkAsync(string rawText, SovImportMode mode, CancellationToken cancellationToken = default)
+    {
+        return _ansiblexNetworkStateService.ImportFromTextAsync(rawText, mode, cancellationToken);
+    }
+
+    public Task AddOrUpdateAnsiblexLinkAsync(string fromSystemName, string toSystemName, CancellationToken cancellationToken = default)
+    {
+        return _ansiblexNetworkStateService.AddOrUpdateLinkAsync(fromSystemName, toSystemName, cancellationToken);
+    }
+
+    public Task RemoveAnsiblexLinkAsync(string fromSystemName, string toSystemName, CancellationToken cancellationToken = default)
+    {
+        return _ansiblexNetworkStateService.RemoveLinkAsync(fromSystemName, toSystemName, cancellationToken);
+    }
+
+    public Task<IReadOnlyList<AnsiblexLinkRecord>> GetAnsiblexSnapshotAsync(CancellationToken cancellationToken = default)
+    {
+        return _ansiblexNetworkStateService.GetSnapshotAsync(cancellationToken);
     }
 
     public async Task SaveIndicatorSovFilterAsync()

@@ -86,6 +86,29 @@ public sealed class SovSystemUpgradeRecord
     public required IReadOnlyList<SovUpgradeEntry> Upgrades { get; init; }
 }
 
+public sealed class AnsiblexLinkEntry
+{
+    public required int FromSolarSystemId { get; init; }
+    public required int ToSolarSystemId { get; init; }
+}
+
+public sealed class AnsiblexImportResult
+{
+    public required int ParsedLinks { get; init; }
+    public required int TotalLinksAfterImport { get; init; }
+    public required int DuplicateOrInvalidLinksSkipped { get; init; }
+    public required int UnresolvedSystemNamesCount { get; init; }
+    public required IReadOnlyList<string> UnresolvedSystemNames { get; init; }
+}
+
+public sealed class AnsiblexLinkRecord
+{
+    public required int FromSolarSystemId { get; init; }
+    public required string FromSolarSystemName { get; init; }
+    public required int ToSolarSystemId { get; init; }
+    public required string ToSolarSystemName { get; init; }
+}
+
 public enum MapSearchKind
 {
     Region = 0,

@@ -1,0 +1,61 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:app="clr-namespace:Hisa.App"
+        mc:Ignorable="d"
+        x:Class="Hisa.App.AnsiblexNetworkWindow"
+        Width="900"
+        Height="720"
+        Title="Ansiblex Network"
+        Background="#0D131D">
+  <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" Margin="12">
+    <TextBlock Text="Ansiblex Network" Foreground="#D8E5F8" FontSize="16" FontWeight="SemiBold" />
+    <Border Grid.Row="1" Background="#101826" BorderBrush="#243247" BorderThickness="1" CornerRadius="4" Padding="10" Margin="0,8,0,0">
+      <StackPanel Spacing="8">
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <TextBlock Text="Import mode" VerticalAlignment="Center" Foreground="#8A96A8" />
+          <ComboBox x:Name="ImportModeCombo" Width="190" SelectedIndex="0">
+            <ComboBoxItem Content="Delete Previous (Default)" />
+            <ComboBoxItem Content="Update on Change" />
+            <ComboBoxItem Content="Append" />
+          </ComboBox>
+          <Button Content="Import / Apply" Click="OnImportClicked" />
+        </StackPanel>
+        <TextBlock Text="Paste Input" Foreground="#8A96A8" />
+        <TextBox x:Name="ImportTextBox"
+                 Watermark="Supported: full Goonwiki page/table paste, SYSTEM &lt;-&gt; SYSTEM, SYSTEM -&gt; SYSTEM, SYSTEM,SYSTEM"
+                 AcceptsReturn="True"
+                 TextWrapping="Wrap"
+                 VerticalAlignment="Stretch"
+                 Height="220" />
+      </StackPanel>
+    </Border>
+    <Border Grid.Row="2" Background="#101826" BorderBrush="#243247" BorderThickness="1" CornerRadius="4" Padding="10" Margin="0,10,0,0">
+      <StackPanel Spacing="8">
+        <TextBlock Text="Manual Add / Remove" Foreground="#8A96A8" />
+        <Grid ColumnDefinitions="180,180,Auto,Auto" ColumnSpacing="6">
+          <TextBox Grid.Column="0" x:Name="ManualFromSystemBox" Watermark="From system" />
+          <TextBox Grid.Column="1" x:Name="ManualToSystemBox" Watermark="To system" />
+          <Button Grid.Column="2" Content="Add / Update" Click="OnAddManualClicked" />
+          <Button Grid.Column="3" Content="Remove Link" Click="OnRemoveLinkClicked" />
+        </Grid>
+      </StackPanel>
+    </Border>
+    <TextBlock Grid.Row="3" Text="Saved Links" Foreground="#8A96A8" Margin="0,10,0,6" />
+    <Border Grid.Row="4" Background="#101826" BorderBrush="#243247" BorderThickness="1" CornerRadius="4" Padding="6">
+      <ListBox x:Name="SavedLinksList" Height="230" BorderThickness="0" Background="Transparent">
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="app:AnsiblexLinkListRow">
+            <StackPanel Orientation="Horizontal" Spacing="8" Margin="2">
+              <TextBlock Text="{Binding FromSystemName}" Width="180" Foreground="#D8E5F8" />
+              <TextBlock Text="&lt;--&gt;" Foreground="#71D3D8" />
+              <TextBlock Text="{Binding ToSystemName}" Width="180" Foreground="#D8E5F8" />
+            </StackPanel>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+    </Border>
+    <TextBlock x:Name="StatusText" Grid.Row="5" Foreground="#8A96A8" Margin="0,8,0,0" TextWrapping="Wrap" />
+  </Grid>
+</Window>

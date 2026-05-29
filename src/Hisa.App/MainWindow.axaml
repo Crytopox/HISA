@@ -119,6 +119,7 @@
               <MenuItem Header="Map Editor" Click="OnOpenMapEditorClicked" />
               <MenuItem Header="Preferences" Click="OnOpenPreferencesClicked" />
               <MenuItem Header="SOV Upgrades" Click="OnOpenSovUpgradesClicked" />
+              <MenuItem Header="Ansiblex Network" Click="OnOpenAnsiblexNetworkClicked" />
               <MenuItem Header="Debug Window" Click="OnOpenDebugConsoleClicked" />
             </MenuFlyout>
           </Button.Flyout>
@@ -175,6 +176,8 @@
                               LyCoverageUncoveredNodeIds="{Binding LyCoverageUncoveredNodeIdsForView}"
                               JumpRouteNodeIds="{Binding JumpRouteNodeIdsForView}"
                               JumpRouteSkippedNodeIds="{Binding JumpRouteSkippedNodeIdsForView}"
+                              AnsiblexLinks="{Binding AnsiblexLinksForView}"
+                              ShowAnsiblexNetwork="{Binding ShowAnsiblexNetwork}"
                               ShowIndicatorJumpRangeLy="{Binding ShowIndicatorJumpRangeLy}"
                               InfoBoxShowJumpRangeLy="{Binding InfoBoxShowJumpRangeLy}"
                               SelectedNodeId="{Binding SelectedNodeId, Mode=TwoWay}" />
@@ -270,6 +273,15 @@
                 <StackPanel Orientation="Horizontal" Spacing="8">
                   <Border Width="18" Height="2" Background="#8E5C8A" VerticalAlignment="Center" />
                   <TextBlock Text="Link: across regions"
+                             Foreground="#C7D6EA"
+                             TextWrapping="Wrap"
+                             VerticalAlignment="Center" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsAnsiblexLegendVisible}">
+                  <Canvas Width="18" Height="8" VerticalAlignment="Center">
+                    <Line StartPoint="0,4" EndPoint="18,4" Stroke="#E7C85A" StrokeThickness="2" StrokeDashArray="4.2,2.8" />
+                  </Canvas>
+                  <TextBlock Text="Ansiblex link"
                              Foreground="#C7D6EA"
                              TextWrapping="Wrap"
                              VerticalAlignment="Center" />
@@ -585,6 +597,7 @@
             <CheckBox IsChecked="{Binding ShowIndicatorWormholeIcon}" Content="Thera/Turnur Wormholes" />
             <CheckBox IsChecked="{Binding ShowIndicatorIncursionIcon}" Content="Incursions" />
             <CheckBox IsChecked="{Binding ShowIndicatorJumpRangeLy}" Content="Jump Range LY" />
+            <CheckBox IsChecked="{Binding ShowAnsiblexNetwork}" Content="Ansiblex Network" />
             <StackPanel Orientation="Horizontal" Spacing="6">
               <CheckBox IsChecked="{Binding ShowIndicatorSovUpgradeIcon}" Content="SOV Upgrades" />
               <Button Width="24" Height="24" Padding="0">

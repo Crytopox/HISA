@@ -62,6 +62,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IIncursionStateService, IncursionStateService>();
         services.AddHostedService<IncursionRefreshHostedService>();
         services.AddSingleton<ISovUpgradeStateService, SovUpgradeStateService>();
+        services.AddSingleton<IAnsiblexNetworkStateService, AnsiblexNetworkStateService>();
         return services;
     }
 }

@@ -26,6 +26,7 @@ public partial class MainWindow : Window
     private PreferencesWindow? _preferencesWindow;
     private MapEditorWindow? _mapEditorWindow;
     private SovUpgradesWindow? _sovUpgradesWindow;
+    private AnsiblexNetworkWindow? _ansiblexNetworkWindow;
     private LyCoveragePlannerWindow? _lyCoveragePlannerWindow;
     private JumpRouteOptimizerWindow? _jumpRouteOptimizerWindow;
     private readonly ContextMenu _mapNodeContextMenu;
@@ -185,6 +186,23 @@ public partial class MainWindow : Window
 
         _sovUpgradesWindow.Show();
         _sovUpgradesWindow.Activate();
+    }
+
+    private void OnOpenAnsiblexNetworkClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_ansiblexNetworkWindow is null)
+        {
+            if (_boundVm is null)
+            {
+                return;
+            }
+
+            _ansiblexNetworkWindow = new AnsiblexNetworkWindow(_boundVm);
+            _ansiblexNetworkWindow.Closed += (_, _) => _ansiblexNetworkWindow = null;
+        }
+
+        _ansiblexNetworkWindow.Show();
+        _ansiblexNetworkWindow.Activate();
     }
 
     private void OnOpenLyCoveragePlannerClicked(object? sender, RoutedEventArgs e)

@@ -107,6 +107,14 @@ public sealed class MapControl : Control
         1.8,
         dashStyle: new DashStyle([2.0, 2.0], 0));
     private static readonly Pen JumpRouteSkippedRingPen = new(new ImmutableSolidColorBrush(Color.Parse("#FF6A6A")), 2.1);
+    private static readonly Pen AnsiblexLinkPen = new(
+        new ImmutableSolidColorBrush(Color.Parse("#e0bd3c")),
+        2.2,
+        dashStyle: new DashStyle([4.2, 2.8], 0));
+    private static readonly Pen AnsiblexHighlightedLinkPen = new(
+        new ImmutableSolidColorBrush(Color.Parse("#fcdc73")),
+        3.1,
+        dashStyle: new DashStyle([4.2, 2.8], 0));
     private static readonly IBrush JumpRouteNumberFillBrush = new ImmutableSolidColorBrush(Color.Parse("#63D3FF"));
     private static readonly IBrush JumpRouteNumberTextBrush = new ImmutableSolidColorBrush(Color.Parse("#0D131D"));
     private static readonly IBrush EditorCrossRegionConnectorBrush = new ImmutableSolidColorBrush(Color.Parse("#8E74D8"));
@@ -189,6 +197,10 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorIncursionIcon), true);
     public static readonly StyledProperty<bool> ShowIndicatorJumpRangeLyProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorJumpRangeLy), true);
+    public static readonly StyledProperty<bool> ShowAnsiblexNetworkProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(ShowAnsiblexNetwork), true);
+    public static readonly StyledProperty<IEnumerable<MapLink>?> AnsiblexLinksProperty =
+        AvaloniaProperty.Register<MapControl, IEnumerable<MapLink>?>(nameof(AnsiblexLinks));
     public static readonly StyledProperty<IEnumerable<string>?> IndicatorSovUpgradeFilterKeysProperty =
         AvaloniaProperty.Register<MapControl, IEnumerable<string>?>(nameof(IndicatorSovUpgradeFilterKeys));
     public static readonly StyledProperty<bool> InfoBoxShowRegionProperty =
@@ -425,6 +437,18 @@ public sealed class MapControl : Control
     {
         get => GetValue(ShowIndicatorJumpRangeLyProperty);
         set => SetValue(ShowIndicatorJumpRangeLyProperty, value);
+    }
+
+    public bool ShowAnsiblexNetwork
+    {
+        get => GetValue(ShowAnsiblexNetworkProperty);
+        set => SetValue(ShowAnsiblexNetworkProperty, value);
+    }
+
+    public IEnumerable<MapLink>? AnsiblexLinks
+    {
+        get => GetValue(AnsiblexLinksProperty);
+        set => SetValue(AnsiblexLinksProperty, value);
     }
 
     public IEnumerable<string>? IndicatorSovUpgradeFilterKeys
@@ -667,6 +691,8 @@ public sealed class MapControl : Control
             ShowIndicatorSovUpgradeIconProperty,
             ShowIndicatorIncursionIconProperty,
             ShowIndicatorJumpRangeLyProperty,
+            ShowAnsiblexNetworkProperty,
+            AnsiblexLinksProperty,
             IndicatorSovUpgradeFilterKeysProperty,
             InfoBoxShowRegionProperty,
             InfoBoxShowConstellationProperty,
@@ -1179,6 +1205,34 @@ public sealed class MapControl : Control
                         : basePen;
 
             context.DrawLine(pen, from, to);
+        }
+
+        if (ShowAnsiblexNetwork &&
+            ViewMode != MapViewMode.UniverseRegions &&
+            AnsiblexLinks is not null)
+        {
+            foreach (var link in AnsiblexLinks)
+            {
+                if (!_nodeIndexById.TryGetValue(link.FromId, out var fromIndex) ||
+                    !_nodeIndexById.TryGetValue(link.ToId, out var toIndex))
+                {
+                    continue;
+                }
+
+                var from = _screenPositions[fromIndex];
+                var to = _screenPositions[toIndex];
+                if (!IsSegmentPotentiallyVisible(from, to, bounds, 64))
+                {
+                    continue;
+                }
+
+                var isSelectedLink = SelectedNodeId is not null &&
+                                     (link.FromId == SelectedNodeId.Value || link.ToId == SelectedNodeId.Value);
+                var isHoveredLink = _hoveredNodeId is not null &&
+                                    (link.FromId == _hoveredNodeId.Value || link.ToId == _hoveredNodeId.Value);
+                var pen = (isSelectedLink || isHoveredLink) ? AnsiblexHighlightedLinkPen : AnsiblexLinkPen;
+                DrawCurvedAnsiblexLink(context, from, to, link, pen);
+            }
         }
 
         var labelBudget = GetLabelBudget();
@@ -2228,6 +2282,66 @@ public sealed class MapControl : Control
         }
 
         return highlightedDefaultPen;
+    }
+
+    private void DrawCurvedAnsiblexLink(DrawingContext context, Point from, Point to, MapLink link, Pen pen)
+    {
+        var dx = to.X - from.X;
+        var dy = to.Y - from.Y;
+        var length = Math.Sqrt((dx * dx) + (dy * dy));
+        if (length < 2.0)
+        {
+            context.DrawLine(pen, from, to);
+            return;
+        }
+
+        var nx = -dy / length;
+        var ny = dx / length;
+        var sign = (((link.FromId ^ link.ToId) & 1) == 0) ? 1.0 : -1.0;
+        var offset = Math.Clamp(length * 0.13, 16.0, 62.0);
+
+        // Stronger curvature for short/medium links, where node overlap is most common.
+        if (length < 120)
+        {
+            offset = Math.Max(offset, 34.0);
+        }
+        else if (length < 220)
+        {
+            offset = Math.Max(offset, 28.0);
+        }
+
+        // If a third node sits close to the midpoint corridor, push the curve farther out.
+        var midpoint = new Point((from.X + to.X) * 0.5, (from.Y + to.Y) * 0.5);
+        var nearestCenterDistance = double.MaxValue;
+        for (var i = 0; i < _screenPositions.Length; i++)
+        {
+            var p = _screenPositions[i];
+            var dpX = p.X - midpoint.X;
+            var dpY = p.Y - midpoint.Y;
+            var d = Math.Sqrt((dpX * dpX) + (dpY * dpY));
+            if (d < nearestCenterDistance)
+            {
+                nearestCenterDistance = d;
+            }
+        }
+
+        if (nearestCenterDistance < 34.0)
+        {
+            offset = Math.Min(76.0, offset + 16.0);
+        }
+
+        offset *= sign;
+        var control = new Point((from.X + to.X) * 0.5 + (nx * offset), (from.Y + to.Y) * 0.5 + (ny * offset));
+
+        var geometry = new StreamGeometry();
+        using (var ctx = geometry.Open())
+        {
+            ctx.BeginFigure(from, false);
+            ctx.QuadraticBezierTo(control, to);
+            ctx.EndFigure(false);
+        }
+
+        context.DrawGeometry(null, pen, geometry);
     }
 
     private FormattedText GetNodeLabel(long nodeId, string name)
