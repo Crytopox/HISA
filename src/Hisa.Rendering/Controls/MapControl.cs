@@ -115,6 +115,11 @@ public sealed class MapControl : Control
         new ImmutableSolidColorBrush(Color.Parse("#fcdc73")),
         3.1,
         dashStyle: new DashStyle([4.2, 2.8], 0));
+    private static readonly Color AnimatedSameConstellationColor = Color.Parse("#A9CBFF");
+    private static readonly Color AnimatedSameRegionColor = Color.Parse("#8DE5D7");
+    private static readonly Color AnimatedCrossRegionColor = Color.Parse("#D9A9D4");
+    private static readonly Color AnimatedDefaultLinkColor = Color.Parse("#AFC7E8");
+    private static readonly Color AnimatedAnsiblexColor = Color.Parse("#ffd34e");
     private static readonly IBrush JumpRouteNumberFillBrush = new ImmutableSolidColorBrush(Color.Parse("#63D3FF"));
     private static readonly IBrush JumpRouteNumberTextBrush = new ImmutableSolidColorBrush(Color.Parse("#0D131D"));
     private static readonly IBrush EditorCrossRegionConnectorBrush = new ImmutableSolidColorBrush(Color.Parse("#8E74D8"));
@@ -197,6 +202,8 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorIncursionIcon), true);
     public static readonly StyledProperty<bool> ShowIndicatorJumpRangeLyProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorJumpRangeLy), true);
+    public static readonly StyledProperty<bool> EnableLinkAnimationsProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(EnableLinkAnimations), true);
     public static readonly StyledProperty<bool> ShowAnsiblexNetworkProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowAnsiblexNetwork), true);
     public static readonly StyledProperty<IEnumerable<MapLink>?> AnsiblexLinksProperty =
@@ -322,6 +329,8 @@ public sealed class MapControl : Control
     private const double FitPadding = 40.0;
     private const double EditorFitPadding = 60.0;
     private const double EditorFitPaddingWide = 40.0;
+    private readonly DispatcherTimer _linkAnimationTimer;
+    private double _linkAnimationPhase;
 
     private const double DenseSpacingLow = 0.02;
     private const double DenseSpacingHigh = 0.07;
@@ -437,6 +446,12 @@ public sealed class MapControl : Control
     {
         get => GetValue(ShowIndicatorJumpRangeLyProperty);
         set => SetValue(ShowIndicatorJumpRangeLyProperty, value);
+    }
+
+    public bool EnableLinkAnimations
+    {
+        get => GetValue(EnableLinkAnimationsProperty);
+        set => SetValue(EnableLinkAnimationsProperty, value);
     }
 
     public bool ShowAnsiblexNetwork
@@ -691,6 +706,7 @@ public sealed class MapControl : Control
             ShowIndicatorSovUpgradeIconProperty,
             ShowIndicatorIncursionIconProperty,
             ShowIndicatorJumpRangeLyProperty,
+            EnableLinkAnimationsProperty,
             ShowAnsiblexNetworkProperty,
             AnsiblexLinksProperty,
             IndicatorSovUpgradeFilterKeysProperty,
@@ -731,6 +747,15 @@ public sealed class MapControl : Control
             JumpRouteNodeIdsProperty,
             JumpRouteSkippedNodeIdsProperty);
         ClipToBounds = true;
+        _linkAnimationTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(24), DispatcherPriority.Render, (_, _) =>
+        {
+            _linkAnimationPhase += 0.012;
+            if (ShouldAnimateAnyLink())
+            {
+                InvalidateVisual();
+            }
+        });
+        _linkAnimationTimer.Start();
     }
 
     public void FitToView()
@@ -1205,6 +1230,10 @@ public sealed class MapControl : Control
                         : basePen;
 
             context.DrawLine(pen, from, to);
+            if (EnableLinkAnimations && (isSelectedLink || isHoveredLink))
+            {
+                DrawAnimatedRegularLinkEffect(context, from, to, GetAnimatedRegularLinkColor(basePen), link);
+            }
         }
 
         if (ShowAnsiblexNetwork &&
@@ -1231,7 +1260,7 @@ public sealed class MapControl : Control
                 var isHoveredLink = _hoveredNodeId is not null &&
                                     (link.FromId == _hoveredNodeId.Value || link.ToId == _hoveredNodeId.Value);
                 var pen = (isSelectedLink || isHoveredLink) ? AnsiblexHighlightedLinkPen : AnsiblexLinkPen;
-                DrawCurvedAnsiblexLink(context, from, to, link, pen);
+                DrawCurvedAnsiblexLink(context, from, to, link, pen, EnableLinkAnimations && (isSelectedLink || isHoveredLink));
             }
         }
 
@@ -2284,7 +2313,7 @@ public sealed class MapControl : Control
         return highlightedDefaultPen;
     }
 
-    private void DrawCurvedAnsiblexLink(DrawingContext context, Point from, Point to, MapLink link, Pen pen)
+    private void DrawCurvedAnsiblexLink(DrawingContext context, Point from, Point to, MapLink link, Pen pen, bool animate)
     {
         var dx = to.X - from.X;
         var dy = to.Y - from.Y;
@@ -2292,6 +2321,10 @@ public sealed class MapControl : Control
         if (length < 2.0)
         {
             context.DrawLine(pen, from, to);
+            if (animate)
+            {
+                DrawAnimatedRegularLinkEffect(context, from, to, AnimatedAnsiblexColor, link);
+            }
             return;
         }
 
@@ -2341,7 +2374,85 @@ public sealed class MapControl : Control
             ctx.EndFigure(false);
         }
 
-        context.DrawGeometry(null, pen, geometry);
+        if (!animate)
+        {
+            context.DrawGeometry(null, pen, geometry);
+        }
+        else
+        {
+            var dashOffset = (_linkAnimationPhase * 22.0) + ((link.FromId + link.ToId) % 13);
+            var animatedPen = new Pen(
+                GetCachedBrush(Color.FromArgb(225, AnimatedAnsiblexColor.R, AnimatedAnsiblexColor.G, AnimatedAnsiblexColor.B)),
+                3.2,
+                dashStyle: new DashStyle([6.5, 7.5], dashOffset));
+            context.DrawGeometry(null, animatedPen, geometry);
+        }
+    }
+
+    private void DrawAnimatedRegularLinkEffect(DrawingContext context, Point from, Point to, Color baseColor, MapLink link)
+    {
+        var glowPen = new Pen(GetCachedBrush(Color.FromArgb(176, baseColor.R, baseColor.G, baseColor.B)), 2.9);
+        context.DrawLine(glowPen, from, to);
+
+        var baseT = (_linkAnimationPhase + (((link.FromId * 17) + (link.ToId * 31)) % 100) / 100.0) % 1.0;
+        for (var i = 0; i < 3; i++)
+        {
+            var t = (baseT + (i * 0.27)) % 1.0;
+            var p = new Point(from.X + ((to.X - from.X) * t), from.Y + ((to.Y - from.Y) * t));
+            var alpha = (byte)(235 - (i * 35));
+            var radius = 3.15 - (i * 0.38);
+            context.DrawEllipse(GetCachedBrush(Color.FromArgb(alpha, baseColor.R, baseColor.G, baseColor.B)), null, p, radius, radius);
+        }
+    }
+
+    private static Color GetAnimatedRegularLinkColor(Pen basePen)
+    {
+        if (ReferenceEquals(basePen, SameConstellationPen))
+        {
+            return AnimatedSameConstellationColor;
+        }
+
+        if (ReferenceEquals(basePen, SameRegionPen))
+        {
+            return AnimatedSameRegionColor;
+        }
+
+        if (ReferenceEquals(basePen, CrossRegionPen))
+        {
+            return AnimatedCrossRegionColor;
+        }
+
+        return AnimatedDefaultLinkColor;
+    }
+
+    private bool ShouldAnimateAnyLink()
+    {
+        if (!EnableLinkAnimations || Graph is null)
+        {
+            return false;
+        }
+
+        var anchorNodeId = _hoveredNodeId ?? SelectedNodeId;
+        if (anchorNodeId is null)
+        {
+            return false;
+        }
+
+        var id = anchorNodeId.Value;
+        if (Graph.Links.Any(l => l.FromId == id || l.ToId == id))
+        {
+            return true;
+        }
+
+        if (ShowAnsiblexNetwork &&
+            ViewMode != MapViewMode.UniverseRegions &&
+            AnsiblexLinks is not null &&
+            AnsiblexLinks.Any(l => l.FromId == id || l.ToId == id))
+        {
+            return true;
+        }
+
+        return false;
     }
 
     private FormattedText GetNodeLabel(long nodeId, string name)

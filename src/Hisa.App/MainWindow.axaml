@@ -176,6 +176,7 @@
                               LyCoverageUncoveredNodeIds="{Binding LyCoverageUncoveredNodeIdsForView}"
                               JumpRouteNodeIds="{Binding JumpRouteNodeIdsForView}"
                               JumpRouteSkippedNodeIds="{Binding JumpRouteSkippedNodeIdsForView}"
+                              EnableLinkAnimations="{Binding EnableLinkAnimations}"
                               AnsiblexLinks="{Binding AnsiblexLinksForView}"
                               ShowAnsiblexNetwork="{Binding ShowAnsiblexNetwork}"
                               ShowIndicatorJumpRangeLy="{Binding ShowIndicatorJumpRangeLy}"

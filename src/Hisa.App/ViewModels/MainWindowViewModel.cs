@@ -52,6 +52,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _showIndicatorSovUpgradeIcon = true;
     private bool _showIndicatorIncursionIcon = true;
     private bool _showIndicatorJumpRangeLy = true;
+    private bool _enableLinkAnimations = true;
     private bool _showAnsiblexNetwork = true;
     private bool _infoBoxShowRegion = true;
     private bool _infoBoxShowConstellation = true;
@@ -106,6 +107,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string ShowIndicatorSovUpgradeIconKey = "Map.ShowIndicatorSovUpgradeIcon";
     private const string ShowIndicatorIncursionIconKey = "Map.ShowIndicatorIncursionIcon";
     private const string ShowIndicatorJumpRangeLyKey = "Map.ShowIndicatorJumpRangeLy";
+    private const string EnableLinkAnimationsKey = "Map.EnableLinkAnimations";
     private const string ShowAnsiblexNetworkKey = "Map.ShowAnsiblexNetwork";
     private const string InfoBoxShowRegionKey = "Map.InfoBoxShowRegion";
     private const string InfoBoxShowConstellationKey = "Map.InfoBoxShowConstellation";
@@ -439,6 +441,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             if (SetProperty(ref _showIndicatorJumpRangeLy, value) && !_isInitializing)
             {
                 _ = _settingsService.SetAsync(ShowIndicatorJumpRangeLyKey, value);
+            }
+        }
+    }
+
+    public bool EnableLinkAnimations
+    {
+        get => _enableLinkAnimations;
+        set
+        {
+            if (SetProperty(ref _enableLinkAnimations, value) && !_isInitializing)
+            {
+                _ = _settingsService.SetAsync(EnableLinkAnimationsKey, value);
             }
         }
     }
@@ -1299,6 +1313,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         ShowIndicatorSovUpgradeIcon = await _settingsService.GetAsync<bool?>(ShowIndicatorSovUpgradeIconKey) ?? true;
         ShowIndicatorIncursionIcon = await _settingsService.GetAsync<bool?>(ShowIndicatorIncursionIconKey) ?? true;
         ShowIndicatorJumpRangeLy = await _settingsService.GetAsync<bool?>(ShowIndicatorJumpRangeLyKey) ?? true;
+        EnableLinkAnimations = await _settingsService.GetAsync<bool?>(EnableLinkAnimationsKey) ?? true;
         ShowAnsiblexNetwork = await _settingsService.GetAsync<bool?>(ShowAnsiblexNetworkKey) ?? true;
         InfoBoxShowRegion = await _settingsService.GetAsync<bool?>(InfoBoxShowRegionKey) ?? true;
         InfoBoxShowConstellation = await _settingsService.GetAsync<bool?>(InfoBoxShowConstellationKey) ?? true;
