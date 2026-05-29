@@ -18,6 +18,7 @@ public partial class MainWindow : Window
     private bool _clearSearchOnNextFocus;
     private bool _isApplyingWindowPlacement;
     private bool _isApplyingViewport;
+    private bool _pendingFitToViewForRegionGraphChange;
     private MainWindowViewModel? _boundVm;
     private Hisa.Core.Models.MapViewMode _lastKnownViewMode;
     private readonly DebugWindowViewModel? _debugWindowViewModel;
@@ -767,7 +768,18 @@ public partial class MainWindow : Window
         {
             SaveViewportForMode(_lastKnownViewMode);
             _lastKnownViewMode = _boundVm.SelectedViewMode;
+            _pendingFitToViewForRegionGraphChange = _boundVm.SelectedViewMode == Hisa.Core.Models.MapViewMode.Region;
             await RestoreViewportForCurrentModeAsync(fallbackToFit: true);
+            return;
+        }
+
+        if (e.PropertyName == nameof(MainWindowViewModel.SelectedRegion))
+        {
+            if (_boundVm.SelectedViewMode == Hisa.Core.Models.MapViewMode.Region)
+            {
+                _pendingFitToViewForRegionGraphChange = true;
+            }
+
             return;
         }
 
@@ -775,7 +787,11 @@ public partial class MainWindow : Window
         {
             if (_boundVm.SelectedViewMode == Hisa.Core.Models.MapViewMode.Region)
             {
-                await Dispatcher.UIThread.InvokeAsync(() => MainMapControl.FitToView());
+                if (_pendingFitToViewForRegionGraphChange)
+                {
+                    _pendingFitToViewForRegionGraphChange = false;
+                    await Dispatcher.UIThread.InvokeAsync(() => MainMapControl.FitToView());
+                }
                 return;
             }
 
