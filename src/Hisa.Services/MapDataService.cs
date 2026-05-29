@@ -93,7 +93,7 @@ public sealed class MapDataService : IMapDataService
     {
         var systems = await QuerySystemsAsync(null, coordinateMode, cancellationToken);
         var links = await QuerySystemLinksAsync(null, cancellationToken);
-        return BuildNormalizedGraph(systems, links);
+        return BuildNormalizedGraph(systems, links, applyLightDeoverlap: coordinateMode == MapCoordinateMode.ThreeDProjectedXZ);
     }
 
     public async Task<MapGraph> GetUniverseRegionsGraphAsync(MapCoordinateMode coordinateMode, CancellationToken cancellationToken = default)
@@ -186,7 +186,7 @@ public sealed class MapDataService : IMapDataService
 
         var systems = await QuerySystemsAsync(regionId, coordinateMode, cancellationToken);
         var links = await QuerySystemLinksAsync(regionId, cancellationToken);
-        return BuildNormalizedGraph(systems, links);
+        return BuildNormalizedGraph(systems, links, applyLightDeoverlap: coordinateMode == MapCoordinateMode.ThreeDProjectedXZ);
     }
 
     private async Task<MapGraph> EnrichLayoutGraphFromSdeAsync(MapGraph layoutGraph, CancellationToken cancellationToken)
@@ -723,7 +723,7 @@ public sealed class MapDataService : IMapDataService
         return links;
     }
 
-    private static MapGraph BuildNormalizedGraph(IReadOnlyList<MapNode> rawNodes, IReadOnlyList<MapLink> rawLinks)
+    private static MapGraph BuildNormalizedGraph(IReadOnlyList<MapNode> rawNodes, IReadOnlyList<MapLink> rawLinks, bool applyLightDeoverlap = false)
     {
         if (rawNodes.Count == 0)
         {
@@ -738,13 +738,29 @@ public sealed class MapDataService : IMapDataService
         var width = Math.Max(1e-9, maxX - minX);
         var height = Math.Max(1e-9, maxY - minY);
 
-        var nodes = rawNodes
-            .Select(n => new MapNode
+        var normalizedX = new double[rawNodes.Count];
+        var normalizedY = new double[rawNodes.Count];
+        for (var i = 0; i < rawNodes.Count; i++)
+        {
+            normalizedX[i] = (rawNodes[i].X - minX) / width;
+            normalizedY[i] = 1.0 - ((rawNodes[i].Y - minY) / height);
+        }
+
+        if (applyLightDeoverlap)
+        {
+            ApplyLightDeoverlap(rawNodes, normalizedX, normalizedY);
+        }
+
+        var nodes = new List<MapNode>(rawNodes.Count);
+        for (var i = 0; i < rawNodes.Count; i++)
+        {
+            var n = rawNodes[i];
+            nodes.Add(new MapNode
             {
                 Id = n.Id,
                 Name = n.Name,
-                X = (n.X - minX) / width,
-                Y = 1.0 - ((n.Y - minY) / height),
+                X = normalizedX[i],
+                Y = normalizedY[i],
                 PositionX = n.PositionX,
                 PositionY = n.PositionY,
                 PositionZ = n.PositionZ,
@@ -759,12 +775,11 @@ public sealed class MapDataService : IMapDataService
                 ConstellationId = n.ConstellationId,
                 ConstellationName = n.ConstellationName,
                 StormEffects = n.StormEffects,
-                HubWormholeConnections = n.HubWormholeConnections
-                ,
+                HubWormholeConnections = n.HubWormholeConnections,
                 SovUpgrades = n.SovUpgrades,
                 HasActiveIncursion = n.HasActiveIncursion
-            })
-            .ToList();
+            });
+        }
 
         var idSet = nodes.Select(n => n.Id).ToHashSet();
         var links = rawLinks
@@ -776,6 +791,111 @@ public sealed class MapDataService : IMapDataService
             Nodes = nodes,
             Links = links
         };
+    }
+
+    private static void ApplyLightDeoverlap(IReadOnlyList<MapNode> rawNodes, double[] x, double[] y)
+    {
+        if (rawNodes.Count < 2)
+        {
+            return;
+        }
+
+        var originalX = x.ToArray();
+        var originalY = y.ToArray();
+        var nodeCount = rawNodes.Count;
+        var minSeparation = nodeCount > 2500 ? 0.0046 : nodeCount > 1200 ? 0.0055 : 0.0072;
+        var cellSize = minSeparation;
+        var maxStepPerIteration = minSeparation * 0.34;
+
+        for (var iteration = 0; iteration < 3; iteration++)
+        {
+            var deltaX = new double[nodeCount];
+            var deltaY = new double[nodeCount];
+            var buckets = new Dictionary<(int X, int Y), List<int>>();
+
+            for (var i = 0; i < nodeCount; i++)
+            {
+                var bx = (int)Math.Floor(x[i] / cellSize);
+                var by = (int)Math.Floor(y[i] / cellSize);
+                var key = (bx, by);
+                if (!buckets.TryGetValue(key, out var list))
+                {
+                    list = [];
+                    buckets[key] = list;
+                }
+
+                list.Add(i);
+            }
+
+            foreach (var (key, indices) in buckets)
+            {
+                for (var ox = -1; ox <= 1; ox++)
+                {
+                    for (var oy = -1; oy <= 1; oy++)
+                    {
+                        var neighborKey = (key.X + ox, key.Y + oy);
+                        if (!buckets.TryGetValue(neighborKey, out var neighborIndices))
+                        {
+                            continue;
+                        }
+
+                        foreach (var i in indices)
+                        {
+                            foreach (var j in neighborIndices)
+                            {
+                                if (j <= i)
+                                {
+                                    continue;
+                                }
+
+                                var dx = x[j] - x[i];
+                                var dy = y[j] - y[i];
+                                var distSq = (dx * dx) + (dy * dy);
+                                if (distSq <= 0)
+                                {
+                                    var sign = (((rawNodes[i].Id ^ rawNodes[j].Id) & 1) == 0) ? 1.0 : -1.0;
+                                    dx = minSeparation * 0.35 * sign;
+                                    dy = minSeparation * 0.35 * -sign;
+                                    distSq = (dx * dx) + (dy * dy);
+                                }
+
+                                var distance = Math.Sqrt(distSq);
+                                if (distance >= minSeparation)
+                                {
+                                    continue;
+                                }
+
+                                var push = (minSeparation - distance) * 0.5;
+                                var nx = dx / Math.Max(1e-9, distance);
+                                var ny = dy / Math.Max(1e-9, distance);
+                                deltaX[i] -= nx * push;
+                                deltaY[i] -= ny * push;
+                                deltaX[j] += nx * push;
+                                deltaY[j] += ny * push;
+                            }
+                        }
+                    }
+                }
+            }
+
+            for (var i = 0; i < nodeCount; i++)
+            {
+                var mag = Math.Sqrt((deltaX[i] * deltaX[i]) + (deltaY[i] * deltaY[i]));
+                if (mag > maxStepPerIteration)
+                {
+                    var scale = maxStepPerIteration / mag;
+                    deltaX[i] *= scale;
+                    deltaY[i] *= scale;
+                }
+
+                x[i] = Math.Clamp(x[i] + deltaX[i], 0.0, 1.0);
+                y[i] = Math.Clamp(y[i] + deltaY[i], 0.0, 1.0);
+
+                // Keep nodes close to original projected coordinates.
+                x[i] = (x[i] * 0.88) + (originalX[i] * 0.12);
+                y[i] = (y[i] * 0.88) + (originalY[i] * 0.12);
+            }
+        }
     }
 
     private static IReadOnlyDictionary<int, StaticSolarSystemData> LoadStaticSolarSystemDataById()
