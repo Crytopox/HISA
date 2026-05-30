@@ -43,6 +43,7 @@ public sealed class IntelChatReport
     public required IReadOnlyList<string> Systems { get; init; }
     public required IReadOnlyList<IntelShipClass> ShipClasses { get; init; }
     public required IReadOnlyList<IntelAlertType> Alerts { get; init; }
+    public required IReadOnlyList<string> ReportedHostileNames { get; init; }
     public bool IsClear { get; init; }
     public int ReportedHostileCount { get; init; }
 }
@@ -57,6 +58,7 @@ public sealed class IntelSystemSnapshot
     public required string LastMessageText { get; init; }
     public required IReadOnlyList<IntelShipClass> ShipClasses { get; init; }
     public required IReadOnlyList<IntelAlertType> Alerts { get; init; }
+    public required IReadOnlyList<string> HostilePilotNames { get; init; }
     public required IReadOnlyList<IntelRecentReport> RecentReports { get; init; }
     public int HostileScore { get; init; }
     public bool IsClear { get; init; }

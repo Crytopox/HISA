@@ -478,6 +478,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             Systems = [],
             ShipClasses = [],
             Alerts = [],
+            HostileNames = [],
             IsClear = false,
             HostileCount = 0
         };
@@ -491,6 +492,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             Systems = parsed.Systems.ToList(),
             ShipClasses = parsed.ShipClasses,
             Alerts = parsed.Alerts,
+            ReportedHostileNames = parsed.HostileNames,
             IsClear = parsed.IsClear,
             ReportedHostileCount = parsed.HostileCount
         };
@@ -526,7 +528,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
                         !string.Equals(x.MessageText, report.MessageText, StringComparison.Ordinal)));
                     recentReports = recentReports
                         .OrderByDescending(x => x.TimestampUtc)
-                        .Take(2)
+                        .Take(1)
                         .ToList();
                     _snapshotBySystemId[systemId] = new IntelSystemSnapshot
                     {
@@ -538,6 +540,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
                         LastMessageText = report.MessageText,
                         ShipClasses = [],
                         Alerts = [IntelAlertType.Clear],
+                        HostilePilotNames = [],
                         RecentReports = recentReports,
                         HostileScore = 0,
                         IsClear = true
@@ -545,8 +548,21 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
                     continue;
                 }
 
+                var movedHostileNames = report.ReportedHostileNames
+                    .Where(x => !string.IsNullOrWhiteSpace(x))
+                    .Select(x => x.Trim())
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                if (movedHostileNames.Count > 0)
+                {
+                    MoveReportedHostilesFromOtherSystems(systemId, movedHostileNames);
+                }
+
                 var previous = _snapshotBySystemId.TryGetValue(systemId, out var existingSnapshot)
                     ? existingSnapshot.RecentReports
+                    : [];
+                var previousHostileNames = _snapshotBySystemId.TryGetValue(systemId, out existingSnapshot)
+                    ? existingSnapshot.HostilePilotNames
                     : [];
                 var reports = new List<IntelRecentReport>
                 {
@@ -562,11 +578,13 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
                     !string.Equals(x.MessageText, report.MessageText, StringComparison.Ordinal)));
                 reports = reports
                     .OrderByDescending(x => x.TimestampUtc)
-                    .Take(2)
+                    .Take(1)
                     .ToList();
+
+                var mergedHostiles = MergeHostileNames(previousHostileNames, movedHostileNames);
                 var hostileScoreBase = report.ReportedHostileCount > 0
                     ? report.ReportedHostileCount
-                    : Math.Max(report.ShipClasses.Count, report.Alerts.Any(a => a != IntelAlertType.Clear) ? 1 : 0);
+                    : Math.Max(mergedHostiles.Count, Math.Max(report.ShipClasses.Count, report.Alerts.Any(a => a != IntelAlertType.Clear) ? 1 : 0));
                 var hostileScore = Math.Max(1, hostileScoreBase);
                 _snapshotBySystemId[systemId] = new IntelSystemSnapshot
                 {
@@ -578,6 +596,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
                     LastMessageText = report.MessageText,
                     ShipClasses = report.ShipClasses,
                     Alerts = report.Alerts,
+                    HostilePilotNames = mergedHostiles,
                     RecentReports = reports,
                     HostileScore = hostileScore,
                     IsClear = false
@@ -609,6 +628,128 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         {
             SnapshotUpdated?.Invoke(this, Snapshot);
         }
+    }
+
+    private void MoveReportedHostilesFromOtherSystems(long targetSystemId, IReadOnlyList<string> movedHostileNames)
+    {
+        foreach (var pair in _snapshotBySystemId.ToList())
+        {
+            if (pair.Key == targetSystemId || pair.Value.IsClear)
+            {
+                continue;
+            }
+
+            var remaining = pair.Value.HostilePilotNames
+                .Where(existing => !movedHostileNames.Any(incoming => HostileNamesMatch(existing, incoming)))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (remaining.Count == pair.Value.HostilePilotNames.Count)
+            {
+                continue;
+            }
+
+            var derivedHostileScore = Math.Max(
+                remaining.Count,
+                Math.Max(pair.Value.ShipClasses.Count, pair.Value.Alerts.Any(a => a != IntelAlertType.Clear) ? 1 : 0));
+
+            _snapshotBySystemId[pair.Key] = new IntelSystemSnapshot
+            {
+                SolarSystemId = pair.Value.SolarSystemId,
+                SolarSystemName = pair.Value.SolarSystemName,
+                LastUpdatedUtc = pair.Value.LastUpdatedUtc,
+                LastChannelName = pair.Value.LastChannelName,
+                LastReporterName = pair.Value.LastReporterName,
+                LastMessageText = pair.Value.LastMessageText,
+                ShipClasses = pair.Value.ShipClasses,
+                Alerts = pair.Value.Alerts,
+                HostilePilotNames = remaining,
+                RecentReports = pair.Value.RecentReports,
+                HostileScore = derivedHostileScore,
+                IsClear = pair.Value.IsClear
+            };
+        }
+    }
+
+    private static List<string> MergeHostileNames(IReadOnlyList<string> existing, IReadOnlyList<string> incoming)
+    {
+        var result = new List<string>(existing.Count + incoming.Count);
+
+        foreach (var name in existing)
+        {
+            if (!result.Any(x => HostileNamesMatch(x, name)))
+            {
+                result.Add(name);
+            }
+        }
+
+        foreach (var name in incoming)
+        {
+            var idx = result.FindIndex(x => HostileNamesMatch(x, name));
+            if (idx >= 0)
+            {
+                // Prefer latest incoming representation so future matching gets fresh tokens.
+                result[idx] = name;
+            }
+            else
+            {
+                result.Add(name);
+            }
+        }
+
+        return result;
+    }
+
+    private static bool HostileNamesMatch(string a, string b)
+    {
+        var left = NormalizeHostileName(a);
+        var right = NormalizeHostileName(b);
+        if (left.Length == 0 || right.Length == 0)
+        {
+            return false;
+        }
+
+        if (string.Equals(left, right, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        var leftParts = left.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var rightParts = right.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+        // "John Smith" vs "Smith John"
+        if (leftParts.Length == 2 && rightParts.Length == 2 &&
+            leftParts[0] == rightParts[1] && leftParts[1] == rightParts[0])
+        {
+            return true;
+        }
+
+        // Single-token fallback for reports that abbreviate one side of a full name.
+        if (leftParts.Length == 1 && rightParts.Length == 2)
+        {
+            return rightParts[0] == leftParts[0] || rightParts[1] == leftParts[0];
+        }
+
+        if (leftParts.Length == 2 && rightParts.Length == 1)
+        {
+            return leftParts[0] == rightParts[0] || leftParts[1] == rightParts[0];
+        }
+
+        return false;
+    }
+
+    private static string NormalizeHostileName(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var cleaned = new string(value
+            .Trim()
+            .ToLowerInvariant()
+            .Where(c => char.IsLetterOrDigit(c) || c == '\'' || c == '-' || char.IsWhiteSpace(c))
+            .ToArray());
+        return Regex.Replace(cleaned, @"\s+", " ").Trim();
     }
 
     private async Task<string?> ReadHeaderChannelNameAsync(string filePath, CancellationToken cancellationToken)

@@ -2024,7 +2024,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             hostileScoresByNode[system.SolarSystemId] = Math.Max(0, system.HostileScore);
             recentReportsByNode[system.SolarSystemId] = system.RecentReports
                 .OrderByDescending(x => x.TimestampUtc)
-                .Take(2)
+                .Take(1)
                 .Select(x => $"{FormatOverlayAge(DateTime.UtcNow - x.TimestampUtc)} | {x.MessageText}")
                 .ToList();
         }
@@ -2066,7 +2066,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         var classCounts = system.ShipClasses
             .GroupBy(x => x)
             .ToDictionary(g => g.Key, g => g.Count());
-        var maxIcons = Math.Clamp(2 + (int)Math.Ceiling(Math.Sqrt(Math.Max(1, system.HostileScore))), 3, 10);
+        var hostile = Math.Max(0, system.HostileScore);
+        if (hostile <= 0)
+        {
+            return [];
+        }
+
+        // Never render more ring icons than reported hostiles (still capped for readability/perf).
+        var maxIcons = Math.Clamp(hostile, 1, 10);
         var icons = new List<string>(maxIcons);
 
         var priority = new[]
@@ -2089,48 +2096,119 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             IntelShipClass.Rookie
         };
 
-        foreach (var shipClass in priority)
+        var presentClasses = priority
+            .Where(classCounts.ContainsKey)
+            .ToList();
+
+        if (presentClasses.Count == 0)
         {
-            if (icons.Count >= maxIcons)
+            if (hostile >= 8)
             {
-                break;
+                return Enumerable.Repeat("squadron", maxIcons).ToList();
             }
 
-            if (!classCounts.TryGetValue(shipClass, out var count) || count <= 0)
-            {
-                continue;
-            }
-
-            var icon = ShipClassToIconKey(shipClass);
-            if (string.IsNullOrWhiteSpace(icon))
-            {
-                continue;
-            }
-
-            icons.Add(icon);
-            classCounts[shipClass] = count - 1;
+            return Enumerable.Repeat("crosshair", maxIcons).ToList();
         }
 
-        foreach (var shipClass in priority)
+        if (hostile >= 8)
         {
-            while (icons.Count < maxIcons && classCounts.TryGetValue(shipClass, out var count) && count > 0)
+            var classSlots = Math.Clamp(maxIcons / 3, 1, 4);
+            var chosenClasses = BuildWeightedClassSequence(classCounts, presentClasses, classSlots);
+            foreach (var shipClass in chosenClasses)
             {
                 var icon = ShipClassToIconKey(shipClass);
                 if (!string.IsNullOrWhiteSpace(icon))
                 {
                     icons.Add(icon);
                 }
-
-                classCounts[shipClass] = count - 1;
             }
 
-            if (icons.Count >= maxIcons)
+            while (icons.Count < maxIcons)
             {
-                break;
+                icons.Add("squadron");
+            }
+
+            return icons;
+        }
+
+        var weightedClasses = BuildWeightedClassSequence(classCounts, presentClasses, maxIcons);
+        foreach (var shipClass in weightedClasses)
+        {
+            var icon = ShipClassToIconKey(shipClass);
+            if (!string.IsNullOrWhiteSpace(icon))
+            {
+                icons.Add(icon);
+            }
+        }
+
+        while (icons.Count < maxIcons && presentClasses.Count > 0)
+        {
+            var topClass = presentClasses[0];
+            var icon = ShipClassToIconKey(topClass);
+            if (!string.IsNullOrWhiteSpace(icon))
+            {
+                icons.Add(icon);
             }
         }
 
         return icons;
+    }
+
+    private static IReadOnlyList<IntelShipClass> BuildWeightedClassSequence(
+        IReadOnlyDictionary<IntelShipClass, int> classCounts,
+        IReadOnlyList<IntelShipClass> orderedClasses,
+        int slots)
+    {
+        if (slots <= 0 || orderedClasses.Count == 0)
+        {
+            return [];
+        }
+
+        var total = orderedClasses.Sum(c => Math.Max(0, classCounts.TryGetValue(c, out var count) ? count : 0));
+        if (total <= 0)
+        {
+            return orderedClasses.Take(Math.Min(slots, orderedClasses.Count)).ToList();
+        }
+
+        var result = new List<IntelShipClass>(slots);
+        var allocated = new Dictionary<IntelShipClass, int>();
+        foreach (var shipClass in orderedClasses)
+        {
+            var count = classCounts.TryGetValue(shipClass, out var raw) ? Math.Max(0, raw) : 0;
+            if (count <= 0)
+            {
+                continue;
+            }
+
+            var weightedShare = (double)count / total;
+            var slotsForClass = Math.Max(1, (int)Math.Round(weightedShare * slots, MidpointRounding.AwayFromZero));
+            allocated[shipClass] = slotsForClass;
+        }
+
+        foreach (var shipClass in orderedClasses)
+        {
+            if (!allocated.TryGetValue(shipClass, out var forClass) || forClass <= 0)
+            {
+                continue;
+            }
+
+            for (var i = 0; i < forClass && result.Count < slots; i++)
+            {
+                result.Add(shipClass);
+            }
+        }
+
+        while (result.Count < slots)
+        {
+            result.Add(orderedClasses[0]);
+        }
+
+        if (result.Count > slots)
+        {
+            result = result.Take(slots).ToList();
+        }
+
+        return result;
     }
 
     private void RebuildCharacterPresenceForView()

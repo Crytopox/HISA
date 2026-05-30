@@ -22,7 +22,8 @@ public sealed partial class IntelChatMessageParser
     private static readonly HashSet<string> CharacterStopWords = new(StringComparer.OrdinalIgnoreCase)
     {
         "in", "on", "at", "to", "from", "and", "with", "gate", "camp", "spike", "clear", "clr", "nv", "neut", "neuts",
-        "hostile", "hostiles", "reported", "report", "local", "intel", "up", "down", "got", "tackled"
+        "hostile", "hostiles", "reported", "report", "local", "intel", "up", "down", "got", "tackled",
+        "kos", "wtb", "where", "status", "shiptypes", "shiptype", "what", "many"
     };
 
     public IntelChatMessageParser(
@@ -43,11 +44,12 @@ public sealed partial class IntelChatMessageParser
         var shipClasses = DetectShipClasses(message, lower);
         var alerts = DetectAlerts(lower);
         var isClear = IsClear(lower);
+        var hostileNames = isClear ? [] : ExtractHostileNames(message, systems);
         if (isClear)
         {
             alerts.Add(IntelAlertType.Clear);
         }
-        var hostileCount = isClear ? 0 : DetectHostileCount(message, systems);
+        var hostileCount = isClear ? 0 : DetectHostileCount(message, hostileNames.Count);
 
         return new IntelParseResult
         {
@@ -55,11 +57,12 @@ public sealed partial class IntelChatMessageParser
             ShipClasses = shipClasses.ToList(),
             Alerts = alerts.ToList(),
             IsClear = isClear,
-            HostileCount = hostileCount
+            HostileCount = hostileCount,
+            HostileNames = hostileNames
         };
     }
 
-    private int DetectHostileCount(string message, IReadOnlySet<string> systems)
+    private int DetectHostileCount(string message, int hostileNamesCount)
     {
         var lower = message.ToLowerInvariant();
         var explicitCount = ExtractExplicitHostileCount(lower);
@@ -68,13 +71,18 @@ public sealed partial class IntelChatMessageParser
             return explicitCount;
         }
 
+        return hostileNamesCount;
+    }
+
+    private List<string> ExtractHostileNames(string message, IReadOnlySet<string> systems)
+    {
         var tokens = WordRegex.Matches(message)
             .Select(x => x.Value.Trim())
             .Where(x => x.Length > 0)
             .ToList();
         if (tokens.Count == 0)
         {
-            return 0;
+            return [];
         }
 
         var used = new bool[tokens.Count];
@@ -102,7 +110,7 @@ public sealed partial class IntelChatMessageParser
             }
         }
 
-        var count = 0;
+        var names = new List<string>();
         for (var i = 0; i < tokens.Count; i++)
         {
             if (used[i])
@@ -118,7 +126,7 @@ public sealed partial class IntelChatMessageParser
             // Prefer first/last-name style reports.
             if (i + 1 < tokens.Count && !used[i + 1] && LooksLikeCharacterWord(tokens[i + 1]))
             {
-                count++;
+                names.Add($"{tokens[i]} {tokens[i + 1]}");
                 used[i] = true;
                 used[i + 1] = true;
                 i++;
@@ -126,11 +134,14 @@ public sealed partial class IntelChatMessageParser
             }
 
             // Single-word character handles.
-            count++;
+            names.Add(tokens[i]);
             used[i] = true;
         }
 
-        return Math.Clamp(count, 0, 300);
+        return names
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(300)
+            .ToList();
     }
 
     private static int ExtractExplicitHostileCount(string lower)
@@ -415,10 +426,17 @@ public sealed partial class IntelChatMessageParser
 
     private static bool IsClear(string lower)
     {
+        // Include common typos/variants and cyrillic "c" variants used by intel tools.
         return lower.Contains(" clr ")
             || lower.StartsWith("clr ")
+            || lower.Contains(" сlr ")
+            || lower.StartsWith("сlr ")
             || lower.Contains(" clear ")
             || lower.StartsWith("clear ")
+            || lower.Contains(" сlear ")
+            || lower.StartsWith("сlear ")
+            || lower.Contains(" clr du ")
+            || lower.Contains(" clear du ")
             || lower.EndsWith(" nv ")
             || lower == "nv";
     }
@@ -434,7 +452,7 @@ public sealed partial class IntelChatMessageParser
     [GeneratedRegex(@"[A-Za-z0-9'\-]+", RegexOptions.Compiled | RegexOptions.CultureInvariant)]
     private static partial Regex BuildWordRegex();
 
-    [GeneratedRegex(@"\+(?<n>\d{1,3})|(?<n>\d{1,3})\+|=(?<n>\d{1,3})|(?<n>\d{1,3})\s+neuts?\b", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"\+(?<n>\d{1,3})|(?<n>\d{1,3})\+|=(?<n>\d{1,3})|(?<n>\d{1,3})\s+neuts?\b|(?<n>\d{1,3})x\b|x(?<n>\d{1,3})\b", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
     private static partial Regex BuildHostileCountRegex();
 }
 
@@ -443,6 +461,7 @@ public sealed class IntelParseResult
     public required HashSet<string> Systems { get; init; }
     public required IReadOnlyList<IntelShipClass> ShipClasses { get; init; }
     public required IReadOnlyList<IntelAlertType> Alerts { get; init; }
+    public required IReadOnlyList<string> HostileNames { get; init; }
     public bool IsClear { get; init; }
     public int HostileCount { get; init; }
 }

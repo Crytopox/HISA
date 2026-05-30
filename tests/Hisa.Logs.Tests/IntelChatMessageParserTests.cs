@@ -138,4 +138,23 @@ public sealed class IntelChatMessageParserTests
 
         Assert.Equal(5, result.HostileCount);
     }
+
+    [Fact]
+    public void Parse_XCountPattern_DetectsHostileCount()
+    {
+        var parser = CreateParser();
+        var result = parser.Parse("D-P1EH x4");
+
+        Assert.Equal(4, result.HostileCount);
+    }
+
+    [Fact]
+    public void Parse_ClearDuVariant_IsClear()
+    {
+        var parser = CreateParser();
+        var result = parser.Parse("D-P1EH clear du");
+
+        Assert.True(result.IsClear);
+        Assert.Equal(0, result.HostileCount);
+    }
 }
