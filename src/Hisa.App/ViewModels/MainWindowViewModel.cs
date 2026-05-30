@@ -2011,7 +2011,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                     continue;
                 }
                 // Placeholder for missing alert icons (per current asset set).
-                iconKeys.Add("rookie");
+                iconKeys.Add("crosshair");
             }
 
             if (system.IsClear && iconKeys.Count == 0)
@@ -2059,8 +2059,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             IntelShipClass.MiningBarge => "miningbarge",
             IntelShipClass.Capsule => "capsule",
             IntelShipClass.Shuttle => "shuttle",
-            IntelShipClass.Rookie => "rookie",
-            _ => "rookie"
+            IntelShipClass.Rookie => "crosshair",
+            _ => "crosshair"
         };
     }
 

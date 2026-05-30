@@ -226,7 +226,7 @@
               <StackPanel Orientation="Horizontal" Spacing="6">
                 <Canvas Width="14" Height="14">
                   <Ellipse Width="12" Height="12"
-                           Stroke="#F3BE5E"
+                           Stroke="#ffffff"
                            StrokeThickness="2"
                            StrokeDashArray="3,2"
                            Fill="Transparent"

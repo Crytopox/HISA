@@ -3,68 +3,53 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="clr-namespace:Hisa.App"
-        mc:Ignorable="d" d:DesignWidth="620" d:DesignHeight="540"
+        mc:Ignorable="d" d:DesignWidth="430" d:DesignHeight="460"
         x:Class="Hisa.App.IntelSettingsWindow"
         x:DataType="vm:MainWindowViewModel"
         Title="Intel Settings"
+        Width="430"
+        MinWidth="420"
+        SizeToContent="Height"
         Background="#0D131D">
-  <Border Margin="12" Padding="12" Background="#121A26" BorderBrush="#263244" BorderThickness="1" CornerRadius="6">
+  <Border Margin="10" Padding="10" Background="#121A26" BorderBrush="#263244" BorderThickness="1" CornerRadius="6">
     <ScrollViewer VerticalScrollBarVisibility="Auto">
-      <StackPanel Spacing="10">
-        <TextBlock Text="Intel Chat Settings" FontSize="15" FontWeight="SemiBold" Foreground="#D8E5F8" />
-
-        <Border Padding="10" Background="#101826" BorderBrush="#243247" BorderThickness="1" CornerRadius="5">
-          <StackPanel Spacing="8">
-            <CheckBox IsChecked="{Binding IntelEnabled}" Content="Enable intel chat parsing" />
-            <TextBlock Text="Scope: chat intel lines only (killmail-style parsing ignored for now)."
-                       Foreground="#8A96A8"
-                       TextWrapping="Wrap" />
-          </StackPanel>
+      <StackPanel Spacing="8">
+        <TextBlock Text="Intel Chat Settings" FontSize="14" FontWeight="SemiBold" Foreground="#D8E5F8" />
+        <Border Padding="8" Background="#101826" BorderBrush="#243247" BorderThickness="1" CornerRadius="5">
+          <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="10" RowSpacing="6">
+            <CheckBox Grid.Row="0" Grid.ColumnSpan="2" IsChecked="{Binding IntelEnabled}" Content="Enable intel chat parsing" />
+            <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Foreground="#8A96A8" Text="System expiry (min)" />
+            <NumericUpDown Grid.Row="1" Grid.Column="1" Minimum="1" Maximum="180" Increment="1" FormatString="N0" Value="{Binding IntelSystemExpiryMinutes}" Width="128" HorizontalAlignment="Left" />
+            <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Foreground="#8A96A8" Text="Clear expiry (min)" />
+            <NumericUpDown Grid.Row="2" Grid.Column="1" Minimum="1" Maximum="60" Increment="1" FormatString="N0" Value="{Binding IntelClearOverlayMinutes}" Width="128" HorizontalAlignment="Left" />
+          </Grid>
         </Border>
 
-        <Border Padding="10" Background="#101826" BorderBrush="#243247" BorderThickness="1" CornerRadius="5">
-          <StackPanel Spacing="8">
-            <TextBlock Text="Included Channels (optional allow-list)" FontWeight="SemiBold" Foreground="#C9D9EE" />
-            <TextBlock Text="Required. If empty, intel parser reads no channels."
-                       Foreground="#8A96A8"
-                       TextWrapping="Wrap" />
+        <Border Padding="8" Background="#101826" BorderBrush="#243247" BorderThickness="1" CornerRadius="5">
+          <StackPanel Spacing="6">
+            <TextBlock Text="Included Channels" FontWeight="SemiBold" Foreground="#C9D9EE" />
+            <TextBlock Text="Only these channels are read." Foreground="#8A96A8" FontSize="11" />
             <TextBox Text="{Binding IntelIncludeChannelsText, Mode=TwoWay}"
                      AcceptsReturn="True"
                      Height="120"
-                     Watermark="One channel per line, e.g.&#10;fareast.imperium&#10;delve.imperium" />
+                     Watermark="fareast.imperium&#10;delve.imperium" />
           </StackPanel>
         </Border>
 
-        <Border Padding="10" Background="#101826" BorderBrush="#243247" BorderThickness="1" CornerRadius="5">
-          <StackPanel Spacing="8">
-            <TextBlock Text="Ignored Channels (deny-list)" FontWeight="SemiBold" Foreground="#C9D9EE" />
+        <Border Padding="8" Background="#101826" BorderBrush="#243247" BorderThickness="1" CornerRadius="5">
+          <StackPanel Spacing="6">
+            <TextBlock Text="Ignored Channels" FontWeight="SemiBold" Foreground="#C9D9EE" />
+            <TextBlock Text="Optional deny list." Foreground="#8A96A8" FontSize="11" />
             <TextBox Text="{Binding IntelIgnoreChannelsText, Mode=TwoWay}"
                      AcceptsReturn="True"
                      Height="120"
-                     Watermark="One channel per line, e.g.&#10;alliance.chat&#10;corp.chat" />
-          </StackPanel>
-        </Border>
-
-        <Border Padding="10" Background="#101826" BorderBrush="#243247" BorderThickness="1" CornerRadius="5">
-          <StackPanel Spacing="8">
-            <TextBlock Text="Aging / Expiry" FontWeight="SemiBold" Foreground="#C9D9EE" />
-            <StackPanel Orientation="Horizontal" Spacing="8">
-              <TextBlock VerticalAlignment="Center" Text="Normal report expiry (minutes)" Foreground="#8A96A8" Width="230" />
-              <NumericUpDown Minimum="1" Maximum="180" Value="{Binding IntelSystemExpiryMinutes}" Width="90" />
-            </StackPanel>
-            <StackPanel Orientation="Horizontal" Spacing="8">
-              <TextBlock VerticalAlignment="Center" Text="Clear overlay expiry (minutes)" Foreground="#8A96A8" Width="230" />
-              <NumericUpDown Minimum="1" Maximum="60" Value="{Binding IntelClearOverlayMinutes}" Width="90" />
-            </StackPanel>
-            <TextBlock Text="Clear reports remove hostile icon state immediately and keep clear marker until this timeout."
-                       Foreground="#8A96A8"
-                       TextWrapping="Wrap" />
+                     Watermark="alliance.chat&#10;corp.chat" />
           </StackPanel>
         </Border>
 
         <StackPanel Orientation="Horizontal" Spacing="8">
-          <Button Content="Save Intel Settings" Click="OnSaveIntelSettingsClicked" />
-          <TextBlock Text="Restart app after changing channel filters."
+          <Button Content="Save" MinWidth="90" Click="OnSaveIntelSettingsClicked" />
+          <TextBlock Text="Restart app after channel filter changes."
                      Foreground="#8A96A8"
                      VerticalAlignment="Center" />
         </StackPanel>

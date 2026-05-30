@@ -46,7 +46,7 @@ public sealed class MapControl : Control
     private static readonly Dictionary<string, Dictionary<long, IReadOnlyList<(double X, double Y)>>> VoronoiMemoryCache = [];
     private static readonly JsonSerializerOptions VoronoiJsonOptions = new() { WriteIndented = false };
 
-    private static readonly Point NodeLabelOffset = new(9, 3);
+    private static readonly Point NodeLabelOffset = new(14, 8);
     private static readonly Typeface NodeLabelTypeface = new("Inter", FontStyle.Normal, FontWeight.SemiBold);
     private static readonly Typeface RegionCardTypeface = new("Inter", FontStyle.Normal, FontWeight.SemiBold);
     private const double NodeLabelFontSize = 11;
@@ -92,8 +92,8 @@ public sealed class MapControl : Control
         1.9,
         dashStyle: new DashStyle([2.2, 2.6], 0));
     private static readonly Pen JumpRangeOriginRingPen = new(
-        new ImmutableSolidColorBrush(Color.Parse("#F3BE5E")),
-        2.2,
+        new ImmutableSolidColorBrush(Color.Parse("#ffffff")),
+        2.5,
         dashStyle: new DashStyle([3.2, 2.0], 0));
     private static readonly Pen LyCoverageCoveredRingPen = new(
         new ImmutableSolidColorBrush(Color.Parse("#59D38C")),
@@ -853,7 +853,7 @@ public sealed class MapControl : Control
         _linkAnimationTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(24), DispatcherPriority.Render, (_, _) =>
         {
             _linkAnimationPhase += 0.012;
-            if (ShouldAnimateAnyLink())
+            if (ShouldAnimateAnyLink() || HasAnimatedIntelRings())
             {
                 InvalidateVisual();
             }
@@ -1481,17 +1481,21 @@ public sealed class MapControl : Control
             }
 
             context.DrawEllipse(brush, NodeOutlinePen, p, radius, radius);
-            if (IntelIconKeysByNodeId is not null &&
-                IntelIconKeysByNodeId.TryGetValue(node.Id, out var intelRingIcons) &&
-                intelRingIcons.Count > 0)
+            var hostileScoreForNode = 0;
+            var hasHostileScore = IntelHostileScoresByNodeId is not null &&
+                                  IntelHostileScoresByNodeId.TryGetValue(node.Id, out hostileScoreForNode) &&
+                                  hostileScoreForNode > 0;
+            if (hasHostileScore)
             {
-                var hostileScore = 0;
-                if (IntelHostileScoresByNodeId is not null)
+                IReadOnlyList<string> intelRingIcons = ["crosshair"];
+                if (IntelIconKeysByNodeId is not null &&
+                    IntelIconKeysByNodeId.TryGetValue(node.Id, out var configuredIcons) &&
+                    configuredIcons.Count > 0)
                 {
-                    IntelHostileScoresByNodeId.TryGetValue(node.Id, out hostileScore);
+                    intelRingIcons = configuredIcons;
                 }
 
-                DrawIntelRingWithIcons(context, p, radius + 5.1, intelRingIcons, hostileScore);
+                DrawIntelRingWithIcons(context, p, radius, intelRingIcons, hostileScoreForNode, shouldShowInlineLabels);
             }
             if (ShowMissingConnectionMarkers &&
                 (missingConnectionSet?.Contains(node.Id) ?? false) &&
@@ -1503,7 +1507,7 @@ public sealed class MapControl : Control
             if (_jumpRangeOverlapByNodeId.TryGetValue(node.Id, out var jumpRangeOverlapCount) &&
                 jumpRangeOverlapCount > 0)
             {
-                var inRangeRadius = radius + 6.4;
+                var inRangeRadius = radius + 3.6;
                 if (JumpRangeMembershipByNodeId is not null &&
                     JumpRangeMembershipByNodeId.TryGetValue(node.Id, out var sourceOriginIds) &&
                     sourceOriginIds.Count > 0)
@@ -1517,25 +1521,17 @@ public sealed class MapControl : Control
             }
             if (_jumpRangeOriginNodeIds.Contains(node.Id))
             {
-                var originRadius = radius + 10.1;
-                if (_jumpRangeOriginColorByNodeId.TryGetValue(node.Id, out var originColor))
-                {
-                    var originPen = new Pen(new ImmutableSolidColorBrush(originColor), 2.8, dashStyle: new DashStyle([3.8, 2.4], 0));
-                    context.DrawEllipse(null, originPen, p, originRadius, originRadius);
-                }
-                else
-                {
-                    context.DrawEllipse(null, JumpRangeOriginRingPen, p, originRadius, originRadius);
-                }
+                var originRadius = radius + 6.2;
+                context.DrawEllipse(null, JumpRangeOriginRingPen, p, originRadius, originRadius);
             }
             if (lyCoveredSet?.Contains(node.Id) == true)
             {
-                var coveredRadius = radius + 13.6;
+                var coveredRadius = radius + 7.8;
                 context.DrawEllipse(null, LyCoverageCoveredRingPen, p, coveredRadius, coveredRadius);
             }
             if (lyUncoveredSet?.Contains(node.Id) == true)
             {
-                var uncoveredRadius = radius + 16.9;
+                var uncoveredRadius = radius + 9.8;
                 context.DrawEllipse(null, LyCoverageUncoveredRingPen, p, uncoveredRadius, uncoveredRadius);
             }
             if (jumpRouteOrderByNodeId.ContainsKey(node.Id))
@@ -1690,19 +1686,22 @@ public sealed class MapControl : Control
 
     private double GetUniverseNodeZoomScale()
     {
-        if (ViewMode != MapViewMode.Universe)
+        if (ViewMode != MapViewMode.Universe && ViewMode != MapViewMode.Region)
         {
             return 1.0;
         }
 
         var threshold = GetLabelZoomThreshold();
-        if (_zoom >= threshold)
+        var effectiveThreshold = ViewMode == MapViewMode.Region
+            ? Math.Min(GetMaxZoom(), threshold * 1.45)
+            : threshold;
+        if (_zoom >= effectiveThreshold)
         {
             return 1.0;
         }
 
         const double minZoom = 0.4;
-        var progress = (_zoom - minZoom) / (threshold - minZoom);
+        var progress = (_zoom - minZoom) / (effectiveThreshold - minZoom);
         progress = Math.Clamp(progress, 0.0, 1.0);
         return UniverseMinNodeScale + ((1.0 - UniverseMinNodeScale) * progress);
     }
@@ -2587,6 +2586,24 @@ public sealed class MapControl : Control
         return false;
     }
 
+    private bool HasAnimatedIntelRings()
+    {
+        if (IntelHostileScoresByNodeId is null || IntelHostileScoresByNodeId.Count == 0)
+        {
+            return false;
+        }
+
+        foreach (var score in IntelHostileScoresByNodeId.Values)
+        {
+            if (score > 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private FormattedText GetNodeLabel(long nodeId, string name)
     {
         var fontSize = ShowEditorGrid ? EditorNodeLabelFontSize : NodeLabelFontSize;
@@ -3232,6 +3249,16 @@ public sealed class MapControl : Control
         if (NodeBackgroundColorMode == MapNodeColorMode.Incursions && !node.HasActiveIncursion)
         {
             return;
+        }
+        if (NodeBackgroundColorMode == MapNodeColorMode.Hostiles)
+        {
+            if (IntelHostileScoresByNodeId is null ||
+                !IntelHostileScoresByNodeId.TryGetValue(node.Id, out var hostileScore) ||
+                hostileScore <= 0)
+            {
+                // No active intel for this node: keep background transparent.
+                return;
+            }
         }
 
         var color = GetNodeBaseColor(node, NodeBackgroundColorMode);
@@ -4856,13 +4883,30 @@ public sealed class MapControl : Control
 
     private static readonly ConcurrentDictionary<string, Bitmap?> ShipClassIconCache = new(StringComparer.OrdinalIgnoreCase);
 
-    private static void DrawIntelRingWithIcons(DrawingContext context, Point center, double ringRadius, IReadOnlyList<string> iconKeys, int hostileScore)
+    private void DrawIntelRingWithIcons(
+        DrawingContext context,
+        Point center,
+        double nodeRadius,
+        IReadOnlyList<string> iconKeys,
+        int hostileScore,
+        bool showOrbitIcons)
     {
         var ringColor = GetIntelHostileColor(hostileScore);
-        var scale = Math.Clamp(hostileScore / 12.0, 0.0, 1.0);
-        var scaledRingRadius = ringRadius + (scale * 6.0);
-        var ringPen = new Pen(new ImmutableSolidColorBrush(Color.FromArgb(230, ringColor.R, ringColor.G, ringColor.B)), 2.4);
-        context.DrawEllipse(null, ringPen, center, scaledRingRadius, scaledRingRadius);
+        // Keep intel ring ratios bound to node size so it scales 1:1 with node zoom.
+        var scaledRingRadius = nodeRadius * 2.2;
+        var corePen = new Pen(new ImmutableSolidColorBrush(Color.FromArgb(220, ringColor.R, ringColor.G, ringColor.B)), Math.Max(1.8, nodeRadius * 0.67));
+        var fadePen1 = new Pen(new ImmutableSolidColorBrush(Color.FromArgb(130, ringColor.R, ringColor.G, ringColor.B)), Math.Max(1.2, nodeRadius * 0.47));
+        var fadePen2 = new Pen(new ImmutableSolidColorBrush(Color.FromArgb(70, ringColor.R, ringColor.G, ringColor.B)), Math.Max(0.9, nodeRadius * 0.31));
+        context.DrawEllipse(null, corePen, center, scaledRingRadius, scaledRingRadius);
+        var fadeOffset1 = Math.Max(0.5, nodeRadius * 0.13);
+        var fadeOffset2 = Math.Max(0.9, nodeRadius * 0.25);
+        context.DrawEllipse(null, fadePen1, center, scaledRingRadius + fadeOffset1, scaledRingRadius + fadeOffset1);
+        context.DrawEllipse(null, fadePen2, center, scaledRingRadius + fadeOffset2, scaledRingRadius + fadeOffset2);
+
+        if (!showOrbitIcons)
+        {
+            return;
+        }
 
         var icons = iconKeys.Take(6).ToList();
         if (icons.Count == 0)
@@ -4870,11 +4914,12 @@ public sealed class MapControl : Control
             return;
         }
 
-        var orbitRadius = scaledRingRadius + 1.8;
-        var iconSize = 12.0;
+        var orbitRadius = scaledRingRadius;
+        var iconSize = Math.Clamp(nodeRadius * 3.1, 15.0, 33.0);
+        var rotationDegrees = _linkAnimationPhase * 126.0;
         for (var i = 0; i < icons.Count; i++)
         {
-            var angle = (-90.0 + ((360.0 / icons.Count) * i)) * (Math.PI / 180.0);
+            var angle = (-90.0 + rotationDegrees + ((360.0 / icons.Count) * i)) * (Math.PI / 180.0);
             var iconX = center.X + (orbitRadius * Math.Cos(angle)) - (iconSize * 0.5);
             var iconY = center.Y + (orbitRadius * Math.Sin(angle)) - (iconSize * 0.5);
             DrawIntelIcon(context, icons[i], new Point(iconX, iconY), iconSize);
@@ -4894,7 +4939,7 @@ public sealed class MapControl : Control
         Bitmap? icon;
         if (string.Equals(iconKey, "question-mark", StringComparison.OrdinalIgnoreCase))
         {
-            icon = ShipClassIconCache.GetOrAdd("rookie", static key => LoadIcon($"Ships/{key}.png"));
+            icon = LoadIcon("crosshair.png");
         }
         else
         {
@@ -4903,7 +4948,7 @@ public sealed class MapControl : Control
 
         if (icon is null)
         {
-            icon = ShipClassIconCache.GetOrAdd("rookie", static key => LoadIcon($"Ships/{key}.png")) ?? QuestionMarkIcon.Value;
+            icon = LoadIcon("crosshair.png") ?? QuestionMarkIcon.Value;
         }
 
         if (icon is null)
