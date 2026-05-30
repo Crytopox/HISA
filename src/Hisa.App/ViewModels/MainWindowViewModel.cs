@@ -1,7 +1,10 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Runtime.InteropServices;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using System.Net.Http;
+using Avalonia;
 using Avalonia.Threading;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
@@ -13,6 +16,211 @@ namespace Hisa.App;
 
 public sealed class MainWindowViewModel : INotifyPropertyChanged
 {
+    private sealed class CharacterTrackingPreference
+    {
+        public required int CharacterId { get; init; }
+        public string CharacterName { get; set; } = string.Empty;
+        public int Priority { get; set; }
+        public bool IsEnabled { get; set; } = true;
+    }
+
+    public sealed class CharacterTrackingCardViewModel : INotifyPropertyChanged
+    {
+        private static readonly HttpClient PortraitHttpClient = new();
+        private Bitmap? _portrait;
+        private Bitmap? _grayscalePortrait;
+        private string _name = string.Empty;
+        private string _lastLocation = "Unknown";
+        private string _lastUpdated = "Never";
+        private bool _isEnabled = true;
+        private bool _isDragging;
+        private int _priority;
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+
+        public int CharacterId { get; init; }
+        public Bitmap? Portrait
+        {
+            get => _portrait;
+            private set
+            {
+                if (!ReferenceEquals(_portrait, value))
+                {
+                    _portrait = value;
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Portrait)));
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DisplayPortrait)));
+                }
+            }
+        }
+
+        public Bitmap? GrayscalePortrait
+        {
+            get => _grayscalePortrait;
+            private set
+            {
+                if (!ReferenceEquals(_grayscalePortrait, value))
+                {
+                    _grayscalePortrait = value;
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(GrayscalePortrait)));
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DisplayPortrait)));
+                }
+            }
+        }
+
+        public Bitmap? DisplayPortrait => IsEnabled ? Portrait : GrayscalePortrait ?? Portrait;
+
+        public string Name
+        {
+            get => _name;
+            set
+            {
+                if (!string.Equals(_name, value, StringComparison.Ordinal))
+                {
+                    _name = value;
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Name)));
+                }
+            }
+        }
+
+        public string LastLocation
+        {
+            get => _lastLocation;
+            set
+            {
+                if (!string.Equals(_lastLocation, value, StringComparison.Ordinal))
+                {
+                    _lastLocation = value;
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LastLocation)));
+                }
+            }
+        }
+
+        public string LastUpdated
+        {
+            get => _lastUpdated;
+            set
+            {
+                if (!string.Equals(_lastUpdated, value, StringComparison.Ordinal))
+                {
+                    _lastUpdated = value;
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LastUpdated)));
+                }
+            }
+        }
+
+        public bool IsEnabled
+        {
+            get => _isEnabled;
+            set
+            {
+                if (_isEnabled != value)
+                {
+                    _isEnabled = value;
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsEnabled)));
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DisplayPortrait)));
+                }
+            }
+        }
+
+        public int Priority
+        {
+            get => _priority;
+            set
+            {
+                if (_priority != value)
+                {
+                    _priority = value;
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Priority)));
+                }
+            }
+        }
+
+        public bool IsDragging
+        {
+            get => _isDragging;
+            set
+            {
+                if (_isDragging != value)
+                {
+                    _isDragging = value;
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsDragging)));
+                }
+            }
+        }
+
+        public string PortraitUrl => $"https://images.evetech.net/characters/{CharacterId}/portrait?tenant=tranquility&size=256";
+
+        public async Task EnsurePortraitLoadedAsync(CancellationToken cancellationToken = default)
+        {
+            if (Portrait is not null)
+            {
+                return;
+            }
+
+            try
+            {
+                using var stream = await PortraitHttpClient.GetStreamAsync(PortraitUrl, cancellationToken).ConfigureAwait(false);
+                using var memory = new MemoryStream();
+                await stream.CopyToAsync(memory, cancellationToken).ConfigureAwait(false);
+                memory.Position = 0;
+                var bitmap = new Bitmap(memory);
+                var grayscale = CreateGrayscaleBitmap(bitmap);
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    Portrait = bitmap;
+                    GrayscalePortrait = grayscale;
+                });
+            }
+            catch
+            {
+                // Keep placeholder when portrait can't be loaded.
+            }
+        }
+
+        private static Bitmap? CreateGrayscaleBitmap(Bitmap source)
+        {
+            var size = source.PixelSize;
+            var stride = size.Width * 4;
+            var totalBytes = stride * size.Height;
+            var buffer = new byte[totalBytes];
+            var handle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
+            try
+            {
+                var ptr = handle.AddrOfPinnedObject();
+                source.CopyPixels(new PixelRect(0, 0, size.Width, size.Height), ptr, totalBytes, stride);
+                for (var i = 0; i < totalBytes; i += 4)
+                {
+                    var b = buffer[i];
+                    var g = buffer[i + 1];
+                    var r = buffer[i + 2];
+                    var gray = (byte)((r * 77 + g * 150 + b * 29) >> 8);
+                    buffer[i] = gray;
+                    buffer[i + 1] = gray;
+                    buffer[i + 2] = gray;
+                }
+
+                return new WriteableBitmap(
+                    PixelFormat.Bgra8888,
+                    AlphaFormat.Premul,
+                    ptr,
+                    size,
+                    new Vector(96, 96),
+                    stride);
+            }
+            catch
+            {
+                return null;
+            }
+            finally
+            {
+                if (handle.IsAllocated)
+                {
+                    handle.Free();
+                }
+            }
+        }
+    }
+
     private sealed class SavedRegionToken
     {
         public required string RegionName { get; init; }
@@ -87,6 +295,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private IReadOnlyList<IncursionOverlayCard> _incursionCardsForView = [];
     private IReadOnlyList<StormOverlayCard> _stormCardsForView = [];
     private readonly Dictionary<int, LocalCharacterSystemChange> _localCharacterLocationsByCharacterId = [];
+    private readonly Dictionary<int, CharacterTrackingPreference> _characterTrackingPreferencesById = [];
+    private readonly ObservableCollection<CharacterTrackingCardViewModel> _characterTrackingCards = [];
+    private readonly ObservableCollection<CharacterTrackingCardViewModel> _enabledCharacterTrackingCards = [];
+    private readonly ObservableCollection<CharacterTrackingCardViewModel> _disabledCharacterTrackingCards = [];
     private IReadOnlyDictionary<long, int> _characterPresenceCountsByNodeId = new Dictionary<long, int>();
     private IReadOnlyDictionary<long, IReadOnlyList<string>> _characterPresenceNamesByNodeId = new Dictionary<long, IReadOnlyList<string>>();
     private IReadOnlyDictionary<long, DateTime> _characterPresenceLastUpdatedUtcByNodeId = new Dictionary<long, DateTime>();
@@ -151,6 +363,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string WindowPlacementKey = "Window.Main.Placement";
     private const string MapViewportPrefixKey = "Map.Viewport";
     private const string TrackingLogsRootPathKey = "Tracking.LogsRootPath";
+    private const string TrackingCharacterPreferencesKey = "Tracking.CharacterPreferences";
     private readonly Task _initialLoadTask;
 
     public MainWindowViewModel(
@@ -210,6 +423,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public IReadOnlyDictionary<long, int> CharacterPresenceCountsByNodeIdForView => _characterPresenceCountsByNodeId;
     public IReadOnlyDictionary<long, IReadOnlyList<string>> CharacterPresenceNamesByNodeIdForView => _characterPresenceNamesByNodeId;
     public IReadOnlyDictionary<long, DateTime> CharacterPresenceLastUpdatedUtcByNodeIdForView => _characterPresenceLastUpdatedUtcByNodeId;
+    public ObservableCollection<CharacterTrackingCardViewModel> CharacterTrackingCards => _characterTrackingCards;
+    public ObservableCollection<CharacterTrackingCardViewModel> EnabledCharacterTrackingCards => _enabledCharacterTrackingCards;
+    public ObservableCollection<CharacterTrackingCardViewModel> DisabledCharacterTrackingCards => _disabledCharacterTrackingCards;
     public string HubWormholeOverlayTitle => $"Thera/Turnur Wormholes ({_hubWormholeCardsForView.Count})";
     public string IncursionOverlayTitle => $"Incursions ({_incursionCardsForView.Count})";
     public string StormOverlayTitle => $"Metaliminal Storms ({_stormCardsForView.Count})";
@@ -1436,14 +1652,22 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             ?? Regions.FirstOrDefault(r => !r.IsHeader);
 
         _isInitializing = false;
+        var savedTrackingPreferences = await _settingsService.GetAsync<List<CharacterTrackingPreference>>(TrackingCharacterPreferencesKey) ?? [];
+        _characterTrackingPreferencesById.Clear();
+        foreach (var pref in savedTrackingPreferences)
+        {
+            _characterTrackingPreferencesById[pref.CharacterId] = pref;
+        }
         lock (_localCharacterLocationsByCharacterId)
         {
             _localCharacterLocationsByCharacterId.Clear();
             foreach (var kvp in _localCharacterLocationFeed.Snapshot)
             {
                 _localCharacterLocationsByCharacterId[kvp.Key] = kvp.Value;
+                EnsureCharacterTrackingPreference(kvp.Value);
             }
         }
+        RebuildCharacterTrackingCards();
         await ReloadGraphAsync();
         RebuildCharacterPresenceForView();
     }
@@ -1560,6 +1784,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     private void OnLocalCharacterSystemChanged(object? sender, LocalCharacterSystemChange change)
     {
+        EnsureCharacterTrackingPreference(change);
+        if (!IsCharacterTrackingEnabled(change.CharacterId))
+        {
+            return;
+        }
+
         lock (_localCharacterLocationsByCharacterId)
         {
             _localCharacterLocationsByCharacterId[change.CharacterId] = change;
@@ -1567,6 +1797,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
         Dispatcher.UIThread.Post(() =>
         {
+            RebuildCharacterTrackingCards();
             RebuildCharacterPresenceForView();
         });
     }
@@ -1595,10 +1826,15 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             .GroupBy(n => n.Name, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
-        var namesByNode = new Dictionary<long, List<string>>();
+        var namesByNode = new Dictionary<long, List<(int CharacterId, string CharacterName)>>();
         var latestSeenByNode = new Dictionary<long, DateTime>();
         foreach (var character in snapshot.Values)
         {
+            if (!IsCharacterTrackingEnabled(character.CharacterId))
+            {
+                continue;
+            }
+
             if (!nodeByName.TryGetValue(character.SolarSystemName, out var node))
             {
                 continue;
@@ -1610,7 +1846,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 namesByNode[node.Id] = names;
             }
 
-            names.Add(character.CharacterName);
+            names.Add((character.CharacterId, character.CharacterName));
             if (!latestSeenByNode.TryGetValue(node.Id, out var currentLatest) || character.TimestampUtc > currentLatest)
             {
                 latestSeenByNode[node.Id] = character.TimestampUtc;
@@ -1620,12 +1856,283 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _characterPresenceCountsByNodeId = namesByNode.ToDictionary(kvp => kvp.Key, kvp => kvp.Value.Count);
         _characterPresenceNamesByNodeId = namesByNode.ToDictionary(
             kvp => kvp.Key,
-            kvp => (IReadOnlyList<string>)kvp.Value.OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList());
+            kvp => (IReadOnlyList<string>)kvp.Value
+                .OrderBy(n => GetCharacterPriorityById(n.CharacterId))
+                .ThenBy(n => n.CharacterName, StringComparer.OrdinalIgnoreCase)
+                .Select(n => n.CharacterName)
+                .ToList());
         _characterPresenceLastUpdatedUtcByNodeId = latestSeenByNode;
 
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CharacterPresenceCountsByNodeIdForView)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CharacterPresenceNamesByNodeIdForView)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CharacterPresenceLastUpdatedUtcByNodeIdForView)));
+    }
+
+    public void MoveCharacterTrackingPriorityUp(int characterId)
+    {
+        if (!_characterTrackingPreferencesById.TryGetValue(characterId, out var pref))
+        {
+            return;
+        }
+
+        var ordered = _characterTrackingPreferencesById.Values.OrderBy(x => x.Priority).ToList();
+        var index = ordered.FindIndex(x => x.CharacterId == characterId);
+        if (index <= 0)
+        {
+            return;
+        }
+
+        (ordered[index - 1].Priority, ordered[index].Priority) = (ordered[index].Priority, ordered[index - 1].Priority);
+        NormalizeCharacterPriorities(ordered);
+        _ = SaveCharacterTrackingPreferencesAsync();
+        RebuildCharacterTrackingCards();
+        RebuildCharacterPresenceForView();
+    }
+
+    public void MoveCharacterTrackingPriorityDown(int characterId)
+    {
+        if (!_characterTrackingPreferencesById.TryGetValue(characterId, out var pref))
+        {
+            return;
+        }
+
+        var ordered = _characterTrackingPreferencesById.Values.OrderBy(x => x.Priority).ToList();
+        var index = ordered.FindIndex(x => x.CharacterId == characterId);
+        if (index < 0 || index >= ordered.Count - 1)
+        {
+            return;
+        }
+
+        (ordered[index + 1].Priority, ordered[index].Priority) = (ordered[index].Priority, ordered[index + 1].Priority);
+        NormalizeCharacterPriorities(ordered);
+        _ = SaveCharacterTrackingPreferencesAsync();
+        RebuildCharacterTrackingCards();
+        RebuildCharacterPresenceForView();
+    }
+
+    public void SetCharacterTrackingEnabled(int characterId, bool isEnabled)
+    {
+        if (!_characterTrackingPreferencesById.TryGetValue(characterId, out var pref))
+        {
+            return;
+        }
+
+        if (pref.IsEnabled == isEnabled)
+        {
+            return;
+        }
+
+        pref.IsEnabled = isEnabled;
+        if (!isEnabled)
+        {
+            lock (_localCharacterLocationsByCharacterId)
+            {
+                _localCharacterLocationsByCharacterId.Remove(characterId);
+            }
+        }
+
+        _ = SaveCharacterTrackingPreferencesAsync();
+        RebuildCharacterTrackingCards();
+        RebuildCharacterPresenceForView();
+    }
+
+    public void MoveCharacterTrackingAmongEnabled(int sourceCharacterId, int targetCharacterId)
+    {
+        if (sourceCharacterId == targetCharacterId)
+        {
+            return;
+        }
+
+        var enabledOrdered = _characterTrackingPreferencesById.Values
+            .Where(x => x.IsEnabled)
+            .OrderBy(x => x.Priority)
+            .ToList();
+        var sourceIndex = enabledOrdered.FindIndex(x => x.CharacterId == sourceCharacterId);
+        var targetIndex = enabledOrdered.FindIndex(x => x.CharacterId == targetCharacterId);
+        if (sourceIndex < 0 || targetIndex < 0)
+        {
+            return;
+        }
+
+        var moved = enabledOrdered[sourceIndex];
+        enabledOrdered.RemoveAt(sourceIndex);
+        enabledOrdered.Insert(targetIndex, moved);
+
+        var disabledOrdered = _characterTrackingPreferencesById.Values
+            .Where(x => !x.IsEnabled)
+            .OrderBy(x => x.Priority)
+            .ToList();
+
+        var combined = enabledOrdered.Concat(disabledOrdered).ToList();
+        NormalizeCharacterPriorities(combined);
+        _ = SaveCharacterTrackingPreferencesAsync();
+        RebuildCharacterTrackingCards();
+        RebuildCharacterPresenceForView();
+    }
+
+    public void MoveCharacterTrackingUpAmongEnabled(int characterId)
+    {
+        var enabledOrdered = _characterTrackingPreferencesById.Values
+            .Where(x => x.IsEnabled)
+            .OrderBy(x => x.Priority)
+            .ToList();
+        var index = enabledOrdered.FindIndex(x => x.CharacterId == characterId);
+        if (index <= 0)
+        {
+            return;
+        }
+
+        MoveCharacterTrackingAmongEnabled(characterId, enabledOrdered[index - 1].CharacterId);
+    }
+
+    public void MoveCharacterTrackingDownAmongEnabled(int characterId)
+    {
+        var enabledOrdered = _characterTrackingPreferencesById.Values
+            .Where(x => x.IsEnabled)
+            .OrderBy(x => x.Priority)
+            .ToList();
+        var index = enabledOrdered.FindIndex(x => x.CharacterId == characterId);
+        if (index < 0 || index >= enabledOrdered.Count - 1)
+        {
+            return;
+        }
+
+        MoveCharacterTrackingAmongEnabled(characterId, enabledOrdered[index + 1].CharacterId);
+    }
+
+    private void EnsureCharacterTrackingPreference(LocalCharacterSystemChange change)
+    {
+        var created = false;
+        if (!_characterTrackingPreferencesById.TryGetValue(change.CharacterId, out var pref))
+        {
+            pref = new CharacterTrackingPreference
+            {
+                CharacterId = change.CharacterId,
+                CharacterName = change.CharacterName,
+                IsEnabled = true,
+                Priority = _characterTrackingPreferencesById.Count
+            };
+            _characterTrackingPreferencesById[change.CharacterId] = pref;
+            created = true;
+        }
+        else if (!string.IsNullOrWhiteSpace(change.CharacterName) &&
+                 !string.Equals(pref.CharacterName, change.CharacterName, StringComparison.Ordinal))
+        {
+            pref.CharacterName = change.CharacterName;
+        }
+
+        if (created)
+        {
+            _ = SaveCharacterTrackingPreferencesAsync();
+        }
+    }
+
+    private bool IsCharacterTrackingEnabled(int characterId)
+    {
+        return !_characterTrackingPreferencesById.TryGetValue(characterId, out var pref) || pref.IsEnabled;
+    }
+
+    private int GetCharacterPriorityById(int characterId)
+    {
+        return _characterTrackingPreferencesById.TryGetValue(characterId, out var pref)
+            ? pref.Priority
+            : int.MaxValue;
+    }
+
+    private void RebuildCharacterTrackingCards()
+    {
+        var lastByCharacterId = new Dictionary<int, LocalCharacterSystemChange>();
+        lock (_localCharacterLocationsByCharacterId)
+        {
+            foreach (var kvp in _localCharacterLocationsByCharacterId)
+            {
+                lastByCharacterId[kvp.Key] = kvp.Value;
+            }
+        }
+
+        var ordered = _characterTrackingPreferencesById.Values
+            .OrderBy(x => x.Priority)
+            .ThenBy(x => x.CharacterName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        NormalizeCharacterPriorities(ordered);
+
+        _characterTrackingCards.Clear();
+        _enabledCharacterTrackingCards.Clear();
+        _disabledCharacterTrackingCards.Clear();
+        foreach (var pref in ordered)
+        {
+            var hasLast = lastByCharacterId.TryGetValue(pref.CharacterId, out var last);
+            var card = new CharacterTrackingCardViewModel
+            {
+                CharacterId = pref.CharacterId,
+                Name = string.IsNullOrWhiteSpace(pref.CharacterName) ? pref.CharacterId.ToString() : pref.CharacterName,
+                LastLocation = hasLast ? last!.SolarSystemName : "Unknown",
+                LastUpdated = hasLast ? FormatRelativeAge(last!.TimestampUtc) : "Never",
+                IsEnabled = pref.IsEnabled,
+                Priority = pref.Priority + 1
+            };
+            _characterTrackingCards.Add(card);
+            if (pref.IsEnabled)
+            {
+                _enabledCharacterTrackingCards.Add(card);
+            }
+            else
+            {
+                _disabledCharacterTrackingCards.Add(card);
+            }
+            _ = card.EnsurePortraitLoadedAsync();
+        }
+    }
+
+    private static void NormalizeCharacterPriorities(List<CharacterTrackingPreference> ordered)
+    {
+        for (var i = 0; i < ordered.Count; i++)
+        {
+            ordered[i].Priority = i;
+        }
+    }
+
+    private Task SaveCharacterTrackingPreferencesAsync()
+    {
+        var payload = _characterTrackingPreferencesById.Values
+            .OrderBy(x => x.Priority)
+            .ThenBy(x => x.CharacterName, StringComparer.OrdinalIgnoreCase)
+            .Select(x => new CharacterTrackingPreference
+            {
+                CharacterId = x.CharacterId,
+                CharacterName = x.CharacterName,
+                IsEnabled = x.IsEnabled,
+                Priority = x.Priority
+            })
+            .ToList();
+        return _settingsService.SetAsync(TrackingCharacterPreferencesKey, payload);
+    }
+
+    private static string FormatRelativeAge(DateTime timestampUtc)
+    {
+        var utc = timestampUtc.Kind == DateTimeKind.Utc ? timestampUtc : timestampUtc.ToUniversalTime();
+        var elapsed = DateTime.UtcNow - utc;
+        if (elapsed < TimeSpan.Zero)
+        {
+            elapsed = TimeSpan.Zero;
+        }
+
+        if (elapsed < TimeSpan.FromMinutes(1))
+        {
+            return $"{Math.Max(1, (int)elapsed.TotalSeconds)}s ago";
+        }
+
+        if (elapsed < TimeSpan.FromHours(1))
+        {
+            return $"{(int)elapsed.TotalMinutes}m ago";
+        }
+
+        if (elapsed < TimeSpan.FromDays(1))
+        {
+            return $"{(int)elapsed.TotalHours}h ago";
+        }
+
+        return $"{(int)elapsed.TotalDays}d ago";
     }
 
     public void ValidateLogsRootPath()

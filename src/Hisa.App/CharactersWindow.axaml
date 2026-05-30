@@ -1,0 +1,138 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:Hisa.App"
+        mc:Ignorable="d" d:DesignWidth="760" d:DesignHeight="560"
+        x:Class="Hisa.App.CharactersWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="Characters"
+        SizeToContent="Width"
+        MinWidth="700"
+        MaxWidth="980"
+        Background="#0D131D">
+  <Border Margin="12" Padding="12" Background="#121A26" BorderBrush="#263244" BorderThickness="1" CornerRadius="6">
+    <Grid RowDefinitions="Auto,*" RowSpacing="10">
+      <StackPanel Grid.Row="0" Spacing="4">
+        <TextBlock Text="Character Tracking" FontSize="16" FontWeight="SemiBold" Foreground="#D8E5F8" />
+        <TextBlock Text="Drag enabled cards to set marker priority. Disabled cards are ignored for map tracking."
+                   Foreground="#8A96A8"
+                   TextWrapping="Wrap" />
+      </StackPanel>
+
+      <ScrollViewer x:Name="CharacterCardsScrollViewer"
+                    Grid.Row="1"
+                    VerticalScrollBarVisibility="Auto"
+                    DragDrop.AllowDrop="True"
+                    DragDrop.DragOver="OnCharactersScrollDragOver"
+                    DragDrop.DragLeave="OnCharactersScrollDragLeave"
+                    DragDrop.Drop="OnCharactersScrollDrop">
+        <StackPanel Spacing="10">
+          <Border Background="#0F1724" BorderBrush="#243247" BorderThickness="1" CornerRadius="8" Padding="8">
+            <StackPanel Spacing="8">
+              <TextBlock Text="{Binding EnabledCharacterTrackingCards.Count, StringFormat=Enabled ({0})}" Foreground="#C9D9EE" FontWeight="SemiBold" />
+              <ItemsControl ItemsSource="{Binding EnabledCharacterTrackingCards}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Border Background="#101826"
+                            BorderBrush="#2A3A51"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Margin="0,0,0,8"
+                            Padding="8"
+                            DragDrop.AllowDrop="True"
+                            DragDrop.DragOver="OnEnabledCharacterCardDragOver"
+                            DragDrop.Drop="OnEnabledCharacterCardDrop">
+                      <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="10">
+                        <StackPanel Spacing="4" VerticalAlignment="Center">
+                          <Border Background="#1B2737" BorderBrush="#2B3C55" BorderThickness="1" CornerRadius="4" Padding="5,4"
+                                  PointerPressed="OnDragEnabledCharacterPointerPressed" Tag="{Binding CharacterId}">
+                            <UniformGrid Rows="3" Columns="2" Width="10" Height="14">
+                              <Ellipse Fill="#C9D9EE" Width="2.2" Height="2.2" />
+                              <Ellipse Fill="#C9D9EE" Width="2.2" Height="2.2" />
+                              <Ellipse Fill="#C9D9EE" Width="2.2" Height="2.2" />
+                              <Ellipse Fill="#C9D9EE" Width="2.2" Height="2.2" />
+                              <Ellipse Fill="#C9D9EE" Width="2.2" Height="2.2" />
+                              <Ellipse Fill="#C9D9EE" Width="2.2" Height="2.2" />
+                            </UniformGrid>
+                          </Border>
+                          <Button Width="24" Height="20" FontSize="10" Padding="0" Click="OnMoveCharacterUpClicked">
+                            <TextBlock Text="^" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                          </Button>
+                          <Button Width="24" Height="20" FontSize="10" Padding="0" Click="OnMoveCharacterDownClicked">
+                            <TextBlock Text="v" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                          </Button>
+                        </StackPanel>
+
+                        <Border Grid.Column="1" Width="56" Height="56" Background="#0B111A" CornerRadius="6" BorderBrush="#2B3C55" BorderThickness="1">
+                          <Image Source="{Binding DisplayPortrait}" Stretch="UniformToFill" />
+                        </Border>
+
+                        <StackPanel Grid.Column="2" Spacing="2" VerticalAlignment="Center">
+                          <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold" Foreground="#D8E5F8" />
+                            <TextBlock Text="{Binding CharacterId}" Foreground="#6E7D94" />
+                          </StackPanel>
+                          <TextBlock Text="{Binding LastLocation, StringFormat=Last: {0}}" Foreground="#A9BDD7" />
+                          <TextBlock Text="{Binding LastUpdated, StringFormat=Updated: {0}}" Foreground="#7F93AA" />
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                          <Border Background="#1B2737" BorderBrush="#2B3C55" BorderThickness="1" CornerRadius="4" Padding="6,2">
+                            <TextBlock Text="{Binding Priority, StringFormat=# {0}}" Foreground="#C9D9EE" />
+                          </Border>
+                          <CheckBox Content="Enabled"
+                                    IsChecked="{Binding IsEnabled}"
+                                    Checked="OnCharacterEnabledChanged"
+                                    Unchecked="OnCharacterEnabledChanged" />
+                        </StackPanel>
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </Border>
+
+          <Border Background="#0F1724" BorderBrush="#243247" BorderThickness="1" CornerRadius="8" Padding="8">
+            <StackPanel Spacing="8">
+              <TextBlock Text="{Binding DisabledCharacterTrackingCards.Count, StringFormat=Disabled ({0})}" Foreground="#C9D9EE" FontWeight="SemiBold" />
+              <ItemsControl ItemsSource="{Binding DisabledCharacterTrackingCards}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Border Background="#101826" BorderBrush="#2A3A51" BorderThickness="1" CornerRadius="8" Margin="0,0,0,8" Padding="8">
+                      <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                        <Border Width="56" Height="56" Background="#0B111A" CornerRadius="6" BorderBrush="#2B3C55" BorderThickness="1">
+                          <Image Source="{Binding DisplayPortrait}" Stretch="UniformToFill" />
+                        </Border>
+
+                        <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                          <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold" Foreground="#D8E5F8" />
+                            <TextBlock Text="{Binding CharacterId}" Foreground="#6E7D94" />
+                          </StackPanel>
+                          <TextBlock Text="{Binding LastLocation, StringFormat=Last: {0}}" Foreground="#A9BDD7" />
+                          <TextBlock Text="{Binding LastUpdated, StringFormat=Updated: {0}}" Foreground="#7F93AA" />
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                          <Border Background="#1B2737" BorderBrush="#2B3C55" BorderThickness="1" CornerRadius="4" Padding="6,2">
+                            <TextBlock Text="{Binding Priority, StringFormat=# {0}}" Foreground="#C9D9EE" />
+                          </Border>
+                          <CheckBox Content="Enabled"
+                                    IsChecked="{Binding IsEnabled}"
+                                    Checked="OnCharacterEnabledChanged"
+                                    Unchecked="OnCharacterEnabledChanged" />
+                        </StackPanel>
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+    </Grid>
+  </Border>
+</Window>

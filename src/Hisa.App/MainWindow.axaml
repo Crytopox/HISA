@@ -118,6 +118,7 @@
             <MenuFlyout>
               <MenuItem Header="Map Editor" Click="OnOpenMapEditorClicked" />
               <MenuItem Header="Preferences" Click="OnOpenPreferencesClicked" />
+              <MenuItem Header="Characters" Click="OnOpenCharactersClicked" />
               <MenuItem Header="SOV Upgrades" Click="OnOpenSovUpgradesClicked" />
               <MenuItem Header="Ansiblex Network" Click="OnOpenAnsiblexNetworkClicked" />
               <MenuItem Header="Debug Window" Click="OnOpenDebugConsoleClicked" />

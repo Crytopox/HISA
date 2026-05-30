@@ -24,6 +24,7 @@ public partial class MainWindow : Window
     private readonly DebugWindowViewModel? _debugWindowViewModel;
     private DebugWindow? _debugWindow;
     private PreferencesWindow? _preferencesWindow;
+    private CharactersWindow? _charactersWindow;
     private MapEditorWindow? _mapEditorWindow;
     private SovUpgradesWindow? _sovUpgradesWindow;
     private AnsiblexNetworkWindow? _ansiblexNetworkWindow;
@@ -144,6 +145,23 @@ public partial class MainWindow : Window
 
         _preferencesWindow.Show();
         _preferencesWindow.Activate();
+    }
+
+    private void OnOpenCharactersClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_charactersWindow is null)
+        {
+            if (_boundVm is null)
+            {
+                return;
+            }
+
+            _charactersWindow = new CharactersWindow(_boundVm);
+            _charactersWindow.Closed += (_, _) => _charactersWindow = null;
+        }
+
+        _charactersWindow.Show();
+        _charactersWindow.Activate();
     }
 
     private void OnOpenMapEditorClicked(object? sender, RoutedEventArgs e)
