@@ -4908,14 +4908,20 @@ public sealed class MapControl : Control
             return;
         }
 
-        var icons = iconKeys.Take(6).ToList();
+        var icons = iconKeys.Take(10).ToList();
         if (icons.Count == 0)
         {
             return;
         }
 
         var orbitRadius = scaledRingRadius;
-        var iconSize = Math.Clamp(nodeRadius * 3.1, 15.0, 33.0);
+        var iconScale = icons.Count switch
+        {
+            <= 6 => 3.1,
+            <= 8 => 2.65,
+            _ => 2.25
+        };
+        var iconSize = Math.Clamp(nodeRadius * iconScale, 11.0, 33.0);
         var rotationDegrees = _linkAnimationPhase * 126.0;
         for (var i = 0; i < icons.Count; i++)
         {

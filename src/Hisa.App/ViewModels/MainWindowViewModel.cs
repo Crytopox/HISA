@@ -322,7 +322,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private string _intelIncludeChannelsText = string.Empty;
     private string _intelIgnoreChannelsText = string.Empty;
     private int _intelSystemExpiryMinutes = 15;
-    private int _intelClearOverlayMinutes = 5;
     private CancellationTokenSource? _searchSuggestionsCts;
     private MapCoordinateMode _savedUniverseCoordinateMode = MapCoordinateMode.SdePlanarXY;
     private MapCoordinateMode _savedRegionCoordinateMode = MapCoordinateMode.SdePlanarXY;
@@ -381,7 +380,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string IntelIncludeChannelsKey = "Intel.Channels.Include";
     private const string IntelIgnoreChannelsKey = "Intel.Channels.Ignore";
     private const string IntelSystemExpiryMinutesKey = "Intel.SystemExpiryMinutes";
-    private const string IntelClearOverlayMinutesKey = "Intel.ClearOverlayMinutes";
     private readonly Task _initialLoadTask;
 
     public MainWindowViewModel(
@@ -488,12 +486,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     {
         get => _intelSystemExpiryMinutes;
         set => SetProperty(ref _intelSystemExpiryMinutes, Math.Clamp(value, 1, 180));
-    }
-
-    public int IntelClearOverlayMinutes
-    {
-        get => _intelClearOverlayMinutes;
-        set => SetProperty(ref _intelClearOverlayMinutes, Math.Clamp(value, 1, 60));
     }
 
     public MapViewMode SelectedViewMode
@@ -1700,7 +1692,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         CharacterPresenceHoverMaxNames = await _settingsService.GetAsync<int?>(CharacterPresenceHoverMaxNamesKey) ?? 6;
         IntelEnabled = await _settingsService.GetAsync<bool?>(IntelEnabledKey) ?? true;
         IntelSystemExpiryMinutes = await _settingsService.GetAsync<int?>(IntelSystemExpiryMinutesKey) ?? 15;
-        IntelClearOverlayMinutes = await _settingsService.GetAsync<int?>(IntelClearOverlayMinutesKey) ?? 5;
         var initialIncludeChannels = await _settingsService.GetAsync<List<string>>(IntelIncludeChannelsKey) ?? [];
         IntelIncludeChannelsText = string.Join(Environment.NewLine, initialIncludeChannels);
         IntelIgnoreChannelsText = string.Join(Environment.NewLine, await _settingsService.GetAsync<List<string>>(IntelIgnoreChannelsKey) ?? []);
@@ -1994,15 +1985,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 continue;
             }
 
-            var iconKeys = new List<string>();
-            foreach (var shipClass in system.ShipClasses.Distinct())
-            {
-                var icon = ShipClassToIconKey(shipClass);
-                if (!string.IsNullOrWhiteSpace(icon))
-                {
-                    iconKeys.Add(icon);
-                }
-            }
+            var iconKeys = BuildIntelRingIconKeys(system).ToList();
 
             foreach (var alert in system.Alerts.Distinct())
             {
@@ -2021,7 +2004,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
             if (iconKeys.Count > 0)
             {
-                iconsByNode[system.SolarSystemId] = iconKeys.Take(6).ToList();
+                iconsByNode[system.SolarSystemId] = iconKeys;
             }
 
             hostileScoresByNode[system.SolarSystemId] = Math.Max(0, system.HostileScore);
@@ -2062,6 +2045,78 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             IntelShipClass.Rookie => "crosshair",
             _ => "crosshair"
         };
+    }
+
+    private static IReadOnlyList<string> BuildIntelRingIconKeys(IntelSystemSnapshot system)
+    {
+        var classCounts = system.ShipClasses
+            .GroupBy(x => x)
+            .ToDictionary(g => g.Key, g => g.Count());
+        var maxIcons = Math.Clamp(2 + (int)Math.Ceiling(Math.Sqrt(Math.Max(1, system.HostileScore))), 3, 10);
+        var icons = new List<string>(maxIcons);
+
+        var priority = new[]
+        {
+            IntelShipClass.Titan,
+            IntelShipClass.Supercapital,
+            IntelShipClass.Capital,
+            IntelShipClass.Battleship,
+            IntelShipClass.Battlecruiser,
+            IntelShipClass.Cruiser,
+            IntelShipClass.Destroyer,
+            IntelShipClass.Frigate,
+            IntelShipClass.Freighter,
+            IntelShipClass.IndustrialCommand,
+            IntelShipClass.Industrial,
+            IntelShipClass.MiningBarge,
+            IntelShipClass.MiningFrigate,
+            IntelShipClass.Shuttle,
+            IntelShipClass.Capsule,
+            IntelShipClass.Rookie
+        };
+
+        foreach (var shipClass in priority)
+        {
+            if (icons.Count >= maxIcons)
+            {
+                break;
+            }
+
+            if (!classCounts.TryGetValue(shipClass, out var count) || count <= 0)
+            {
+                continue;
+            }
+
+            var icon = ShipClassToIconKey(shipClass);
+            if (string.IsNullOrWhiteSpace(icon))
+            {
+                continue;
+            }
+
+            icons.Add(icon);
+            classCounts[shipClass] = count - 1;
+        }
+
+        foreach (var shipClass in priority)
+        {
+            while (icons.Count < maxIcons && classCounts.TryGetValue(shipClass, out var count) && count > 0)
+            {
+                var icon = ShipClassToIconKey(shipClass);
+                if (!string.IsNullOrWhiteSpace(icon))
+                {
+                    icons.Add(icon);
+                }
+
+                classCounts[shipClass] = count - 1;
+            }
+
+            if (icons.Count >= maxIcons)
+            {
+                break;
+            }
+        }
+
+        return icons;
     }
 
     private void RebuildCharacterPresenceForView()
@@ -2452,7 +2507,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         await _settingsService.SetAsync(IntelIncludeChannelsKey, include);
         await _settingsService.SetAsync(IntelIgnoreChannelsKey, ignore);
         await _settingsService.SetAsync(IntelSystemExpiryMinutesKey, Math.Clamp(IntelSystemExpiryMinutes, 1, 180));
-        await _settingsService.SetAsync(IntelClearOverlayMinutesKey, Math.Clamp(IntelClearOverlayMinutes, 1, 60));
         StatusText = "Intel settings saved. Restart HISA intel feed to apply channel filter changes.";
     }
 
@@ -3855,4 +3909,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         };
     }
 }
+
+
 

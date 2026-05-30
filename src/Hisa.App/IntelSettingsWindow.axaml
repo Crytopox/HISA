@@ -16,12 +16,10 @@
       <StackPanel Spacing="8">
         <TextBlock Text="Intel Chat Settings" FontSize="14" FontWeight="SemiBold" Foreground="#D8E5F8" />
         <Border Padding="8" Background="#101826" BorderBrush="#243247" BorderThickness="1" CornerRadius="5">
-          <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="10" RowSpacing="6">
+          <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" ColumnSpacing="10" RowSpacing="6">
             <CheckBox Grid.Row="0" Grid.ColumnSpan="2" IsChecked="{Binding IntelEnabled}" Content="Enable intel chat parsing" />
             <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Foreground="#8A96A8" Text="System expiry (min)" />
             <NumericUpDown Grid.Row="1" Grid.Column="1" Minimum="1" Maximum="180" Increment="1" FormatString="N0" Value="{Binding IntelSystemExpiryMinutes}" Width="128" HorizontalAlignment="Left" />
-            <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Foreground="#8A96A8" Text="Clear expiry (min)" />
-            <NumericUpDown Grid.Row="2" Grid.Column="1" Minimum="1" Maximum="60" Increment="1" FormatString="N0" Value="{Binding IntelClearOverlayMinutes}" Width="128" HorizontalAlignment="Left" />
           </Grid>
         </Border>
 
@@ -57,3 +55,4 @@
     </ScrollViewer>
   </Border>
 </Window>
+

@@ -19,7 +19,6 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
     private const string IntelIncludeChannelsSettingsKey = "Intel.Channels.Include";
     private const string IntelIgnoreChannelsSettingsKey = "Intel.Channels.Ignore";
     private const string IntelSystemExpiryMinutesSettingsKey = "Intel.SystemExpiryMinutes";
-    private const string IntelClearOverlayMinutesSettingsKey = "Intel.ClearOverlayMinutes";
 
     private static readonly Regex ChatLineRegex = BuildChatLineRegex();
     private static readonly Regex IntelFileNameRegex = BuildIntelFileNameRegex();
@@ -33,12 +32,35 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
     private readonly object _gate = new();
     private FileSystemWatcher? _watcher;
     private Dictionary<string, long> _systemIdByName = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, IntelShipClass> _shipClassByName = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly IReadOnlyDictionary<string, string> ShipAliases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["kiki"] = "kikimora",
+        ["iki"] = "ikitursa",
+        ["stileto"] = "stiletto",
+        ["stilleto"] = "stiletto",
+        ["stilletto"] = "stiletto",
+        ["pod"] = "capsule",
+        ["exeq"] = "exequror",
+        ["cerb"] = "cerberus",
+        ["retri"] = "retribution",
+        ["sythe"] = "scythe",
+        ["trasher"] = "thrasher",
+        ["porp"] = "porpoise",
+        ["bni"] = "brutix navy issue",
+        ["eni"] = "exequror navy issue",
+        ["bc"] = "battlecruiser",
+        ["bs"] = "battleship",
+        ["jf"] = "jump freighter",
+        ["hictor"] = "heavy interdiction cruiser",
+        ["hac"] = "heavy assault cruiser",
+        ["fax"] = "force auxiliary"
+    };
     private IntelChatMessageParser? _messageParser;
     private bool _enabled = true;
     private HashSet<string> _includeChannels = new(StringComparer.OrdinalIgnoreCase);
     private HashSet<string> _ignoreChannels = new(StringComparer.OrdinalIgnoreCase);
     private TimeSpan _systemExpiry = TimeSpan.FromMinutes(15);
-    private TimeSpan _clearOverlayExpiry = TimeSpan.FromMinutes(5);
 
     public IntelChatLogFeedHostedService(
         ISettingsService settingsService,
@@ -74,7 +96,8 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         }
 
         _systemIdByName = await LoadSystemNameMapAsync(stoppingToken);
-        _messageParser = new IntelChatMessageParser(_systemIdByName);
+        _shipClassByName = await LoadShipClassMapAsync(stoppingToken);
+        _messageParser = new IntelChatMessageParser(_systemIdByName, _shipClassByName, ShipAliases);
         var chatLogsDirectory = await ResolveChatLogsDirectoryAsync(stoppingToken);
         if (chatLogsDirectory is null)
         {
@@ -109,9 +132,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         _includeChannels = include.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
         _ignoreChannels = ignore.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var expiryMinutes = Math.Clamp(await _settingsService.GetAsync<int?>(IntelSystemExpiryMinutesSettingsKey, cancellationToken) ?? 15, 1, 180);
-        var clearMinutes = Math.Clamp(await _settingsService.GetAsync<int?>(IntelClearOverlayMinutesSettingsKey, cancellationToken) ?? 5, 1, 60);
         _systemExpiry = TimeSpan.FromMinutes(expiryMinutes);
-        _clearOverlayExpiry = TimeSpan.FromMinutes(clearMinutes);
     }
 
     private async Task<Dictionary<string, long>> LoadSystemNameMapAsync(CancellationToken cancellationToken)
@@ -128,6 +149,59 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         }
 
         return result;
+    }
+
+    private async Task<Dictionary<string, IntelShipClass>> LoadShipClassMapAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = _sdeDatabase.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        var result = new Dictionary<string, IntelShipClass>(StringComparer.OrdinalIgnoreCase);
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT t.typeName, g.groupName
+            FROM invTypes t
+            INNER JOIN invGroups g ON g.groupID = t.groupID
+            WHERE g.categoryID = 6;
+            """;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var shipName = reader.GetString(0);
+            var groupName = reader.GetString(1);
+            var shipClass = ShipGroupToIntelShipClass(groupName);
+            if (shipClass == IntelShipClass.Unknown)
+            {
+                continue;
+            }
+
+            result[shipName.ToLowerInvariant()] = shipClass;
+        }
+
+        return result;
+    }
+
+    private static IntelShipClass ShipGroupToIntelShipClass(string groupName)
+    {
+        return groupName switch
+        {
+            "Capsule" => IntelShipClass.Capsule,
+            "Shuttle" => IntelShipClass.Shuttle,
+            "Corvette" => IntelShipClass.Rookie,
+            "Frigate" or "Assault Frigate" or "Interceptor" or "Electronic Attack Ship" or "Covert Ops" or "Logistics Frigate" or "Prototype Exploration Ship" or "Stealth Bomber" => IntelShipClass.Frigate,
+            "Destroyer" or "Command Destroyer" or "Tactical Destroyer" or "Interdictor" => IntelShipClass.Destroyer,
+            "Cruiser" or "Combat Recon Ship" or "Flag Cruiser" or "Force Recon Ship" or "Heavy Assault Cruiser" or "Heavy Interdiction Cruiser" or "Logistics" or "Strategic Cruiser" => IntelShipClass.Cruiser,
+            "Attack Battlecruiser" or "Combat Battlecruiser" or "Command Ship" => IntelShipClass.Battlecruiser,
+            "Battleship" or "Black Ops" or "Marauder" => IntelShipClass.Battleship,
+            "Carrier" or "Force Auxiliary" or "Dreadnought" or "Lancer Dreadnought" => IntelShipClass.Capital,
+            "Supercarrier" => IntelShipClass.Supercapital,
+            "Titan" => IntelShipClass.Titan,
+            "Hauler" or "Blockade Runner" or "Deep Space Transport" => IntelShipClass.Industrial,
+            "Expedition Frigate" => IntelShipClass.MiningFrigate,
+            "Mining Barge" or "Exhumer" => IntelShipClass.MiningBarge,
+            "Industrial Command Ship" => IntelShipClass.IndustrialCommand,
+            "Freighter" or "Jump Freighter" or "Capital Industrial Ship" => IntelShipClass.Freighter,
+            _ => IntelShipClass.Unknown
+        };
     }
 
     private async Task<string?> ResolveChatLogsDirectoryAsync(CancellationToken cancellationToken)
@@ -332,6 +406,11 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
                 continue;
             }
 
+            if (IsChannelMotdMessage(reporter, message))
+            {
+                continue;
+            }
+
             var report = ParseIntelReport(timestampUtc, channelName, reporter, message, filePath);
             if (report.Systems.Count == 0)
             {
@@ -384,6 +463,12 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
 
         timestampUtc = DateTime.SpecifyKind(parsed, DateTimeKind.Utc);
         return true;
+    }
+
+    private static bool IsChannelMotdMessage(string reporter, string message)
+    {
+        return reporter.Equals("EVE System", StringComparison.OrdinalIgnoreCase)
+            && message.StartsWith("Channel MOTD:", StringComparison.OrdinalIgnoreCase);
     }
 
     private IntelChatReport ParseIntelReport(DateTime timestampUtc, string channelName, string reporter, string message, string sourcePath)
@@ -506,7 +591,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             foreach (var pair in _snapshotBySystemId.ToList())
             {
                 var age = nowUtc - pair.Value.LastUpdatedUtc;
-                var maxAge = pair.Value.IsClear ? _clearOverlayExpiry : _systemExpiry;
+                var maxAge = _systemExpiry;
                 if (age > maxAge)
                 {
                     _snapshotBySystemId.Remove(pair.Key);
@@ -573,3 +658,5 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
     private static partial Regex BuildIntelFileNameRegex();
 
 }
+
+
