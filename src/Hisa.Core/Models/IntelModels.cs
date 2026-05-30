@@ -42,6 +42,8 @@ public sealed class IntelChatReport
     public required string SourceFilePath { get; init; }
     public required IReadOnlyList<string> Systems { get; init; }
     public required IReadOnlyList<IntelShipClass> ShipClasses { get; init; }
+    public required IReadOnlyList<string> ReportedShipNames { get; init; }
+    public required IReadOnlyList<int> ReportedShipTypeIds { get; init; }
     public required IReadOnlyList<IntelAlertType> Alerts { get; init; }
     public required IReadOnlyList<string> ReportedHostileNames { get; init; }
     public bool IsClear { get; init; }
@@ -57,6 +59,8 @@ public sealed class IntelSystemSnapshot
     public required string LastReporterName { get; init; }
     public required string LastMessageText { get; init; }
     public required IReadOnlyList<IntelShipClass> ShipClasses { get; init; }
+    public required IReadOnlyList<string> ShipNames { get; init; }
+    public required IReadOnlyList<int> ShipTypeIds { get; init; }
     public required IReadOnlyList<IntelAlertType> Alerts { get; init; }
     public required IReadOnlyList<string> HostilePilotNames { get; init; }
     public required IReadOnlyList<IntelRecentReport> RecentReports { get; init; }

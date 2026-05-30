@@ -570,6 +570,10 @@ public partial class MainWindow : Window
         }
 
         var systemId = card.SolarSystemId;
+        if (systemId <= 0)
+        {
+            return;
+        }
         var shouldSwitchToUniverse = vm.SelectedViewMode == Hisa.Core.Models.MapViewMode.UniverseRegions;
         if (vm.SelectedViewMode == Hisa.Core.Models.MapViewMode.Region)
         {
@@ -586,6 +590,72 @@ public partial class MainWindow : Window
         vm.SelectedNodeId = systemId;
         MainMapControl.FocusOnNodeWithZoomPercent(systemId, 0.9);
         await FocusSelectedNodeAtZoomAsync(systemId, 0.9);
+    }
+
+    private void OnIntelHostilePortraitClicked(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control { DataContext: IntelOverlayHostileCard hostile } || hostile.CharacterId is null)
+        {
+            return;
+        }
+
+        var url = $"https://zkillboard.com/character/{hostile.CharacterId.Value}/";
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = url,
+                UseShellExecute = true
+            });
+        }
+        catch
+        {
+            // Ignore failures from shell/browser launch.
+        }
+    }
+
+    private void OnIntelHostileCorporationClicked(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control { DataContext: IntelOverlayHostileCard hostile } || hostile.CorporationId is null)
+        {
+            return;
+        }
+
+        var url = $"https://zkillboard.com/corporation/{hostile.CorporationId.Value}/";
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = url,
+                UseShellExecute = true
+            });
+        }
+        catch
+        {
+            // Ignore failures from shell/browser launch.
+        }
+    }
+
+    private void OnIntelHostileAllianceClicked(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control { DataContext: IntelOverlayHostileCard hostile } || hostile.AllianceId is null)
+        {
+            return;
+        }
+
+        var url = $"https://zkillboard.com/alliance/{hostile.AllianceId.Value}/";
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = url,
+                UseShellExecute = true
+            });
+        }
+        catch
+        {
+            // Ignore failures from shell/browser launch.
+        }
     }
 
     private void ConfigureMapNodeMenuPlacement(Point clickPoint)

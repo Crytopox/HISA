@@ -4,6 +4,10 @@ using System.Runtime.InteropServices;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Net.Http;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Collections.Concurrent;
 using Avalonia;
 using Avalonia.Threading;
 using Avalonia.Media.Imaging;
@@ -315,6 +319,23 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly Dictionary<long, List<long>> _jumpRangeMembershipByNodeId = [];
     private readonly Dictionary<long, List<JumpRangeDistanceDisplay>> _jumpRangeDistancesByNodeId = [];
     private readonly Dictionary<long, IntelSystemSnapshot> _intelSnapshotsBySystemId = [];
+    private readonly List<IntelChatReport> _intelReportHistory = [];
+    private readonly Dictionary<string, int> _characterIdByName = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _invalidHostilePilotNames = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _characterIdLookupInFlight = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _characterIdLookupGate = new();
+    private readonly DispatcherTimer _intelOverlayAgeTimer;
+    private static readonly HttpClient IntelPortraitHttpClient = new();
+    private static readonly ConcurrentDictionary<int, Bitmap> IntelPortraitBitmapCache = new();
+    private static readonly ConcurrentDictionary<int, Bitmap> IntelCorporationBitmapCache = new();
+    private static readonly ConcurrentDictionary<int, Bitmap> IntelAllianceBitmapCache = new();
+    private static readonly ConcurrentDictionary<int, Bitmap> IntelShipBitmapCache = new();
+    private static readonly ConcurrentDictionary<int, (int CorpId, int? AllianceId)> IntelAffiliationsByCharacterId = new();
+    private static readonly ConcurrentDictionary<int, byte> IntelImageLoadingByCharacterId = new();
+    private static readonly string IntelImageCacheRoot = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "HISA",
+        "IntelImageCache");
     private IReadOnlyDictionary<long, IReadOnlyList<string>> _intelIconKeysByNodeId = new Dictionary<long, IReadOnlyList<string>>();
     private IReadOnlyDictionary<long, IReadOnlyList<string>> _intelRecentReportsByNodeId = new Dictionary<long, IReadOnlyList<string>>();
     private IReadOnlyDictionary<long, int> _intelHostileScoresByNodeId = new Dictionary<long, int>();
@@ -417,7 +438,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _ansiblexNetworkStateService.SnapshotUpdated += OnAnsiblexNetworkSnapshotUpdated;
         _incursionStateService.IncursionSnapshotUpdated += OnIncursionSnapshotUpdated;
         _localCharacterLocationFeed.SystemChanged += OnLocalCharacterSystemChanged;
+        _intelFeed.ReportReceived += OnIntelReportReceived;
         _intelFeed.SnapshotUpdated += OnIntelSnapshotUpdated;
+        _intelOverlayAgeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        _intelOverlayAgeTimer.Tick += (_, _) => RefreshIntelOverlayCardAges();
+        _intelOverlayAgeTimer.Start();
         _initialLoadTask = LoadAsync();
     }
 
@@ -1938,6 +1963,20 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         });
     }
 
+    private void OnIntelReportReceived(object? sender, IntelChatReport report)
+    {
+        lock (_intelReportHistory)
+        {
+            _intelReportHistory.Add(report);
+            if (_intelReportHistory.Count > 1000)
+            {
+                _intelReportHistory.RemoveRange(0, _intelReportHistory.Count - 1000);
+            }
+        }
+
+        Dispatcher.UIThread.Post(() => _ = RebuildActivityCardsAsync(CurrentGraph));
+    }
+
     private void OnIntelSnapshotUpdated(object? sender, IReadOnlyDictionary<long, IntelSystemSnapshot> snapshot)
     {
         lock (_intelSnapshotsBySystemId)
@@ -3141,9 +3180,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             allSystemIds.Add(center.SolarSystemId);
         }
         List<IntelSystemSnapshot> intelSnapshots;
+        List<IntelChatReport> intelHistory;
         lock (_intelSnapshotsBySystemId)
         {
             intelSnapshots = _intelSnapshotsBySystemId.Values.ToList();
+        }
+        lock (_intelReportHistory)
+        {
+            intelHistory = _intelReportHistory.ToList();
         }
         foreach (var intel in intelSnapshots)
         {
@@ -3290,48 +3334,94 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             .OrderBy(c => c.CenterSystemName, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        _intelCardsForView = intelSnapshots
-            .Where(s => !s.IsClear)
-            .Where(s => !LimitIntelReportsToCurrentRegion || visibleNodeIds.Contains(s.SolarSystemId))
-            .Select(s =>
+        var graphNodeByName = (graph?.Nodes ?? [])
+            .Where(n => !string.IsNullOrWhiteSpace(n.Name))
+            .GroupBy(n => n.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key!, g => g.First(), StringComparer.OrdinalIgnoreCase);
+        var snapshotByName = intelSnapshots
+            .GroupBy(s => s.SolarSystemName, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(x => x.LastUpdatedUtc).First(), StringComparer.OrdinalIgnoreCase);
+
+        _intelCardsForView = intelHistory
+            .Select(r =>
             {
-                metadataById.TryGetValue(s.SolarSystemId, out var meta);
-                var age = DateTime.UtcNow - s.LastUpdatedUtc;
+                var systemName = r.Systems.FirstOrDefault() ?? "Unknown";
+                long solarSystemId = 0;
+                string constellationName = "Unknown Constellation";
+                string regionName = "Unknown Region";
+                int? constellationId = null;
+                int? regionId = null;
+
+                if (graphNodeByName.TryGetValue(systemName, out var node))
+                {
+                    solarSystemId = node.Id;
+                    constellationName = string.IsNullOrWhiteSpace(node.ConstellationName) ? constellationName : node.ConstellationName;
+                    regionName = string.IsNullOrWhiteSpace(node.RegionName) ? regionName : node.RegionName;
+                    constellationId = node.ConstellationId;
+                    regionId = node.RegionId;
+                }
+                else if (snapshotByName.TryGetValue(systemName, out var snapshotRef))
+                {
+                    solarSystemId = snapshotRef.SolarSystemId;
+                    if (metadataById.TryGetValue(snapshotRef.SolarSystemId, out var metaFromSnapshot))
+                    {
+                        constellationName = metaFromSnapshot.ConstellationName ?? constellationName;
+                        regionName = metaFromSnapshot.RegionName ?? regionName;
+                        constellationId = metaFromSnapshot.ConstellationId;
+                        regionId = metaFromSnapshot.RegionId;
+                    }
+                }
+
+                if (LimitIntelReportsToCurrentRegion && solarSystemId > 0 && !visibleNodeIds.Contains(solarSystemId))
+                {
+                    return null;
+                }
+
+                var age = DateTime.UtcNow - r.TimestampUtc;
                 if (age < TimeSpan.Zero)
                 {
                     age = TimeSpan.Zero;
                 }
 
-                var shipSummary = s.ShipClasses.Count > 0
-                    ? string.Join(", ", s.ShipClasses.Select(x => x.ToString()))
+                var shipSummary = r.ReportedShipNames.Count > 0
+                    ? string.Join(", ", r.ReportedShipNames.Distinct(StringComparer.OrdinalIgnoreCase))
+                    : r.ShipClasses.Count > 0
+                        ? string.Join(", ", r.ShipClasses.Select(x => x.ToString()))
                     : "Unknown";
-                var maxShipTier = GetMaxShipThreatTier(s.ShipClasses);
+                var maxShipTier = GetMaxShipThreatTier(r.ShipClasses);
                 var shipBadgeColors = GetThreatBadgeColors(maxShipTier / 8.0);
-                var hostileScore = Math.Max(0, s.HostileScore);
+                var hostileScore = Math.Max(0, r.ReportedHostileCount > 0 ? r.ReportedHostileCount : r.ReportedHostileNames.Count);
                 var hostileBadgeColors = GetThreatBadgeColors(Math.Clamp(hostileScore / 12.0, 0.0, 1.0));
+                var hostileCards = BuildIntelHostileCards(r.ReportedHostileNames, r.ReportedShipNames, r.ReportedShipTypeIds, r.ShipClasses);
+                var shipsSummary = BuildIntelShipsSummary(r.ReportedShipNames, r.ReportedShipTypeIds, r.ShipClasses);
 
                 return new IntelOverlayCard
                 {
-                    SortTimestampUtc = s.LastUpdatedUtc,
-                    SolarSystemId = s.SolarSystemId,
-                    SystemName = meta?.SolarSystemName ?? s.SolarSystemName,
-                    ConstellationName = meta?.ConstellationName ?? "Unknown Constellation",
-                    RegionName = meta?.RegionName ?? "Unknown Region",
-                    ConstellationId = meta?.ConstellationId,
-                    RegionId = meta?.RegionId,
-                    ChannelName = s.LastChannelName,
-                    ReporterName = s.LastReporterName,
-                    AgeSummary = FormatOverlayAge(age),
-                    MessageText = s.LastMessageText,
+                    SortTimestampUtc = r.TimestampUtc,
+                    LastUpdatedUtc = r.TimestampUtc,
+                    SolarSystemId = solarSystemId,
+                    SystemName = systemName,
+                    ConstellationName = constellationName,
+                    RegionName = regionName,
+                    ConstellationId = constellationId,
+                    RegionId = regionId,
+                    ChannelName = r.ChannelName,
+                    ReporterName = r.ReporterName,
+                    AgeSummary = FormatOverlayAgeClock(age),
+                    MessageText = r.MessageText,
+                    Hostiles = hostileCards,
+                    ShipsSummary = shipsSummary,
                     ShipClassSummary = shipSummary,
                     HostileCount = hostileScore,
                     ShipBadgeBackgroundHex = shipBadgeColors.BackgroundHex,
                     ShipBadgeBorderHex = shipBadgeColors.BorderHex,
                     HostileBadgeBackgroundHex = hostileBadgeColors.BackgroundHex,
                     HostileBadgeBorderHex = hostileBadgeColors.BorderHex,
-                    AccentHex = s.IsClear ? "#6FE38E" : "#FFB347"
+                    AccentHex = r.IsClear ? "#6FE38E" : "#FFB347"
                 };
             })
+            .Where(c => c is not null)
+            .Select(c => c!)
             .OrderByDescending(c => c.SortTimestampUtc)
             .ThenBy(c => c.SystemName, StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -3352,6 +3442,718 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasNoIncursionOverlayData)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasNoStormOverlayData)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasNoIntelOverlayData)));
+
+        _ = ResolveIntelCharacterIdsAsync();
+        _ = EnsureShipImagesForIntelCardsAsync();
+    }
+
+    private List<IntelOverlayShipSummaryCard> BuildIntelShipsSummary(
+        IReadOnlyList<string> shipNames,
+        IReadOnlyList<int> shipTypeIds,
+        IReadOnlyList<IntelShipClass> shipClasses)
+    {
+        var items = new List<(string Name, int? TypeId, string IconKey)>();
+        if (shipNames.Count > 0)
+        {
+            for (var i = 0; i < shipNames.Count; i++)
+            {
+                var name = shipNames[i];
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    continue;
+                }
+                var typeId = shipTypeIds.Count > 0 ? shipTypeIds[Math.Min(i, shipTypeIds.Count - 1)] : (int?)null;
+                var shipClass = shipClasses.Count > 0 ? shipClasses[Math.Min(i, shipClasses.Count - 1)] : IntelShipClass.Unknown;
+                items.Add((name.Trim(), typeId, ShipClassToOverlayIconKey(shipClass)));
+            }
+        }
+
+        var grouped = items
+            .GroupBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(g =>
+            {
+                var first = g.First();
+                Bitmap? bitmap = null;
+                if (first.TypeId is { } id && IntelShipBitmapCache.TryGetValue(id, out var b))
+                {
+                    bitmap = b;
+                }
+                return new IntelOverlayShipSummaryCard
+                {
+                    ShipName = first.Name,
+                    Count = g.Count(),
+                    ShipTypeId = first.TypeId,
+                    ShipIconKey = first.IconKey,
+                    ShipBitmap = bitmap
+                };
+            })
+            .OrderByDescending(x => x.Count)
+            .ThenBy(x => x.ShipName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return grouped;
+    }
+
+    private async Task EnsureShipImagesForIntelCardsAsync()
+    {
+        var typeIds = _intelCardsForView
+            .SelectMany(c => c.Hostiles)
+            .Select(h => h.ShipTypeId)
+            .Where(id => id is > 0)
+            .Select(id => id!.Value)
+            .Concat(_intelCardsForView.SelectMany(c => c.ShipsSummary).Select(s => s.ShipTypeId).Where(id => id is > 0).Select(id => id!.Value))
+            .Distinct()
+            .ToList();
+        if (typeIds.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var typeId in typeIds)
+        {
+            if (IntelShipBitmapCache.ContainsKey(typeId))
+            {
+                continue;
+            }
+
+            var bitmap = await GetOrLoadCachedBitmapAsync(
+                IntelShipBitmapCache,
+                typeId,
+                "ships",
+                $"{typeId}.png",
+                $"https://images.evetech.net/types/{typeId}/icon?tenant=tranquility&size=64");
+            if (bitmap is null)
+            {
+                continue;
+            }
+
+            foreach (var card in _intelCardsForView)
+            {
+                foreach (var hostile in card.Hostiles)
+                {
+                    if (hostile.ShipTypeId == typeId)
+                    {
+                        hostile.ShipBitmap = bitmap;
+                    }
+                }
+                foreach (var ship in card.ShipsSummary)
+                {
+                    if (ship.ShipTypeId == typeId)
+                    {
+                        ship.ShipBitmap = bitmap;
+                    }
+                }
+            }
+        }
+
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelCardsForView)));
+    }
+
+    private List<IntelOverlayHostileCard> BuildIntelHostileCards(
+        IReadOnlyList<string> hostilePilotNames,
+        IReadOnlyList<string> shipNames,
+        IReadOnlyList<int> shipTypeIds,
+        IReadOnlyList<IntelShipClass> shipClasses)
+    {
+        var names = hostilePilotNames
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Where(x => !_invalidHostilePilotNames.Contains(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (names.Count == 0)
+        {
+            return [];
+        }
+
+        var rankedShipClasses = (shipClasses.Count > 0 ? shipClasses : [IntelShipClass.Unknown])
+            .OrderByDescending(GetShipClassThreatTier)
+            .ToList();
+        var shipNamesExpanded = shipNames
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .ToList();
+
+        var result = new List<IntelOverlayHostileCard>(names.Count);
+        for (var i = 0; i < names.Count; i++)
+        {
+            var shipClass = rankedShipClasses[Math.Min(i, rankedShipClasses.Count - 1)];
+            var shipName = shipNamesExpanded.Count > 0
+                ? shipNamesExpanded[Math.Min(i, shipNamesExpanded.Count - 1)]
+                : ShipClassToDisplayName(shipClass);
+            var shipTypeId = shipTypeIds.Count > 0 ? shipTypeIds[Math.Min(i, shipTypeIds.Count - 1)] : (int?)null;
+            result.Add(new IntelOverlayHostileCard
+            {
+                Name = names[i],
+                ShipTypeId = shipTypeId,
+                ShipBitmap = shipTypeId is { } id && IntelShipBitmapCache.TryGetValue(id, out var cachedShip) ? cachedShip : null,
+                ShipDisplayName = shipName,
+                ShipIconKey = ShipClassToOverlayIconKey(shipClass)
+            });
+        }
+
+        return result;
+    }
+
+    private static int GetShipClassThreatTier(IntelShipClass shipClass)
+    {
+        return shipClass switch
+        {
+            IntelShipClass.Titan => 8,
+            IntelShipClass.Supercapital => 7,
+            IntelShipClass.Capital => 6,
+            IntelShipClass.Battleship => 5,
+            IntelShipClass.Battlecruiser => 4,
+            IntelShipClass.Cruiser => 3,
+            IntelShipClass.Destroyer => 2,
+            IntelShipClass.Frigate => 1,
+            _ => 0
+        };
+    }
+
+    private static string ShipClassToDisplayName(IntelShipClass shipClass)
+    {
+        return shipClass switch
+        {
+            IntelShipClass.Battlecruiser => "Battlecruiser",
+            IntelShipClass.Supercapital => "Supercapital",
+            IntelShipClass.IndustrialCommand => "Industrial Command",
+            IntelShipClass.MiningFrigate => "Mining Frigate",
+            IntelShipClass.MiningBarge => "Mining Barge",
+            IntelShipClass.Capsule => "Capsule",
+            IntelShipClass.Rookie => "Rookie",
+            IntelShipClass.Unknown => "Unknown",
+            _ => shipClass.ToString()
+        };
+    }
+
+    private static string ShipClassToOverlayIconKey(IntelShipClass shipClass)
+    {
+        return shipClass switch
+        {
+            IntelShipClass.Titan => "titan",
+            IntelShipClass.Supercapital => "supercapital",
+            IntelShipClass.Capital => "capital",
+            IntelShipClass.Battleship => "battleship",
+            IntelShipClass.Battlecruiser => "battlecruiser",
+            IntelShipClass.Cruiser => "cruiser",
+            IntelShipClass.Destroyer => "destroyer",
+            IntelShipClass.Frigate => "frigate",
+            IntelShipClass.Industrial => "industrial",
+            IntelShipClass.IndustrialCommand => "industrialcommand",
+            IntelShipClass.Freighter => "freighter",
+            IntelShipClass.MiningFrigate => "miningfrigate",
+            IntelShipClass.MiningBarge => "miningbarge",
+            IntelShipClass.Capsule => "capsule",
+            IntelShipClass.Shuttle => "shuttle",
+            IntelShipClass.Rookie => "rookie",
+            _ => "crosshair"
+        };
+    }
+
+    private void RefreshIntelOverlayCardAges()
+    {
+        if (_intelCardsForView.Count == 0)
+        {
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        foreach (var card in _intelCardsForView)
+        {
+            var age = now - card.LastUpdatedUtc;
+            if (age < TimeSpan.Zero)
+            {
+                age = TimeSpan.Zero;
+            }
+
+            card.AgeSummary = FormatOverlayAgeClock(age);
+        }
+
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelCardsForView)));
+    }
+
+    private static string FormatOverlayAgeClock(TimeSpan age)
+    {
+        if (age < TimeSpan.Zero)
+        {
+            age = TimeSpan.Zero;
+        }
+
+        var totalMinutes = (int)age.TotalMinutes;
+        var seconds = age.Seconds;
+        return $"{totalMinutes:00}:{seconds:00}";
+    }
+
+    private Task ResolveIntelCharacterIdsAsync()
+    {
+        var unresolvedNames = _intelCardsForView
+            .SelectMany(c => c.Hostiles)
+            .Where(h => h.CharacterId is null)
+            .Select(h => h.Name)
+            .Where(n => !string.IsNullOrWhiteSpace(n))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var name in unresolvedNames)
+        {
+            var trimmed = name.Trim();
+            if (_characterIdByName.TryGetValue(trimmed, out var cachedId))
+            {
+                ApplyResolvedCharacterId(trimmed, trimmed, cachedId);
+                _ = EnsureIntelHostileImagesAsync(cachedId);
+                continue;
+            }
+
+            lock (_characterIdLookupGate)
+            {
+                if (_characterIdLookupInFlight.Contains(trimmed))
+                {
+                    continue;
+                }
+
+                _characterIdLookupInFlight.Add(trimmed);
+            }
+
+            var alternatives = BuildAlternativePilotNameCandidates(trimmed);
+            _ = ResolveCharacterIdByNameAsync(trimmed, alternatives);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private IReadOnlyList<string> BuildAlternativePilotNameCandidates(string seedName)
+    {
+        var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var card in _intelCardsForView)
+        {
+            if (!card.Hostiles.Any(h => string.Equals(h.Name, seedName, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            foreach (var candidate in ExtractPilotNameCandidates(card.MessageText))
+            {
+                candidates.Add(candidate);
+            }
+        }
+
+        candidates.RemoveWhere(x => string.Equals(x, seedName, StringComparison.OrdinalIgnoreCase));
+        return candidates.ToList();
+    }
+
+    private static IReadOnlyList<string> ExtractPilotNameCandidates(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return [];
+        }
+
+        var words = message
+            .Split([' ', '\t', ',', ';', ':', '|', '/', '\\', '(', ')', '[', ']', '{', '}', '<', '>', '.', '!', '?'], StringSplitOptions.RemoveEmptyEntries)
+            .Select(x => x.Trim())
+            .Where(x => x.Length >= 3 && x.All(c => char.IsLetter(c) || c == '\'' || c == '-'))
+            .ToList();
+        if (words.Count == 0)
+        {
+            return [];
+        }
+
+        static bool IsNameToken(string word) => char.IsUpper(word[0]);
+
+        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < words.Count; i++)
+        {
+            if (!IsNameToken(words[i]))
+            {
+                continue;
+            }
+
+            // Single token candidate
+            result.Add(words[i]);
+
+            // Two-token candidate (most common EVE pilot name pattern in intel)
+            if (i + 1 < words.Count && IsNameToken(words[i + 1]))
+            {
+                result.Add($"{words[i]} {words[i + 1]}");
+            }
+        }
+
+        return result.ToList();
+    }
+
+    private async Task ResolveCharacterIdByNameAsync(string characterName, IReadOnlyList<string> alternatives)
+    {
+        try
+        {
+            var searchNames = new List<string> { characterName };
+            foreach (var candidate in alternatives)
+            {
+                if (!searchNames.Contains(candidate, StringComparer.OrdinalIgnoreCase))
+                {
+                    searchNames.Add(candidate);
+                }
+            }
+
+            var payload = JsonSerializer.Serialize(searchNames);
+            using var request = new HttpRequestMessage(HttpMethod.Post, "https://esi.evetech.net/latest/universe/ids/?datasource=tranquility");
+            request.Content = new StringContent(payload, Encoding.UTF8, "application/json");
+            using var response = await IntelPortraitHttpClient.SendAsync(request);
+            if (!response.IsSuccessStatusCode)
+            {
+                return;
+            }
+
+            await using var responseStream = await response.Content.ReadAsStreamAsync();
+            var result = await JsonSerializer.DeserializeAsync<EsiUniverseIdsResponse>(responseStream);
+            var orderedMatches = result?.Characters?
+                .OrderBy(x => searchNames.FindIndex(n => string.Equals(n, x.Name, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+            var match = orderedMatches?.FirstOrDefault(x =>
+                searchNames.Any(n => string.Equals(n, x.Name, StringComparison.OrdinalIgnoreCase)));
+            if (match is null || match.Id <= 0)
+            {
+                _invalidHostilePilotNames.Add(characterName);
+                Dispatcher.UIThread.Post(() => _ = RebuildActivityCardsAsync(CurrentGraph));
+                return;
+            }
+
+            _characterIdByName[characterName] = match.Id;
+            _characterIdByName[match.Name] = match.Id;
+            ApplyResolvedCharacterId(characterName, match.Name, match.Id);
+            _ = EnsureIntelHostileImagesAsync(match.Id);
+        }
+        catch
+        {
+            // Ignore lookup failures; overlay keeps name-only hostile entry.
+        }
+        finally
+        {
+            lock (_characterIdLookupGate)
+            {
+                _characterIdLookupInFlight.Remove(characterName);
+            }
+        }
+    }
+
+    private void ApplyResolvedCharacterId(string characterName, string resolvedName, int characterId)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            var changed = false;
+            var pendingAdditionsByCard = new Dictionary<IntelOverlayCard, List<IntelOverlayHostileCard>>();
+            foreach (var card in _intelCardsForView)
+            {
+                foreach (var hostile in card.Hostiles)
+                {
+                    if (!string.Equals(hostile.Name, characterName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    string? additionalPilotCandidate = null;
+                    var parts = characterName.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    if (parts.Length == 2)
+                    {
+                        if (string.Equals(resolvedName, parts[0], StringComparison.OrdinalIgnoreCase))
+                        {
+                            additionalPilotCandidate = parts[1];
+                        }
+                        else if (string.Equals(resolvedName, parts[1], StringComparison.OrdinalIgnoreCase))
+                        {
+                            additionalPilotCandidate = parts[0];
+                        }
+                    }
+
+                    if (!string.Equals(hostile.Name, resolvedName, StringComparison.Ordinal))
+                    {
+                        hostile.Name = resolvedName;
+                        changed = true;
+                    }
+                    hostile.CharacterId = characterId;
+                    if (IntelPortraitBitmapCache.TryGetValue(characterId, out var portrait))
+                    {
+                        hostile.PortraitBitmap = portrait;
+                    }
+                    if (IntelAffiliationsByCharacterId.TryGetValue(characterId, out var affiliation))
+                    {
+                        hostile.CorporationId = affiliation.CorpId > 0 ? affiliation.CorpId : null;
+                        hostile.AllianceId = affiliation.AllianceId;
+                        if (IntelCorporationBitmapCache.TryGetValue(affiliation.CorpId, out var corp))
+                        {
+                            hostile.CorporationBitmap = corp;
+                        }
+                        if (affiliation.AllianceId is { } allianceId &&
+                            IntelAllianceBitmapCache.TryGetValue(allianceId, out var alliance))
+                        {
+                            hostile.AllianceBitmap = alliance;
+                        }
+                    }
+                    changed = true;
+
+                    if (!string.IsNullOrWhiteSpace(additionalPilotCandidate) &&
+                        additionalPilotCandidate.Length >= 3 &&
+                        card.Hostiles.All(h => !string.Equals(h.Name, additionalPilotCandidate, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        var inferred = new IntelOverlayHostileCard
+                        {
+                            Name = additionalPilotCandidate,
+                            ShipDisplayName = "Unknown",
+                            ShipIconKey = "crosshair"
+                        };
+                        if (!pendingAdditionsByCard.TryGetValue(card, out var pending))
+                        {
+                            pending = [];
+                            pendingAdditionsByCard[card] = pending;
+                        }
+                        pending.Add(inferred);
+                    }
+                }
+            }
+
+            foreach (var kvp in pendingAdditionsByCard)
+            {
+                if (kvp.Key.Hostiles is not List<IntelOverlayHostileCard> hostileList)
+                {
+                    continue;
+                }
+
+                foreach (var inferred in kvp.Value)
+                {
+                    if (hostileList.Any(h => string.Equals(h.Name, inferred.Name, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        continue;
+                    }
+
+                    hostileList.Add(inferred);
+                    changed = true;
+                }
+            }
+
+            if (changed)
+            {
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelCardsForView)));
+                _ = ResolveIntelCharacterIdsAsync();
+            }
+        });
+    }
+
+    private async Task EnsureIntelHostileImagesAsync(int characterId)
+    {
+        if (!IntelImageLoadingByCharacterId.TryAdd(characterId, 0))
+        {
+            return;
+        }
+
+        try
+        {
+            var portrait = await GetOrLoadCachedBitmapAsync(
+                IntelPortraitBitmapCache,
+                characterId,
+                "characters",
+                $"{characterId}.png",
+                $"https://images.evetech.net/characters/{characterId}/portrait?tenant=tranquility&size=64");
+
+            if (!IntelAffiliationsByCharacterId.TryGetValue(characterId, out var affiliation))
+            {
+                affiliation = await LoadCharacterAffiliationAsync(characterId) ?? default;
+                if (affiliation.CorpId > 0)
+                {
+                    IntelAffiliationsByCharacterId[characterId] = affiliation;
+                }
+            }
+
+            Bitmap? corpBitmap = null;
+            Bitmap? allianceBitmap = null;
+            if (affiliation.CorpId > 0)
+            {
+                corpBitmap = await GetOrLoadCachedBitmapAsync(
+                    IntelCorporationBitmapCache,
+                    affiliation.CorpId,
+                    "corporations",
+                    $"{affiliation.CorpId}.png",
+                    $"https://images.evetech.net/corporations/{affiliation.CorpId}/logo?tenant=tranquility&size=64");
+            }
+            if (affiliation.AllianceId is { } allianceId && allianceId > 0)
+            {
+                allianceBitmap = await GetOrLoadCachedBitmapAsync(
+                    IntelAllianceBitmapCache,
+                    allianceId,
+                    "alliances",
+                    $"{allianceId}.png",
+                    $"https://images.evetech.net/alliances/{allianceId}/logo?tenant=tranquility&size=64");
+            }
+
+            Dispatcher.UIThread.Post(() =>
+            {
+                var changed = false;
+                foreach (var card in _intelCardsForView)
+                {
+                    foreach (var hostile in card.Hostiles)
+                    {
+                        if (hostile.CharacterId != characterId)
+                        {
+                            continue;
+                        }
+
+                        if (!ReferenceEquals(hostile.PortraitBitmap, portrait))
+                        {
+                            hostile.PortraitBitmap = portrait;
+                            changed = true;
+                        }
+                        if (!ReferenceEquals(hostile.CorporationBitmap, corpBitmap))
+                        {
+                            hostile.CorporationBitmap = corpBitmap;
+                            changed = true;
+                        }
+                        var corpId = affiliation.CorpId > 0 ? affiliation.CorpId : (int?)null;
+                        if (hostile.CorporationId != corpId)
+                        {
+                            hostile.CorporationId = corpId;
+                            changed = true;
+                        }
+                        if (hostile.AllianceId != affiliation.AllianceId)
+                        {
+                            hostile.AllianceId = affiliation.AllianceId;
+                            changed = true;
+                        }
+                        if (!ReferenceEquals(hostile.AllianceBitmap, allianceBitmap))
+                        {
+                            hostile.AllianceBitmap = allianceBitmap;
+                            changed = true;
+                        }
+                    }
+                }
+
+                if (changed)
+                {
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelCardsForView)));
+                }
+            });
+        }
+        catch
+        {
+            // Ignore portrait/logo load failures.
+        }
+        finally
+        {
+            IntelImageLoadingByCharacterId.TryRemove(characterId, out _);
+        }
+    }
+
+    private static async Task<Bitmap?> GetOrLoadCachedBitmapAsync(
+        ConcurrentDictionary<int, Bitmap> memoryCache,
+        int key,
+        string folderName,
+        string fileName,
+        string sourceUrl)
+    {
+        if (memoryCache.TryGetValue(key, out var cached))
+        {
+            return cached;
+        }
+
+        var filePath = Path.Combine(IntelImageCacheRoot, folderName, fileName);
+        var bitmap = await LoadBitmapFromDiskOrDownloadAsync(filePath, sourceUrl);
+        if (bitmap is not null)
+        {
+            memoryCache[key] = bitmap;
+        }
+
+        return bitmap;
+    }
+
+    private static async Task<Bitmap?> LoadBitmapFromDiskOrDownloadAsync(string filePath, string url)
+    {
+        var existing = TryLoadBitmapFromFile(filePath);
+        if (existing is not null)
+        {
+            return existing;
+        }
+
+        try
+        {
+            var directory = Path.GetDirectoryName(filePath);
+            if (!string.IsNullOrWhiteSpace(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            using var networkStream = await IntelPortraitHttpClient.GetStreamAsync(url);
+            await using var fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.Read);
+            await networkStream.CopyToAsync(fileStream);
+            await fileStream.FlushAsync();
+
+            return TryLoadBitmapFromFile(filePath);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static Bitmap? TryLoadBitmapFromFile(string filePath)
+    {
+        try
+        {
+            if (!File.Exists(filePath))
+            {
+                return null;
+            }
+
+            return new Bitmap(filePath);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static async Task<(int CorpId, int? AllianceId)?> LoadCharacterAffiliationAsync(int characterId)
+    {
+        try
+        {
+            using var response = await IntelPortraitHttpClient.GetAsync($"https://esi.evetech.net/latest/characters/{characterId}/?datasource=tranquility");
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            await using var responseStream = await response.Content.ReadAsStreamAsync();
+            var details = await JsonSerializer.DeserializeAsync<EsiCharacterDetailsResponse>(responseStream);
+            if (details is null || details.CorporationId <= 0)
+            {
+                return null;
+            }
+
+            return (details.CorporationId, details.AllianceId);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private sealed class EsiUniverseIdsResponse
+    {
+        [JsonPropertyName("characters")]
+        public List<EsiUniverseIdEntry>? Characters { get; init; }
+    }
+
+    private sealed class EsiUniverseIdEntry
+    {
+        [JsonPropertyName("id")]
+        public int Id { get; init; }
+        [JsonPropertyName("name")]
+        public string Name { get; init; } = string.Empty;
+    }
+
+    private sealed class EsiCharacterDetailsResponse
+    {
+        [JsonPropertyName("corporation_id")]
+        public int CorporationId { get; init; }
+        [JsonPropertyName("alliance_id")]
+        public int? AllianceId { get; init; }
     }
 
     private static string FormatOverlayAge(TimeSpan age)

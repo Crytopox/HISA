@@ -25,6 +25,15 @@ public sealed partial class IntelChatMessageParser
         "hostile", "hostiles", "reported", "report", "local", "intel", "up", "down", "got", "tackled",
         "kos", "wtb", "where", "status", "shiptypes", "shiptype", "what", "many"
     };
+    private static readonly HashSet<string> IntelAcronymStopWords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "nv", "clr", "clear", "gc", "gatecamp", "camp", "spike", "wh", "k162",
+        "wt", "warp", "gate", "out", "in", "ts", "comms", "intel", "status",
+        "neut", "neuts", "hostile", "hostiles", "local", "eyes", "point", "tackle",
+        "fleet", "sabre", "sabres", "dictor", "dictors", "bubble", "bubbles", "cyno", "blops",
+        "no", "visual", "no-visual", "novisual", "safe", "off", "dock", "docked",
+        "jump", "bridged", "bridge"
+    };
 
     public IntelChatMessageParser(
         IReadOnlyDictionary<string, long> systemIdByName,
@@ -41,10 +50,13 @@ public sealed partial class IntelChatMessageParser
         var message = messageText?.Trim() ?? string.Empty;
         var lower = $" {message.ToLowerInvariant()} ";
         var systems = ResolveSystems(message);
-        var shipClasses = DetectShipClasses(message, lower);
+        var detectedShips = DetectShips(message, lower);
+        var shipClasses = detectedShips.Select(x => x.ShipClass).ToList();
+        var shipNames = detectedShips.Select(x => x.ShipName).ToList();
         var alerts = DetectAlerts(lower);
         var isClear = IsClear(lower);
-        var hostileNames = isClear ? [] : ExtractHostileNames(message, systems);
+        var explicitCount = isClear ? 0 : ExtractExplicitHostileCount(message.ToLowerInvariant());
+        var hostileNames = isClear ? [] : ExtractBestHostileNames(message, systems, explicitCount);
         if (isClear)
         {
             alerts.Add(IntelAlertType.Clear);
@@ -55,6 +67,7 @@ public sealed partial class IntelChatMessageParser
         {
             Systems = systems,
             ShipClasses = shipClasses.ToList(),
+            ShipNames = shipNames,
             Alerts = alerts.ToList(),
             IsClear = isClear,
             HostileCount = hostileCount,
@@ -74,7 +87,39 @@ public sealed partial class IntelChatMessageParser
         return hostileNamesCount;
     }
 
-    private List<string> ExtractHostileNames(string message, IReadOnlySet<string> systems)
+    private List<string> ExtractBestHostileNames(string message, IReadOnlySet<string> systems, int explicitCount)
+    {
+        var pairOnly = ExtractHostileNames(message, systems, allowSingleWordNames: false);
+        var pairsPlusSingles = ExtractHostileNames(message, systems, allowSingleWordNames: true);
+        var candidates = new List<List<string>> { pairOnly, pairsPlusSingles };
+        return candidates
+            .OrderByDescending(c => ScoreHostileCandidate(c, explicitCount))
+            .ThenByDescending(c => c.Count)
+            .FirstOrDefault() ?? [];
+    }
+
+    private static int ScoreHostileCandidate(IReadOnlyList<string> names, int explicitCount)
+    {
+        var score = 0;
+        foreach (var name in names)
+        {
+            score += name.Contains(' ') ? 6 : 2;
+        }
+
+        if (explicitCount > 0)
+        {
+            var delta = Math.Abs(explicitCount - names.Count);
+            score -= delta * 4;
+            if (names.Count > explicitCount + 2)
+            {
+                score -= 8;
+            }
+        }
+
+        return score;
+    }
+
+    private List<string> ExtractHostileNames(string message, IReadOnlySet<string> systems, bool allowSingleWordNames)
     {
         var tokens = WordRegex.Matches(message)
             .Select(x => x.Value.Trim())
@@ -133,9 +178,11 @@ public sealed partial class IntelChatMessageParser
                 continue;
             }
 
-            // Single-word character handles.
-            names.Add(tokens[i]);
-            used[i] = true;
+            if (allowSingleWordNames)
+            {
+                names.Add(tokens[i]);
+                used[i] = true;
+            }
         }
 
         return names
@@ -187,7 +234,7 @@ public sealed partial class IntelChatMessageParser
 
     private static bool LooksLikeCharacterWord(string token)
     {
-        if (token.Length < 3 || CharacterStopWords.Contains(token))
+        if (token.Length < 3 || CharacterStopWords.Contains(token) || IntelAcronymStopWords.Contains(token))
         {
             return false;
         }
@@ -206,12 +253,18 @@ public sealed partial class IntelChatMessageParser
             }
         }
 
+        // Short all-uppercase tokens are usually acronyms/callouts in intel, not pilot names.
+        if (token.Length <= 5 && token.All(char.IsUpper))
+        {
+            return false;
+        }
+
         return true;
     }
 
-    private List<IntelShipClass> DetectShipClasses(string message, string lower)
+    private List<(IntelShipClass ShipClass, string ShipName)> DetectShips(string message, string lower)
     {
-        var result = new List<IntelShipClass>();
+        var result = new List<(IntelShipClass ShipClass, string ShipName)>();
         var tokens = WordRegex.Matches(message)
             .Select(x => x.Value.Trim())
             .Where(x => x.Length > 0)
@@ -248,9 +301,10 @@ public sealed partial class IntelChatMessageParser
 
                 var count = DetectShipCount(tokens, i, len);
                 count = Math.Clamp(count, 1, 20);
+                var shipName = phrase;
                 for (var c = 0; c < count; c++)
                 {
-                    result.Add(shipClass);
+                    result.Add((shipClass, shipName));
                 }
 
                 for (var j = i; j < i + len; j++)
@@ -271,7 +325,9 @@ public sealed partial class IntelChatMessageParser
         // Fallback for old shorthand-only reports when no concrete ships were recognized.
         if (result.Count == 0)
         {
-            DetectLegacyShipClasses(lower, result);
+            var legacyClasses = new List<IntelShipClass>();
+            DetectLegacyShipClasses(lower, legacyClasses);
+            result.AddRange(legacyClasses.Select(x => (x, x.ToString())));
         }
 
         return result;
@@ -460,6 +516,7 @@ public sealed class IntelParseResult
 {
     public required HashSet<string> Systems { get; init; }
     public required IReadOnlyList<IntelShipClass> ShipClasses { get; init; }
+    public required IReadOnlyList<string> ShipNames { get; init; }
     public required IReadOnlyList<IntelAlertType> Alerts { get; init; }
     public required IReadOnlyList<string> HostileNames { get; init; }
     public bool IsClear { get; init; }

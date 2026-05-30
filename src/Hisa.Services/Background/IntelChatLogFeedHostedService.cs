@@ -33,6 +33,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
     private FileSystemWatcher? _watcher;
     private Dictionary<string, long> _systemIdByName = new(StringComparer.OrdinalIgnoreCase);
     private Dictionary<string, IntelShipClass> _shipClassByName = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, int> _shipTypeIdByName = new(StringComparer.OrdinalIgnoreCase);
     private static readonly IReadOnlyDictionary<string, string> ShipAliases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
     {
         ["kiki"] = "kikimora",
@@ -95,7 +96,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         }
 
         _systemIdByName = await LoadSystemNameMapAsync(stoppingToken);
-        _shipClassByName = await LoadShipClassMapAsync(stoppingToken);
+        (_shipClassByName, _shipTypeIdByName) = await LoadShipMapsAsync(stoppingToken);
         _messageParser = new IntelChatMessageParser(_systemIdByName, _shipClassByName, ShipAliases);
         var chatLogsDirectory = await ResolveChatLogsDirectoryAsync(stoppingToken);
         if (chatLogsDirectory is null)
@@ -148,14 +149,15 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         return result;
     }
 
-    private async Task<Dictionary<string, IntelShipClass>> LoadShipClassMapAsync(CancellationToken cancellationToken)
+    private async Task<(Dictionary<string, IntelShipClass> ClassByName, Dictionary<string, int> TypeIdByName)> LoadShipMapsAsync(CancellationToken cancellationToken)
     {
         await using var connection = _sdeDatabase.CreateConnection();
         await connection.OpenAsync(cancellationToken);
-        var result = new Dictionary<string, IntelShipClass>(StringComparer.OrdinalIgnoreCase);
+        var classByName = new Dictionary<string, IntelShipClass>(StringComparer.OrdinalIgnoreCase);
+        var typeIdByName = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT t.typeName, g.groupName
+            SELECT t.typeID, t.typeName, g.groupName
             FROM invTypes t
             INNER JOIN invGroups g ON g.groupID = t.groupID
             WHERE g.categoryID = 6;
@@ -163,18 +165,21 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
-            var shipName = reader.GetString(0);
-            var groupName = reader.GetString(1);
+            var typeId = reader.GetInt32(0);
+            var shipName = reader.GetString(1);
+            var groupName = reader.GetString(2);
             var shipClass = ShipGroupToIntelShipClass(groupName);
             if (shipClass == IntelShipClass.Unknown)
             {
                 continue;
             }
 
-            result[shipName.ToLowerInvariant()] = shipClass;
+            var key = shipName.ToLowerInvariant();
+            classByName[key] = shipClass;
+            typeIdByName[key] = typeId;
         }
 
-        return result;
+        return (classByName, typeIdByName);
     }
 
     private static IntelShipClass ShipGroupToIntelShipClass(string groupName)
@@ -462,6 +467,42 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         return _includeChannels.Count > 0 && _includeChannels.Contains(channelName);
     }
 
+    private IReadOnlyList<int> ResolveShipTypeIds(IReadOnlyList<string> shipNames)
+    {
+        if (shipNames.Count == 0)
+        {
+            return [];
+        }
+
+        var result = new List<int>(shipNames.Count);
+        foreach (var rawName in shipNames)
+        {
+            var key = (rawName ?? string.Empty).Trim().ToLowerInvariant();
+            if (key.Length == 0)
+            {
+                continue;
+            }
+
+            if (ShipAliases.TryGetValue(key, out var canonical))
+            {
+                key = canonical;
+            }
+
+            if (_shipTypeIdByName.TryGetValue(key, out var typeId))
+            {
+                result.Add(typeId);
+                continue;
+            }
+
+            if (key.EndsWith('s') && _shipTypeIdByName.TryGetValue(key[..^1], out typeId))
+            {
+                result.Add(typeId);
+            }
+        }
+
+        return result;
+    }
+
     private bool TryPromoteActiveFile(string channelName, string candidatePath, out string activePath)
     {
         activePath = candidatePath;
@@ -495,7 +536,23 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
                 return true;
             }
 
-            if (candidateLastWriteUtc > existing.LastWriteUtc)
+            var existingExists = File.Exists(existing.Path);
+            var promoteCandidate = !existingExists || candidateLastWriteUtc > existing.LastWriteUtc;
+            if (!promoteCandidate && candidateLastWriteUtc == existing.LastWriteUtc)
+            {
+                // EVE can rotate same-channel files with identical write timestamps at second precision.
+                // Prefer lexicographically newer filename to follow rollover immediately.
+                var existingName = Path.GetFileName(existing.Path);
+                var candidateName = Path.GetFileName(candidatePath);
+                if (!string.IsNullOrWhiteSpace(existingName) &&
+                    !string.IsNullOrWhiteSpace(candidateName) &&
+                    string.Compare(candidateName, existingName, StringComparison.OrdinalIgnoreCase) > 0)
+                {
+                    promoteCandidate = true;
+                }
+            }
+
+            if (promoteCandidate)
             {
                 _readOffsetsByPath.Remove(existing.Path);
                 _activeFileByChannel[channelName] = (candidatePath, candidateLastWriteUtc);
@@ -548,11 +605,13 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         {
             Systems = [],
             ShipClasses = [],
+            ShipNames = [],
             Alerts = [],
             HostileNames = [],
             IsClear = false,
             HostileCount = 0
         };
+        var reportedShipTypeIds = ResolveShipTypeIds(parsed.ShipNames);
         return new IntelChatReport
         {
             TimestampUtc = timestampUtc,
@@ -562,6 +621,8 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             SourceFilePath = sourcePath,
             Systems = parsed.Systems.ToList(),
             ShipClasses = parsed.ShipClasses,
+            ReportedShipNames = parsed.ShipNames,
+            ReportedShipTypeIds = reportedShipTypeIds,
             Alerts = parsed.Alerts,
             ReportedHostileNames = parsed.HostileNames,
             IsClear = parsed.IsClear,
@@ -610,6 +671,8 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
                         LastReporterName = report.ReporterName,
                         LastMessageText = report.MessageText,
                         ShipClasses = [],
+                        ShipNames = [],
+                        ShipTypeIds = [],
                         Alerts = [IntelAlertType.Clear],
                         HostilePilotNames = [],
                         RecentReports = recentReports,
@@ -666,6 +729,8 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
                     LastReporterName = report.ReporterName,
                     LastMessageText = report.MessageText,
                     ShipClasses = report.ShipClasses,
+                    ShipNames = report.ReportedShipNames,
+                    ShipTypeIds = report.ReportedShipTypeIds,
                     Alerts = report.Alerts,
                     HostilePilotNames = mergedHostiles,
                     RecentReports = reports,
@@ -732,6 +797,8 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
                 LastReporterName = pair.Value.LastReporterName,
                 LastMessageText = pair.Value.LastMessageText,
                 ShipClasses = pair.Value.ShipClasses,
+                ShipNames = pair.Value.ShipNames,
+                ShipTypeIds = pair.Value.ShipTypeIds,
                 Alerts = pair.Value.Alerts,
                 HostilePilotNames = remaining,
                 RecentReports = pair.Value.RecentReports,

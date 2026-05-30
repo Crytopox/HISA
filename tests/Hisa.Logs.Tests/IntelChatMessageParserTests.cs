@@ -140,6 +140,15 @@ public sealed class IntelChatMessageParserTests
     }
 
     [Fact]
+    public void Parse_ShipOnlyReport_DoesNotInventPilotNames()
+    {
+        var parser = CreateParser();
+        var result = parser.Parse("D-P1EH 2x hecate and loki");
+
+        Assert.Empty(result.HostileNames);
+    }
+
+    [Fact]
     public void Parse_XCountPattern_DetectsHostileCount()
     {
         var parser = CreateParser();
@@ -156,5 +165,23 @@ public sealed class IntelChatMessageParserTests
 
         Assert.True(result.IsClear);
         Assert.Equal(0, result.HostileCount);
+    }
+
+    [Fact]
+    public void Parse_NoVisualAcronyms_AreNotDetectedAsPilotNames()
+    {
+        var parser = CreateParser();
+        var result = parser.Parse("D-P1EH nv no visual clear");
+
+        Assert.Empty(result.HostileNames);
+    }
+
+    [Fact]
+    public void Parse_CommonIntelAcronyms_AreIgnoredAsPilotNames()
+    {
+        var parser = CreateParser();
+        var result = parser.Parse("D-P1EH GC spike WT in gate");
+
+        Assert.Empty(result.HostileNames);
     }
 }
