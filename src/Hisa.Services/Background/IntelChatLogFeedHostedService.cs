@@ -27,6 +27,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
     private readonly ILogger<IntelChatLogFeedHostedService> _logger;
     private readonly ConcurrentDictionary<string, byte> _dirtyFiles = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, long> _readOffsetsByPath = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, (string Path, DateTime LastWriteUtc)> _activeFileByChannel = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<long, IntelSystemSnapshot> _snapshotBySystemId = [];
     private readonly object _gate = new();
     private FileSystemWatcher? _watcher;
@@ -249,6 +250,15 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
                 return;
             }
 
+            if (e.Name is not null && TryExtractChannelNameFromFileName(e.Name, out channelFromName))
+            {
+                if (!TryPromoteActiveFile(channelFromName, e.FullPath, out var activePath) ||
+                    !string.Equals(activePath, e.FullPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+            }
+
             _dirtyFiles[e.FullPath] = 1;
         }
     }
@@ -262,6 +272,15 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
                 !ShouldReadChannel(channelFromName))
             {
                 return;
+            }
+
+            if (e.Name is not null && TryExtractChannelNameFromFileName(e.Name, out channelFromName))
+            {
+                if (!TryPromoteActiveFile(channelFromName, e.FullPath, out var activePath) ||
+                    !string.Equals(activePath, e.FullPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
             }
 
             _dirtyFiles[e.FullPath] = 1;
@@ -314,6 +333,15 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
                 if (!newestByChannel.TryGetValue(channelFromName, out var existing) || lastWriteUtc > existing.LastWriteUtc)
                 {
                     newestByChannel[channelFromName] = (filePath, lastWriteUtc);
+                }
+            }
+
+            lock (_gate)
+            {
+                _activeFileByChannel.Clear();
+                foreach (var kvp in newestByChannel)
+                {
+                    _activeFileByChannel[kvp.Key] = kvp.Value;
                 }
             }
 
@@ -374,6 +402,12 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             return;
         }
 
+        if (!TryPromoteActiveFile(channelName, filePath, out var activePath) ||
+            !string.Equals(activePath, filePath, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
         using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
         long offset;
         lock (_gate)
@@ -426,6 +460,52 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
     private bool ShouldReadChannel(string channelName)
     {
         return _includeChannels.Count > 0 && _includeChannels.Contains(channelName);
+    }
+
+    private bool TryPromoteActiveFile(string channelName, string candidatePath, out string activePath)
+    {
+        activePath = candidatePath;
+        DateTime candidateLastWriteUtc;
+        try
+        {
+            candidateLastWriteUtc = File.GetLastWriteTimeUtc(candidatePath);
+        }
+        catch
+        {
+            return false;
+        }
+
+        lock (_gate)
+        {
+            if (!_activeFileByChannel.TryGetValue(channelName, out var existing))
+            {
+                _activeFileByChannel[channelName] = (candidatePath, candidateLastWriteUtc);
+                activePath = candidatePath;
+                return true;
+            }
+
+            if (string.Equals(existing.Path, candidatePath, StringComparison.OrdinalIgnoreCase))
+            {
+                if (candidateLastWriteUtc > existing.LastWriteUtc)
+                {
+                    _activeFileByChannel[channelName] = (candidatePath, candidateLastWriteUtc);
+                }
+
+                activePath = candidatePath;
+                return true;
+            }
+
+            if (candidateLastWriteUtc > existing.LastWriteUtc)
+            {
+                _readOffsetsByPath.Remove(existing.Path);
+                _activeFileByChannel[channelName] = (candidatePath, candidateLastWriteUtc);
+                activePath = candidatePath;
+                return true;
+            }
+
+            activePath = existing.Path;
+            return false;
+        }
     }
 
     private static bool TryParseChatLine(string rawLine, out DateTime timestampUtc, out string reporter, out string message)

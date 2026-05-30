@@ -11,5 +11,6 @@
   <Folder Name="/tests/">
     <Project Path="tests/Hisa.Core.Tests/Hisa.Core.Tests.csproj" />
     <Project Path="tests/Hisa.Logs.Tests/Hisa.Logs.Tests.csproj" />
+    <Project Path="tests/Hisa.Services.Tests/Hisa.Services.Tests.csproj" />
   </Folder>
 </Solution>
