@@ -561,6 +561,33 @@ public partial class MainWindow : Window
         await FocusSelectedNodeNearCenterAsync(focus, systemId);
     }
 
+    private async void OnIntelCardSystemClicked(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel vm ||
+            sender is not Control { DataContext: IntelOverlayCard card })
+        {
+            return;
+        }
+
+        var systemId = card.SolarSystemId;
+        var shouldSwitchToUniverse = vm.SelectedViewMode == Hisa.Core.Models.MapViewMode.UniverseRegions;
+        if (vm.SelectedViewMode == Hisa.Core.Models.MapViewMode.Region)
+        {
+            var existsInCurrentRegionLayout = vm.CurrentGraph?.Nodes.Any(n => n.Id == systemId) == true;
+            shouldSwitchToUniverse = !existsInCurrentRegionLayout;
+        }
+
+        if (shouldSwitchToUniverse)
+        {
+            vm.SelectedViewMode = Hisa.Core.Models.MapViewMode.Universe;
+            await WaitForNodeInGraphAsync(vm, systemId, 1200);
+        }
+
+        vm.SelectedNodeId = systemId;
+        MainMapControl.FocusOnNodeWithZoomPercent(systemId, 0.9);
+        await FocusSelectedNodeAtZoomAsync(systemId, 0.9);
+    }
+
     private void ConfigureMapNodeMenuPlacement(Point clickPoint)
     {
         const double estimatedMenuWidth = 210;
@@ -608,6 +635,22 @@ public partial class MainWindow : Window
                 if (_boundVm?.CurrentGraph?.Nodes.Any(n => n.Id == nodeId) == true)
                 {
                     MainMapControl.FocusOnSearch(focus);
+                }
+            });
+        }
+    }
+
+    private async Task FocusSelectedNodeAtZoomAsync(long nodeId, double zoomPercent)
+    {
+        // Re-apply explicit center/zoom after UI/layout settles to avoid fit-to-view overrides.
+        for (var i = 0; i < 3; i++)
+        {
+            await Dispatcher.UIThread.InvokeAsync(async () =>
+            {
+                await Task.Delay(40);
+                if (_boundVm?.CurrentGraph?.Nodes.Any(n => n.Id == nodeId) == true)
+                {
+                    MainMapControl.FocusOnNodeWithZoomPercent(nodeId, zoomPercent);
                 }
             });
         }

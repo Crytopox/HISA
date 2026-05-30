@@ -2047,6 +2047,26 @@ public sealed class MapControl : Control
         CenterOnWorld(node.X, node.Y, targetZoom);
     }
 
+    public bool FocusOnNodeWithZoomPercent(long nodeId, double zoomPercent)
+    {
+        if (Graph is null)
+        {
+            return false;
+        }
+
+        if (!_nodeById.TryGetValue(nodeId, out var node))
+        {
+            return false;
+        }
+
+        var minZoom = GetMinZoom();
+        var maxZoom = GetMaxZoom();
+        var t = Math.Clamp(zoomPercent, 0.0, 1.0);
+        var targetZoom = minZoom + ((maxZoom - minZoom) * t);
+        CenterOnWorld(node.X, node.Y, targetZoom);
+        return true;
+    }
+
     private void FocusOnConstellation(int constellationId)
     {
         if (Graph is null)

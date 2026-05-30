@@ -580,7 +580,14 @@
                 CornerRadius="8"
                 IsVisible="{Binding IsIntelOverlayOpen}">
           <StackPanel Spacing="8">
-            <TextBlock Text="{Binding IntelOverlayTitle}" Foreground="#EAF2FF" FontWeight="SemiBold" />
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+              <TextBlock Grid.Column="0" Text="{Binding IntelOverlayTitle}" Foreground="#EAF2FF" FontWeight="SemiBold" VerticalAlignment="Center" />
+              <CheckBox Grid.Column="1"
+                        Content="Current Region"
+                        IsChecked="{Binding LimitIntelReportsToCurrentRegion, Mode=TwoWay}"
+                        Foreground="#BFD2EC"
+                        VerticalAlignment="Center" />
+            </Grid>
             <TextBlock Text="Data source: EVE chat logs (configured intel channels)" Foreground="#8FA5C4" FontSize="11" />
             <ScrollViewer MaxHeight="360" VerticalScrollBarVisibility="Auto">
               <ItemsControl ItemsSource="{Binding IntelCardsForView}">
@@ -600,13 +607,22 @@
                               CornerRadius="0,7,7,0">
                         <StackPanel Spacing="5">
                           <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
-                            <TextBlock Grid.Column="0" Foreground="#F1E8FF" FontWeight="Bold" FontSize="14" >
-                              <Run Text="{Binding SystemName}" FontWeight="Bold" FontSize="14"/>
-                              <Run Text=" | " Foreground="#7F779C" />
-                              <Run Text="{Binding ConstellationName}" FontWeight="SemiBold" FontSize="10"/>
-                              <Run Text=" | " Foreground="#7F779C" />
-                              <Run Text="{Binding RegionName}" FontWeight="SemiBold" FontSize="10" />
-                            </TextBlock>
+                            <Button Grid.Column="0"
+                                    HorizontalAlignment="Left"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Padding="0"
+                                    Cursor="Hand"
+                                    ClickMode="Press"
+                                    Click="OnIntelCardSystemClicked">
+                              <TextBlock Foreground="#F1E8FF" FontWeight="Bold" FontSize="14">
+                                <Run Text="{Binding SystemName}" FontWeight="Bold" FontSize="14"/>
+                                <Run Text=" | " Foreground="#7F779C" />
+                                <Run Text="{Binding ConstellationName}" FontWeight="SemiBold" FontSize="10"/>
+                                <Run Text=" | " Foreground="#7F779C" />
+                                <Run Text="{Binding RegionName}" FontWeight="SemiBold" FontSize="10" />
+                              </TextBlock>
+                            </Button>
                             <Border Grid.Column="1" Padding="6,2" CornerRadius="4" Background="#241C35" BorderThickness="1" BorderBrush="#5D83B5">
                               <TextBlock Text="{Binding AgeSummary}" Foreground="#BFD8FF" FontSize="10" FontWeight="Bold" />
                             </Border>
@@ -617,7 +633,7 @@
                               <TextBlock Text="{Binding ShipClassSummary, StringFormat='Ships: {0}'}" Foreground="#EBDFFF" FontSize="10" FontWeight="SemiBold" />
                             </Border>
                             <Border Background="#2A2340" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="0,0,4,4" BorderBrush="#4D3C73">
-                              <TextBlock Text="{Binding AlertSummary, StringFormat='Alerts: {0}'}" Foreground="#EBDFFF" FontSize="10" FontWeight="SemiBold" />
+                              <TextBlock Text="{Binding HostileCount, StringFormat='Hostiles: {0}'}" Foreground="#EBDFFF" FontSize="10" FontWeight="SemiBold" />
                             </Border>
                           </WrapPanel>
                           <TextBlock Text="{Binding ChannelName, StringFormat='Channel: {0}'}" Foreground="#9DB8D8" FontSize="10" />

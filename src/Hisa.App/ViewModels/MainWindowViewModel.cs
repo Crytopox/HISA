@@ -318,6 +318,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private IReadOnlyDictionary<long, IReadOnlyList<string>> _intelIconKeysByNodeId = new Dictionary<long, IReadOnlyList<string>>();
     private IReadOnlyDictionary<long, IReadOnlyList<string>> _intelRecentReportsByNodeId = new Dictionary<long, IReadOnlyList<string>>();
     private IReadOnlyDictionary<long, int> _intelHostileScoresByNodeId = new Dictionary<long, int>();
+    private bool _limitIntelReportsToCurrentRegion;
     private bool _intelEnabled = true;
     private string _intelIncludeChannelsText = string.Empty;
     private string _intelIgnoreChannelsText = string.Empty;
@@ -458,6 +459,19 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public string IncursionOverlayTitle => $"Incursions ({_incursionCardsForView.Count})";
     public string StormOverlayTitle => $"Metaliminal Storms ({_stormCardsForView.Count})";
     public string IntelOverlayTitle => $"Intel Reports ({_intelCardsForView.Count})";
+    public bool LimitIntelReportsToCurrentRegion
+    {
+        get => _limitIntelReportsToCurrentRegion;
+        set
+        {
+            if (!SetProperty(ref _limitIntelReportsToCurrentRegion, value))
+            {
+                return;
+            }
+
+            _ = RebuildActivityCardsAsync(CurrentGraph);
+        }
+    }
     public string LogsPathValidationStatus => _logsPathValidationStatus;
     public bool IsLogsPathValid => _isLogsPathValid;
     public IReadOnlyDictionary<long, IReadOnlyList<long>> JumpRangeMembershipByNodeIdForView =>
@@ -3099,6 +3113,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
         var now = DateTimeOffset.UtcNow;
         var metadataById = await _mapDataService.GetSystemMetadataByIdsAsync(allSystemIds);
+        var visibleNodeIds = graph?.Nodes.Select(n => n.Id).ToHashSet() ?? new HashSet<long>();
 
         _hubWormholeCardsForView = wormholeBySystem
             .Where(kvp => kvp.Value.Count > 0)
@@ -3212,6 +3227,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             .ToList();
 
         _intelCardsForView = intelSnapshots
+            .Where(s => !LimitIntelReportsToCurrentRegion || visibleNodeIds.Contains(s.SolarSystemId))
             .Select(s =>
             {
                 metadataById.TryGetValue(s.SolarSystemId, out var meta);
@@ -3224,22 +3240,22 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 var shipSummary = s.ShipClasses.Count > 0
                     ? string.Join(", ", s.ShipClasses.Select(x => x.ToString()))
                     : "None";
-                var alertSummary = s.Alerts.Count > 0
-                    ? string.Join(", ", s.Alerts.Select(x => x.ToString()))
-                    : "None";
 
                 return new IntelOverlayCard
                 {
                     SortTimestampUtc = s.LastUpdatedUtc,
+                    SolarSystemId = s.SolarSystemId,
                     SystemName = meta?.SolarSystemName ?? s.SolarSystemName,
                     ConstellationName = meta?.ConstellationName ?? "Unknown Constellation",
                     RegionName = meta?.RegionName ?? "Unknown Region",
+                    ConstellationId = meta?.ConstellationId,
+                    RegionId = meta?.RegionId,
                     ChannelName = s.LastChannelName,
                     ReporterName = s.LastReporterName,
                     AgeSummary = FormatOverlayAge(age),
                     MessageText = s.LastMessageText,
                     ShipClassSummary = shipSummary,
-                    AlertSummary = alertSummary,
+                    HostileCount = Math.Max(0, s.HostileScore),
                     AccentHex = s.IsClear ? "#6FE38E" : "#FFB347"
                 };
             })
