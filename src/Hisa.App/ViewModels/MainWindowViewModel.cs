@@ -7,6 +7,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Hisa.Core.Abstractions;
 using Hisa.Core.Models;
+using Hisa.Logs.LocalChatLogs;
 
 namespace Hisa.App;
 
@@ -25,6 +26,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly ISovUpgradeStateService _sovUpgradeStateService;
     private readonly IAnsiblexNetworkStateService _ansiblexNetworkStateService;
     private readonly IIncursionStateService _incursionStateService;
+    private readonly ILocalCharacterLocationFeed _localCharacterLocationFeed;
     private List<RegionOption> _allRegions = [];
     private bool _isBusy;
     private MapViewMode _selectedViewMode;
@@ -84,6 +86,16 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private IReadOnlyList<WormholeOverlayCard> _hubWormholeCardsForView = [];
     private IReadOnlyList<IncursionOverlayCard> _incursionCardsForView = [];
     private IReadOnlyList<StormOverlayCard> _stormCardsForView = [];
+    private readonly Dictionary<int, LocalCharacterSystemChange> _localCharacterLocationsByCharacterId = [];
+    private IReadOnlyDictionary<long, int> _characterPresenceCountsByNodeId = new Dictionary<long, int>();
+    private IReadOnlyDictionary<long, IReadOnlyList<string>> _characterPresenceNamesByNodeId = new Dictionary<long, IReadOnlyList<string>>();
+    private IReadOnlyDictionary<long, DateTime> _characterPresenceLastUpdatedUtcByNodeId = new Dictionary<long, DateTime>();
+    private bool _showIndicatorCharacterPresence = true;
+    private bool _showInfoBoxCharacterPresence = true;
+    private int _characterPresenceHoverMaxNames = 6;
+    private string _logsRootPath = string.Empty;
+    private string _logsPathValidationStatus = "Not validated.";
+    private bool _isLogsPathValid;
     private readonly Dictionary<long, List<long>> _jumpRangeMembershipByNodeId = [];
     private readonly Dictionary<long, List<JumpRangeDistanceDisplay>> _jumpRangeDistancesByNodeId = [];
     private CancellationTokenSource? _searchSuggestionsCts;
@@ -111,6 +123,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string ShowIndicatorSovUpgradeIconKey = "Map.ShowIndicatorSovUpgradeIcon";
     private const string ShowIndicatorIncursionIconKey = "Map.ShowIndicatorIncursionIcon";
     private const string ShowIndicatorJumpRangeLyKey = "Map.ShowIndicatorJumpRangeLy";
+    private const string ShowIndicatorCharacterPresenceKey = "Map.ShowIndicatorCharacterPresence";
+    private const string ShowInfoBoxCharacterPresenceKey = "Map.ShowInfoBoxCharacterPresence";
+    private const string CharacterPresenceHoverMaxNamesKey = "Map.CharacterPresenceHoverMaxNames";
     private const string EnableLinkAnimationsKey = "Map.EnableLinkAnimations";
     private const string ShowAnsiblexNetworkKey = "Map.ShowAnsiblexNetwork";
     private const string InfoBoxShowRegionKey = "Map.InfoBoxShowRegion";
@@ -135,6 +150,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string ShowMissingConnectionMarkersKey = "Map.ShowMissingConnectionMarkers";
     private const string WindowPlacementKey = "Window.Main.Placement";
     private const string MapViewportPrefixKey = "Map.Viewport";
+    private const string TrackingLogsRootPathKey = "Tracking.LogsRootPath";
     private readonly Task _initialLoadTask;
 
     public MainWindowViewModel(
@@ -144,7 +160,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         IHubWormholeStateService hubWormholeStateService,
         ISovUpgradeStateService sovUpgradeStateService,
         IAnsiblexNetworkStateService ansiblexNetworkStateService,
-        IIncursionStateService incursionStateService)
+        IIncursionStateService incursionStateService,
+        ILocalCharacterLocationFeed localCharacterLocationFeed)
     {
         _mapDataService = mapDataService;
         _settingsService = settingsService;
@@ -153,6 +170,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _sovUpgradeStateService = sovUpgradeStateService;
         _ansiblexNetworkStateService = ansiblexNetworkStateService;
         _incursionStateService = incursionStateService;
+        _localCharacterLocationFeed = localCharacterLocationFeed;
         ViewModes = new ObservableCollection<MapViewMode>(Enum.GetValues<MapViewMode>());
         CoordinateModes = new ObservableCollection<MapCoordinateMode>(Enum.GetValues<MapCoordinateMode>());
         NodeColorModes = new ObservableCollection<MapNodeColorMode>(Enum.GetValues<MapNodeColorMode>());
@@ -163,6 +181,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _sovUpgradeStateService.SnapshotUpdated += OnSovUpgradesSnapshotUpdated;
         _ansiblexNetworkStateService.SnapshotUpdated += OnAnsiblexNetworkSnapshotUpdated;
         _incursionStateService.IncursionSnapshotUpdated += OnIncursionSnapshotUpdated;
+        _localCharacterLocationFeed.SystemChanged += OnLocalCharacterSystemChanged;
         _initialLoadTask = LoadAsync();
     }
 
@@ -188,9 +207,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public IReadOnlyList<WormholeOverlayCard> HubWormholeCardsForView => _hubWormholeCardsForView;
     public IReadOnlyList<IncursionOverlayCard> IncursionCardsForView => _incursionCardsForView;
     public IReadOnlyList<StormOverlayCard> StormCardsForView => _stormCardsForView;
+    public IReadOnlyDictionary<long, int> CharacterPresenceCountsByNodeIdForView => _characterPresenceCountsByNodeId;
+    public IReadOnlyDictionary<long, IReadOnlyList<string>> CharacterPresenceNamesByNodeIdForView => _characterPresenceNamesByNodeId;
+    public IReadOnlyDictionary<long, DateTime> CharacterPresenceLastUpdatedUtcByNodeIdForView => _characterPresenceLastUpdatedUtcByNodeId;
     public string HubWormholeOverlayTitle => $"Thera/Turnur Wormholes ({_hubWormholeCardsForView.Count})";
     public string IncursionOverlayTitle => $"Incursions ({_incursionCardsForView.Count})";
     public string StormOverlayTitle => $"Metaliminal Storms ({_stormCardsForView.Count})";
+    public string LogsPathValidationStatus => _logsPathValidationStatus;
+    public bool IsLogsPathValid => _isLogsPathValid;
     public IReadOnlyDictionary<long, IReadOnlyList<long>> JumpRangeMembershipByNodeIdForView =>
         _jumpRangeMembershipByNodeId.ToDictionary(kvp => kvp.Key, kvp => (IReadOnlyList<long>)kvp.Value);
     public IReadOnlyDictionary<long, IReadOnlyList<JumpRangeDistanceDisplay>> JumpRangeDistancesByNodeIdForView =>
@@ -447,6 +471,49 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 _ = _settingsService.SetAsync(ShowIndicatorJumpRangeLyKey, value);
             }
         }
+    }
+
+    public bool ShowIndicatorCharacterPresence
+    {
+        get => _showIndicatorCharacterPresence;
+        set
+        {
+            if (SetProperty(ref _showIndicatorCharacterPresence, value) && !_isInitializing)
+            {
+                _ = _settingsService.SetAsync(ShowIndicatorCharacterPresenceKey, value);
+            }
+        }
+    }
+
+    public bool ShowInfoBoxCharacterPresence
+    {
+        get => _showInfoBoxCharacterPresence;
+        set
+        {
+            if (SetProperty(ref _showInfoBoxCharacterPresence, value) && !_isInitializing)
+            {
+                _ = _settingsService.SetAsync(ShowInfoBoxCharacterPresenceKey, value);
+            }
+        }
+    }
+
+    public int CharacterPresenceHoverMaxNames
+    {
+        get => _characterPresenceHoverMaxNames;
+        set
+        {
+            var clamped = Math.Clamp(value, 1, 12);
+            if (SetProperty(ref _characterPresenceHoverMaxNames, clamped) && !_isInitializing)
+            {
+                _ = _settingsService.SetAsync(CharacterPresenceHoverMaxNamesKey, clamped);
+            }
+        }
+    }
+
+    public string LogsRootPath
+    {
+        get => _logsRootPath;
+        set => SetProperty(ref _logsRootPath, value);
     }
 
     public bool EnableLinkAnimations
@@ -1326,8 +1393,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         ShowIndicatorSovUpgradeIcon = await _settingsService.GetAsync<bool?>(ShowIndicatorSovUpgradeIconKey) ?? true;
         ShowIndicatorIncursionIcon = await _settingsService.GetAsync<bool?>(ShowIndicatorIncursionIconKey) ?? true;
         ShowIndicatorJumpRangeLy = await _settingsService.GetAsync<bool?>(ShowIndicatorJumpRangeLyKey) ?? true;
+        ShowIndicatorCharacterPresence = await _settingsService.GetAsync<bool?>(ShowIndicatorCharacterPresenceKey) ?? true;
+        ShowInfoBoxCharacterPresence = await _settingsService.GetAsync<bool?>(ShowInfoBoxCharacterPresenceKey) ?? true;
+        CharacterPresenceHoverMaxNames = await _settingsService.GetAsync<int?>(CharacterPresenceHoverMaxNamesKey) ?? 6;
         EnableLinkAnimations = await _settingsService.GetAsync<bool?>(EnableLinkAnimationsKey) ?? true;
         ShowAnsiblexNetwork = await _settingsService.GetAsync<bool?>(ShowAnsiblexNetworkKey) ?? true;
+        LogsRootPath = (await _settingsService.GetAsync<string>(TrackingLogsRootPathKey)) ?? GetDefaultEveLogsRootPath();
         InfoBoxShowRegion = await _settingsService.GetAsync<bool?>(InfoBoxShowRegionKey) ?? true;
         InfoBoxShowConstellation = await _settingsService.GetAsync<bool?>(InfoBoxShowConstellationKey) ?? true;
         InfoBoxShowSecurityStatus = await _settingsService.GetAsync<bool?>(InfoBoxShowSecurityStatusKey) ?? true;
@@ -1353,6 +1424,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         AlwaysShowIncursions = await _settingsService.GetAsync<bool?>(AlwaysShowIncursionsKey) ?? true;
         HubWormholeMarkerMode = await _settingsService.GetAsync<HubWormholeMarkerMode?>(HubWormholeMarkerModeKey) ?? HubWormholeMarkerMode.Badge;
         ShowMissingConnectionMarkers = await _settingsService.GetAsync<bool?>(ShowMissingConnectionMarkersKey) ?? true;
+        ValidateLogsRootPath();
         SelectedViewMode = await _settingsService.GetAsync<MapViewMode?>(ViewModeKey) ?? MapViewMode.Universe;
         EnforceCoordinateModeForView();
 
@@ -1364,7 +1436,16 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             ?? Regions.FirstOrDefault(r => !r.IsHeader);
 
         _isInitializing = false;
+        lock (_localCharacterLocationsByCharacterId)
+        {
+            _localCharacterLocationsByCharacterId.Clear();
+            foreach (var kvp in _localCharacterLocationFeed.Snapshot)
+            {
+                _localCharacterLocationsByCharacterId[kvp.Key] = kvp.Value;
+            }
+        }
         await ReloadGraphAsync();
+        RebuildCharacterPresenceForView();
     }
 
     private async Task ReloadGraphAsync()
@@ -1390,6 +1471,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             RebuildAnsiblexLinksForView(graph);
             await RefreshRegionMissingConnectionMarkersAsync(graph);
             RebuildJumpRangeOverlay();
+            RebuildCharacterPresenceForView();
             await RebuildActivityCardsAsync(graph);
             SelectedNodeId = null;
             StatusText = $"Mode: {SelectedViewMode} | Coordinates: {SelectedCoordinateMode} | Nodes: {graph.Nodes.Count} | Links: {graph.Links.Count}";
@@ -1406,6 +1488,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             AnsiblexLinksForView = [];
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AnsiblexLinksForView)));
             RebuildJumpRangeOverlay();
+            RebuildCharacterPresenceForView();
             await RebuildActivityCardsAsync(CurrentGraph);
         }
         finally
@@ -1473,6 +1556,106 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             RebuildAnsiblexLinksForView(CurrentGraph);
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AnsiblexLinksForView)));
         });
+    }
+
+    private void OnLocalCharacterSystemChanged(object? sender, LocalCharacterSystemChange change)
+    {
+        lock (_localCharacterLocationsByCharacterId)
+        {
+            _localCharacterLocationsByCharacterId[change.CharacterId] = change;
+        }
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            RebuildCharacterPresenceForView();
+        });
+    }
+
+    private void RebuildCharacterPresenceForView()
+    {
+        var graph = CurrentGraph;
+        if (graph is null || graph.Nodes.Count == 0 || SelectedViewMode == MapViewMode.UniverseRegions)
+        {
+            _characterPresenceCountsByNodeId = new Dictionary<long, int>();
+            _characterPresenceNamesByNodeId = new Dictionary<long, IReadOnlyList<string>>();
+            _characterPresenceLastUpdatedUtcByNodeId = new Dictionary<long, DateTime>();
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CharacterPresenceCountsByNodeIdForView)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CharacterPresenceNamesByNodeIdForView)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CharacterPresenceLastUpdatedUtcByNodeIdForView)));
+            return;
+        }
+
+        Dictionary<int, LocalCharacterSystemChange> snapshot;
+        lock (_localCharacterLocationsByCharacterId)
+        {
+            snapshot = _localCharacterLocationsByCharacterId.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+        }
+
+        var nodeByName = graph.Nodes
+            .GroupBy(n => n.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+        var namesByNode = new Dictionary<long, List<string>>();
+        var latestSeenByNode = new Dictionary<long, DateTime>();
+        foreach (var character in snapshot.Values)
+        {
+            if (!nodeByName.TryGetValue(character.SolarSystemName, out var node))
+            {
+                continue;
+            }
+
+            if (!namesByNode.TryGetValue(node.Id, out var names))
+            {
+                names = [];
+                namesByNode[node.Id] = names;
+            }
+
+            names.Add(character.CharacterName);
+            if (!latestSeenByNode.TryGetValue(node.Id, out var currentLatest) || character.TimestampUtc > currentLatest)
+            {
+                latestSeenByNode[node.Id] = character.TimestampUtc;
+            }
+        }
+
+        _characterPresenceCountsByNodeId = namesByNode.ToDictionary(kvp => kvp.Key, kvp => kvp.Value.Count);
+        _characterPresenceNamesByNodeId = namesByNode.ToDictionary(
+            kvp => kvp.Key,
+            kvp => (IReadOnlyList<string>)kvp.Value.OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList());
+        _characterPresenceLastUpdatedUtcByNodeId = latestSeenByNode;
+
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CharacterPresenceCountsByNodeIdForView)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CharacterPresenceNamesByNodeIdForView)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CharacterPresenceLastUpdatedUtcByNodeIdForView)));
+    }
+
+    public void ValidateLogsRootPath()
+    {
+        var result = LocalChatLogsPathValidator.Validate(LogsRootPath);
+        _isLogsPathValid = result.IsValid;
+        _logsPathValidationStatus = result.IsValid
+            ? $"{result.Message} ({result.ChatLogsPath})"
+            : result.Message;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsLogsPathValid)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LogsPathValidationStatus)));
+    }
+
+    public async Task SaveLogsRootPathAsync()
+    {
+        ValidateLogsRootPath();
+        if (!_isLogsPathValid)
+        {
+            return;
+        }
+
+        await _settingsService.SetAsync(TrackingLogsRootPathKey, LogsRootPath.Trim());
+    }
+
+    private static string GetDefaultEveLogsRootPath()
+    {
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+            "EVE",
+            "logs");
     }
 
     private void RebuildAnsiblexLinksForView(MapGraph? graph)

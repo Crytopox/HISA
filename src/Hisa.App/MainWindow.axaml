@@ -149,6 +149,9 @@
                               ShowIndicatorWormholeIcon="{Binding ShowIndicatorWormholeIcon}"
                               ShowIndicatorSovUpgradeIcon="{Binding ShowIndicatorSovUpgradeIcon}"
                               ShowIndicatorIncursionIcon="{Binding ShowIndicatorIncursionIcon}"
+                              ShowIndicatorCharacterPresence="{Binding ShowIndicatorCharacterPresence}"
+                              ShowInfoBoxCharacterPresence="{Binding ShowInfoBoxCharacterPresence}"
+                              CharacterPresenceHoverMaxNames="{Binding CharacterPresenceHoverMaxNames}"
                               IndicatorSovUpgradeFilterKeys="{Binding SelectedIndicatorSovUpgradeKeys}"
                               InfoBoxShowRegion="{Binding InfoBoxShowRegion}"
                               InfoBoxShowConstellation="{Binding InfoBoxShowConstellation}"
@@ -161,6 +164,9 @@
                               InfoBoxShowWormholeIcon="{Binding InfoBoxShowWormholeIcon}"
                               InfoBoxShowSovUpgradeIcon="{Binding InfoBoxShowSovUpgradeIcon}"
                               InfoBoxShowIncursionIcon="{Binding InfoBoxShowIncursionIcon}"
+                              CharacterPresenceCountsByNodeId="{Binding CharacterPresenceCountsByNodeIdForView}"
+                              CharacterPresenceNamesByNodeId="{Binding CharacterPresenceNamesByNodeIdForView}"
+                              CharacterPresenceLastUpdatedUtcByNodeId="{Binding CharacterPresenceLastUpdatedUtcByNodeIdForView}"
                               OverlaySovUpgradeFilterKeys="{Binding SelectedOverlaySovUpgradeKeys}"
                               AlwaysShowHubWormholes="{Binding AlwaysShowHubWormholes}"
                               AlwaysShowIncursions="{Binding AlwaysShowIncursions}"
@@ -597,6 +603,7 @@
             <CheckBox IsChecked="{Binding ShowIndicatorStormIcon}" Content="Metaliminal Storms" />
             <CheckBox IsChecked="{Binding ShowIndicatorWormholeIcon}" Content="Thera/Turnur Wormholes" />
             <CheckBox IsChecked="{Binding ShowIndicatorIncursionIcon}" Content="Incursions" />
+            <CheckBox IsChecked="{Binding ShowIndicatorCharacterPresence}" Content="Characters" />
             <CheckBox IsChecked="{Binding ShowIndicatorJumpRangeLy}" Content="Jump Range LY" />
             <CheckBox IsChecked="{Binding ShowAnsiblexNetwork}" Content="Ansiblex Network" />
             <StackPanel Orientation="Horizontal" Spacing="6">
@@ -648,6 +655,17 @@
             <CheckBox IsChecked="{Binding InfoBoxShowStormIcon}" Content="Metaliminal Storms" />
             <CheckBox IsChecked="{Binding InfoBoxShowWormholeIcon}" Content="Thera/Turnur Wormholes" />
             <CheckBox IsChecked="{Binding InfoBoxShowIncursionIcon}" Content="Incursions" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <CheckBox IsChecked="{Binding ShowInfoBoxCharacterPresence}" Content="Characters" VerticalAlignment="Center" />
+              <TextBlock Text="Max" VerticalAlignment="Center" />
+              <ComboBox Width="72" SelectedItem="{Binding CharacterPresenceHoverMaxNames}">
+                <x:Int32>4</x:Int32>
+                <x:Int32>6</x:Int32>
+                <x:Int32>8</x:Int32>
+                <x:Int32>10</x:Int32>
+                <x:Int32>12</x:Int32>
+              </ComboBox>
+            </StackPanel>
             <CheckBox IsChecked="{Binding InfoBoxShowJumpRangeLy}" Content="Jump Range LY" />
             <StackPanel Orientation="Horizontal" Spacing="6">
               <CheckBox IsChecked="{Binding InfoBoxShowSovUpgradeIcon}" Content="SOV Upgrades" />

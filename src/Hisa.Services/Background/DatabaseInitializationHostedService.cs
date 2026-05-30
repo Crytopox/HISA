@@ -61,6 +61,9 @@ public static class ServiceCollectionExtensions
         services.AddHostedService<HubWormholeRefreshHostedService>();
         services.AddSingleton<IIncursionStateService, IncursionStateService>();
         services.AddHostedService<IncursionRefreshHostedService>();
+        services.AddSingleton<LocalCharacterLocationLogFeedHostedService>();
+        services.AddSingleton<ILocalCharacterLocationFeed>(sp => sp.GetRequiredService<LocalCharacterLocationLogFeedHostedService>());
+        services.AddHostedService(sp => sp.GetRequiredService<LocalCharacterLocationLogFeedHostedService>());
         services.AddSingleton<ISovUpgradeStateService, SovUpgradeStateService>();
         services.AddSingleton<IAnsiblexNetworkStateService, AnsiblexNetworkStateService>();
         return services;

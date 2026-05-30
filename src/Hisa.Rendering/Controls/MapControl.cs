@@ -200,6 +200,8 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorSovUpgradeIcon), true);
     public static readonly StyledProperty<bool> ShowIndicatorIncursionIconProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorIncursionIcon), true);
+    public static readonly StyledProperty<bool> ShowIndicatorCharacterPresenceProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorCharacterPresence), true);
     public static readonly StyledProperty<bool> ShowIndicatorJumpRangeLyProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorJumpRangeLy), true);
     public static readonly StyledProperty<bool> EnableLinkAnimationsProperty =
@@ -282,6 +284,16 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, IEnumerable<long>?>(nameof(JumpRouteNodeIds));
     public static readonly StyledProperty<IEnumerable<long>?> JumpRouteSkippedNodeIdsProperty =
         AvaloniaProperty.Register<MapControl, IEnumerable<long>?>(nameof(JumpRouteSkippedNodeIds));
+    public static readonly StyledProperty<IReadOnlyDictionary<long, int>?> CharacterPresenceCountsByNodeIdProperty =
+        AvaloniaProperty.Register<MapControl, IReadOnlyDictionary<long, int>?>(nameof(CharacterPresenceCountsByNodeId));
+    public static readonly StyledProperty<IReadOnlyDictionary<long, IReadOnlyList<string>>?> CharacterPresenceNamesByNodeIdProperty =
+        AvaloniaProperty.Register<MapControl, IReadOnlyDictionary<long, IReadOnlyList<string>>?>(nameof(CharacterPresenceNamesByNodeId));
+    public static readonly StyledProperty<IReadOnlyDictionary<long, DateTime>?> CharacterPresenceLastUpdatedUtcByNodeIdProperty =
+        AvaloniaProperty.Register<MapControl, IReadOnlyDictionary<long, DateTime>?>(nameof(CharacterPresenceLastUpdatedUtcByNodeId));
+    public static readonly StyledProperty<bool> ShowInfoBoxCharacterPresenceProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(ShowInfoBoxCharacterPresence), true);
+    public static readonly StyledProperty<int> CharacterPresenceHoverMaxNamesProperty =
+        AvaloniaProperty.Register<MapControl, int>(nameof(CharacterPresenceHoverMaxNames), 6);
 
     private Point? _lastPanPoint;
     private Point? _leftPressPoint;
@@ -440,6 +452,12 @@ public sealed class MapControl : Control
     {
         get => GetValue(ShowIndicatorIncursionIconProperty);
         set => SetValue(ShowIndicatorIncursionIconProperty, value);
+    }
+
+    public bool ShowIndicatorCharacterPresence
+    {
+        get => GetValue(ShowIndicatorCharacterPresenceProperty);
+        set => SetValue(ShowIndicatorCharacterPresenceProperty, value);
     }
 
     public bool ShowIndicatorJumpRangeLy
@@ -688,6 +706,36 @@ public sealed class MapControl : Control
         set => SetValue(JumpRouteSkippedNodeIdsProperty, value);
     }
 
+    public IReadOnlyDictionary<long, int>? CharacterPresenceCountsByNodeId
+    {
+        get => GetValue(CharacterPresenceCountsByNodeIdProperty);
+        set => SetValue(CharacterPresenceCountsByNodeIdProperty, value);
+    }
+
+    public IReadOnlyDictionary<long, IReadOnlyList<string>>? CharacterPresenceNamesByNodeId
+    {
+        get => GetValue(CharacterPresenceNamesByNodeIdProperty);
+        set => SetValue(CharacterPresenceNamesByNodeIdProperty, value);
+    }
+
+    public IReadOnlyDictionary<long, DateTime>? CharacterPresenceLastUpdatedUtcByNodeId
+    {
+        get => GetValue(CharacterPresenceLastUpdatedUtcByNodeIdProperty);
+        set => SetValue(CharacterPresenceLastUpdatedUtcByNodeIdProperty, value);
+    }
+
+    public bool ShowInfoBoxCharacterPresence
+    {
+        get => GetValue(ShowInfoBoxCharacterPresenceProperty);
+        set => SetValue(ShowInfoBoxCharacterPresenceProperty, value);
+    }
+
+    public int CharacterPresenceHoverMaxNames
+    {
+        get => GetValue(CharacterPresenceHoverMaxNamesProperty);
+        set => SetValue(CharacterPresenceHoverMaxNamesProperty, value);
+    }
+
     public MapControl()
     {
         AffectsRender<MapControl>(GraphProperty, SelectedNodeIdProperty, ViewModeProperty, StretchToWindowProperty);
@@ -705,6 +753,7 @@ public sealed class MapControl : Control
             ShowIndicatorWormholeIconProperty,
             ShowIndicatorSovUpgradeIconProperty,
             ShowIndicatorIncursionIconProperty,
+            ShowIndicatorCharacterPresenceProperty,
             ShowIndicatorJumpRangeLyProperty,
             EnableLinkAnimationsProperty,
             ShowAnsiblexNetworkProperty,
@@ -745,7 +794,12 @@ public sealed class MapControl : Control
             LyCoverageCoveredNodeIdsProperty,
             LyCoverageUncoveredNodeIdsProperty,
             JumpRouteNodeIdsProperty,
-            JumpRouteSkippedNodeIdsProperty);
+            JumpRouteSkippedNodeIdsProperty,
+            CharacterPresenceCountsByNodeIdProperty,
+            CharacterPresenceNamesByNodeIdProperty,
+            CharacterPresenceLastUpdatedUtcByNodeIdProperty,
+            ShowInfoBoxCharacterPresenceProperty,
+            CharacterPresenceHoverMaxNamesProperty);
         ClipToBounds = true;
         _linkAnimationTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(24), DispatcherPriority.Render, (_, _) =>
         {
@@ -1468,9 +1522,22 @@ public sealed class MapControl : Control
                         break;
                 }
             }
+            var hasHubWormholeBadge = AlwaysShowHubWormholes &&
+                                      node.HubWormholeConnections.Count > 0 &&
+                                      HubWormholeMarkerMode == HubWormholeMarkerMode.Badge;
+            var hasIncursionBadge = AlwaysShowIncursions && node.HasActiveIncursion;
             if (AlwaysShowIncursions && node.HasActiveIncursion)
             {
-                DrawIncursionBeacon(context, p);
+                var incursionVerticalOffset = hasHubWormholeBadge ? 14.0 : 0.0;
+                DrawIncursionBeacon(context, p, incursionVerticalOffset);
+            }
+            if (ShowIndicatorCharacterPresence &&
+                CharacterPresenceCountsByNodeId is not null &&
+                CharacterPresenceCountsByNodeId.TryGetValue(node.Id, out var localCharacterCount) &&
+                localCharacterCount > 0)
+            {
+                var placeLeft = hasHubWormholeBadge || hasIncursionBadge;
+                DrawCharacterPresenceBadge(context, p, radius, localCharacterCount, placeLeft);
             }
 
             var labelVisibilityMargin = ViewMode == MapViewMode.Universe ? 180 : 96;
@@ -3956,6 +4023,32 @@ public sealed class MapControl : Control
         {
             detailLines.Add("Incursion: Active");
         }
+        if (ShowInfoBoxCharacterPresence)
+        {
+            var presentCharacters = CharacterPresenceNamesByNodeId is not null &&
+                                    CharacterPresenceNamesByNodeId.TryGetValue(node.Id, out var namesForNode)
+                ? namesForNode
+                : null;
+            if (presentCharacters is { Count: > 0 })
+            {
+                var maxNames = Math.Clamp(CharacterPresenceHoverMaxNames, 1, 12);
+                detailLines.Add($"Characters: {presentCharacters.Count}");
+                var visibleCount = Math.Min(maxNames, presentCharacters.Count);
+                var visibleNames = string.Join(", ", presentCharacters.Take(visibleCount));
+                detailLines.Add(visibleNames);
+                var overflow = presentCharacters.Count - visibleCount;
+                if (overflow > 0)
+                {
+                    detailLines.Add($"+{overflow} more");
+                }
+
+                if (CharacterPresenceLastUpdatedUtcByNodeId is not null &&
+                    CharacterPresenceLastUpdatedUtcByNodeId.TryGetValue(node.Id, out var lastSeenUtc))
+                {
+                    detailLines.Add($"Updated {FormatRelativeAge(lastSeenUtc)}");
+                }
+            }
+        }
         if (node.StormEffects.Count > 0)
         {
             foreach (var storm in node.StormEffects.OrderByDescending(e => e.Strength).ThenBy(e => e.Type))
@@ -4608,7 +4701,7 @@ public sealed class MapControl : Control
         context.DrawImage(icon, src, dst);
     }
 
-    private static void DrawIncursionBeacon(DrawingContext context, Point nodePoint)
+    private static void DrawIncursionBeacon(DrawingContext context, Point nodePoint, double verticalOffset = 0.0)
     {
         var icon = IncursionIcon.Value;
         if (icon is null)
@@ -4617,12 +4710,90 @@ public sealed class MapControl : Control
         }
 
         var size = 12.0;
-        var rect = new Rect(nodePoint.X + 7.0, nodePoint.Y - 14.0, size, size);
+        var rect = new Rect(nodePoint.X + 7.0, nodePoint.Y - 14.0 + verticalOffset, size, size);
         var bg = new ImmutableSolidColorBrush(Color.FromArgb(178, 74, 46, 120));
         var border = new Pen(new ImmutableSolidColorBrush(Color.FromArgb(255, 58, 110, 168)), 1);
         context.FillRectangle(bg, rect, 3);
         context.DrawRectangle(border, rect, 3);
         DrawBitmap(context, icon, new Point(rect.X + 1, rect.Y + 1), size - 2);
+    }
+
+    private static void DrawCharacterPresenceBadge(DrawingContext context, Point nodePoint, double nodeRadius, int count, bool placeLeft)
+    {
+        var text = count > 99 ? "99+" : count.ToString(CultureInfo.InvariantCulture);
+        var textLayout = new FormattedText(
+            text,
+            CultureInfo.InvariantCulture,
+            FlowDirection.LeftToRight,
+            new Typeface("Inter"),
+            10,
+            Brushes.White);
+
+        var width = Math.Max(14.0, textLayout.Width + 8.0);
+        var height = Math.Max(14.0, textLayout.Height + 4.0);
+        var x = placeLeft
+            ? nodePoint.X - nodeRadius - 3.0 - width
+            : nodePoint.X + nodeRadius + 3.0;
+        var rect = new Rect(
+            x,
+            nodePoint.Y - nodeRadius - 9.0,
+            width,
+            height);
+
+        var bg = new ImmutableSolidColorBrush(GetCharacterPresenceBadgeColor(count));
+        var border = new Pen(new ImmutableSolidColorBrush(Color.Parse("#0B2A1A")), 1.0);
+        context.FillRectangle(bg, rect, 4);
+        context.DrawRectangle(border, rect, 4);
+        context.DrawText(textLayout, new Point(
+            rect.X + ((rect.Width - textLayout.Width) / 2),
+            rect.Y + ((rect.Height - textLayout.Height) / 2) - 0.5));
+    }
+
+    private static string FormatRelativeAge(DateTime timestampUtc)
+    {
+        var utc = timestampUtc.Kind == DateTimeKind.Utc ? timestampUtc : timestampUtc.ToUniversalTime();
+        var elapsed = DateTime.UtcNow - utc;
+        if (elapsed < TimeSpan.Zero)
+        {
+            elapsed = TimeSpan.Zero;
+        }
+
+        if (elapsed < TimeSpan.FromMinutes(1))
+        {
+            return $"{Math.Max(1, (int)elapsed.TotalSeconds)}s ago";
+        }
+
+        if (elapsed < TimeSpan.FromHours(1))
+        {
+            return $"{(int)elapsed.TotalMinutes}m ago";
+        }
+
+        if (elapsed < TimeSpan.FromDays(1))
+        {
+            return $"{(int)elapsed.TotalHours}h ago";
+        }
+
+        return $"{(int)elapsed.TotalDays}d ago";
+    }
+
+    private static Color GetCharacterPresenceBadgeColor(int count)
+    {
+        if (count >= 16)
+        {
+            return Color.Parse("#A83232");
+        }
+
+        if (count >= 6)
+        {
+            return Color.Parse("#A56D16");
+        }
+
+        if (count >= 2)
+        {
+            return Color.Parse("#2F7D44");
+        }
+
+        return Color.Parse("#2B8A58");
     }
 
     private static void DrawBitmap(DrawingContext context, Bitmap icon, Point topLeft, double size)
