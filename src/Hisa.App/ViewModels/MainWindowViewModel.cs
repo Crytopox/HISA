@@ -3227,6 +3227,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             .ToList();
 
         _intelCardsForView = intelSnapshots
+            .Where(s => !s.IsClear)
             .Where(s => !LimitIntelReportsToCurrentRegion || visibleNodeIds.Contains(s.SolarSystemId))
             .Select(s =>
             {
@@ -3239,7 +3240,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
                 var shipSummary = s.ShipClasses.Count > 0
                     ? string.Join(", ", s.ShipClasses.Select(x => x.ToString()))
-                    : "None";
+                    : "Unknown";
+                var maxShipTier = GetMaxShipThreatTier(s.ShipClasses);
+                var shipBadgeColors = GetThreatBadgeColors(maxShipTier / 8.0);
+                var hostileScore = Math.Max(0, s.HostileScore);
+                var hostileBadgeColors = GetThreatBadgeColors(Math.Clamp(hostileScore / 12.0, 0.0, 1.0));
 
                 return new IntelOverlayCard
                 {
@@ -3255,7 +3260,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                     AgeSummary = FormatOverlayAge(age),
                     MessageText = s.LastMessageText,
                     ShipClassSummary = shipSummary,
-                    HostileCount = Math.Max(0, s.HostileScore),
+                    HostileCount = hostileScore,
+                    ShipBadgeBackgroundHex = shipBadgeColors.BackgroundHex,
+                    ShipBadgeBorderHex = shipBadgeColors.BorderHex,
+                    HostileBadgeBackgroundHex = hostileBadgeColors.BackgroundHex,
+                    HostileBadgeBorderHex = hostileBadgeColors.BorderHex,
                     AccentHex = s.IsClear ? "#6FE38E" : "#FFB347"
                 };
             })
@@ -3308,6 +3317,79 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             StormType.Plasma => ("Plasma", "#DE5B52"),
             _ => ("Unknown", "#9AA7B8")
         };
+    }
+
+    private static int GetMaxShipThreatTier(IReadOnlyList<IntelShipClass> shipClasses)
+    {
+        if (shipClasses.Count == 0)
+        {
+            return 0;
+        }
+
+        var max = 0;
+        foreach (var shipClass in shipClasses)
+        {
+            var tier = shipClass switch
+            {
+                IntelShipClass.Titan => 8,
+                IntelShipClass.Supercapital => 7,
+                IntelShipClass.Capital => 6,
+                IntelShipClass.Battleship => 5,
+                IntelShipClass.Battlecruiser => 4,
+                IntelShipClass.Cruiser => 3,
+                IntelShipClass.Destroyer => 2,
+                IntelShipClass.Frigate => 1,
+                _ => 1
+            };
+            if (tier > max)
+            {
+                max = tier;
+            }
+        }
+
+        return max;
+    }
+
+    private static (string BackgroundHex, string BorderHex) GetThreatBadgeColors(double intensity)
+    {
+        var t = Math.Clamp(intensity, 0.0, 1.0);
+        var bg = GetPaletteColor(t, (74, 82, 94), (125, 104, 34), (150, 84, 30), (156, 44, 44));
+        var border = GetPaletteColor(t, (112, 122, 136), (176, 144, 50), (196, 108, 42), (206, 74, 74));
+        return (ToHex(bg), ToHex(border));
+    }
+
+    private static (int R, int G, int B) GetPaletteColor(
+        double t,
+        (int R, int G, int B) c0,
+        (int R, int G, int B) c1,
+        (int R, int G, int B) c2,
+        (int R, int G, int B) c3)
+    {
+        if (t <= 0.33)
+        {
+            return LerpColor(c0, c1, t / 0.33);
+        }
+
+        if (t <= 0.66)
+        {
+            return LerpColor(c1, c2, (t - 0.33) / 0.33);
+        }
+
+        return LerpColor(c2, c3, (t - 0.66) / 0.34);
+    }
+
+    private static (int R, int G, int B) LerpColor((int R, int G, int B) from, (int R, int G, int B) to, double t)
+    {
+        return (
+            (int)Math.Round(from.R + ((to.R - from.R) * t)),
+            (int)Math.Round(from.G + ((to.G - from.G) * t)),
+            (int)Math.Round(from.B + ((to.B - from.B) * t))
+        );
+    }
+
+    private static string ToHex((int R, int G, int B) color)
+    {
+        return $"#{color.R:X2}{color.G:X2}{color.B:X2}";
     }
 
     private static string BuildExpiryHoursLabel(TimeSpan remaining)

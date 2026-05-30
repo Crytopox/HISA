@@ -629,11 +629,11 @@
                           </Grid>
                           <TextBlock Text="{Binding MessageText}" Foreground="#E4ECF8" FontSize="11" TextWrapping="Wrap" />
                           <WrapPanel>
-                            <Border Background="#2A2340" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="0,0,4,4" BorderBrush="#4D3C73">
-                              <TextBlock Text="{Binding ShipClassSummary, StringFormat='Ships: {0}'}" Foreground="#EBDFFF" FontSize="10" FontWeight="SemiBold" />
+                            <Border Background="{Binding ShipBadgeBackgroundHex}" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="0,0,4,4" BorderBrush="{Binding ShipBadgeBorderHex}">
+                              <TextBlock Text="{Binding ShipClassSummary, StringFormat='Ships: {0}'}" Foreground="#FFFFFF" FontSize="10" FontWeight="SemiBold" />
                             </Border>
-                            <Border Background="#2A2340" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="0,0,4,4" BorderBrush="#4D3C73">
-                              <TextBlock Text="{Binding HostileCount, StringFormat='Hostiles: {0}'}" Foreground="#EBDFFF" FontSize="10" FontWeight="SemiBold" />
+                            <Border Background="{Binding HostileBadgeBackgroundHex}" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="0,0,4,4" BorderBrush="{Binding HostileBadgeBorderHex}">
+                              <TextBlock Text="{Binding HostileCount, StringFormat='Hostiles: {0}'}" Foreground="#FFFFFF" FontSize="10" FontWeight="SemiBold" />
                             </Border>
                           </WrapPanel>
                           <TextBlock Text="{Binding ChannelName, StringFormat='Channel: {0}'}" Foreground="#9DB8D8" FontSize="10" />

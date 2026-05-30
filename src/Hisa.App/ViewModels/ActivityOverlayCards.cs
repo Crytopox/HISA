@@ -61,5 +61,9 @@ public sealed class IntelOverlayCard
     public required string MessageText { get; init; }
     public required string ShipClassSummary { get; init; }
     public required int HostileCount { get; init; }
+    public required string ShipBadgeBackgroundHex { get; init; }
+    public required string ShipBadgeBorderHex { get; init; }
+    public required string HostileBadgeBackgroundHex { get; init; }
+    public required string HostileBadgeBorderHex { get; init; }
     public required string AccentHex { get; init; }
 }
