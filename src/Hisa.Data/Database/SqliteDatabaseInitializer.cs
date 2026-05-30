@@ -108,6 +108,21 @@ public sealed class SqliteDatabaseInitializer : IDatabaseInitializer
 
     private static async Task SyncImportedBaseLayoutsAsync(SqliteConnection targetConnection, CancellationToken cancellationToken)
     {
+        var existingImportedCommand = targetConnection.CreateCommand();
+        existingImportedCommand.CommandText = """
+            SELECT COUNT(1)
+            FROM MapLayoutRegion r
+            INNER JOIN MapLayoutPack p ON p.Id = r.PackId
+            WHERE p.Name = $name;
+            """;
+        existingImportedCommand.Parameters.AddWithValue("$name", ImportedPackName);
+        var existingImportedRegions = Convert.ToInt32(await existingImportedCommand.ExecuteScalarAsync(cancellationToken));
+        if (existingImportedRegions > 0)
+        {
+            // Imported base already synced; avoid expensive full re-import on every startup.
+            return;
+        }
+
         var sourcePath = ResolveImportedLayoutSourcePath();
         if (sourcePath is null)
         {

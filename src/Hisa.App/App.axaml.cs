@@ -24,12 +24,17 @@ public partial class App : Application
 
             try
             {
-                await Task.WhenAll(Task.Delay(TimeSpan.FromSeconds(2)), vm.InitialLoadTask);
+                await Task.Delay(TimeSpan.FromSeconds(1.2));
             }
             catch
             {
-                // Let MainWindow surface load errors in its status bar.
+                // Ignore splash delay cancellation/failures.
             }
+
+            _ = vm.InitialLoadTask.ContinueWith(_ =>
+            {
+                // Let MainWindow surface load errors in its status bar.
+            }, TaskScheduler.Default);
 
             var mainWindow = services.GetRequiredService<MainWindow>();
             desktop.MainWindow = mainWindow;

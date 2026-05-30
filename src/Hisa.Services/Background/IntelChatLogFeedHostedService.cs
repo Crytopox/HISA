@@ -13,6 +13,7 @@ namespace Hisa.Services.Background;
 
 public sealed partial class IntelChatLogFeedHostedService : BackgroundService, IIntelFeed
 {
+    private const long InitialReadTailBytes = 512 * 1024;
     private const string LogsRootSettingsKey = "Tracking.LogsRootPath";
     private const string IntelEnabledSettingsKey = "Intel.Enabled";
     private const string IntelIncludeChannelsSettingsKey = "Intel.Channels.Include";
@@ -83,7 +84,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
 
         _logger.LogInformation("Starting intel chat feed from: {Path}", chatLogsDirectory);
         SetupWatcher(chatLogsDirectory);
-        EnqueueAllKnownFiles(chatLogsDirectory);
+        EnqueueAllKnownFiles(chatLogsDirectory, startupOnlyNewestPerChannel: true);
 
         try
         {
@@ -164,7 +165,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         _watcher.Changed += OnWatcherChanged;
         _watcher.Created += OnWatcherChanged;
         _watcher.Renamed += OnWatcherRenamed;
-        _watcher.Error += (_, _) => EnqueueAllKnownFiles(chatLogsDirectory);
+        _watcher.Error += (_, _) => EnqueueAllKnownFiles(chatLogsDirectory, startupOnlyNewestPerChannel: true);
     }
 
     private void OnWatcherChanged(object sender, FileSystemEventArgs e)
@@ -221,8 +222,39 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         return channelName.Length > 0;
     }
 
-    private void EnqueueAllKnownFiles(string chatLogsDirectory)
+    private void EnqueueAllKnownFiles(string chatLogsDirectory, bool startupOnlyNewestPerChannel)
     {
+        if (startupOnlyNewestPerChannel)
+        {
+            var newestByChannel = new Dictionary<string, (string Path, DateTime LastWriteUtc)>(StringComparer.OrdinalIgnoreCase);
+            foreach (var filePath in Directory.EnumerateFiles(chatLogsDirectory, "*.txt", SearchOption.TopDirectoryOnly))
+            {
+                var fileName = Path.GetFileName(filePath);
+                if (!IsCandidateIntelFile(fileName))
+                {
+                    continue;
+                }
+
+                if (!TryExtractChannelNameFromFileName(fileName, out var channelFromName) || !ShouldReadChannel(channelFromName))
+                {
+                    continue;
+                }
+
+                var lastWriteUtc = File.GetLastWriteTimeUtc(filePath);
+                if (!newestByChannel.TryGetValue(channelFromName, out var existing) || lastWriteUtc > existing.LastWriteUtc)
+                {
+                    newestByChannel[channelFromName] = (filePath, lastWriteUtc);
+                }
+            }
+
+            foreach (var entry in newestByChannel.Values)
+            {
+                _dirtyFiles[entry.Path] = 0;
+            }
+
+            return;
+        }
+
         foreach (var filePath in Directory.EnumerateFiles(chatLogsDirectory, "*.txt", SearchOption.TopDirectoryOnly))
         {
             var fileName = Path.GetFileName(filePath);
@@ -277,6 +309,12 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         lock (_gate)
         {
             _readOffsetsByPath.TryGetValue(filePath, out offset);
+        }
+
+        if (offset <= 0 && stream.Length > InitialReadTailBytes)
+        {
+            // Startup optimization: tail the latest chunk instead of replaying full historical logs.
+            offset = stream.Length - InitialReadTailBytes;
         }
 
         if (offset > stream.Length)
