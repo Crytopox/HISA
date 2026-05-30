@@ -167,6 +167,7 @@
                               InfoBoxShowIncursionIcon="{Binding InfoBoxShowIncursionIcon}"
                               CharacterPresenceCountsByNodeId="{Binding CharacterPresenceCountsByNodeIdForView}"
                               CharacterPresenceNamesByNodeId="{Binding CharacterPresenceNamesByNodeIdForView}"
+                              CharacterPresenceCharacterIdsByNodeId="{Binding CharacterPresenceCharacterIdsByNodeIdForView}"
                               CharacterPresenceLastUpdatedUtcByNodeId="{Binding CharacterPresenceLastUpdatedUtcByNodeIdForView}"
                               OverlaySovUpgradeFilterKeys="{Binding SelectedOverlaySovUpgradeKeys}"
                               AlwaysShowHubWormholes="{Binding AlwaysShowHubWormholes}"

@@ -12,6 +12,8 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
+using System.Net.Http;
 using NetTopologySuite.Triangulate;
 using NetTopologySuite.Precision;
 using NtsCoordinate = NetTopologySuite.Geometries.Coordinate;
@@ -288,6 +290,8 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, IReadOnlyDictionary<long, int>?>(nameof(CharacterPresenceCountsByNodeId));
     public static readonly StyledProperty<IReadOnlyDictionary<long, IReadOnlyList<string>>?> CharacterPresenceNamesByNodeIdProperty =
         AvaloniaProperty.Register<MapControl, IReadOnlyDictionary<long, IReadOnlyList<string>>?>(nameof(CharacterPresenceNamesByNodeId));
+    public static readonly StyledProperty<IReadOnlyDictionary<long, IReadOnlyList<int>>?> CharacterPresenceCharacterIdsByNodeIdProperty =
+        AvaloniaProperty.Register<MapControl, IReadOnlyDictionary<long, IReadOnlyList<int>>?>(nameof(CharacterPresenceCharacterIdsByNodeId));
     public static readonly StyledProperty<IReadOnlyDictionary<long, DateTime>?> CharacterPresenceLastUpdatedUtcByNodeIdProperty =
         AvaloniaProperty.Register<MapControl, IReadOnlyDictionary<long, DateTime>?>(nameof(CharacterPresenceLastUpdatedUtcByNodeId));
     public static readonly StyledProperty<bool> ShowInfoBoxCharacterPresenceProperty =
@@ -301,6 +305,7 @@ public sealed class MapControl : Control
     private bool _leftDragPanned;
     private Point _panOffset = new(0, 0);
     private double _zoom = 1.0;
+    private Point _lastPointerPosition;
     private long? _hoveredNodeId;
     private int? _hoveredRegionId;
     private int? _selectedRegionId;
@@ -331,6 +336,11 @@ public sealed class MapControl : Control
     private Dictionary<long, int> _jumpRangeOverlapByNodeId = [];
     private HashSet<long> _jumpRangeOriginNodeIds = [];
     private Dictionary<long, Color> _jumpRangeOriginColorByNodeId = [];
+    private static readonly HttpClient CharacterPortraitHttpClient = new();
+    private static readonly ConcurrentDictionary<int, Bitmap?> CharacterPortraitCache = new();
+    private static readonly ConcurrentDictionary<int, byte> CharacterPortraitLoading = new();
+    private static readonly ConcurrentDictionary<int, DateTime> CharacterPortraitRetryAfterUtc = new();
+    private static readonly TimeSpan CharacterPortraitRetryDelay = TimeSpan.FromMinutes(2);
     private Point[] _screenPositions = [];
     private double _graphMinX;
     private double _graphMaxX;
@@ -718,6 +728,12 @@ public sealed class MapControl : Control
         set => SetValue(CharacterPresenceNamesByNodeIdProperty, value);
     }
 
+    public IReadOnlyDictionary<long, IReadOnlyList<int>>? CharacterPresenceCharacterIdsByNodeId
+    {
+        get => GetValue(CharacterPresenceCharacterIdsByNodeIdProperty);
+        set => SetValue(CharacterPresenceCharacterIdsByNodeIdProperty, value);
+    }
+
     public IReadOnlyDictionary<long, DateTime>? CharacterPresenceLastUpdatedUtcByNodeId
     {
         get => GetValue(CharacterPresenceLastUpdatedUtcByNodeIdProperty);
@@ -797,6 +813,7 @@ public sealed class MapControl : Control
             JumpRouteSkippedNodeIdsProperty,
             CharacterPresenceCountsByNodeIdProperty,
             CharacterPresenceNamesByNodeIdProperty,
+            CharacterPresenceCharacterIdsByNodeIdProperty,
             CharacterPresenceLastUpdatedUtcByNodeIdProperty,
             ShowInfoBoxCharacterPresenceProperty,
             CharacterPresenceHoverMaxNamesProperty);
@@ -1771,6 +1788,7 @@ public sealed class MapControl : Control
     {
         base.OnPointerMoved(e);
         var point = e.GetPosition(this);
+        _lastPointerPosition = point;
 
         if (_lastPanPoint is null)
         {
@@ -4023,32 +4041,6 @@ public sealed class MapControl : Control
         {
             detailLines.Add("Incursion: Active");
         }
-        if (ShowInfoBoxCharacterPresence)
-        {
-            var presentCharacters = CharacterPresenceNamesByNodeId is not null &&
-                                    CharacterPresenceNamesByNodeId.TryGetValue(node.Id, out var namesForNode)
-                ? namesForNode
-                : null;
-            if (presentCharacters is { Count: > 0 })
-            {
-                var maxNames = Math.Clamp(CharacterPresenceHoverMaxNames, 1, 12);
-                detailLines.Add($"Characters: {presentCharacters.Count}");
-                var visibleCount = Math.Min(maxNames, presentCharacters.Count);
-                var visibleNames = string.Join(", ", presentCharacters.Take(visibleCount));
-                detailLines.Add(visibleNames);
-                var overflow = presentCharacters.Count - visibleCount;
-                if (overflow > 0)
-                {
-                    detailLines.Add($"+{overflow} more");
-                }
-
-                if (CharacterPresenceLastUpdatedUtcByNodeId is not null &&
-                    CharacterPresenceLastUpdatedUtcByNodeId.TryGetValue(node.Id, out var lastSeenUtc))
-                {
-                    detailLines.Add($"Updated {FormatRelativeAge(lastSeenUtc)}");
-                }
-            }
-        }
         if (node.StormEffects.Count > 0)
         {
             foreach (var storm in node.StormEffects.OrderByDescending(e => e.Strength).ThenBy(e => e.Type))
@@ -4190,19 +4182,57 @@ public sealed class MapControl : Control
             jumpLineHeight = Math.Max(jumpLineHeight, Math.Max(14, jumpLine.Text.Height));
             jumpMaxWidth = Math.Max(jumpMaxWidth, 14 + 4 + jumpLine.Text.Width);
         }
+        IReadOnlyList<int>? presentCharacterIds = null;
+        IReadOnlyList<string>? presentCharacterNames = null;
+        var characterPortraitSize = 28.0;
+        var characterPortraitGap = 4.0;
+        var characterRowHeight = 0.0;
+        var characterRowWidth = 0.0;
+        FormattedText? characterOverflowText = null;
+        if (ShowInfoBoxCharacterPresence &&
+            CharacterPresenceCharacterIdsByNodeId is not null &&
+            CharacterPresenceCharacterIdsByNodeId.TryGetValue(node.Id, out var idsForNode) &&
+            idsForNode.Count > 0)
+        {
+            presentCharacterIds = idsForNode;
+            if (CharacterPresenceNamesByNodeId is not null &&
+                CharacterPresenceNamesByNodeId.TryGetValue(node.Id, out var namesForNode))
+            {
+                presentCharacterNames = namesForNode;
+            }
+
+            var maxNames = Math.Clamp(CharacterPresenceHoverMaxNames, 1, 12);
+            var visibleCount = Math.Min(maxNames, idsForNode.Count);
+            characterRowWidth = visibleCount * characterPortraitSize +
+                                Math.Max(0, visibleCount - 1) * characterPortraitGap;
+            var overflow = idsForNode.Count - visibleCount;
+            if (overflow > 0)
+            {
+                characterOverflowText = new FormattedText(
+                    $"+{overflow}",
+                    CultureInfo.InvariantCulture,
+                    FlowDirection.LeftToRight,
+                    new Typeface("Inter"),
+                    12,
+                    Brushes.White);
+                characterRowWidth += 6 + characterOverflowText.Width;
+            }
+            characterRowHeight = Math.Max(characterPortraitSize, characterOverflowText?.Height ?? 0);
+        }
 
         var start = GetNodeLabelOrigin(anchor);
         var padX = 8.0;
         var padY = 6.0;
         var headerWidth = headerText.Width + (securityText is null ? 0 : (8 + securityText.Width));
-        var bodyWidth = Math.Max(Math.Max(Math.Max(Math.Max(regionConstellationText?.Width ?? 0, detailsText?.Width ?? 0), wormholeMaxWidth), sovMaxWidth), jumpMaxWidth);
+        var bodyWidth = Math.Max(Math.Max(Math.Max(Math.Max(Math.Max(regionConstellationText?.Width ?? 0, detailsText?.Width ?? 0), wormholeMaxWidth), sovMaxWidth), jumpMaxWidth), characterRowWidth);
         var contentWidth = Math.Max(headerWidth, bodyWidth);
         var contentHeight = headerText.Height
             + (regionConstellationText is null ? 0 : regionConstellationText.Height + 2)
             + (detailsText is null ? 0 : detailsText.Height + 2)
             + (jumpRangeLineTexts.Count == 0 ? 0 : (jumpRangeLineTexts.Count * (jumpLineHeight + 1)))
             + (sovLineTexts.Count == 0 ? 0 : (sovLineTexts.Count * (sovLineHeight + 1)))
-            + (wormholes.Count == 0 ? 0 : (wormholes.Count * (wormholeLineHeight + 1)));
+            + (wormholes.Count == 0 ? 0 : (wormholes.Count * (wormholeLineHeight + 1)))
+            + (presentCharacterIds is null ? 0 : characterRowHeight + 2);
         var rect = new Rect(
             start.X - 2,
             start.Y - 2,
@@ -4271,6 +4301,43 @@ public sealed class MapControl : Control
             lineX += sep.Width;
             context.DrawText(mass, new Point(lineX, wormholeStartY));
             wormholeStartY += wormholeLineHeight + 1;
+        }
+        if (presentCharacterIds is { Count: > 0 })
+        {
+            var maxNames = Math.Clamp(CharacterPresenceHoverMaxNames, 1, 12);
+            var visibleCount = Math.Min(maxNames, presentCharacterIds.Count);
+            var charStartY = wormholeStartY + 2;
+            var charX = headerOrigin.X;
+            string? hoveredCharacterName = null;
+            for (var i = 0; i < visibleCount; i++)
+            {
+                var characterId = presentCharacterIds[i];
+                var currentName = presentCharacterNames is not null && i < presentCharacterNames.Count ? presentCharacterNames[i] : null;
+                var portraitRect = new Rect(charX, charStartY, characterPortraitSize, characterPortraitSize);
+                if (portraitRect.Contains(_lastPointerPosition))
+                {
+                    hoveredCharacterName = currentName;
+                }
+
+                DrawCharacterPortraitChip(
+                    context,
+                    charX,
+                    charStartY,
+                    characterPortraitSize,
+                    characterId,
+                    currentName);
+                charX += characterPortraitSize + characterPortraitGap;
+            }
+
+            if (characterOverflowText is not null)
+            {
+                context.DrawText(characterOverflowText, new Point(charX + 6, charStartY + ((characterPortraitSize - characterOverflowText.Height) / 2)));
+            }
+
+            if (!string.IsNullOrWhiteSpace(hoveredCharacterName))
+            {
+                DrawCompactTooltip(context, _lastPointerPosition, hoveredCharacterName!);
+            }
         }
 
         var overlayIconSlot = 0;
@@ -4747,6 +4814,128 @@ public sealed class MapControl : Control
         context.DrawText(textLayout, new Point(
             rect.X + ((rect.Width - textLayout.Width) / 2),
             rect.Y + ((rect.Height - textLayout.Height) / 2) - 0.5));
+    }
+
+    private void DrawCharacterPortraitChip(
+        DrawingContext context,
+        double x,
+        double y,
+        double size,
+        int characterId,
+        string? characterName)
+    {
+        var rect = new Rect(x, y, size, size);
+        context.FillRectangle(new ImmutableSolidColorBrush(Color.Parse("#233248")), rect, 3);
+
+        var portrait = GetCharacterPortrait(characterId);
+        if (portrait is not null)
+        {
+            var src = new Rect(0, 0, portrait.Size.Width, portrait.Size.Height);
+            context.DrawImage(portrait, src, rect);
+        }
+        else
+        {
+            var fallbackGlyph = string.IsNullOrWhiteSpace(characterName)
+                ? "?"
+                : characterName.Trim().Substring(0, 1).ToUpperInvariant();
+            var fallbackText = new FormattedText(
+                fallbackGlyph,
+                CultureInfo.InvariantCulture,
+                FlowDirection.LeftToRight,
+                new Typeface("Inter", FontStyle.Normal, FontWeight.SemiBold),
+                10,
+                Brushes.White);
+            context.DrawText(
+                fallbackText,
+                new Point(
+                    rect.X + ((rect.Width - fallbackText.Width) / 2),
+                    rect.Y + ((rect.Height - fallbackText.Height) / 2) - 0.5));
+        }
+    }
+
+    private static void DrawCompactTooltip(DrawingContext context, Point anchor, string text)
+    {
+        var content = new FormattedText(
+            text,
+            CultureInfo.InvariantCulture,
+            FlowDirection.LeftToRight,
+            new Typeface("Inter"),
+            11,
+            Brushes.White);
+
+        var padX = 6.0;
+        var padY = 3.0;
+        var rect = new Rect(
+            anchor.X + 10.0,
+            anchor.Y + 10.0,
+            content.Width + (padX * 2),
+            content.Height + (padY * 2));
+
+        context.FillRectangle(new ImmutableSolidColorBrush(Color.Parse("#D6111A28")), rect, 4);
+        context.DrawRectangle(new Pen(new ImmutableSolidColorBrush(Color.Parse("#55739A")), 1), rect, 4);
+        context.DrawText(content, new Point(rect.X + padX, rect.Y + padY));
+    }
+
+    private Bitmap? GetCharacterPortrait(int characterId)
+    {
+        if (characterId <= 0)
+        {
+            return null;
+        }
+
+        if (CharacterPortraitCache.TryGetValue(characterId, out var cached))
+        {
+            return cached;
+        }
+
+        if (CharacterPortraitRetryAfterUtc.TryGetValue(characterId, out var retryAfterUtc) &&
+            DateTime.UtcNow < retryAfterUtc)
+        {
+            return null;
+        }
+
+        if (!CharacterPortraitLoading.TryAdd(characterId, 0))
+        {
+            return null;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            Bitmap? portrait = null;
+            try
+            {
+                var url = $"https://images.evetech.net/characters/{characterId}/portrait?tenant=tranquility&size=64";
+                using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                request.Headers.UserAgent.ParseAdd("HISA/1.0");
+                using var response = await CharacterPortraitHttpClient.SendAsync(request).ConfigureAwait(false);
+                if (response.IsSuccessStatusCode)
+                {
+                    await using var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+                    portrait = new Bitmap(stream);
+                }
+            }
+            catch
+            {
+                portrait = null;
+            }
+            finally
+            {
+                if (portrait is not null)
+                {
+                    CharacterPortraitCache[characterId] = portrait;
+                    CharacterPortraitRetryAfterUtc.TryRemove(characterId, out _);
+                }
+                else
+                {
+                    CharacterPortraitRetryAfterUtc[characterId] = DateTime.UtcNow + CharacterPortraitRetryDelay;
+                }
+
+                CharacterPortraitLoading.TryRemove(characterId, out _);
+                Dispatcher.UIThread.Post(InvalidateVisual);
+            }
+        });
+
+        return null;
     }
 
     private static string FormatRelativeAge(DateTime timestampUtc)

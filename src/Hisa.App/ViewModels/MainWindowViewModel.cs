@@ -301,6 +301,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly ObservableCollection<CharacterTrackingCardViewModel> _disabledCharacterTrackingCards = [];
     private IReadOnlyDictionary<long, int> _characterPresenceCountsByNodeId = new Dictionary<long, int>();
     private IReadOnlyDictionary<long, IReadOnlyList<string>> _characterPresenceNamesByNodeId = new Dictionary<long, IReadOnlyList<string>>();
+    private IReadOnlyDictionary<long, IReadOnlyList<int>> _characterPresenceCharacterIdsByNodeId = new Dictionary<long, IReadOnlyList<int>>();
     private IReadOnlyDictionary<long, DateTime> _characterPresenceLastUpdatedUtcByNodeId = new Dictionary<long, DateTime>();
     private bool _showIndicatorCharacterPresence = true;
     private bool _showInfoBoxCharacterPresence = true;
@@ -422,6 +423,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public IReadOnlyList<StormOverlayCard> StormCardsForView => _stormCardsForView;
     public IReadOnlyDictionary<long, int> CharacterPresenceCountsByNodeIdForView => _characterPresenceCountsByNodeId;
     public IReadOnlyDictionary<long, IReadOnlyList<string>> CharacterPresenceNamesByNodeIdForView => _characterPresenceNamesByNodeId;
+    public IReadOnlyDictionary<long, IReadOnlyList<int>> CharacterPresenceCharacterIdsByNodeIdForView => _characterPresenceCharacterIdsByNodeId;
     public IReadOnlyDictionary<long, DateTime> CharacterPresenceLastUpdatedUtcByNodeIdForView => _characterPresenceLastUpdatedUtcByNodeId;
     public ObservableCollection<CharacterTrackingCardViewModel> CharacterTrackingCards => _characterTrackingCards;
     public ObservableCollection<CharacterTrackingCardViewModel> EnabledCharacterTrackingCards => _enabledCharacterTrackingCards;
@@ -1809,9 +1811,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         {
             _characterPresenceCountsByNodeId = new Dictionary<long, int>();
             _characterPresenceNamesByNodeId = new Dictionary<long, IReadOnlyList<string>>();
+            _characterPresenceCharacterIdsByNodeId = new Dictionary<long, IReadOnlyList<int>>();
             _characterPresenceLastUpdatedUtcByNodeId = new Dictionary<long, DateTime>();
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CharacterPresenceCountsByNodeIdForView)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CharacterPresenceNamesByNodeIdForView)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CharacterPresenceCharacterIdsByNodeIdForView)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CharacterPresenceLastUpdatedUtcByNodeIdForView)));
             return;
         }
@@ -1854,17 +1858,23 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
 
         _characterPresenceCountsByNodeId = namesByNode.ToDictionary(kvp => kvp.Key, kvp => kvp.Value.Count);
-        _characterPresenceNamesByNodeId = namesByNode.ToDictionary(
+        var sortedByNode = namesByNode.ToDictionary(
             kvp => kvp.Key,
-            kvp => (IReadOnlyList<string>)kvp.Value
+            kvp => kvp.Value
                 .OrderBy(n => GetCharacterPriorityById(n.CharacterId))
                 .ThenBy(n => n.CharacterName, StringComparer.OrdinalIgnoreCase)
-                .Select(n => n.CharacterName)
                 .ToList());
+        _characterPresenceNamesByNodeId = sortedByNode.ToDictionary(
+            kvp => kvp.Key,
+            kvp => (IReadOnlyList<string>)kvp.Value.Select(n => n.CharacterName).ToList());
+        _characterPresenceCharacterIdsByNodeId = sortedByNode.ToDictionary(
+            kvp => kvp.Key,
+            kvp => (IReadOnlyList<int>)kvp.Value.Select(n => n.CharacterId).ToList());
         _characterPresenceLastUpdatedUtcByNodeId = latestSeenByNode;
 
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CharacterPresenceCountsByNodeIdForView)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CharacterPresenceNamesByNodeIdForView)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CharacterPresenceCharacterIdsByNodeIdForView)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CharacterPresenceLastUpdatedUtcByNodeIdForView)));
     }
 
