@@ -76,6 +76,7 @@ public sealed class IntelChatMessageParserTests
 
         Assert.Contains("GK5Z-T", result.Systems, StringComparer.OrdinalIgnoreCase);
         Assert.False(result.IsClear);
+        Assert.Equal(3, result.HostileCount);
     }
 
     [Fact]
@@ -118,5 +119,23 @@ public sealed class IntelChatMessageParserTests
 
         Assert.Equal(2, result.ShipClasses.Count);
         Assert.All(result.ShipClasses, shipClass => Assert.Equal(IntelShipClass.Capsule, shipClass));
+    }
+
+    [Fact]
+    public void Parse_CharacterNames_InfersHostileCount()
+    {
+        var parser = CreateParser();
+        var result = parser.Parse("D-P1EH John Smith Jane Doe");
+
+        Assert.Equal(2, result.HostileCount);
+    }
+
+    [Fact]
+    public void Parse_ExplicitCount_WinsOverNameHeuristics()
+    {
+        var parser = CreateParser();
+        var result = parser.Parse("D-P1EH John Smith +5");
+
+        Assert.Equal(5, result.HostileCount);
     }
 }

@@ -6,6 +6,7 @@ namespace Hisa.Logs.IntelChatLogs;
 public sealed partial class IntelChatMessageParser
 {
     private static readonly Regex WordRegex = BuildWordRegex();
+    private static readonly Regex HostileCountRegex = BuildHostileCountRegex();
     private readonly IReadOnlyDictionary<string, long> _systemIdByName;
     private readonly IReadOnlyDictionary<string, IntelShipClass> _shipClassByName;
     private readonly IReadOnlyDictionary<string, string> _shipAliases;
@@ -17,6 +18,11 @@ public sealed partial class IntelChatMessageParser
         ["two"] = 2,
         ["three"] = 3,
         ["both"] = 2
+    };
+    private static readonly HashSet<string> CharacterStopWords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "in", "on", "at", "to", "from", "and", "with", "gate", "camp", "spike", "clear", "clr", "nv", "neut", "neuts",
+        "hostile", "hostiles", "reported", "report", "local", "intel", "up", "down", "got", "tackled"
     };
 
     public IntelChatMessageParser(
@@ -41,14 +47,155 @@ public sealed partial class IntelChatMessageParser
         {
             alerts.Add(IntelAlertType.Clear);
         }
+        var hostileCount = isClear ? 0 : DetectHostileCount(message, systems);
 
         return new IntelParseResult
         {
             Systems = systems,
             ShipClasses = shipClasses.ToList(),
             Alerts = alerts.ToList(),
-            IsClear = isClear
+            IsClear = isClear,
+            HostileCount = hostileCount
         };
+    }
+
+    private int DetectHostileCount(string message, IReadOnlySet<string> systems)
+    {
+        var lower = message.ToLowerInvariant();
+        var explicitCount = ExtractExplicitHostileCount(lower);
+        if (explicitCount > 0)
+        {
+            return explicitCount;
+        }
+
+        var tokens = WordRegex.Matches(message)
+            .Select(x => x.Value.Trim())
+            .Where(x => x.Length > 0)
+            .ToList();
+        if (tokens.Count == 0)
+        {
+            return 0;
+        }
+
+        var used = new bool[tokens.Count];
+        for (var i = 0; i < tokens.Count; i++)
+        {
+            var token = tokens[i];
+            if (systems.Contains(token) || IsCountToken(token))
+            {
+                used[i] = true;
+                continue;
+            }
+
+            // Mark ship tokens as used so they don't get counted as character names.
+            for (var len = Math.Min(5, tokens.Count - i); len >= 1; len--)
+            {
+                var phrase = string.Join(" ", tokens.Skip(i).Take(len));
+                if (TryResolveShipClass(phrase, out var shipClass) && shipClass != IntelShipClass.Unknown)
+                {
+                    for (var j = i; j < i + len; j++)
+                    {
+                        used[j] = true;
+                    }
+                    break;
+                }
+            }
+        }
+
+        var count = 0;
+        for (var i = 0; i < tokens.Count; i++)
+        {
+            if (used[i])
+            {
+                continue;
+            }
+
+            if (!LooksLikeCharacterWord(tokens[i]))
+            {
+                continue;
+            }
+
+            // Prefer first/last-name style reports.
+            if (i + 1 < tokens.Count && !used[i + 1] && LooksLikeCharacterWord(tokens[i + 1]))
+            {
+                count++;
+                used[i] = true;
+                used[i + 1] = true;
+                i++;
+                continue;
+            }
+
+            // Single-word character handles.
+            count++;
+            used[i] = true;
+        }
+
+        return Math.Clamp(count, 0, 300);
+    }
+
+    private static int ExtractExplicitHostileCount(string lower)
+    {
+        var max = 0;
+        foreach (Match match in HostileCountRegex.Matches(lower))
+        {
+            var valueText = match.Groups["n"].Value;
+            if (!int.TryParse(valueText, out var value))
+            {
+                continue;
+            }
+
+            if (value > max)
+            {
+                max = value;
+            }
+        }
+
+        return max;
+    }
+
+    private static bool IsCountToken(string token)
+    {
+        if (int.TryParse(token, out _))
+        {
+            return true;
+        }
+
+        var lower = token.ToLowerInvariant();
+        if (CountWords.ContainsKey(lower))
+        {
+            return true;
+        }
+
+        if (lower.Length > 1 && (lower.EndsWith('x') || lower.EndsWith('*')) && int.TryParse(lower[..^1], out _))
+        {
+            return true;
+        }
+
+        return lower.StartsWith('+') || lower.EndsWith('+') || lower.StartsWith('=');
+    }
+
+    private static bool LooksLikeCharacterWord(string token)
+    {
+        if (token.Length < 3 || CharacterStopWords.Contains(token))
+        {
+            return false;
+        }
+
+        if (!char.IsLetter(token[0]) || !char.IsUpper(token[0]))
+        {
+            return false;
+        }
+
+        for (var i = 1; i < token.Length; i++)
+        {
+            var c = token[i];
+            if (!(char.IsLetter(c) || c == '\'' || c == '-'))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private List<IntelShipClass> DetectShipClasses(string message, string lower)
@@ -286,6 +433,9 @@ public sealed partial class IntelChatMessageParser
 
     [GeneratedRegex(@"[A-Za-z0-9'\-]+", RegexOptions.Compiled | RegexOptions.CultureInvariant)]
     private static partial Regex BuildWordRegex();
+
+    [GeneratedRegex(@"\+(?<n>\d{1,3})|(?<n>\d{1,3})\+|=(?<n>\d{1,3})|(?<n>\d{1,3})\s+neuts?\b", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
+    private static partial Regex BuildHostileCountRegex();
 }
 
 public sealed class IntelParseResult
@@ -294,4 +444,5 @@ public sealed class IntelParseResult
     public required IReadOnlyList<IntelShipClass> ShipClasses { get; init; }
     public required IReadOnlyList<IntelAlertType> Alerts { get; init; }
     public bool IsClear { get; init; }
+    public int HostileCount { get; init; }
 }

@@ -478,7 +478,8 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             Systems = [],
             ShipClasses = [],
             Alerts = [],
-            IsClear = false
+            IsClear = false,
+            HostileCount = 0
         };
         return new IntelChatReport
         {
@@ -490,7 +491,8 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             Systems = parsed.Systems.ToList(),
             ShipClasses = parsed.ShipClasses,
             Alerts = parsed.Alerts,
-            IsClear = parsed.IsClear
+            IsClear = parsed.IsClear,
+            ReportedHostileCount = parsed.HostileCount
         };
     }
 
@@ -562,7 +564,10 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
                     .OrderByDescending(x => x.TimestampUtc)
                     .Take(2)
                     .ToList();
-                var hostileScore = Math.Max(1, report.ShipClasses.Count + report.Alerts.Count(a => a != IntelAlertType.Clear));
+                var hostileScoreBase = report.ReportedHostileCount > 0
+                    ? report.ReportedHostileCount
+                    : Math.Max(report.ShipClasses.Count, report.Alerts.Any(a => a != IntelAlertType.Clear) ? 1 : 0);
+                var hostileScore = Math.Max(1, hostileScoreBase);
                 _snapshotBySystemId[systemId] = new IntelSystemSnapshot
                 {
                     SolarSystemId = systemId,

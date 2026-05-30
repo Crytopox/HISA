@@ -44,6 +44,7 @@ public sealed class IntelChatReport
     public required IReadOnlyList<IntelShipClass> ShipClasses { get; init; }
     public required IReadOnlyList<IntelAlertType> Alerts { get; init; }
     public bool IsClear { get; init; }
+    public int ReportedHostileCount { get; init; }
 }
 
 public sealed class IntelSystemSnapshot
