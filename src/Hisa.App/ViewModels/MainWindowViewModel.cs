@@ -235,6 +235,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly IAnsiblexNetworkStateService _ansiblexNetworkStateService;
     private readonly IIncursionStateService _incursionStateService;
     private readonly ILocalCharacterLocationFeed _localCharacterLocationFeed;
+    private readonly IIntelFeed _intelFeed;
     private List<RegionOption> _allRegions = [];
     private bool _isBusy;
     private MapViewMode _selectedViewMode;
@@ -282,6 +283,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _isHubWormholesOverlayOpen;
     private bool _isIncursionsOverlayOpen;
     private bool _isStormsOverlayOpen;
+    private bool _isIntelOverlayOpen;
     private HubWormholeMarkerMode _hubWormholeMarkerMode = HubWormholeMarkerMode.Badge;
     private readonly Dictionary<long, double> _jumpRangeOriginsLyByNodeId = [];
     private readonly Dictionary<long, uint> _jumpRangeOriginColorByNodeId = [];
@@ -294,6 +296,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private IReadOnlyList<WormholeOverlayCard> _hubWormholeCardsForView = [];
     private IReadOnlyList<IncursionOverlayCard> _incursionCardsForView = [];
     private IReadOnlyList<StormOverlayCard> _stormCardsForView = [];
+    private IReadOnlyList<IntelOverlayCard> _intelCardsForView = [];
     private readonly Dictionary<int, LocalCharacterSystemChange> _localCharacterLocationsByCharacterId = [];
     private readonly Dictionary<int, CharacterTrackingPreference> _characterTrackingPreferencesById = [];
     private readonly ObservableCollection<CharacterTrackingCardViewModel> _characterTrackingCards = [];
@@ -311,6 +314,15 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _isLogsPathValid;
     private readonly Dictionary<long, List<long>> _jumpRangeMembershipByNodeId = [];
     private readonly Dictionary<long, List<JumpRangeDistanceDisplay>> _jumpRangeDistancesByNodeId = [];
+    private readonly Dictionary<long, IntelSystemSnapshot> _intelSnapshotsBySystemId = [];
+    private IReadOnlyDictionary<long, IReadOnlyList<string>> _intelIconKeysByNodeId = new Dictionary<long, IReadOnlyList<string>>();
+    private IReadOnlyDictionary<long, IReadOnlyList<string>> _intelRecentReportsByNodeId = new Dictionary<long, IReadOnlyList<string>>();
+    private IReadOnlyDictionary<long, int> _intelHostileScoresByNodeId = new Dictionary<long, int>();
+    private bool _intelEnabled = true;
+    private string _intelIncludeChannelsText = string.Empty;
+    private string _intelIgnoreChannelsText = string.Empty;
+    private int _intelSystemExpiryMinutes = 15;
+    private int _intelClearOverlayMinutes = 5;
     private CancellationTokenSource? _searchSuggestionsCts;
     private MapCoordinateMode _savedUniverseCoordinateMode = MapCoordinateMode.SdePlanarXY;
     private MapCoordinateMode _savedRegionCoordinateMode = MapCoordinateMode.SdePlanarXY;
@@ -365,6 +377,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string MapViewportPrefixKey = "Map.Viewport";
     private const string TrackingLogsRootPathKey = "Tracking.LogsRootPath";
     private const string TrackingCharacterPreferencesKey = "Tracking.CharacterPreferences";
+    private const string IntelEnabledKey = "Intel.Enabled";
+    private const string IntelIncludeChannelsKey = "Intel.Channels.Include";
+    private const string IntelIgnoreChannelsKey = "Intel.Channels.Ignore";
+    private const string IntelSystemExpiryMinutesKey = "Intel.SystemExpiryMinutes";
+    private const string IntelClearOverlayMinutesKey = "Intel.ClearOverlayMinutes";
     private readonly Task _initialLoadTask;
 
     public MainWindowViewModel(
@@ -375,7 +392,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         ISovUpgradeStateService sovUpgradeStateService,
         IAnsiblexNetworkStateService ansiblexNetworkStateService,
         IIncursionStateService incursionStateService,
-        ILocalCharacterLocationFeed localCharacterLocationFeed)
+        ILocalCharacterLocationFeed localCharacterLocationFeed,
+        IIntelFeed intelFeed)
     {
         _mapDataService = mapDataService;
         _settingsService = settingsService;
@@ -385,9 +403,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _ansiblexNetworkStateService = ansiblexNetworkStateService;
         _incursionStateService = incursionStateService;
         _localCharacterLocationFeed = localCharacterLocationFeed;
+        _intelFeed = intelFeed;
         ViewModes = new ObservableCollection<MapViewMode>(Enum.GetValues<MapViewMode>());
         CoordinateModes = new ObservableCollection<MapCoordinateMode>(Enum.GetValues<MapCoordinateMode>());
-        NodeColorModes = new ObservableCollection<MapNodeColorMode>(Enum.GetValues<MapNodeColorMode>());
+        var orderedColorModes = new List<MapNodeColorMode> { MapNodeColorMode.None, MapNodeColorMode.Hostiles };
+        orderedColorModes.AddRange(
+            Enum.GetValues<MapNodeColorMode>()
+                .Where(x => x != MapNodeColorMode.None && x != MapNodeColorMode.Hostiles));
+        NodeColorModes = new ObservableCollection<MapNodeColorMode>(orderedColorModes);
         HubWormholeMarkerModes = new ObservableCollection<HubWormholeMarkerMode>(Enum.GetValues<HubWormholeMarkerMode>());
         Regions = [];
         _stormStateService.StormSnapshotUpdated += OnStormSnapshotUpdated;
@@ -396,6 +419,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _ansiblexNetworkStateService.SnapshotUpdated += OnAnsiblexNetworkSnapshotUpdated;
         _incursionStateService.IncursionSnapshotUpdated += OnIncursionSnapshotUpdated;
         _localCharacterLocationFeed.SystemChanged += OnLocalCharacterSystemChanged;
+        _intelFeed.SnapshotUpdated += OnIntelSnapshotUpdated;
         _initialLoadTask = LoadAsync();
     }
 
@@ -421,22 +445,56 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public IReadOnlyList<WormholeOverlayCard> HubWormholeCardsForView => _hubWormholeCardsForView;
     public IReadOnlyList<IncursionOverlayCard> IncursionCardsForView => _incursionCardsForView;
     public IReadOnlyList<StormOverlayCard> StormCardsForView => _stormCardsForView;
+    public IReadOnlyList<IntelOverlayCard> IntelCardsForView => _intelCardsForView;
     public IReadOnlyDictionary<long, int> CharacterPresenceCountsByNodeIdForView => _characterPresenceCountsByNodeId;
     public IReadOnlyDictionary<long, IReadOnlyList<string>> CharacterPresenceNamesByNodeIdForView => _characterPresenceNamesByNodeId;
     public IReadOnlyDictionary<long, IReadOnlyList<int>> CharacterPresenceCharacterIdsByNodeIdForView => _characterPresenceCharacterIdsByNodeId;
     public IReadOnlyDictionary<long, DateTime> CharacterPresenceLastUpdatedUtcByNodeIdForView => _characterPresenceLastUpdatedUtcByNodeId;
+    public IReadOnlyDictionary<long, IReadOnlyList<string>> IntelIconKeysByNodeIdForView => _intelIconKeysByNodeId;
+    public IReadOnlyDictionary<long, IReadOnlyList<string>> IntelRecentReportsByNodeIdForView => _intelRecentReportsByNodeId;
+    public IReadOnlyDictionary<long, int> IntelHostileScoresByNodeIdForView => _intelHostileScoresByNodeId;
     public ObservableCollection<CharacterTrackingCardViewModel> CharacterTrackingCards => _characterTrackingCards;
     public ObservableCollection<CharacterTrackingCardViewModel> EnabledCharacterTrackingCards => _enabledCharacterTrackingCards;
     public ObservableCollection<CharacterTrackingCardViewModel> DisabledCharacterTrackingCards => _disabledCharacterTrackingCards;
     public string HubWormholeOverlayTitle => $"Thera/Turnur Wormholes ({_hubWormholeCardsForView.Count})";
     public string IncursionOverlayTitle => $"Incursions ({_incursionCardsForView.Count})";
     public string StormOverlayTitle => $"Metaliminal Storms ({_stormCardsForView.Count})";
+    public string IntelOverlayTitle => $"Intel Reports ({_intelCardsForView.Count})";
     public string LogsPathValidationStatus => _logsPathValidationStatus;
     public bool IsLogsPathValid => _isLogsPathValid;
     public IReadOnlyDictionary<long, IReadOnlyList<long>> JumpRangeMembershipByNodeIdForView =>
         _jumpRangeMembershipByNodeId.ToDictionary(kvp => kvp.Key, kvp => (IReadOnlyList<long>)kvp.Value);
     public IReadOnlyDictionary<long, IReadOnlyList<JumpRangeDistanceDisplay>> JumpRangeDistancesByNodeIdForView =>
         _jumpRangeDistancesByNodeId.ToDictionary(kvp => kvp.Key, kvp => (IReadOnlyList<JumpRangeDistanceDisplay>)kvp.Value);
+    public bool IntelEnabled
+    {
+        get => _intelEnabled;
+        set => SetProperty(ref _intelEnabled, value);
+    }
+
+    public string IntelIncludeChannelsText
+    {
+        get => _intelIncludeChannelsText;
+        set => SetProperty(ref _intelIncludeChannelsText, value);
+    }
+
+    public string IntelIgnoreChannelsText
+    {
+        get => _intelIgnoreChannelsText;
+        set => SetProperty(ref _intelIgnoreChannelsText, value);
+    }
+
+    public int IntelSystemExpiryMinutes
+    {
+        get => _intelSystemExpiryMinutes;
+        set => SetProperty(ref _intelSystemExpiryMinutes, Math.Clamp(value, 1, 180));
+    }
+
+    public int IntelClearOverlayMinutes
+    {
+        get => _intelClearOverlayMinutes;
+        set => SetProperty(ref _intelClearOverlayMinutes, Math.Clamp(value, 1, 60));
+    }
 
     public MapViewMode SelectedViewMode
     {
@@ -1075,9 +1133,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public bool HasHubWormholeOverlayData => _hubWormholeCardsForView.Count > 0;
     public bool HasIncursionOverlayData => _incursionCardsForView.Count > 0;
     public bool HasStormOverlayData => _stormCardsForView.Count > 0;
+    public bool HasIntelOverlayData => _intelCardsForView.Count > 0;
     public bool HasNoHubWormholeOverlayData => _hubWormholeCardsForView.Count == 0;
     public bool HasNoIncursionOverlayData => _incursionCardsForView.Count == 0;
     public bool HasNoStormOverlayData => _stormCardsForView.Count == 0;
+    public bool HasNoIntelOverlayData => _intelCardsForView.Count == 0;
     public Task InitialLoadTask => _initialLoadTask;
 
     public bool IsHubWormholesOverlayOpen
@@ -1096,10 +1156,22 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsIncursionsOverlayOpen)));
             }
 
+            if (_isIntelOverlayOpen)
+            {
+                _isIntelOverlayOpen = false;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsIntelOverlayOpen)));
+            }
+
             if (_isStormsOverlayOpen)
             {
                 _isStormsOverlayOpen = false;
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsStormsOverlayOpen)));
+            }
+
+            if (_isIntelOverlayOpen)
+            {
+                _isIntelOverlayOpen = false;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsIntelOverlayOpen)));
             }
         }
     }
@@ -1125,6 +1197,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 _isStormsOverlayOpen = false;
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsStormsOverlayOpen)));
             }
+
+            if (_isIntelOverlayOpen)
+            {
+                _isIntelOverlayOpen = false;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsIntelOverlayOpen)));
+            }
         }
     }
 
@@ -1148,6 +1226,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             {
                 _isIncursionsOverlayOpen = false;
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsIncursionsOverlayOpen)));
+            }
+
+            if (_isIntelOverlayOpen)
+            {
+                _isIntelOverlayOpen = false;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsIntelOverlayOpen)));
             }
         }
     }
@@ -1614,6 +1698,16 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         ShowIndicatorCharacterPresence = await _settingsService.GetAsync<bool?>(ShowIndicatorCharacterPresenceKey) ?? true;
         ShowInfoBoxCharacterPresence = await _settingsService.GetAsync<bool?>(ShowInfoBoxCharacterPresenceKey) ?? true;
         CharacterPresenceHoverMaxNames = await _settingsService.GetAsync<int?>(CharacterPresenceHoverMaxNamesKey) ?? 6;
+        IntelEnabled = await _settingsService.GetAsync<bool?>(IntelEnabledKey) ?? true;
+        IntelSystemExpiryMinutes = await _settingsService.GetAsync<int?>(IntelSystemExpiryMinutesKey) ?? 15;
+        IntelClearOverlayMinutes = await _settingsService.GetAsync<int?>(IntelClearOverlayMinutesKey) ?? 5;
+        var initialIncludeChannels = await _settingsService.GetAsync<List<string>>(IntelIncludeChannelsKey) ?? [];
+        IntelIncludeChannelsText = string.Join(Environment.NewLine, initialIncludeChannels);
+        IntelIgnoreChannelsText = string.Join(Environment.NewLine, await _settingsService.GetAsync<List<string>>(IntelIgnoreChannelsKey) ?? []);
+        if (IntelEnabled && initialIncludeChannels.Count == 0)
+        {
+            StatusText = "Intel feed paused: configure included channels in Intel Settings.";
+        }
         EnableLinkAnimations = await _settingsService.GetAsync<bool?>(EnableLinkAnimationsKey) ?? true;
         ShowAnsiblexNetwork = await _settingsService.GetAsync<bool?>(ShowAnsiblexNetworkKey) ?? true;
         LogsRootPath = (await _settingsService.GetAsync<string>(TrackingLogsRootPathKey)) ?? GetDefaultEveLogsRootPath();
@@ -1670,8 +1764,47 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             }
         }
         RebuildCharacterTrackingCards();
+        lock (_intelSnapshotsBySystemId)
+        {
+            _intelSnapshotsBySystemId.Clear();
+            foreach (var kvp in _intelFeed.Snapshot)
+            {
+                _intelSnapshotsBySystemId[kvp.Key] = kvp.Value;
+            }
+        }
         await ReloadGraphAsync();
         RebuildCharacterPresenceForView();
+        RebuildIntelPresenceForView();
+    }
+
+    public bool IsIntelOverlayOpen
+    {
+        get => _isIntelOverlayOpen;
+        set
+        {
+            if (!SetProperty(ref _isIntelOverlayOpen, value) || !value)
+            {
+                return;
+            }
+
+            if (_isHubWormholesOverlayOpen)
+            {
+                _isHubWormholesOverlayOpen = false;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsHubWormholesOverlayOpen)));
+            }
+
+            if (_isIncursionsOverlayOpen)
+            {
+                _isIncursionsOverlayOpen = false;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsIncursionsOverlayOpen)));
+            }
+
+            if (_isStormsOverlayOpen)
+            {
+                _isStormsOverlayOpen = false;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsStormsOverlayOpen)));
+            }
+        }
     }
 
     private async Task ReloadGraphAsync()
@@ -1698,6 +1831,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             await RefreshRegionMissingConnectionMarkersAsync(graph);
             RebuildJumpRangeOverlay();
             RebuildCharacterPresenceForView();
+            RebuildIntelPresenceForView();
             await RebuildActivityCardsAsync(graph);
             SelectedNodeId = null;
             StatusText = $"Mode: {SelectedViewMode} | Coordinates: {SelectedCoordinateMode} | Nodes: {graph.Nodes.Count} | Links: {graph.Links.Count}";
@@ -1715,6 +1849,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AnsiblexLinksForView)));
             RebuildJumpRangeOverlay();
             RebuildCharacterPresenceForView();
+            RebuildIntelPresenceForView();
             await RebuildActivityCardsAsync(CurrentGraph);
         }
         finally
@@ -1802,6 +1937,131 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             RebuildCharacterTrackingCards();
             RebuildCharacterPresenceForView();
         });
+    }
+
+    private void OnIntelSnapshotUpdated(object? sender, IReadOnlyDictionary<long, IntelSystemSnapshot> snapshot)
+    {
+        lock (_intelSnapshotsBySystemId)
+        {
+            _intelSnapshotsBySystemId.Clear();
+            foreach (var kvp in snapshot)
+            {
+                _intelSnapshotsBySystemId[kvp.Key] = kvp.Value;
+            }
+        }
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            RebuildIntelPresenceForView();
+            _ = RebuildActivityCardsAsync(CurrentGraph);
+        });
+    }
+
+    private void RebuildIntelPresenceForView()
+    {
+        var graph = CurrentGraph;
+        if (graph is null || graph.Nodes.Count == 0 || SelectedViewMode == MapViewMode.UniverseRegions)
+        {
+            _intelIconKeysByNodeId = new Dictionary<long, IReadOnlyList<string>>();
+            _intelRecentReportsByNodeId = new Dictionary<long, IReadOnlyList<string>>();
+            _intelHostileScoresByNodeId = new Dictionary<long, int>();
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelIconKeysByNodeIdForView)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelRecentReportsByNodeIdForView)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelHostileScoresByNodeIdForView)));
+            return;
+        }
+
+        Dictionary<long, IntelSystemSnapshot> snapshot;
+        lock (_intelSnapshotsBySystemId)
+        {
+            snapshot = _intelSnapshotsBySystemId.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+        }
+
+        var validNodeIds = graph.Nodes.Select(n => n.Id).ToHashSet();
+        var iconsByNode = new Dictionary<long, IReadOnlyList<string>>();
+        var recentReportsByNode = new Dictionary<long, IReadOnlyList<string>>();
+        var hostileScoresByNode = new Dictionary<long, int>();
+        foreach (var system in snapshot.Values)
+        {
+            if (!validNodeIds.Contains(system.SolarSystemId))
+            {
+                continue;
+            }
+
+            if (system.IsClear)
+            {
+                // "clear/clr" means no active hostile intel for map overlays.
+                continue;
+            }
+
+            var iconKeys = new List<string>();
+            foreach (var shipClass in system.ShipClasses.Distinct())
+            {
+                var icon = ShipClassToIconKey(shipClass);
+                if (!string.IsNullOrWhiteSpace(icon))
+                {
+                    iconKeys.Add(icon);
+                }
+            }
+
+            foreach (var alert in system.Alerts.Distinct())
+            {
+                if (alert == IntelAlertType.Clear)
+                {
+                    continue;
+                }
+                // Placeholder for missing alert icons (per current asset set).
+                iconKeys.Add("rookie");
+            }
+
+            if (system.IsClear && iconKeys.Count == 0)
+            {
+                iconKeys.Add("question-mark");
+            }
+
+            if (iconKeys.Count > 0)
+            {
+                iconsByNode[system.SolarSystemId] = iconKeys.Take(6).ToList();
+            }
+
+            hostileScoresByNode[system.SolarSystemId] = Math.Max(0, system.HostileScore);
+            recentReportsByNode[system.SolarSystemId] = system.RecentReports
+                .OrderByDescending(x => x.TimestampUtc)
+                .Take(2)
+                .Select(x => $"{FormatOverlayAge(DateTime.UtcNow - x.TimestampUtc)} | {x.MessageText}")
+                .ToList();
+        }
+
+        _intelIconKeysByNodeId = iconsByNode;
+        _intelRecentReportsByNodeId = recentReportsByNode;
+        _intelHostileScoresByNodeId = hostileScoresByNode;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelIconKeysByNodeIdForView)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelRecentReportsByNodeIdForView)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelHostileScoresByNodeIdForView)));
+    }
+
+    private static string? ShipClassToIconKey(IntelShipClass shipClass)
+    {
+        return shipClass switch
+        {
+            IntelShipClass.Frigate => "frigate",
+            IntelShipClass.Destroyer => "destroyer",
+            IntelShipClass.Cruiser => "cruiser",
+            IntelShipClass.Battlecruiser => "battlecruiser",
+            IntelShipClass.Battleship => "battleship",
+            IntelShipClass.Capital => "capital",
+            IntelShipClass.Supercapital => "supercapital",
+            IntelShipClass.Titan => "titan",
+            IntelShipClass.Industrial => "industrial",
+            IntelShipClass.IndustrialCommand => "industrialcommand",
+            IntelShipClass.Freighter => "freighter",
+            IntelShipClass.MiningFrigate => "miningfrigate",
+            IntelShipClass.MiningBarge => "miningbarge",
+            IntelShipClass.Capsule => "capsule",
+            IntelShipClass.Shuttle => "shuttle",
+            IntelShipClass.Rookie => "rookie",
+            _ => "rookie"
+        };
     }
 
     private void RebuildCharacterPresenceForView()
@@ -2165,6 +2425,35 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
 
         await _settingsService.SetAsync(TrackingLogsRootPathKey, LogsRootPath.Trim());
+    }
+
+    public async Task SaveIntelSettingsAsync()
+    {
+        var include = IntelIncludeChannelsText
+            .Split(['\r', '\n', ',', ';', '\t'], StringSplitOptions.RemoveEmptyEntries)
+            .Select(x => x.Trim())
+            .Where(x => x.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var ignore = IntelIgnoreChannelsText
+            .Split(['\r', '\n', ',', ';', '\t'], StringSplitOptions.RemoveEmptyEntries)
+            .Select(x => x.Trim())
+            .Where(x => x.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (IntelEnabled && include.Count == 0)
+        {
+            StatusText = "Intel is enabled but no included channels are configured. Add at least one channel name.";
+            return;
+        }
+
+        await _settingsService.SetAsync(IntelEnabledKey, IntelEnabled);
+        await _settingsService.SetAsync(IntelIncludeChannelsKey, include);
+        await _settingsService.SetAsync(IntelIgnoreChannelsKey, ignore);
+        await _settingsService.SetAsync(IntelSystemExpiryMinutesKey, Math.Clamp(IntelSystemExpiryMinutes, 1, 180));
+        await _settingsService.SetAsync(IntelClearOverlayMinutesKey, Math.Clamp(IntelClearOverlayMinutes, 1, 60));
+        StatusText = "Intel settings saved. Restart HISA intel feed to apply channel filter changes.";
     }
 
     private static string GetDefaultEveLogsRootPath()
@@ -2719,24 +3008,38 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         {
             allSystemIds.Add(center.SolarSystemId);
         }
+        List<IntelSystemSnapshot> intelSnapshots;
+        lock (_intelSnapshotsBySystemId)
+        {
+            intelSnapshots = _intelSnapshotsBySystemId.Values.ToList();
+        }
+        foreach (var intel in intelSnapshots)
+        {
+            allSystemIds.Add(intel.SolarSystemId);
+        }
 
         if (allSystemIds.Count == 0)
         {
             _hubWormholeCardsForView = [];
             _incursionCardsForView = [];
             _stormCardsForView = [];
+            _intelCardsForView = [];
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HubWormholeCardsForView)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IncursionCardsForView)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StormCardsForView)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelCardsForView)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HubWormholeOverlayTitle)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IncursionOverlayTitle)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StormOverlayTitle)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelOverlayTitle)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasHubWormholeOverlayData)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasIncursionOverlayData)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasStormOverlayData)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasIntelOverlayData)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasNoHubWormholeOverlayData)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasNoIncursionOverlayData)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasNoStormOverlayData)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasNoIntelOverlayData)));
             return;
         }
 
@@ -2854,18 +3157,75 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             .OrderBy(c => c.CenterSystemName, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
+        _intelCardsForView = intelSnapshots
+            .Select(s =>
+            {
+                metadataById.TryGetValue(s.SolarSystemId, out var meta);
+                var age = DateTime.UtcNow - s.LastUpdatedUtc;
+                if (age < TimeSpan.Zero)
+                {
+                    age = TimeSpan.Zero;
+                }
+
+                var shipSummary = s.ShipClasses.Count > 0
+                    ? string.Join(", ", s.ShipClasses.Select(x => x.ToString()))
+                    : "None";
+                var alertSummary = s.Alerts.Count > 0
+                    ? string.Join(", ", s.Alerts.Select(x => x.ToString()))
+                    : "None";
+
+                return new IntelOverlayCard
+                {
+                    SortTimestampUtc = s.LastUpdatedUtc,
+                    SystemName = meta?.SolarSystemName ?? s.SolarSystemName,
+                    ConstellationName = meta?.ConstellationName ?? "Unknown Constellation",
+                    RegionName = meta?.RegionName ?? "Unknown Region",
+                    ChannelName = s.LastChannelName,
+                    ReporterName = s.LastReporterName,
+                    AgeSummary = FormatOverlayAge(age),
+                    MessageText = s.LastMessageText,
+                    ShipClassSummary = shipSummary,
+                    AlertSummary = alertSummary,
+                    AccentHex = s.IsClear ? "#6FE38E" : "#FFB347"
+                };
+            })
+            .OrderByDescending(c => c.SortTimestampUtc)
+            .ThenBy(c => c.SystemName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HubWormholeCardsForView)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IncursionCardsForView)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StormCardsForView)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelCardsForView)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HubWormholeOverlayTitle)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IncursionOverlayTitle)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StormOverlayTitle)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelOverlayTitle)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasHubWormholeOverlayData)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasIncursionOverlayData)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasStormOverlayData)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasIntelOverlayData)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasNoHubWormholeOverlayData)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasNoIncursionOverlayData)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasNoStormOverlayData)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasNoIntelOverlayData)));
+    }
+
+    private static string FormatOverlayAge(TimeSpan age)
+    {
+        if (age < TimeSpan.FromMinutes(1))
+        {
+            return $"{Math.Max(1, (int)age.TotalSeconds)}s ago";
+        }
+        if (age < TimeSpan.FromHours(1))
+        {
+            return $"{(int)age.TotalMinutes}m ago";
+        }
+        if (age < TimeSpan.FromDays(1))
+        {
+            return $"{(int)age.TotalHours}h ago";
+        }
+        return $"{(int)age.TotalDays}d ago";
     }
 
     private static (string Label, string ColorHex) GetStormTypeDisplay(StormType type)
@@ -3495,3 +3855,4 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         };
     }
 }
+

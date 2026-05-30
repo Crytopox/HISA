@@ -45,3 +45,18 @@ public sealed class StormOverlayCard
     public required string ReportedSummary { get; init; }
     public required string AccentHex { get; init; }
 }
+
+public sealed class IntelOverlayCard
+{
+    public required DateTime SortTimestampUtc { get; init; }
+    public required string SystemName { get; init; }
+    public required string ConstellationName { get; init; }
+    public required string RegionName { get; init; }
+    public required string ChannelName { get; init; }
+    public required string ReporterName { get; init; }
+    public required string AgeSummary { get; init; }
+    public required string MessageText { get; init; }
+    public required string ShipClassSummary { get; init; }
+    public required string AlertSummary { get; init; }
+    public required string AccentHex { get; init; }
+}

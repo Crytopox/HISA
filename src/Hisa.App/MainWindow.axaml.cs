@@ -24,6 +24,7 @@ public partial class MainWindow : Window
     private readonly DebugWindowViewModel? _debugWindowViewModel;
     private DebugWindow? _debugWindow;
     private PreferencesWindow? _preferencesWindow;
+    private IntelSettingsWindow? _intelSettingsWindow;
     private CharactersWindow? _charactersWindow;
     private MapEditorWindow? _mapEditorWindow;
     private SovUpgradesWindow? _sovUpgradesWindow;
@@ -162,6 +163,23 @@ public partial class MainWindow : Window
 
         _charactersWindow.Show();
         _charactersWindow.Activate();
+    }
+
+    private void OnOpenIntelSettingsClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_intelSettingsWindow is null)
+        {
+            if (_boundVm is null)
+            {
+                return;
+            }
+
+            _intelSettingsWindow = new IntelSettingsWindow(_boundVm);
+            _intelSettingsWindow.Closed += (_, _) => _intelSettingsWindow = null;
+        }
+
+        _intelSettingsWindow.Show();
+        _intelSettingsWindow.Activate();
     }
 
     private void OnOpenMapEditorClicked(object? sender, RoutedEventArgs e)

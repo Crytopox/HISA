@@ -1,0 +1,74 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:Hisa.App"
+        mc:Ignorable="d" d:DesignWidth="620" d:DesignHeight="540"
+        x:Class="Hisa.App.IntelSettingsWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="Intel Settings"
+        Background="#0D131D">
+  <Border Margin="12" Padding="12" Background="#121A26" BorderBrush="#263244" BorderThickness="1" CornerRadius="6">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+      <StackPanel Spacing="10">
+        <TextBlock Text="Intel Chat Settings" FontSize="15" FontWeight="SemiBold" Foreground="#D8E5F8" />
+
+        <Border Padding="10" Background="#101826" BorderBrush="#243247" BorderThickness="1" CornerRadius="5">
+          <StackPanel Spacing="8">
+            <CheckBox IsChecked="{Binding IntelEnabled}" Content="Enable intel chat parsing" />
+            <TextBlock Text="Scope: chat intel lines only (killmail-style parsing ignored for now)."
+                       Foreground="#8A96A8"
+                       TextWrapping="Wrap" />
+          </StackPanel>
+        </Border>
+
+        <Border Padding="10" Background="#101826" BorderBrush="#243247" BorderThickness="1" CornerRadius="5">
+          <StackPanel Spacing="8">
+            <TextBlock Text="Included Channels (optional allow-list)" FontWeight="SemiBold" Foreground="#C9D9EE" />
+            <TextBlock Text="Required. If empty, intel parser reads no channels."
+                       Foreground="#8A96A8"
+                       TextWrapping="Wrap" />
+            <TextBox Text="{Binding IntelIncludeChannelsText, Mode=TwoWay}"
+                     AcceptsReturn="True"
+                     Height="120"
+                     Watermark="One channel per line, e.g.&#10;fareast.imperium&#10;delve.imperium" />
+          </StackPanel>
+        </Border>
+
+        <Border Padding="10" Background="#101826" BorderBrush="#243247" BorderThickness="1" CornerRadius="5">
+          <StackPanel Spacing="8">
+            <TextBlock Text="Ignored Channels (deny-list)" FontWeight="SemiBold" Foreground="#C9D9EE" />
+            <TextBox Text="{Binding IntelIgnoreChannelsText, Mode=TwoWay}"
+                     AcceptsReturn="True"
+                     Height="120"
+                     Watermark="One channel per line, e.g.&#10;alliance.chat&#10;corp.chat" />
+          </StackPanel>
+        </Border>
+
+        <Border Padding="10" Background="#101826" BorderBrush="#243247" BorderThickness="1" CornerRadius="5">
+          <StackPanel Spacing="8">
+            <TextBlock Text="Aging / Expiry" FontWeight="SemiBold" Foreground="#C9D9EE" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <TextBlock VerticalAlignment="Center" Text="Normal report expiry (minutes)" Foreground="#8A96A8" Width="230" />
+              <NumericUpDown Minimum="1" Maximum="180" Value="{Binding IntelSystemExpiryMinutes}" Width="90" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <TextBlock VerticalAlignment="Center" Text="Clear overlay expiry (minutes)" Foreground="#8A96A8" Width="230" />
+              <NumericUpDown Minimum="1" Maximum="60" Value="{Binding IntelClearOverlayMinutes}" Width="90" />
+            </StackPanel>
+            <TextBlock Text="Clear reports remove hostile icon state immediately and keep clear marker until this timeout."
+                       Foreground="#8A96A8"
+                       TextWrapping="Wrap" />
+          </StackPanel>
+        </Border>
+
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <Button Content="Save Intel Settings" Click="OnSaveIntelSettingsClicked" />
+          <TextBlock Text="Restart app after changing channel filters."
+                     Foreground="#8A96A8"
+                     VerticalAlignment="Center" />
+        </StackPanel>
+      </StackPanel>
+    </ScrollViewer>
+  </Border>
+</Window>

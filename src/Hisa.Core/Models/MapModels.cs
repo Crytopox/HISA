@@ -16,6 +16,7 @@ public enum MapCoordinateMode
 public enum MapNodeColorMode
 {
     None = 0,
+    Hostiles = 11,
     Security = 1,
     Region = 2,
     Star = 3,

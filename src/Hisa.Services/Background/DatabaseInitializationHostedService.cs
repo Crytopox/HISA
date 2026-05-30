@@ -64,6 +64,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<LocalCharacterLocationLogFeedHostedService>();
         services.AddSingleton<ILocalCharacterLocationFeed>(sp => sp.GetRequiredService<LocalCharacterLocationLogFeedHostedService>());
         services.AddHostedService(sp => sp.GetRequiredService<LocalCharacterLocationLogFeedHostedService>());
+        services.AddSingleton<IntelChatLogFeedHostedService>();
+        services.AddSingleton<IIntelFeed>(sp => sp.GetRequiredService<IntelChatLogFeedHostedService>());
+        services.AddHostedService(sp => sp.GetRequiredService<IntelChatLogFeedHostedService>());
         services.AddSingleton<ISovUpgradeStateService, SovUpgradeStateService>();
         services.AddSingleton<IAnsiblexNetworkStateService, AnsiblexNetworkStateService>();
         return services;

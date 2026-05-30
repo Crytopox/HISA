@@ -109,6 +109,10 @@ public sealed class MapControl : Control
         1.8,
         dashStyle: new DashStyle([2.0, 2.0], 0));
     private static readonly Pen JumpRouteSkippedRingPen = new(new ImmutableSolidColorBrush(Color.Parse("#FF6A6A")), 2.1);
+    private static readonly Pen IntelRingPen = new(
+        new ImmutableSolidColorBrush(Color.Parse("#FFB347")),
+        2.2,
+        dashStyle: new DashStyle([2.2, 1.8], 0));
     private static readonly Pen AnsiblexLinkPen = new(
         new ImmutableSolidColorBrush(Color.Parse("#e0bd3c")),
         2.2,
@@ -152,6 +156,7 @@ public sealed class MapControl : Control
     private static readonly Lazy<Bitmap?> StormUnknownIcon = new(() => LoadIcon("storm_unknown.png"));
     private static readonly Lazy<Bitmap?> WormholeIcon = new(() => LoadIcon("wormhole.png"));
     private static readonly Lazy<Bitmap?> IncursionIcon = new(() => LoadIcon("incursion.png"));
+    private static readonly Lazy<Bitmap?> QuestionMarkIcon = new(() => LoadIcon("question-mark.png"));
     private static readonly Lazy<Bitmap?> JumpRangeInRangeIcon = new(() => LoadIcon("jumpRange_onRange.png"));
     private static readonly Lazy<Bitmap?> JumpRangeOutRangeIcon = new(() => LoadIcon("jumpRange_outRange.png"));
     private static readonly Dictionary<string, Lazy<Bitmap?>> SovUpgradeIcons = new(StringComparer.OrdinalIgnoreCase);
@@ -294,6 +299,12 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, IReadOnlyDictionary<long, IReadOnlyList<int>>?>(nameof(CharacterPresenceCharacterIdsByNodeId));
     public static readonly StyledProperty<IReadOnlyDictionary<long, DateTime>?> CharacterPresenceLastUpdatedUtcByNodeIdProperty =
         AvaloniaProperty.Register<MapControl, IReadOnlyDictionary<long, DateTime>?>(nameof(CharacterPresenceLastUpdatedUtcByNodeId));
+    public static readonly StyledProperty<IReadOnlyDictionary<long, IReadOnlyList<string>>?> IntelIconKeysByNodeIdProperty =
+        AvaloniaProperty.Register<MapControl, IReadOnlyDictionary<long, IReadOnlyList<string>>?>(nameof(IntelIconKeysByNodeId));
+    public static readonly StyledProperty<IReadOnlyDictionary<long, IReadOnlyList<string>>?> IntelRecentReportsByNodeIdProperty =
+        AvaloniaProperty.Register<MapControl, IReadOnlyDictionary<long, IReadOnlyList<string>>?>(nameof(IntelRecentReportsByNodeId));
+    public static readonly StyledProperty<IReadOnlyDictionary<long, int>?> IntelHostileScoresByNodeIdProperty =
+        AvaloniaProperty.Register<MapControl, IReadOnlyDictionary<long, int>?>(nameof(IntelHostileScoresByNodeId));
     public static readonly StyledProperty<bool> ShowInfoBoxCharacterPresenceProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowInfoBoxCharacterPresence), true);
     public static readonly StyledProperty<int> CharacterPresenceHoverMaxNamesProperty =
@@ -740,6 +751,24 @@ public sealed class MapControl : Control
         set => SetValue(CharacterPresenceLastUpdatedUtcByNodeIdProperty, value);
     }
 
+    public IReadOnlyDictionary<long, IReadOnlyList<string>>? IntelIconKeysByNodeId
+    {
+        get => GetValue(IntelIconKeysByNodeIdProperty);
+        set => SetValue(IntelIconKeysByNodeIdProperty, value);
+    }
+
+    public IReadOnlyDictionary<long, IReadOnlyList<string>>? IntelRecentReportsByNodeId
+    {
+        get => GetValue(IntelRecentReportsByNodeIdProperty);
+        set => SetValue(IntelRecentReportsByNodeIdProperty, value);
+    }
+
+    public IReadOnlyDictionary<long, int>? IntelHostileScoresByNodeId
+    {
+        get => GetValue(IntelHostileScoresByNodeIdProperty);
+        set => SetValue(IntelHostileScoresByNodeIdProperty, value);
+    }
+
     public bool ShowInfoBoxCharacterPresence
     {
         get => GetValue(ShowInfoBoxCharacterPresenceProperty);
@@ -815,6 +844,9 @@ public sealed class MapControl : Control
             CharacterPresenceNamesByNodeIdProperty,
             CharacterPresenceCharacterIdsByNodeIdProperty,
             CharacterPresenceLastUpdatedUtcByNodeIdProperty,
+            IntelIconKeysByNodeIdProperty,
+            IntelRecentReportsByNodeIdProperty,
+            IntelHostileScoresByNodeIdProperty,
             ShowInfoBoxCharacterPresenceProperty,
             CharacterPresenceHoverMaxNamesProperty);
         ClipToBounds = true;
@@ -1449,6 +1481,18 @@ public sealed class MapControl : Control
             }
 
             context.DrawEllipse(brush, NodeOutlinePen, p, radius, radius);
+            if (IntelIconKeysByNodeId is not null &&
+                IntelIconKeysByNodeId.TryGetValue(node.Id, out var intelRingIcons) &&
+                intelRingIcons.Count > 0)
+            {
+                var hostileScore = 0;
+                if (IntelHostileScoresByNodeId is not null)
+                {
+                    IntelHostileScoresByNodeId.TryGetValue(node.Id, out hostileScore);
+                }
+
+                DrawIntelRingWithIcons(context, p, radius + 5.1, intelRingIcons, hostileScore);
+            }
             if (ShowMissingConnectionMarkers &&
                 (missingConnectionSet?.Contains(node.Id) ?? false) &&
                 (ViewMode == MapViewMode.Region || ShowEditorGrid))
@@ -3202,6 +3246,7 @@ public sealed class MapControl : Control
         return mode switch
         {
             MapNodeColorMode.Security => GetSecurityColor(node),
+            MapNodeColorMode.Hostiles => GetIntelHostileColorForNode(node.Id),
             MapNodeColorMode.Region => GetRegionColor(node.RegionId),
             MapNodeColorMode.Star => GetStarColor(node),
             MapNodeColorMode.NullsecTrueSec => GetNullsecTrueSecColor(node),
@@ -3809,7 +3854,6 @@ public sealed class MapControl : Control
             DrawIncursionIcon(context, new Point(iconX, iconY), IconSize);
             indicatorIconSlot++;
         }
-
         FormattedText? jumpRangeIndicatorText = null;
         Bitmap? jumpRangeIndicatorIcon = null;
         if (ShowIndicatorJumpRangeLy &&
@@ -4182,6 +4226,24 @@ public sealed class MapControl : Control
             jumpLineHeight = Math.Max(jumpLineHeight, Math.Max(14, jumpLine.Text.Height));
             jumpMaxWidth = Math.Max(jumpMaxWidth, 14 + 4 + jumpLine.Text.Width);
         }
+        var intelLineTexts = new List<FormattedText>();
+        if (IntelRecentReportsByNodeId is not null &&
+            IntelRecentReportsByNodeId.TryGetValue(node.Id, out var reportsForNode) &&
+            reportsForNode.Count > 0)
+        {
+            foreach (var line in reportsForNode.Take(2))
+            {
+                intelLineTexts.Add(new FormattedText(
+                    line,
+                    CultureInfo.InvariantCulture,
+                    FlowDirection.LeftToRight,
+                    new Typeface("Inter"),
+                    11,
+                    new ImmutableSolidColorBrush(Color.Parse("#FFE8C4"))));
+            }
+        }
+        var intelMaxWidth = intelLineTexts.Count == 0 ? 0.0 : intelLineTexts.Max(x => x.Width);
+        var intelLineHeight = intelLineTexts.Count == 0 ? 0.0 : intelLineTexts.Max(x => x.Height);
         IReadOnlyList<int>? presentCharacterIds = null;
         IReadOnlyList<string>? presentCharacterNames = null;
         var characterPortraitSize = 28.0;
@@ -4224,11 +4286,12 @@ public sealed class MapControl : Control
         var padX = 8.0;
         var padY = 6.0;
         var headerWidth = headerText.Width + (securityText is null ? 0 : (8 + securityText.Width));
-        var bodyWidth = Math.Max(Math.Max(Math.Max(Math.Max(Math.Max(regionConstellationText?.Width ?? 0, detailsText?.Width ?? 0), wormholeMaxWidth), sovMaxWidth), jumpMaxWidth), characterRowWidth);
+        var bodyWidth = Math.Max(Math.Max(Math.Max(Math.Max(Math.Max(Math.Max(regionConstellationText?.Width ?? 0, detailsText?.Width ?? 0), wormholeMaxWidth), sovMaxWidth), jumpMaxWidth), characterRowWidth), intelMaxWidth);
         var contentWidth = Math.Max(headerWidth, bodyWidth);
         var contentHeight = headerText.Height
             + (regionConstellationText is null ? 0 : regionConstellationText.Height + 2)
             + (detailsText is null ? 0 : detailsText.Height + 2)
+            + (intelLineTexts.Count == 0 ? 0 : (intelLineTexts.Count * (intelLineHeight + 1)))
             + (jumpRangeLineTexts.Count == 0 ? 0 : (jumpRangeLineTexts.Count * (jumpLineHeight + 1)))
             + (sovLineTexts.Count == 0 ? 0 : (sovLineTexts.Count * (sovLineHeight + 1)))
             + (wormholes.Count == 0 ? 0 : (wormholes.Count * (wormholeLineHeight + 1)))
@@ -4337,6 +4400,19 @@ public sealed class MapControl : Control
             if (!string.IsNullOrWhiteSpace(hoveredCharacterName))
             {
                 DrawCompactTooltip(context, _lastPointerPosition, hoveredCharacterName!);
+            }
+        }
+
+        if (intelLineTexts.Count > 0)
+        {
+            var intelStartY = wormholeStartY + (presentCharacterIds is { Count: > 0 } ? characterRowHeight + 4 : 2);
+            var splitterY = intelStartY - 3;
+            var splitterPen = new Pen(new ImmutableSolidColorBrush(Color.Parse("#5A6B82")), 1);
+            context.DrawLine(splitterPen, new Point(headerOrigin.X, splitterY), new Point(rect.Right - padX, splitterY));
+            foreach (var intelLine in intelLineTexts)
+            {
+                context.DrawText(intelLine, new Point(headerOrigin.X, intelStartY));
+                intelStartY += intelLineHeight + 1;
             }
         }
 
@@ -4758,6 +4834,78 @@ public sealed class MapControl : Control
     private static void DrawIncursionIcon(DrawingContext context, Point topLeft, double size)
     {
         var icon = IncursionIcon.Value;
+        if (icon is null)
+        {
+            return;
+        }
+
+        var src = new Rect(0, 0, icon.Size.Width, icon.Size.Height);
+        var dst = new Rect(topLeft.X, topLeft.Y, size, size);
+        context.DrawImage(icon, src, dst);
+    }
+
+    private Color GetIntelHostileColorForNode(long nodeId)
+    {
+        if (IntelHostileScoresByNodeId is null || !IntelHostileScoresByNodeId.TryGetValue(nodeId, out var score))
+        {
+            return Color.Parse("#98A6B8");
+        }
+
+        return GetIntelHostileColor(score);
+    }
+
+    private static readonly ConcurrentDictionary<string, Bitmap?> ShipClassIconCache = new(StringComparer.OrdinalIgnoreCase);
+
+    private static void DrawIntelRingWithIcons(DrawingContext context, Point center, double ringRadius, IReadOnlyList<string> iconKeys, int hostileScore)
+    {
+        var ringColor = GetIntelHostileColor(hostileScore);
+        var scale = Math.Clamp(hostileScore / 12.0, 0.0, 1.0);
+        var scaledRingRadius = ringRadius + (scale * 6.0);
+        var ringPen = new Pen(new ImmutableSolidColorBrush(Color.FromArgb(230, ringColor.R, ringColor.G, ringColor.B)), 2.4);
+        context.DrawEllipse(null, ringPen, center, scaledRingRadius, scaledRingRadius);
+
+        var icons = iconKeys.Take(6).ToList();
+        if (icons.Count == 0)
+        {
+            return;
+        }
+
+        var orbitRadius = scaledRingRadius + 1.8;
+        var iconSize = 12.0;
+        for (var i = 0; i < icons.Count; i++)
+        {
+            var angle = (-90.0 + ((360.0 / icons.Count) * i)) * (Math.PI / 180.0);
+            var iconX = center.X + (orbitRadius * Math.Cos(angle)) - (iconSize * 0.5);
+            var iconY = center.Y + (orbitRadius * Math.Sin(angle)) - (iconSize * 0.5);
+            DrawIntelIcon(context, icons[i], new Point(iconX, iconY), iconSize);
+        }
+    }
+
+    private static Color GetIntelHostileColor(int hostileScore)
+    {
+        var t = Math.Clamp(hostileScore / 12.0, 0.0, 1.0);
+        var start = Color.Parse("#E6D86C");
+        var end = Color.Parse("#D83B2F");
+        return BlendColors(start, end, t);
+    }
+
+    private static void DrawIntelIcon(DrawingContext context, string iconKey, Point topLeft, double size)
+    {
+        Bitmap? icon;
+        if (string.Equals(iconKey, "question-mark", StringComparison.OrdinalIgnoreCase))
+        {
+            icon = ShipClassIconCache.GetOrAdd("rookie", static key => LoadIcon($"Ships/{key}.png"));
+        }
+        else
+        {
+            icon = ShipClassIconCache.GetOrAdd(iconKey, static key => LoadIcon($"Ships/{key}.png"));
+        }
+
+        if (icon is null)
+        {
+            icon = ShipClassIconCache.GetOrAdd("rookie", static key => LoadIcon($"Ships/{key}.png")) ?? QuestionMarkIcon.Value;
+        }
+
         if (icon is null)
         {
             return;

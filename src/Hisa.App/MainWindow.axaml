@@ -118,6 +118,7 @@
             <MenuFlyout>
               <MenuItem Header="Map Editor" Click="OnOpenMapEditorClicked" />
               <MenuItem Header="Preferences" Click="OnOpenPreferencesClicked" />
+              <MenuItem Header="Intel Settings" Click="OnOpenIntelSettingsClicked" />
               <MenuItem Header="Characters" Click="OnOpenCharactersClicked" />
               <MenuItem Header="SOV Upgrades" Click="OnOpenSovUpgradesClicked" />
               <MenuItem Header="Ansiblex Network" Click="OnOpenAnsiblexNetworkClicked" />
@@ -169,6 +170,9 @@
                               CharacterPresenceNamesByNodeId="{Binding CharacterPresenceNamesByNodeIdForView}"
                               CharacterPresenceCharacterIdsByNodeId="{Binding CharacterPresenceCharacterIdsByNodeIdForView}"
                               CharacterPresenceLastUpdatedUtcByNodeId="{Binding CharacterPresenceLastUpdatedUtcByNodeIdForView}"
+                              IntelIconKeysByNodeId="{Binding IntelIconKeysByNodeIdForView}"
+                              IntelRecentReportsByNodeId="{Binding IntelRecentReportsByNodeIdForView}"
+                              IntelHostileScoresByNodeId="{Binding IntelHostileScoresByNodeIdForView}"
                               OverlaySovUpgradeFilterKeys="{Binding SelectedOverlaySovUpgradeKeys}"
                               AlwaysShowHubWormholes="{Binding AlwaysShowHubWormholes}"
                               AlwaysShowIncursions="{Binding AlwaysShowIncursions}"
@@ -563,6 +567,71 @@
             <TextBlock Text="No storms available." Foreground="#7F93AE" IsVisible="{Binding HasNoStormOverlayData}" />
           </StackPanel>
         </Border>
+
+        <Border HorizontalAlignment="Right"
+                VerticalAlignment="Bottom"
+                Margin="12,12,12,56"
+                Width="400"
+                MaxHeight="440"
+                Padding="10"
+                Background="#D2101826"
+                BorderBrush="#4E6B92C5"
+                BorderThickness="1"
+                CornerRadius="8"
+                IsVisible="{Binding IsIntelOverlayOpen}">
+          <StackPanel Spacing="8">
+            <TextBlock Text="{Binding IntelOverlayTitle}" Foreground="#EAF2FF" FontWeight="SemiBold" />
+            <TextBlock Text="Data source: EVE chat logs (configured intel channels)" Foreground="#8FA5C4" FontSize="11" />
+            <ScrollViewer MaxHeight="360" VerticalScrollBarVisibility="Auto">
+              <ItemsControl ItemsSource="{Binding IntelCardsForView}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Grid Margin="0,0,0,8" ColumnDefinitions="4,*">
+                      <Border Grid.Column="0" CornerRadius="4,0,0,4">
+                        <Border.Background>
+                          <SolidColorBrush Color="{Binding AccentHex}" />
+                        </Border.Background>
+                      </Border>
+                      <Border Grid.Column="1"
+                              Padding="9,8"
+                              Background="#D01A2232"
+                              BorderThickness="1"
+                              BorderBrush="#3B4262"
+                              CornerRadius="0,7,7,0">
+                        <StackPanel Spacing="5">
+                          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                            <TextBlock Grid.Column="0" Foreground="#F1E8FF" FontWeight="Bold" FontSize="14" >
+                              <Run Text="{Binding SystemName}" FontWeight="Bold" FontSize="14"/>
+                              <Run Text=" | " Foreground="#7F779C" />
+                              <Run Text="{Binding ConstellationName}" FontWeight="SemiBold" FontSize="10"/>
+                              <Run Text=" | " Foreground="#7F779C" />
+                              <Run Text="{Binding RegionName}" FontWeight="SemiBold" FontSize="10" />
+                            </TextBlock>
+                            <Border Grid.Column="1" Padding="6,2" CornerRadius="4" Background="#241C35" BorderThickness="1" BorderBrush="#5D83B5">
+                              <TextBlock Text="{Binding AgeSummary}" Foreground="#BFD8FF" FontSize="10" FontWeight="Bold" />
+                            </Border>
+                          </Grid>
+                          <TextBlock Text="{Binding MessageText}" Foreground="#E4ECF8" FontSize="11" TextWrapping="Wrap" />
+                          <WrapPanel>
+                            <Border Background="#2A2340" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="0,0,4,4" BorderBrush="#4D3C73">
+                              <TextBlock Text="{Binding ShipClassSummary, StringFormat='Ships: {0}'}" Foreground="#EBDFFF" FontSize="10" FontWeight="SemiBold" />
+                            </Border>
+                            <Border Background="#2A2340" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="0,0,4,4" BorderBrush="#4D3C73">
+                              <TextBlock Text="{Binding AlertSummary, StringFormat='Alerts: {0}'}" Foreground="#EBDFFF" FontSize="10" FontWeight="SemiBold" />
+                            </Border>
+                          </WrapPanel>
+                          <TextBlock Text="{Binding ChannelName, StringFormat='Channel: {0}'}" Foreground="#9DB8D8" FontSize="10" />
+                          <TextBlock Text="{Binding ReporterName, StringFormat='Reporter: {0}'}" Foreground="#9DB8D8" FontSize="10" />
+                        </StackPanel>
+                      </Border>
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+            <TextBlock Text="No intel reports available in this view." Foreground="#7F93AE" IsVisible="{Binding HasNoIntelOverlayData}" />
+          </StackPanel>
+        </Border>
       </Grid>
 
       <Border Grid.Column="1"
@@ -735,6 +804,13 @@
                         Foreground="#D9EBFF"
                         Padding="10,4"
                         MinWidth="92" />
+          <ToggleButton Content="Intel Reports"
+                        IsChecked="{Binding IsIntelOverlayOpen, Mode=TwoWay}"
+                        Background="#2D2416"
+                        BorderBrush="#8A6C34"
+                        Foreground="#FFE8C4"
+                        Padding="10,4"
+                        MinWidth="120" />
         </StackPanel>
       </Grid>
     </Border>

@@ -16,6 +16,7 @@ public sealed class MapNodeColorModeDisplayConverter : IValueConverter
 
         return mode switch
         {
+            MapNodeColorMode.Hostiles => "Hostiles",
             MapNodeColorMode.Security => "Security Status",
             MapNodeColorMode.Star => "Star Color",
             MapNodeColorMode.NullsecTrueSec => "Nullsec TrueSec",
