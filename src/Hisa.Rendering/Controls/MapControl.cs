@@ -5186,21 +5186,6 @@ public sealed class MapControl : Control
 
     private static Color GetCharacterPresenceBadgeColor(int count)
     {
-        if (count >= 16)
-        {
-            return Color.Parse("#A83232");
-        }
-
-        if (count >= 6)
-        {
-            return Color.Parse("#A56D16");
-        }
-
-        if (count >= 2)
-        {
-            return Color.Parse("#2F7D44");
-        }
-
         return Color.Parse("#2B8A58");
     }
 

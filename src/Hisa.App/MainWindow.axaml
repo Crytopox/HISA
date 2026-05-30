@@ -571,7 +571,7 @@
         <Border HorizontalAlignment="Right"
                 VerticalAlignment="Bottom"
                 Margin="12,12,12,56"
-                Width="400"
+                Width="320"
                 MaxHeight="440"
                 Padding="10"
                 Background="#D2101826"
@@ -627,7 +627,6 @@
                               <TextBlock Text="{Binding AgeSummary}" Foreground="#BFD8FF" FontSize="10" FontWeight="Bold" />
                             </Border>
                           </Grid>
-                          <TextBlock Text="{Binding MessageText}" Foreground="#E4ECF8" FontSize="11" TextWrapping="Wrap" />
                           <WrapPanel>
                             <Border Background="{Binding ShipBadgeBackgroundHex}" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="0,0,4,4" BorderBrush="{Binding ShipBadgeBorderHex}">
                               <TextBlock Text="{Binding ShipClassSummary, StringFormat='Ships: {0}'}" Foreground="#FFFFFF" FontSize="10" FontWeight="SemiBold" />
@@ -636,8 +635,13 @@
                               <TextBlock Text="{Binding HostileCount, StringFormat='Hostiles: {0}'}" Foreground="#FFFFFF" FontSize="10" FontWeight="SemiBold" />
                             </Border>
                           </WrapPanel>
-                          <TextBlock Text="{Binding ChannelName, StringFormat='Channel: {0}'}" Foreground="#9DB8D8" FontSize="10" />
-                          <TextBlock Text="{Binding ReporterName, StringFormat='Reporter: {0}'}" Foreground="#9DB8D8" FontSize="10" />
+                          <TextBlock Text="{Binding MessageText}" Foreground="#E4ECF8" FontSize="10" TextWrapping="Wrap" />
+                          <TextBlock Foreground="#9DB8D8" FontSize="10">
+                            <Run Text="Reporter: " />
+                            <Run Text="{Binding ReporterName}" />
+                            <Run Text="  |  Channel: " />
+                            <Run Text="{Binding ChannelName}" />
+                          </TextBlock>
                         </StackPanel>
                       </Border>
                     </Grid>

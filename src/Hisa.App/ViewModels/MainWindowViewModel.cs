@@ -321,7 +321,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _limitIntelReportsToCurrentRegion;
     private bool _intelEnabled = true;
     private string _intelIncludeChannelsText = string.Empty;
-    private string _intelIgnoreChannelsText = string.Empty;
     private int _intelSystemExpiryMinutes = 15;
     private CancellationTokenSource? _searchSuggestionsCts;
     private MapCoordinateMode _savedUniverseCoordinateMode = MapCoordinateMode.SdePlanarXY;
@@ -379,7 +378,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string TrackingCharacterPreferencesKey = "Tracking.CharacterPreferences";
     private const string IntelEnabledKey = "Intel.Enabled";
     private const string IntelIncludeChannelsKey = "Intel.Channels.Include";
-    private const string IntelIgnoreChannelsKey = "Intel.Channels.Ignore";
+    private const string IntelLimitToCurrentRegionKey = "Intel.Overlay.LimitToCurrentRegion";
     private const string IntelSystemExpiryMinutesKey = "Intel.SystemExpiryMinutes";
     private readonly Task _initialLoadTask;
 
@@ -469,6 +468,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 return;
             }
 
+            _ = _settingsService.SetAsync(IntelLimitToCurrentRegionKey, value);
             _ = RebuildActivityCardsAsync(CurrentGraph);
         }
     }
@@ -488,12 +488,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     {
         get => _intelIncludeChannelsText;
         set => SetProperty(ref _intelIncludeChannelsText, value);
-    }
-
-    public string IntelIgnoreChannelsText
-    {
-        get => _intelIgnoreChannelsText;
-        set => SetProperty(ref _intelIgnoreChannelsText, value);
     }
 
     public int IntelSystemExpiryMinutes
@@ -1706,9 +1700,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         CharacterPresenceHoverMaxNames = await _settingsService.GetAsync<int?>(CharacterPresenceHoverMaxNamesKey) ?? 6;
         IntelEnabled = await _settingsService.GetAsync<bool?>(IntelEnabledKey) ?? true;
         IntelSystemExpiryMinutes = await _settingsService.GetAsync<int?>(IntelSystemExpiryMinutesKey) ?? 15;
+        LimitIntelReportsToCurrentRegion = await _settingsService.GetAsync<bool?>(IntelLimitToCurrentRegionKey) ?? false;
         var initialIncludeChannels = await _settingsService.GetAsync<List<string>>(IntelIncludeChannelsKey) ?? [];
         IntelIncludeChannelsText = string.Join(Environment.NewLine, initialIncludeChannels);
-        IntelIgnoreChannelsText = string.Join(Environment.NewLine, await _settingsService.GetAsync<List<string>>(IntelIgnoreChannelsKey) ?? []);
         if (IntelEnabled && initialIncludeChannels.Count == 0)
         {
             StatusText = "Intel feed paused: configure included channels in Intel Settings.";
@@ -2582,13 +2576,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             .Where(x => x.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
-        var ignore = IntelIgnoreChannelsText
-            .Split(['\r', '\n', ',', ';', '\t'], StringSplitOptions.RemoveEmptyEntries)
-            .Select(x => x.Trim())
-            .Where(x => x.Length > 0)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
         if (IntelEnabled && include.Count == 0)
         {
             StatusText = "Intel is enabled but no included channels are configured. Add at least one channel name.";
@@ -2597,7 +2584,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
         await _settingsService.SetAsync(IntelEnabledKey, IntelEnabled);
         await _settingsService.SetAsync(IntelIncludeChannelsKey, include);
-        await _settingsService.SetAsync(IntelIgnoreChannelsKey, ignore);
         await _settingsService.SetAsync(IntelSystemExpiryMinutesKey, Math.Clamp(IntelSystemExpiryMinutes, 1, 180));
         StatusText = "Intel settings saved. Restart HISA intel feed to apply channel filter changes.";
     }

@@ -17,7 +17,6 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
     private const string LogsRootSettingsKey = "Tracking.LogsRootPath";
     private const string IntelEnabledSettingsKey = "Intel.Enabled";
     private const string IntelIncludeChannelsSettingsKey = "Intel.Channels.Include";
-    private const string IntelIgnoreChannelsSettingsKey = "Intel.Channels.Ignore";
     private const string IntelSystemExpiryMinutesSettingsKey = "Intel.SystemExpiryMinutes";
 
     private static readonly Regex ChatLineRegex = BuildChatLineRegex();
@@ -59,7 +58,6 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
     private IntelChatMessageParser? _messageParser;
     private bool _enabled = true;
     private HashSet<string> _includeChannels = new(StringComparer.OrdinalIgnoreCase);
-    private HashSet<string> _ignoreChannels = new(StringComparer.OrdinalIgnoreCase);
     private TimeSpan _systemExpiry = TimeSpan.FromMinutes(15);
 
     public IntelChatLogFeedHostedService(
@@ -128,9 +126,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
     {
         _enabled = await _settingsService.GetAsync<bool?>(IntelEnabledSettingsKey, cancellationToken) ?? true;
         var include = await _settingsService.GetAsync<List<string>>(IntelIncludeChannelsSettingsKey, cancellationToken) ?? [];
-        var ignore = await _settingsService.GetAsync<List<string>>(IntelIgnoreChannelsSettingsKey, cancellationToken) ?? [];
         _includeChannels = include.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        _ignoreChannels = ignore.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var expiryMinutes = Math.Clamp(await _settingsService.GetAsync<int?>(IntelSystemExpiryMinutesSettingsKey, cancellationToken) ?? 15, 1, 180);
         _systemExpiry = TimeSpan.FromMinutes(expiryMinutes);
     }
@@ -429,11 +425,6 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
 
     private bool ShouldReadChannel(string channelName)
     {
-        if (_ignoreChannels.Contains(channelName))
-        {
-            return false;
-        }
-
         return _includeChannels.Count > 0 && _includeChannels.Contains(channelName);
     }
 
