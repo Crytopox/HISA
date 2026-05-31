@@ -90,6 +90,7 @@ public sealed class IntelMapHoverShip
 {
     public required string ShipDisplayName { get; init; }
     public required string ShipIconKey { get; init; }
+    public int? ShipTypeId { get; init; }
     public int Count { get; init; }
 }
 

@@ -413,6 +413,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             return;
         }
 
+        var snapshotChanged = false;
         using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
         long offset;
         lock (_gate)
@@ -453,12 +454,17 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             }
 
             ReportReceived?.Invoke(this, report);
-            ApplyToSystemSnapshot(report);
+            snapshotChanged |= ApplyToSystemSnapshot(report);
         }
 
         lock (_gate)
         {
             _readOffsetsByPath[filePath] = stream.Position;
+        }
+
+        if (snapshotChanged)
+        {
+            SnapshotUpdated?.Invoke(this, Snapshot);
         }
     }
 
@@ -630,8 +636,9 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         };
     }
 
-    private void ApplyToSystemSnapshot(IntelChatReport report)
+    private bool ApplyToSystemSnapshot(IntelChatReport report)
     {
+        var changed = false;
         lock (_gate)
         {
             foreach (var systemName in report.Systems)
@@ -679,6 +686,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
                         HostileScore = 0,
                         IsClear = true
                     };
+                    changed = true;
                     continue;
                 }
 
@@ -737,10 +745,11 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
                     HostileScore = hostileScore,
                     IsClear = false
                 };
+                changed = true;
             }
         }
 
-        SnapshotUpdated?.Invoke(this, Snapshot);
+        return changed;
     }
 
     private void ExpireSnapshots(DateTime nowUtc)

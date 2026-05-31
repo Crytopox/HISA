@@ -369,11 +369,7 @@
                 <ItemsControl.ItemTemplate>
                   <DataTemplate>
                     <Grid Margin="0,0,0,8" ColumnDefinitions="4,*">
-                      <Border Grid.Column="0" CornerRadius="4,0,0,4">
-                        <Border.Background>
-                          <SolidColorBrush Color="{Binding AccentHex}" />
-                        </Border.Background>
-                      </Border>
+                      <Border Grid.Column="0" CornerRadius="4,0,0,4" Background="{Binding AccentHex}" />
                       <Border Grid.Column="1"
                               Padding="9,8"
                               Background="#D0162234"
@@ -391,9 +387,7 @@
                             </TextBlock>
                             <Border Grid.Column="1" Padding="6,2" CornerRadius="4">
                               <Border.Background>#192838</Border.Background>
-                              <Border.BorderBrush>
-                                <SolidColorBrush Color="{Binding AccentHex}" />
-                              </Border.BorderBrush>
+                              <Border.BorderBrush>{Binding AccentHex}</Border.BorderBrush>
                               <Border.BorderThickness>1</Border.BorderThickness>
                               <TextBlock Text="{Binding HubSummary}" FontSize="10" FontWeight="Bold" Foreground="{Binding HubLabelColorHex}" />
                             </Border>
@@ -447,11 +441,7 @@
                 <ItemsControl.ItemTemplate>
                   <DataTemplate>
                     <Grid Margin="0,0,0,8" ColumnDefinitions="4,*">
-                      <Border Grid.Column="0" CornerRadius="4,0,0,4">
-                        <Border.Background>
-                          <SolidColorBrush Color="{Binding AccentHex}" />
-                        </Border.Background>
-                      </Border>
+                      <Border Grid.Column="0" CornerRadius="4,0,0,4" Background="{Binding AccentHex}" />
                       <Border Grid.Column="1"
                               Padding="9,8"
                               Background="#D01A2232"
@@ -520,11 +510,7 @@
                 <ItemsControl.ItemTemplate>
                   <DataTemplate>
                     <Grid Margin="0,0,0,8" ColumnDefinitions="4,*">
-                      <Border Grid.Column="0" CornerRadius="4,0,0,4">
-                        <Border.Background>
-                          <SolidColorBrush Color="{Binding AccentHex}" />
-                        </Border.Background>
-                      </Border>
+                      <Border Grid.Column="0" CornerRadius="4,0,0,4" Background="{Binding AccentHex}" />
                       <Border Grid.Column="1"
                               Padding="9,8"
                               Background="#D01A2232"
@@ -594,11 +580,7 @@
                 <ItemsControl.ItemTemplate>
                   <DataTemplate>
                     <Grid Margin="0,0,0,8" ColumnDefinitions="4,*">
-                      <Border Grid.Column="0" CornerRadius="4,0,0,4">
-                        <Border.Background>
-                          <SolidColorBrush Color="{Binding AccentHex}" />
-                        </Border.Background>
-                      </Border>
+                      <Border Grid.Column="0" CornerRadius="4,0,0,4" Background="{Binding AccentHex}" />
                       <Border Grid.Column="1"
                               Padding="9,8"
                               Background="#D01A2232"
@@ -653,7 +635,6 @@
                                         ToolTip.Tip="{Binding ShipName}">
                                   <StackPanel Orientation="Horizontal" Spacing="4">
                                     <Image Width="24" Height="24" Source="{Binding ShipBitmap}" IsVisible="{Binding HasShipBitmap}" />
-                                    <Image Width="24" Height="24" Source="{Binding ShipIconKey, StringFormat='avares://Hisa.Rendering/Assets/Icons/Ships/{0}.png'}" IsVisible="{Binding HasNoShipBitmap}" />
                                     <TextBlock Foreground="#EAF2FF" FontSize="10" VerticalAlignment="Center">
                                       <Run Text="{Binding ShipName}" />
                                       <Run Text=" x" />

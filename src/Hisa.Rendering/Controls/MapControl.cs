@@ -351,6 +351,9 @@ public sealed class MapControl : Control
     private static readonly ConcurrentDictionary<int, Bitmap?> CharacterPortraitCache = new();
     private static readonly ConcurrentDictionary<int, byte> CharacterPortraitLoading = new();
     private static readonly ConcurrentDictionary<int, DateTime> CharacterPortraitRetryAfterUtc = new();
+    private static readonly ConcurrentDictionary<int, Bitmap?> ShipTypeIconCache = new();
+    private static readonly ConcurrentDictionary<int, byte> ShipTypeIconLoading = new();
+    private static readonly ConcurrentDictionary<int, DateTime> ShipTypeIconRetryAfterUtc = new();
     private static readonly ConcurrentDictionary<string, Bitmap?> OrganizationLogoCache = new(StringComparer.OrdinalIgnoreCase);
     private static readonly ConcurrentDictionary<string, byte> OrganizationLogoLoading = new(StringComparer.OrdinalIgnoreCase);
     private static readonly TimeSpan CharacterPortraitRetryDelay = TimeSpan.FromMinutes(2);
@@ -4576,7 +4579,7 @@ public sealed class MapControl : Control
                 var identityY = chipY + Math.Max(ageRect.Height, hostilesRect.Height) + 3;
                 foreach (var ship in intelRow.Ships)
                 {
-                    DrawIntelIcon(context, ship.Ship.ShipIconKey, new Point(headerOrigin.X + 4, identityY), intelIdentityIconSize);
+                    DrawIntelShipIcon(context, ship.Ship, new Point(headerOrigin.X + 4, identityY), intelIdentityIconSize);
                     context.DrawText(ship.Item2, new Point(headerOrigin.X + 4 + intelIdentityIconSize + 4, identityY + ((intelIdentityIconSize - ship.Item2.Height) / 2)));
                     identityY += Math.Max(intelIdentityIconSize, ship.Item2.Height) + 2;
                 }
@@ -5164,6 +5167,25 @@ public sealed class MapControl : Control
         context.DrawImage(icon, src, dst);
     }
 
+    private void DrawIntelShipIcon(DrawingContext context, IntelMapHoverShip ship, Point topLeft, double size)
+    {
+        Bitmap? icon = null;
+        if (ship.ShipTypeId is int typeId && typeId > 0)
+        {
+            icon = GetShipTypeIcon(typeId);
+        }
+
+        if (icon is null)
+        {
+            DrawIntelIcon(context, ship.ShipIconKey, topLeft, size);
+            return;
+        }
+
+        var src = new Rect(0, 0, icon.Size.Width, icon.Size.Height);
+        var dst = new Rect(topLeft.X, topLeft.Y, size, size);
+        context.DrawImage(icon, src, dst);
+    }
+
     private static void DrawIncursionBeacon(DrawingContext context, Point nodePoint, double verticalOffset = 0.0)
     {
         var icon = IncursionIcon.Value;
@@ -5339,6 +5361,68 @@ public sealed class MapControl : Control
             {
                 OrganizationLogoCache[cacheKey] = logo;
                 OrganizationLogoLoading.TryRemove(cacheKey, out _);
+                Dispatcher.UIThread.Post(InvalidateVisual);
+            }
+        });
+
+        return null;
+    }
+
+    private Bitmap? GetShipTypeIcon(int typeId)
+    {
+        if (typeId <= 0)
+        {
+            return null;
+        }
+
+        if (ShipTypeIconCache.TryGetValue(typeId, out var cached))
+        {
+            return cached;
+        }
+
+        if (ShipTypeIconRetryAfterUtc.TryGetValue(typeId, out var retryAfterUtc) &&
+            DateTime.UtcNow < retryAfterUtc)
+        {
+            return null;
+        }
+
+        if (!ShipTypeIconLoading.TryAdd(typeId, 0))
+        {
+            return null;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            Bitmap? icon = null;
+            try
+            {
+                var url = $"https://images.evetech.net/types/{typeId}/icon?tenant=tranquility&size=64";
+                using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                request.Headers.UserAgent.ParseAdd("HISA/1.0");
+                using var response = await CharacterPortraitHttpClient.SendAsync(request).ConfigureAwait(false);
+                if (response.IsSuccessStatusCode)
+                {
+                    await using var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+                    icon = new Bitmap(stream);
+                }
+            }
+            catch
+            {
+                icon = null;
+            }
+            finally
+            {
+                if (icon is not null)
+                {
+                    ShipTypeIconCache[typeId] = icon;
+                    ShipTypeIconRetryAfterUtc.TryRemove(typeId, out _);
+                }
+                else
+                {
+                    ShipTypeIconRetryAfterUtc[typeId] = DateTime.UtcNow + CharacterPortraitRetryDelay;
+                }
+
+                ShipTypeIconLoading.TryRemove(typeId, out _);
                 Dispatcher.UIThread.Post(InvalidateVisual);
             }
         });

@@ -325,6 +325,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly HashSet<string> _characterIdLookupInFlight = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _characterIdLookupGate = new();
     private readonly DispatcherTimer _intelOverlayAgeTimer;
+    private readonly DispatcherTimer _activityCardsRebuildDebounceTimer;
+    private int _activityCardsRebuildVersion;
+    private int _activityCardsRebuildRunningVersion;
+    private bool _activityCardsRebuildInFlight;
     private static readonly HttpClient IntelPortraitHttpClient = new();
     private static readonly ConcurrentDictionary<int, Bitmap> IntelPortraitBitmapCache = new();
     private static readonly ConcurrentDictionary<int, Bitmap> IntelCorporationBitmapCache = new();
@@ -334,6 +338,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private static readonly ConcurrentDictionary<int, string> IntelCorporationTickersById = new();
     private static readonly ConcurrentDictionary<int, string> IntelAllianceTickersById = new();
     private static readonly ConcurrentDictionary<int, byte> IntelImageLoadingByCharacterId = new();
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> IntelBitmapLoadLocks = new(StringComparer.OrdinalIgnoreCase);
     private static readonly string IntelImageCacheRoot = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "HISA",
@@ -403,6 +408,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string IntelIncludeChannelsKey = "Intel.Channels.Include";
     private const string IntelLimitToCurrentRegionKey = "Intel.Overlay.LimitToCurrentRegion";
     private const string IntelSystemExpiryMinutesKey = "Intel.SystemExpiryMinutes";
+    private const int MaxIntelReportHistory = 350;
+    private const int MaxIntelOverlayCards = 140;
+    private const int MaxIntelShipBitmapCacheItems = 600;
+    private const int MaxIntelPortraitBitmapCacheItems = 500;
+    private const int MaxIntelCorporationBitmapCacheItems = 500;
+    private const int MaxIntelAllianceBitmapCacheItems = 500;
     private readonly Task _initialLoadTask;
 
     public MainWindowViewModel(
@@ -445,6 +456,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _intelOverlayAgeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _intelOverlayAgeTimer.Tick += (_, _) => RefreshIntelOverlayCardAges();
         _intelOverlayAgeTimer.Start();
+        _activityCardsRebuildDebounceTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(120) };
+        _activityCardsRebuildDebounceTimer.Tick += (_, _) =>
+        {
+            _activityCardsRebuildDebounceTimer.Stop();
+            _ = RunScheduledActivityCardsRebuildAsync();
+        };
         _initialLoadTask = LoadAsync();
     }
 
@@ -496,7 +513,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             }
 
             _ = _settingsService.SetAsync(IntelLimitToCurrentRegionKey, value);
-            _ = RebuildActivityCardsAsync(CurrentGraph);
+            ScheduleActivityCardsRebuild();
         }
     }
     public string LogsPathValidationStatus => _logsPathValidationStatus;
@@ -1970,13 +1987,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         lock (_intelReportHistory)
         {
             _intelReportHistory.Add(report);
-            if (_intelReportHistory.Count > 1000)
+            if (_intelReportHistory.Count > MaxIntelReportHistory)
             {
-                _intelReportHistory.RemoveRange(0, _intelReportHistory.Count - 1000);
+                _intelReportHistory.RemoveRange(0, _intelReportHistory.Count - MaxIntelReportHistory);
             }
         }
 
-        Dispatcher.UIThread.Post(() => _ = RebuildActivityCardsAsync(CurrentGraph));
+        Dispatcher.UIThread.Post(ScheduleActivityCardsRebuild);
     }
 
     private void OnIntelSnapshotUpdated(object? sender, IReadOnlyDictionary<long, IntelSystemSnapshot> snapshot)
@@ -1993,8 +2010,43 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         Dispatcher.UIThread.Post(() =>
         {
             RebuildIntelPresenceForView();
-            _ = RebuildActivityCardsAsync(CurrentGraph);
+            ScheduleActivityCardsRebuild();
         });
+    }
+
+    private void ScheduleActivityCardsRebuild()
+    {
+        Interlocked.Increment(ref _activityCardsRebuildVersion);
+        _activityCardsRebuildDebounceTimer.Stop();
+        _activityCardsRebuildDebounceTimer.Start();
+    }
+
+    private async Task RunScheduledActivityCardsRebuildAsync()
+    {
+        if (_activityCardsRebuildInFlight)
+        {
+            return;
+        }
+
+        _activityCardsRebuildInFlight = true;
+        try
+        {
+            while (true)
+            {
+                var requestedVersion = Volatile.Read(ref _activityCardsRebuildVersion);
+                if (requestedVersion == _activityCardsRebuildRunningVersion)
+                {
+                    break;
+                }
+
+                _activityCardsRebuildRunningVersion = requestedVersion;
+                await RebuildActivityCardsAsync(CurrentGraph);
+            }
+        }
+        finally
+        {
+            _activityCardsRebuildInFlight = false;
+        }
     }
 
     private void RebuildIntelPresenceForView()
@@ -2065,7 +2117,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                     TimestampUtc = x.TimestampUtc,
                     ReporterName = x.ReporterName,
                     MessageText = x.MessageText,
-                    Ships = BuildIntelHoverShips(system.ShipNames, system.ShipClasses),
+                    Ships = BuildIntelHoverShips(system.ShipNames, system.ShipTypeIds, system.ShipClasses),
                     Hostiles = system.HostilePilotNames
                         .Where(name => !string.IsNullOrWhiteSpace(name))
                         .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -3463,6 +3515,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             .Select(c => c!)
             .OrderByDescending(c => c.SortTimestampUtc)
             .ThenBy(c => c.SystemName, StringComparer.OrdinalIgnoreCase)
+            .Take(MaxIntelOverlayCards)
             .ToList();
 
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HubWormholeCardsForView)));
@@ -3699,9 +3752,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     private static IReadOnlyList<IntelMapHoverShip> BuildIntelHoverShips(
         IReadOnlyList<string> shipNames,
+        IReadOnlyList<int> shipTypeIds,
         IReadOnlyList<IntelShipClass> shipClasses)
     {
-        var entries = new List<(string Name, string IconKey)>();
+        var entries = new List<(string Name, string IconKey, int? TypeId)>();
         for (var i = 0; i < shipNames.Count; i++)
         {
             var raw = shipNames[i];
@@ -3717,7 +3771,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             }
 
             var shipClass = shipClasses.Count > 0 ? shipClasses[Math.Min(i, shipClasses.Count - 1)] : IntelShipClass.Unknown;
-            entries.Add((normalized, ShipClassToOverlayIconKey(shipClass)));
+            var shipTypeId = shipTypeIds.Count > 0 ? shipTypeIds[Math.Min(i, shipTypeIds.Count - 1)] : (int?)null;
+            entries.Add((normalized, ShipClassToOverlayIconKey(shipClass), shipTypeId));
         }
 
         return entries
@@ -3729,6 +3784,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 {
                     ShipDisplayName = first.Name,
                     ShipIconKey = first.IconKey,
+                    ShipTypeId = first.TypeId,
                     Count = g.Count()
                 };
             })
@@ -3924,7 +3980,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             if (match is null || match.Id <= 0)
             {
                 _invalidHostilePilotNames.Add(characterName);
-                Dispatcher.UIThread.Post(() => _ = RebuildActivityCardsAsync(CurrentGraph));
+                Dispatcher.UIThread.Post(ScheduleActivityCardsRebuild);
                 return;
             }
 
@@ -4188,14 +4244,64 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             return cached;
         }
 
-        var filePath = Path.Combine(IntelImageCacheRoot, folderName, fileName);
-        var bitmap = await LoadBitmapFromDiskOrDownloadAsync(filePath, sourceUrl);
-        if (bitmap is not null)
+        var lockKey = $"{folderName}:{key}";
+        var gate = IntelBitmapLoadLocks.GetOrAdd(lockKey, static _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync().ConfigureAwait(false);
+        try
         {
-            memoryCache[key] = bitmap;
+            if (memoryCache.TryGetValue(key, out cached))
+            {
+                return cached;
+            }
+
+            var filePath = Path.Combine(IntelImageCacheRoot, folderName, fileName);
+            var bitmap = await LoadBitmapFromDiskOrDownloadAsync(filePath, sourceUrl);
+            if (bitmap is not null)
+            {
+                memoryCache[key] = bitmap;
+                TrimBitmapCache(memoryCache, ResolveBitmapCacheLimit(folderName));
+            }
+
+            return bitmap;
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    private static int ResolveBitmapCacheLimit(string folderName)
+    {
+        return folderName.ToLowerInvariant() switch
+        {
+            "ships" => MaxIntelShipBitmapCacheItems,
+            "characters" => MaxIntelPortraitBitmapCacheItems,
+            "corporations" => MaxIntelCorporationBitmapCacheItems,
+            "alliances" => MaxIntelAllianceBitmapCacheItems,
+            _ => 500
+        };
+    }
+
+    private static void TrimBitmapCache(ConcurrentDictionary<int, Bitmap> memoryCache, int maxItems)
+    {
+        if (memoryCache.Count <= maxItems)
+        {
+            return;
         }
 
-        return bitmap;
+        var overflow = memoryCache.Count - maxItems;
+        if (overflow <= 0)
+        {
+            return;
+        }
+
+        foreach (var key in memoryCache.Keys.Take(overflow))
+        {
+            if (memoryCache.TryRemove(key, out _))
+            {
+                // Bitmap instances can still be referenced by active cards; avoid disposing here.
+            }
+        }
     }
 
     private static async Task<Bitmap?> LoadBitmapFromDiskOrDownloadAsync(string filePath, string url)
