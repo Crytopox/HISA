@@ -83,6 +83,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
     private DateTime _nextZkillPollAfterUtc = DateTime.MinValue;
     private HashSet<string> _includeChannels = new(StringComparer.OrdinalIgnoreCase);
     private TimeSpan _systemExpiry = TimeSpan.FromMinutes(15);
+    private readonly DateTime _startupHistoryCutoffUtc = DateTime.UtcNow - TimeSpan.FromMinutes(10);
 
     public IntelChatLogFeedHostedService(
         ISettingsService settingsService,
@@ -489,6 +490,11 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
                 continue;
             }
 
+            if (timestampUtc < _startupHistoryCutoffUtc)
+            {
+                continue;
+            }
+
             if (IsChannelMotdMessage(reporter, message))
             {
                 continue;
@@ -679,7 +685,8 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             Alerts = parsed.Alerts,
             ReportedHostileNames = parsed.HostileNames,
             IsClear = parsed.IsClear,
-            ReportedHostileCount = parsed.HostileCount
+            ReportedHostileCount = parsed.HostileCount,
+            Killmail = null
         };
     }
 
@@ -714,7 +721,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
                         !string.Equals(x.MessageText, report.MessageText, StringComparison.Ordinal)));
                     recentReports = recentReports
                         .OrderByDescending(x => x.TimestampUtc)
-                        .Take(1)
+                        .Take(4)
                         .ToList();
                     _snapshotBySystemId[systemId] = new IntelSystemSnapshot
                     {
@@ -767,7 +774,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
                     !string.Equals(x.MessageText, report.MessageText, StringComparison.Ordinal)));
                 reports = reports
                     .OrderByDescending(x => x.TimestampUtc)
-                    .Take(1)
+                    .Take(4)
                     .ToList();
 
                 var mergedHostiles = MergeHostileNames(previousHostileNames, movedHostileNames);
@@ -1102,6 +1109,35 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         var zkb = root.TryGetProperty("zkb", out var zkbNode) ? zkbNode : default;
         var value = zkb.ValueKind == JsonValueKind.Object ? ReadDecimal(zkb, "totalValue") ?? 0m : 0m;
         var message = $"Killmail: {victimShipName} destroyed ({attackerCount} attacker{(attackerCount == 1 ? string.Empty : "s")}, {value:N0} ISK).";
+        var killmailId = ReadInt64(root, "killmail_id") ?? 0;
+        var hash = ReadString(root, "hash");
+        var killmailUrl = killmailId > 0 && !string.IsNullOrWhiteSpace(hash)
+            ? $"https://zkillboard.com/kill/{killmailId}/"
+            : string.Empty;
+        var victimCharacterId = victim.ValueKind == JsonValueKind.Object ? ReadInt32(victim, "character_id") : null;
+        var victimCorporationId = victim.ValueKind == JsonValueKind.Object ? (ReadInt32(victim, "corporation_id") ?? 0) : 0;
+        var victimAllianceId = victim.ValueKind == JsonValueKind.Object ? ReadInt32(victim, "alliance_id") : null;
+
+        var attackers = new List<IntelKillmailAttacker>();
+        if (attackersNode.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var attacker in attackersNode.EnumerateArray())
+            {
+                if (attacker.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                attackers.Add(new IntelKillmailAttacker
+                {
+                    Name = ReadString(attacker, "character_name") ?? string.Empty,
+                    CharacterId = ReadInt32(attacker, "character_id"),
+                    CorporationId = ReadInt32(attacker, "corporation_id") ?? 0,
+                    AllianceId = ReadInt32(attacker, "alliance_id"),
+                    ShipTypeId = ReadInt32(attacker, "ship_type_id")
+                });
+            }
+        }
 
         report = new IntelChatReport
         {
@@ -1117,7 +1153,20 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             Alerts = [IntelAlertType.Fight],
             ReportedHostileNames = [],
             IsClear = false,
-            ReportedHostileCount = Math.Max(1, attackerCount)
+            ReportedHostileCount = Math.Max(1, attackerCount),
+            Killmail = new IntelKillmailDetails
+            {
+                KillmailId = killmailId,
+                Hash = hash ?? string.Empty,
+                Url = killmailUrl,
+                VictimCharacterId = victimCharacterId,
+                VictimCorporationId = victimCorporationId,
+                VictimAllianceId = victimAllianceId,
+                VictimShipTypeId = victimShipTypeId,
+                VictimName = ReadString(victim, "character_name") ?? string.Empty,
+                TotalValue = value,
+                Attackers = attackers
+            }
         };
 
         return true;
@@ -1187,6 +1236,16 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         }
 
         return DateTime.SpecifyKind(parsed, DateTimeKind.Utc);
+    }
+
+    private static string? ReadString(JsonElement obj, string name)
+    {
+        if (!obj.TryGetProperty(name, out var node) || node.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        return node.GetString();
     }
 
     public override void Dispose()

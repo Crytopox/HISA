@@ -267,11 +267,22 @@ public sealed class IntelOverlayCard
 public sealed class ZkillmailOverlayCard
 {
     public required DateTime TimestampUtc { get; init; }
+    public long SolarSystemId { get; init; }
     public required string AgeSummary { get; set; }
+    public required string KillmailUrl { get; init; }
     public required string SystemName { get; init; }
     public required string RegionName { get; init; }
     public required string ConstellationName { get; init; }
     public required string ShipSummary { get; init; }
     public required int HostileCount { get; init; }
     public required string MessageText { get; init; }
+    public string IskLostLabel { get; init; } = string.Empty;
+    public string IskLostBackgroundHex { get; init; } = "#1E4A2B";
+    public string IskLostBorderHex { get; init; } = "#3DA35A";
+    public required IntelOverlayHostileCard Victim { get; init; }
+    public required IReadOnlyList<IntelOverlayHostileCard> VisibleAttackers { get; init; }
+    public int HiddenAttackerCount { get; init; }
+    public bool HasHiddenAttackers => HiddenAttackerCount > 0;
+    public string HiddenAttackersSummary => $"+{HiddenAttackerCount}";
+    public required IReadOnlyList<IntelOverlayShipSummaryCard> ShipsSummary { get; init; }
 }

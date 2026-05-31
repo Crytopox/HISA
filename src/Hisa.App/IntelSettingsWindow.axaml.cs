@@ -24,4 +24,14 @@ public partial class IntelSettingsWindow : Window
 
         await vm.SaveIntelSettingsAsync();
     }
+
+    private async void OnClearIntelHistoryClicked(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel vm)
+        {
+            return;
+        }
+
+        await vm.ClearIntelAndKillmailHistoryAsync();
+    }
 }

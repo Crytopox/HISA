@@ -31,6 +31,7 @@ public partial class MainWindow : Window
     private AnsiblexNetworkWindow? _ansiblexNetworkWindow;
     private LyCoveragePlannerWindow? _lyCoveragePlannerWindow;
     private JumpRouteOptimizerWindow? _jumpRouteOptimizerWindow;
+    private ZkillmailsWindow? _zkillmailsWindow;
     private readonly ContextMenu _mapNodeContextMenu;
     private readonly MenuItem _copySystemNameMenuItem;
     private readonly MenuItem _openInViewMenuItem;
@@ -273,6 +274,23 @@ public partial class MainWindow : Window
 
         _jumpRouteOptimizerWindow.Show();
         _jumpRouteOptimizerWindow.Activate();
+    }
+
+    private void OnOpenZkillmailsWindowClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_zkillmailsWindow is null)
+        {
+            if (_boundVm is null)
+            {
+                return;
+            }
+
+            _zkillmailsWindow = new ZkillmailsWindow(_boundVm);
+            _zkillmailsWindow.Closed += (_, _) => _zkillmailsWindow = null;
+        }
+
+        _zkillmailsWindow.Show();
+        _zkillmailsWindow.Activate();
     }
 
     private void OnFitCenterClicked(object? sender, RoutedEventArgs e)
@@ -563,33 +581,31 @@ public partial class MainWindow : Window
 
     private async void OnIntelCardSystemClicked(object? sender, RoutedEventArgs e)
     {
-        if (DataContext is not MainWindowViewModel vm ||
-            sender is not Control { DataContext: IntelOverlayCard card })
+        if (DataContext is not MainWindowViewModel vm)
         {
             return;
         }
 
-        var systemId = card.SolarSystemId;
+        var systemId = sender switch
+        {
+            Control { DataContext: IntelOverlayCard intelCard } => intelCard.SolarSystemId,
+            Control { DataContext: ZkillmailOverlayCard zkillCard } => zkillCard.SolarSystemId,
+            _ => 0
+        };
         if (systemId <= 0)
         {
             return;
         }
-        var shouldSwitchToUniverse = vm.SelectedViewMode == Hisa.Core.Models.MapViewMode.UniverseRegions;
-        if (vm.SelectedViewMode == Hisa.Core.Models.MapViewMode.Region)
-        {
-            var existsInCurrentRegionLayout = vm.CurrentGraph?.Nodes.Any(n => n.Id == systemId) == true;
-            shouldSwitchToUniverse = !existsInCurrentRegionLayout;
-        }
 
-        if (shouldSwitchToUniverse)
-        {
-            vm.SelectedViewMode = Hisa.Core.Models.MapViewMode.Universe;
-            await WaitForNodeInGraphAsync(vm, systemId, 1200);
-        }
-
+        await vm.NavigateToSystemFromReportAsync(systemId);
         vm.SelectedNodeId = systemId;
         MainMapControl.FocusOnNodeWithZoomPercent(systemId, 0.9);
         await FocusSelectedNodeAtZoomAsync(systemId, 0.9);
+    }
+
+    private async void OnZkillmailCardSystemClicked(object? sender, RoutedEventArgs e)
+    {
+        OnIntelCardSystemClicked(sender, e);
     }
 
     private void OnIntelHostilePortraitClicked(object? sender, RoutedEventArgs e)
@@ -644,6 +660,73 @@ public partial class MainWindow : Window
         }
 
         var url = $"https://zkillboard.com/alliance/{hostile.AllianceId.Value}/";
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = url,
+                UseShellExecute = true
+            });
+        }
+        catch
+        {
+            // Ignore failures from shell/browser launch.
+        }
+    }
+
+    private void OnZkillmailLinkClicked(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control { DataContext: ZkillmailOverlayCard card } || string.IsNullOrWhiteSpace(card.KillmailUrl))
+        {
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = card.KillmailUrl,
+                UseShellExecute = true
+            });
+        }
+        catch
+        {
+            // Ignore failures from shell/browser launch.
+        }
+    }
+
+    private void OnZkillVictimPortraitClicked(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control { DataContext: ZkillmailOverlayCard card } || card.Victim.CharacterId is null)
+        {
+            return;
+        }
+
+        TryOpenUrl($"https://zkillboard.com/character/{card.Victim.CharacterId.Value}/");
+    }
+
+    private void OnZkillVictimCorporationClicked(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control { DataContext: ZkillmailOverlayCard card } || card.Victim.CorporationId is null)
+        {
+            return;
+        }
+
+        TryOpenUrl($"https://zkillboard.com/corporation/{card.Victim.CorporationId.Value}/");
+    }
+
+    private void OnZkillVictimAllianceClicked(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control { DataContext: ZkillmailOverlayCard card } || card.Victim.AllianceId is null)
+        {
+            return;
+        }
+
+        TryOpenUrl($"https://zkillboard.com/alliance/{card.Victim.AllianceId.Value}/");
+    }
+
+    private static void TryOpenUrl(string url)
+    {
         try
         {
             Process.Start(new ProcessStartInfo

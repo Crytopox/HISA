@@ -338,6 +338,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private static readonly ConcurrentDictionary<int, Bitmap> IntelAllianceBitmapCache = new();
     private static readonly ConcurrentDictionary<int, Bitmap> IntelShipBitmapCache = new();
     private static readonly ConcurrentDictionary<int, (int CorpId, int? AllianceId)> IntelAffiliationsByCharacterId = new();
+    private static readonly ConcurrentDictionary<int, string> IntelCharacterNamesById = new();
     private static readonly ConcurrentDictionary<int, string> IntelCorporationTickersById = new();
     private static readonly ConcurrentDictionary<int, string> IntelAllianceTickersById = new();
     private static readonly ConcurrentDictionary<int, byte> IntelImageLoadingByCharacterId = new();
@@ -350,9 +351,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private IReadOnlyDictionary<long, IReadOnlyList<IntelMapHoverReport>> _intelRecentReportsByNodeId = new Dictionary<long, IReadOnlyList<IntelMapHoverReport>>();
     private IReadOnlyDictionary<long, int> _intelHostileScoresByNodeId = new Dictionary<long, int>();
     private bool _limitIntelReportsToCurrentRegion;
+    private bool _limitZkillmailsToCurrentRegion;
     private bool _intelEnabled = true;
     private string _intelIncludeChannelsText = string.Empty;
     private int _intelSystemExpiryMinutes = 15;
+    private int _intelListExpiryMinutes = 30;
     private CancellationTokenSource? _searchSuggestionsCts;
     private MapCoordinateMode _savedUniverseCoordinateMode = MapCoordinateMode.SdePlanarXY;
     private MapCoordinateMode _savedRegionCoordinateMode = MapCoordinateMode.SdePlanarXY;
@@ -411,7 +414,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string IntelEnabledKey = "Intel.Enabled";
     private const string IntelIncludeChannelsKey = "Intel.Channels.Include";
     private const string IntelLimitToCurrentRegionKey = "Intel.Overlay.LimitToCurrentRegion";
+    private const string ZkillLimitToCurrentRegionKey = "Intel.Zkill.Overlay.LimitToCurrentRegion";
     private const string IntelSystemExpiryMinutesKey = "Intel.SystemExpiryMinutes";
+    private const string IntelListExpiryMinutesKey = "Intel.ListExpiryMinutes";
     private const int MaxIntelReportHistory = 350;
     private const int MaxIntelOverlayCards = 140;
     private const int MaxIntelShipBitmapCacheItems = 600;
@@ -522,6 +527,21 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             ScheduleActivityCardsRebuild();
         }
     }
+
+    public bool LimitZkillmailsToCurrentRegion
+    {
+        get => _limitZkillmailsToCurrentRegion;
+        set
+        {
+            if (!SetProperty(ref _limitZkillmailsToCurrentRegion, value))
+            {
+                return;
+            }
+
+            _ = _settingsService.SetAsync(ZkillLimitToCurrentRegionKey, value);
+            ScheduleActivityCardsRebuild();
+        }
+    }
     public string LogsPathValidationStatus => _logsPathValidationStatus;
     public bool IsLogsPathValid => _isLogsPathValid;
     public IReadOnlyDictionary<long, IReadOnlyList<long>> JumpRangeMembershipByNodeIdForView =>
@@ -544,6 +564,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     {
         get => _intelSystemExpiryMinutes;
         set => SetProperty(ref _intelSystemExpiryMinutes, Math.Clamp(value, 1, 180));
+    }
+
+    public int IntelListExpiryMinutes
+    {
+        get => _intelListExpiryMinutes;
+        set => SetProperty(ref _intelListExpiryMinutes, Math.Clamp(value, 1, 240));
     }
 
     public MapViewMode SelectedViewMode
@@ -1782,7 +1808,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         CharacterPresenceHoverMaxNames = await _settingsService.GetAsync<int?>(CharacterPresenceHoverMaxNamesKey) ?? 6;
         IntelEnabled = await _settingsService.GetAsync<bool?>(IntelEnabledKey) ?? true;
         IntelSystemExpiryMinutes = await _settingsService.GetAsync<int?>(IntelSystemExpiryMinutesKey) ?? 15;
+        IntelListExpiryMinutes = await _settingsService.GetAsync<int?>(IntelListExpiryMinutesKey) ?? 30;
         LimitIntelReportsToCurrentRegion = await _settingsService.GetAsync<bool?>(IntelLimitToCurrentRegionKey) ?? false;
+        LimitZkillmailsToCurrentRegion = await _settingsService.GetAsync<bool?>(ZkillLimitToCurrentRegionKey) ?? false;
         var initialIncludeChannels = await _settingsService.GetAsync<List<string>>(IntelIncludeChannelsKey) ?? [];
         IntelIncludeChannelsText = string.Join(Environment.NewLine, initialIncludeChannels);
         if (IntelEnabled && initialIncludeChannels.Count == 0)
@@ -2065,8 +2093,15 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     private void OnIntelReportReceived(object? sender, IntelChatReport report)
     {
+        var listMaxAgeUtc = DateTime.UtcNow - TimeSpan.FromMinutes(IntelListExpiryMinutes);
+        if (report.TimestampUtc < listMaxAgeUtc)
+        {
+            return;
+        }
+
         lock (_intelReportHistory)
         {
+            _intelReportHistory.RemoveAll(x => x.TimestampUtc < listMaxAgeUtc);
             _intelReportHistory.Add(report);
             if (_intelReportHistory.Count > MaxIntelReportHistory)
             {
@@ -2796,7 +2831,59 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         await _settingsService.SetAsync(IntelEnabledKey, IntelEnabled);
         await _settingsService.SetAsync(IntelIncludeChannelsKey, include);
         await _settingsService.SetAsync(IntelSystemExpiryMinutesKey, Math.Clamp(IntelSystemExpiryMinutes, 1, 180));
+        await _settingsService.SetAsync(IntelListExpiryMinutesKey, Math.Clamp(IntelListExpiryMinutes, 1, 240));
+        await _settingsService.SetAsync(IntelLimitToCurrentRegionKey, LimitIntelReportsToCurrentRegion);
+        await _settingsService.SetAsync(ZkillLimitToCurrentRegionKey, LimitZkillmailsToCurrentRegion);
         StatusText = "Intel settings saved. Restart HISA intel feed to apply channel filter changes.";
+    }
+
+    public Task ClearIntelAndKillmailHistoryAsync()
+    {
+        lock (_intelReportHistory)
+        {
+            _intelReportHistory.Clear();
+        }
+
+        lock (_intelSnapshotsBySystemId)
+        {
+            _intelSnapshotsBySystemId.Clear();
+        }
+
+        ScheduleActivityCardsRebuild();
+        RebuildIntelPresenceForView();
+        return Task.CompletedTask;
+    }
+
+    public async Task NavigateToSystemFromReportAsync(long systemId)
+    {
+        if (systemId <= 0)
+        {
+            return;
+        }
+
+        var shouldSwitchToUniverse = SelectedViewMode == MapViewMode.UniverseRegions;
+        if (SelectedViewMode == MapViewMode.Region)
+        {
+            var existsInCurrentRegionLayout = CurrentGraph?.Nodes.Any(n => n.Id == systemId) == true;
+            shouldSwitchToUniverse = !existsInCurrentRegionLayout;
+        }
+
+        if (shouldSwitchToUniverse)
+        {
+            SelectedViewMode = MapViewMode.Universe;
+            var deadline = DateTime.UtcNow.AddMilliseconds(1200);
+            while (DateTime.UtcNow < deadline)
+            {
+                if (CurrentGraph?.Nodes.Any(n => n.Id == systemId) == true)
+                {
+                    break;
+                }
+
+                await Task.Delay(30);
+            }
+        }
+
+        SelectedNodeId = systemId;
     }
 
     private static string GetDefaultEveLogsRootPath()
@@ -3361,6 +3448,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         {
             intelHistory = _intelReportHistory.ToList();
         }
+        var listMaxAgeUtc = DateTime.UtcNow - TimeSpan.FromMinutes(IntelListExpiryMinutes);
+        intelHistory = intelHistory.Where(x => x.TimestampUtc >= listMaxAgeUtc).ToList();
         foreach (var intel in intelSnapshots)
         {
             allSystemIds.Add(intel.SolarSystemId);
@@ -3520,6 +3609,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             .ToDictionary(g => g.Key, g => g.OrderByDescending(x => x.LastUpdatedUtc).First(), StringComparer.OrdinalIgnoreCase);
 
         _intelCardsForView = intelHistory
+            .Where(r => !(string.Equals(r.ChannelName, "zKillboard", StringComparison.OrdinalIgnoreCase)
+                          || r.SourceFilePath.StartsWith("api://zkillboard", StringComparison.OrdinalIgnoreCase)))
             .Select(r =>
             {
                 var systemName = r.Systems.FirstOrDefault() ?? "Unknown";
@@ -3610,12 +3701,28 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             .Select(r =>
             {
                 var systemName = r.Systems.FirstOrDefault() ?? "Unknown";
+                long solarSystemId = 0;
                 var regionName = "Unknown Region";
                 var constellationName = "Unknown Constellation";
                 if (graphNodeByName.TryGetValue(systemName, out var node))
                 {
+                    solarSystemId = node.Id;
                     regionName = string.IsNullOrWhiteSpace(node.RegionName) ? regionName : node.RegionName;
                     constellationName = string.IsNullOrWhiteSpace(node.ConstellationName) ? constellationName : node.ConstellationName;
+                }
+                else if (snapshotByName.TryGetValue(systemName, out var snapshotRef))
+                {
+                    solarSystemId = snapshotRef.SolarSystemId;
+                    if (metadataById.TryGetValue(snapshotRef.SolarSystemId, out var metaFromSnapshot))
+                    {
+                        constellationName = metaFromSnapshot.ConstellationName ?? constellationName;
+                        regionName = metaFromSnapshot.RegionName ?? regionName;
+                    }
+                }
+
+                if (LimitZkillmailsToCurrentRegion && solarSystemId > 0 && !visibleNodeIds.Contains(solarSystemId))
+                {
+                    return null;
                 }
 
                 var age = DateTime.UtcNow - r.TimestampUtc;
@@ -3627,22 +3734,55 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 var shipSummary = r.ReportedShipNames.Count > 0
                     ? string.Join(", ", r.ReportedShipNames.Select(CapitalizeFirstLetter).Distinct(StringComparer.OrdinalIgnoreCase))
                     : "Unknown";
+                var killmail = r.Killmail;
+                var victim = BuildZkillVictimCard(killmail, r.ReportedShipNames, r.ReportedShipTypeIds, r.ShipClasses);
+                var attackers = BuildZkillAttackerCards(killmail);
+                var visibleAttackers = attackers.Take(4).ToList();
+                var hiddenAttackers = Math.Max(0, attackers.Count - visibleAttackers.Count);
+                var shipsSummary = BuildZkillShipsSummary(killmail, r.ReportedShipNames, r.ReportedShipTypeIds, r.ShipClasses);
+                var (iskBg, iskBorder) = GetIskLossBadgeColors(killmail?.TotalValue ?? 0m);
 
                 return new ZkillmailOverlayCard
                 {
                     TimestampUtc = r.TimestampUtc,
+                    SolarSystemId = solarSystemId,
                     AgeSummary = FormatOverlayAgeClock(age),
+                    KillmailUrl = killmail?.Url ?? string.Empty,
                     SystemName = systemName,
                     RegionName = regionName,
                     ConstellationName = constellationName,
                     ShipSummary = shipSummary,
                     HostileCount = Math.Max(1, r.ReportedHostileCount),
-                    MessageText = r.MessageText
+                    MessageText = r.MessageText,
+                    IskLostLabel = $"ISK Lost: {FormatCompactIsk(killmail?.TotalValue ?? 0m)}",
+                    IskLostBackgroundHex = iskBg,
+                    IskLostBorderHex = iskBorder,
+                    Victim = victim,
+                    VisibleAttackers = visibleAttackers,
+                    HiddenAttackerCount = hiddenAttackers,
+                    ShipsSummary = shipsSummary
                 };
             })
+            .Where(x => x is not null)
+            .Select(x => x!)
             .OrderByDescending(x => x.TimestampUtc)
             .Take(MaxIntelOverlayCards)
             .ToList();
+
+        if (LimitZkillmailsToCurrentRegion && SelectedViewMode == MapViewMode.Region)
+        {
+            var allowedIds = _zkillmailCardsForView.Select(x => x.SolarSystemId).Where(x => x > 0).ToHashSet();
+            lock (_intelReportHistory)
+            {
+                _intelReportHistory.RemoveAll(r =>
+                    (string.Equals(r.ChannelName, "zKillboard", StringComparison.OrdinalIgnoreCase) ||
+                     r.SourceFilePath.StartsWith("api://zkillboard", StringComparison.OrdinalIgnoreCase)) &&
+                    r.Systems.FirstOrDefault() is { } systemName &&
+                    snapshotByName.TryGetValue(systemName, out var snap) &&
+                    snap.SolarSystemId > 0 &&
+                    !allowedIds.Contains(snap.SolarSystemId));
+            }
+        }
 
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HubWormholeCardsForView)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IncursionCardsForView)));
@@ -3667,6 +3807,77 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
         _ = ResolveIntelCharacterIdsAsync();
         _ = EnsureShipImagesForIntelCardsAsync();
+        _ = EnsureZkillIdentityAssetsAsync();
+    }
+
+    private async Task EnsureZkillIdentityAssetsAsync()
+    {
+        var characterIds = _zkillmailCardsForView
+            .SelectMany(c =>
+                new[] { c.Victim.CharacterId }
+                    .Concat(c.VisibleAttackers.Select(a => a.CharacterId)))
+            .Where(id => id is > 0)
+            .Select(id => id!.Value)
+            .Distinct()
+            .ToList();
+        foreach (var characterId in characterIds)
+        {
+            _ = EnsureIntelHostileImagesAsync(characterId);
+        }
+
+        var corporationIds = _zkillmailCardsForView
+            .SelectMany(c =>
+                new[] { c.Victim.CorporationId }
+                    .Concat(c.VisibleAttackers.Select(a => a.CorporationId)))
+            .Where(id => id is > 0)
+            .Select(id => id!.Value)
+            .Distinct()
+            .ToList();
+
+        foreach (var corporationId in corporationIds)
+        {
+            await GetOrLoadCachedBitmapAsync(
+                IntelCorporationBitmapCache,
+                corporationId,
+                "corporations",
+                $"{corporationId}.png",
+                $"https://images.evetech.net/corporations/{corporationId}/logo?tenant=tranquility&size=64");
+            await GetOrLoadCorporationTickerAsync(corporationId);
+        }
+
+        var allianceIds = _zkillmailCardsForView
+            .SelectMany(c =>
+                new[] { c.Victim.AllianceId }
+                    .Concat(c.VisibleAttackers.Select(a => a.AllianceId)))
+            .Where(id => id is > 0)
+            .Select(id => id!.Value)
+            .Distinct()
+            .ToList();
+
+        foreach (var allianceId in allianceIds)
+        {
+            await GetOrLoadCachedBitmapAsync(
+                IntelAllianceBitmapCache,
+                allianceId,
+                "alliances",
+                $"{allianceId}.png",
+                $"https://images.evetech.net/alliances/{allianceId}/logo?tenant=tranquility&size=64");
+            await GetOrLoadAllianceTickerAsync(allianceId);
+        }
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            foreach (var card in _zkillmailCardsForView)
+            {
+                ApplyCachedIntelIdentityData(card.Victim);
+                foreach (var attacker in card.VisibleAttackers)
+                {
+                    ApplyCachedIntelIdentityData(attacker);
+                }
+            }
+
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ZkillmailCardsForView)));
+        });
     }
 
     private List<IntelOverlayShipSummaryCard> BuildIntelShipsSummary(
@@ -3724,6 +3935,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             .Where(id => id is > 0)
             .Select(id => id!.Value)
             .Concat(_intelCardsForView.SelectMany(c => c.ShipsSummary).Select(s => s.ShipTypeId).Where(id => id is > 0).Select(id => id!.Value))
+            .Concat(_zkillmailCardsForView.Select(c => c.Victim.ShipTypeId).Where(id => id is > 0).Select(id => id!.Value))
+            .Concat(_zkillmailCardsForView.SelectMany(c => c.VisibleAttackers).Select(a => a.ShipTypeId).Where(id => id is > 0).Select(id => id!.Value))
+            .Concat(_zkillmailCardsForView.SelectMany(c => c.ShipsSummary).Select(s => s.ShipTypeId).Where(id => id is > 0).Select(id => id!.Value))
             .Distinct()
             .ToList();
         if (typeIds.Count == 0)
@@ -3766,9 +3980,34 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                     }
                 }
             }
+
+            foreach (var card in _zkillmailCardsForView)
+            {
+                if (card.Victim.ShipTypeId == typeId)
+                {
+                    card.Victim.ShipBitmap = bitmap;
+                }
+
+                foreach (var attacker in card.VisibleAttackers)
+                {
+                    if (attacker.ShipTypeId == typeId)
+                    {
+                        attacker.ShipBitmap = bitmap;
+                    }
+                }
+
+                foreach (var ship in card.ShipsSummary)
+                {
+                    if (ship.ShipTypeId == typeId)
+                    {
+                        ship.ShipBitmap = bitmap;
+                    }
+                }
+            }
         }
 
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelCardsForView)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ZkillmailCardsForView)));
     }
 
     private List<IntelOverlayHostileCard> BuildIntelHostileCards(
@@ -3815,6 +4054,141 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
 
         return result;
+    }
+
+    private IntelOverlayHostileCard BuildZkillVictimCard(
+        IntelKillmailDetails? killmail,
+        IReadOnlyList<string> shipNames,
+        IReadOnlyList<int> shipTypeIds,
+        IReadOnlyList<IntelShipClass> shipClasses)
+    {
+        var shipName = shipNames.FirstOrDefault() ?? "Unknown";
+        var shipTypeId = killmail?.VictimShipTypeId ?? shipTypeIds.FirstOrDefault();
+        var shipClass = shipClasses.FirstOrDefault();
+        var card = new IntelOverlayHostileCard
+        {
+            Name = !string.IsNullOrWhiteSpace(killmail?.VictimName)
+                ? killmail!.VictimName
+                : killmail?.VictimCharacterId is { } c
+                ? (IntelCharacterNamesById.TryGetValue(c, out var cachedName) ? cachedName : $"Pilot {c}")
+                : "Unknown Victim",
+            CharacterId = killmail?.VictimCharacterId,
+            CorporationId = killmail is { VictimCorporationId: > 0 } ? killmail.VictimCorporationId : null,
+            AllianceId = killmail?.VictimAllianceId,
+            CorporationTicker = string.Empty,
+            AllianceTicker = string.Empty,
+            ShipTypeId = shipTypeId > 0 ? shipTypeId : null,
+            ShipDisplayName = NormalizeShipDisplayName(shipName),
+            ShipIconKey = ShipClassToOverlayIconKey(shipClass)
+        };
+        ApplyCachedIntelIdentityData(card);
+        return card;
+    }
+
+    private List<IntelOverlayHostileCard> BuildZkillAttackerCards(IntelKillmailDetails? killmail)
+    {
+        if (killmail?.Attackers is null || killmail.Attackers.Count == 0)
+        {
+            return [];
+        }
+
+        var result = new List<IntelOverlayHostileCard>(killmail.Attackers.Count);
+        foreach (var attacker in killmail.Attackers)
+        {
+            var shipName = attacker.ShipTypeId is { } id ? $"Type {id}" : "Unknown";
+            var card = new IntelOverlayHostileCard
+            {
+                Name = attacker.CharacterId is { } characterId
+                    ? (IntelCharacterNamesById.TryGetValue(characterId, out var cachedName) ? cachedName : $"Pilot {characterId}")
+                    : (!string.IsNullOrWhiteSpace(attacker.Name) ? attacker.Name : "Unknown Attacker"),
+                CharacterId = attacker.CharacterId,
+                CorporationId = attacker.CorporationId > 0 ? attacker.CorporationId : null,
+                AllianceId = attacker.AllianceId,
+                CorporationTicker = string.Empty,
+                AllianceTicker = string.Empty,
+                ShipTypeId = attacker.ShipTypeId,
+                ShipDisplayName = shipName,
+                ShipIconKey = "crosshair"
+            };
+            ApplyCachedIntelIdentityData(card);
+            result.Add(card);
+        }
+
+        return result;
+    }
+
+    private List<IntelOverlayShipSummaryCard> BuildZkillShipsSummary(
+        IntelKillmailDetails? killmail,
+        IReadOnlyList<string> shipNames,
+        IReadOnlyList<int> shipTypeIds,
+        IReadOnlyList<IntelShipClass> shipClasses)
+    {
+        if (killmail?.Attackers is { Count: > 0 })
+        {
+            var names = killmail.Attackers
+                .Where(x => x.ShipTypeId is > 0)
+                .Select(x => $"Type {x.ShipTypeId!.Value}")
+                .ToList();
+            var typeIds = killmail.Attackers
+                .Where(x => x.ShipTypeId is > 0)
+                .Select(x => x.ShipTypeId!.Value)
+                .ToList();
+            var classes = Enumerable.Repeat(IntelShipClass.Unknown, typeIds.Count).ToList();
+            if (names.Count > 0)
+            {
+                return BuildIntelShipsSummary(names, typeIds, classes);
+            }
+        }
+
+        return BuildIntelShipsSummary(shipNames, shipTypeIds, shipClasses);
+    }
+
+    private void ApplyCachedIntelIdentityData(IntelOverlayHostileCard card)
+    {
+        if (card.CharacterId is { } characterId)
+        {
+            if (IntelPortraitBitmapCache.TryGetValue(characterId, out var portrait))
+            {
+                card.PortraitBitmap = portrait;
+            }
+
+            if (IntelAffiliationsByCharacterId.TryGetValue(characterId, out var affiliation))
+            {
+                card.CorporationId = affiliation.CorpId;
+                card.AllianceId = affiliation.AllianceId;
+            }
+        }
+
+        if (card.CorporationId is { } corpId)
+        {
+            if (IntelCorporationBitmapCache.TryGetValue(corpId, out var corp))
+            {
+                card.CorporationBitmap = corp;
+            }
+
+            if (IntelCorporationTickersById.TryGetValue(corpId, out var corporationTicker))
+            {
+                card.CorporationTicker = corporationTicker;
+            }
+        }
+
+        if (card.AllianceId is { } allianceId)
+        {
+            if (IntelAllianceBitmapCache.TryGetValue(allianceId, out var alliance))
+            {
+                card.AllianceBitmap = alliance;
+            }
+
+            if (IntelAllianceTickersById.TryGetValue(allianceId, out var allianceTicker))
+            {
+                card.AllianceTicker = allianceTicker;
+            }
+        }
+
+        if (card.ShipTypeId is { } shipTypeId && IntelShipBitmapCache.TryGetValue(shipTypeId, out var shipBitmap))
+        {
+            card.ShipBitmap = shipBitmap;
+        }
     }
 
     private static int GetShipClassThreatTier(IntelShipClass shipClass)
@@ -3878,6 +4252,30 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         return trimmed.EndsWith("s", StringComparison.OrdinalIgnoreCase)
             ? trimmed[..^1]
             : trimmed;
+    }
+
+    private static string FormatCompactIsk(decimal value)
+    {
+        var abs = Math.Abs(value);
+        return abs switch
+        {
+            >= 1_000_000_000_000m => $"{value / 1_000_000_000_000m:0.#}t",
+            >= 1_000_000_000m => $"{value / 1_000_000_000m:0.#}b",
+            >= 1_000_000m => $"{value / 1_000_000m:0.#}m",
+            >= 1_000m => $"{value / 1_000m:0.#}k",
+            _ => $"{value:0}"
+        };
+    }
+
+    private static (string Background, string Border) GetIskLossBadgeColors(decimal totalValue)
+    {
+        return totalValue switch
+        {
+            >= 10_000_000_000m => ("#4A245A", "#9D61B8"), // purple
+            >= 1_000_000_000m => ("#4A2525", "#C16565"),  // red
+            >= 100_000_000m => ("#4A4022", "#C9A34E"),    // yellow
+            _ => ("#1F3E28", "#4FA36A")                   // green
+        };
     }
 
     private static IReadOnlyList<IntelMapHoverShip> BuildIntelHoverShips(
@@ -4274,7 +4672,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
             if (!IntelAffiliationsByCharacterId.TryGetValue(characterId, out var affiliation))
             {
-                affiliation = await LoadCharacterAffiliationAsync(characterId) ?? default;
+                var details = await LoadCharacterAffiliationAsync(characterId);
+                affiliation = details is null ? default : (details.CorpId, details.AllianceId);
+                if (details is not null && !string.IsNullOrWhiteSpace(details.Name))
+                {
+                    IntelCharacterNamesById[characterId] = details.Name;
+                }
+
                 if (affiliation.CorpId > 0)
                 {
                     IntelAffiliationsByCharacterId[characterId] = affiliation;
@@ -4354,6 +4758,52 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                             hostile.AllianceTicker = allianceTicker;
                             changed = true;
                         }
+                        if (IntelCharacterNamesById.TryGetValue(characterId, out var resolvedName) &&
+                            !string.Equals(hostile.Name, resolvedName, StringComparison.Ordinal))
+                        {
+                            hostile.Name = resolvedName;
+                            changed = true;
+                        }
+                    }
+                }
+
+                foreach (var zkill in _zkillmailCardsForView)
+                {
+                    if (zkill.Victim.CharacterId == characterId)
+                    {
+                        zkill.Victim.PortraitBitmap = portrait;
+                        zkill.Victim.CorporationBitmap = corpBitmap;
+                        zkill.Victim.CorporationId = affiliation.CorpId > 0 ? affiliation.CorpId : null;
+                        zkill.Victim.AllianceId = affiliation.AllianceId;
+                        zkill.Victim.AllianceBitmap = allianceBitmap;
+                        zkill.Victim.CorporationTicker = corporationTicker;
+                        zkill.Victim.AllianceTicker = allianceTicker;
+                        if (IntelCharacterNamesById.TryGetValue(characterId, out var resolvedName))
+                        {
+                            zkill.Victim.Name = resolvedName;
+                        }
+                        changed = true;
+                    }
+
+                    foreach (var attacker in zkill.VisibleAttackers)
+                    {
+                        if (attacker.CharacterId != characterId)
+                        {
+                            continue;
+                        }
+
+                        attacker.PortraitBitmap = portrait;
+                        attacker.CorporationBitmap = corpBitmap;
+                        attacker.CorporationId = affiliation.CorpId > 0 ? affiliation.CorpId : null;
+                        attacker.AllianceId = affiliation.AllianceId;
+                        attacker.AllianceBitmap = allianceBitmap;
+                        attacker.CorporationTicker = corporationTicker;
+                        attacker.AllianceTicker = allianceTicker;
+                        if (IntelCharacterNamesById.TryGetValue(characterId, out var resolvedName))
+                        {
+                            attacker.Name = resolvedName;
+                        }
+                        changed = true;
                     }
                 }
 
@@ -4361,6 +4811,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 {
                     RebuildIntelPresenceForView();
                     PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelCardsForView)));
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ZkillmailCardsForView)));
                 }
             });
         }
@@ -4492,7 +4943,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
-    private static async Task<(int CorpId, int? AllianceId)?> LoadCharacterAffiliationAsync(int characterId)
+    private static async Task<EsiCharacterIdentity?> LoadCharacterAffiliationAsync(int characterId)
     {
         try
         {
@@ -4509,7 +4960,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 return null;
             }
 
-            return (details.CorporationId, details.AllianceId);
+            return new EsiCharacterIdentity
+            {
+                CorpId = details.CorporationId,
+                AllianceId = details.AllianceId,
+                Name = details.Name?.Trim() ?? string.Empty
+            };
         }
         catch
         {
@@ -4589,6 +5045,15 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         public int CorporationId { get; init; }
         [JsonPropertyName("alliance_id")]
         public int? AllianceId { get; init; }
+        [JsonPropertyName("name")]
+        public string? Name { get; init; }
+    }
+
+    private sealed class EsiCharacterIdentity
+    {
+        public int CorpId { get; init; }
+        public int? AllianceId { get; init; }
+        public string Name { get; init; } = string.Empty;
     }
 
     private sealed class EsiOrganizationDetailsResponse

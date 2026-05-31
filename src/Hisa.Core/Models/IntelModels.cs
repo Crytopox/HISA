@@ -48,6 +48,30 @@ public sealed class IntelChatReport
     public required IReadOnlyList<string> ReportedHostileNames { get; init; }
     public bool IsClear { get; init; }
     public int ReportedHostileCount { get; init; }
+    public IntelKillmailDetails? Killmail { get; init; }
+}
+
+public sealed class IntelKillmailDetails
+{
+    public required long KillmailId { get; init; }
+    public string Hash { get; init; } = string.Empty;
+    public string Url { get; init; } = string.Empty;
+    public int? VictimCharacterId { get; init; }
+    public int VictimCorporationId { get; init; }
+    public int? VictimAllianceId { get; init; }
+    public int? VictimShipTypeId { get; init; }
+    public decimal TotalValue { get; init; }
+    public string VictimName { get; init; } = string.Empty;
+    public IReadOnlyList<IntelKillmailAttacker> Attackers { get; init; } = [];
+}
+
+public sealed class IntelKillmailAttacker
+{
+    public string Name { get; init; } = string.Empty;
+    public int? CharacterId { get; init; }
+    public int CorporationId { get; init; }
+    public int? AllianceId { get; init; }
+    public int? ShipTypeId { get; init; }
 }
 
 public sealed class IntelSystemSnapshot
