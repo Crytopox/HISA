@@ -100,7 +100,7 @@ public partial class SovUpgradesWindow : Window
             : $"{upgrade.UpgradeName} {Math.Clamp(upgrade.Tier, 1, 3)}.png";
         try
         {
-            var uri = new Uri($"avares://Hisa.App/Assets/Icons/SOV Upgrades/{fileName}");
+            var uri = new Uri($"avares://HISA/Assets/Icons/SOV Upgrades/{fileName}");
             using var stream = AssetLoader.Open(uri);
             return new Bitmap(stream);
         }

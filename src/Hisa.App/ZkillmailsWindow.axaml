@@ -45,7 +45,7 @@
                   </StackPanel>
                   <StackPanel Orientation="Horizontal" Spacing="4">
                     <Button Width="28" Height="28" Padding="0" Background="Transparent" BorderThickness="0" Click="OnZkillmailLinkClicked" ToolTip.Tip="Open killmail on zKillboard">
-                      <Image Source="avares://Hisa.App/Assets/Icons/killmail.png" Width="28" Height="28" />
+                      <Image Source="avares://HISA/Assets/Icons/killmail.png" Width="28" Height="28" />
                     </Button>
                     <Image Width="28" Height="28" Stretch="UniformToFill" Source="{Binding Victim.ShipBitmap}" IsVisible="{Binding Victim.HasShipBitmap}" ToolTip.Tip="{Binding Victim.ShipDisplayName}" />
                     <Border Width="28" Height="28" Background="#172234" BorderBrush="#2A3C58" BorderThickness="1" IsVisible="{Binding Victim.HasNoShipBitmap}" ToolTip.Tip="{Binding Victim.ShipDisplayName}">

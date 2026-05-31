@@ -9,7 +9,7 @@
         x:Class="Hisa.App.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Title="HISA - Haakario Interstellar Survey Authority"
-        Icon="avares://Hisa.App/Assets/HISA-Logo.ico"
+        Icon="avares://HISA/Assets/HISA-Logo.ico"
         Background="#0D131D">
   <Window.Resources>
     <converters:MapCoordinateModeDisplayConverter x:Key="MapCoordinateModeDisplayConverter" />
@@ -348,7 +348,7 @@
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding AlwaysShowIncursions}">
                   <Border Width="16" Height="16" Background="#B24A2E78" BorderBrush="#3A6EA8" BorderThickness="1" CornerRadius="3">
-                    <Image Source="avares://Hisa.App/Assets/Icons/incursion.png" Width="12" Height="12" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    <Image Source="avares://HISA/Assets/Icons/incursion.png" Width="12" Height="12" HorizontalAlignment="Center" VerticalAlignment="Center" />
                   </Border>
                   <TextBlock Text="Incursion badge shown on active systems"
                              Foreground="#C7D6EA"
@@ -827,7 +827,7 @@
                           <Border Background="#1A2639" BorderBrush="#2A3C58" BorderThickness="1" CornerRadius="4" Padding="5,4">
                             <StackPanel Orientation="Horizontal" Spacing="4">
                               <Button Width="28" Height="28" Padding="0" Background="Transparent" BorderThickness="0" Click="OnZkillmailLinkClicked" ToolTip.Tip="Open killmail on zKillboard">
-                                <Image Source="avares://Hisa.App/Assets/Icons/killmail.png" Width="28" Height="28" />
+                                <Image Source="avares://HISA/Assets/Icons/killmail.png" Width="28" Height="28" />
                               </Button>
                               <Image Width="28" Height="28" Stretch="UniformToFill" Source="{Binding Victim.ShipBitmap}" IsVisible="{Binding Victim.HasShipBitmap}" ToolTip.Tip="{Binding Victim.ShipDisplayName}" />
                               <Border Width="28" Height="28" Background="#172234" BorderBrush="#2A3C58" BorderThickness="1" IsVisible="{Binding Victim.HasNoShipBitmap}" ToolTip.Tip="{Binding Victim.ShipDisplayName}">
@@ -954,7 +954,7 @@
             <StackPanel Orientation="Horizontal" Spacing="6">
               <CheckBox IsChecked="{Binding ShowIndicatorSovUpgradeIcon}" Content="SOV Upgrades" />
               <Button Width="24" Height="24" Padding="0">
-                <Image Source="avares://Hisa.App/Assets/Icons/settings.png" Width="14" Height="14" />
+                <Image Source="avares://HISA/Assets/Icons/settings.png" Width="14" Height="14" />
                 <Button.Flyout>
                   <Flyout Placement="BottomEdgeAlignedRight">
                     <Border Width="360" Padding="8" Background="#101826" BorderBrush="#243247" BorderThickness="1" CornerRadius="4">
@@ -1019,7 +1019,7 @@
             <StackPanel Orientation="Horizontal" Spacing="6">
               <CheckBox IsChecked="{Binding InfoBoxShowSovUpgradeIcon}" Content="SOV Upgrades" />
               <Button Width="24" Height="24" Padding="0">
-                <Image Source="avares://Hisa.App/Assets/Icons/settings.png" Width="14" Height="14" />
+                <Image Source="avares://HISA/Assets/Icons/settings.png" Width="14" Height="14" />
                 <Button.Flyout>
                   <Flyout Placement="BottomEdgeAlignedRight">
                     <Border Width="360" Padding="8" Background="#101826" BorderBrush="#243247" BorderThickness="1" CornerRadius="4">

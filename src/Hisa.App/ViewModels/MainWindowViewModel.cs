@@ -3261,7 +3261,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         try
         {
             var fileName = tier <= 0 ? $"{upgradeName}.png" : $"{upgradeName} {tier}.png";
-            var uri = new Uri($"avares://Hisa.App/Assets/Icons/SOV Upgrades/{fileName}");
+            var uri = new Uri($"avares://HISA/Assets/Icons/SOV Upgrades/{fileName}");
             using var stream = AssetLoader.Open(uri);
             return new Bitmap(stream);
         }

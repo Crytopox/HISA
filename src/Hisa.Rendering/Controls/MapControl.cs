@@ -5267,7 +5267,7 @@ public sealed class MapControl : Control
     {
         try
         {
-            var uri = new Uri($"avares://Hisa.App/Assets/Icons/{fileName}");
+            var uri = new Uri($"avares://HISA/Assets/Icons/{fileName}");
             using var stream = AssetLoader.Open(uri);
             return new Bitmap(stream);
         }
@@ -5425,7 +5425,7 @@ public sealed class MapControl : Control
     {
         try
         {
-            var uri = new Uri($"avares://Hisa.App/Assets/Icons/SOV Upgrades/{fileName}");
+            var uri = new Uri($"avares://HISA/Assets/Icons/SOV Upgrades/{fileName}");
             using var stream = AssetLoader.Open(uri);
             return new Bitmap(stream);
         }

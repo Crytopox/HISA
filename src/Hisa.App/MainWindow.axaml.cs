@@ -813,7 +813,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            var uri = new Uri($"avares://Hisa.App/Assets/Icons/{fileName}");
+            var uri = new Uri($"avares://HISA/Assets/Icons/{fileName}");
             using var stream = AssetLoader.Open(uri);
             var bitmap = new Bitmap(stream);
             return new Image

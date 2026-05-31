@@ -3,7 +3,7 @@
         x:Class="Hisa.App.SplashWindow"
         Width="800"
         Height="450"
-        Icon="avares://Hisa.App/Assets/HISA-Logo.ico"
+        Icon="avares://HISA/Assets/HISA-Logo.ico"
         CanResize="False"
         SystemDecorations="None"
         WindowStartupLocation="CenterScreen"
@@ -12,7 +12,7 @@
         Topmost="True">
   <Border BorderBrush="#263244" BorderThickness="1" CornerRadius="6" Background="#121A26">
     <Grid>
-      <Image Source="avares://Hisa.App/Assets/SplashScreen.png"
+      <Image Source="avares://HISA/Assets/SplashScreen.png"
              Stretch="UniformToFill" />
       <Border VerticalAlignment="Bottom"
               Background="#9A0D131D"
