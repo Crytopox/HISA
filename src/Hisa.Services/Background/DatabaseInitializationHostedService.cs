@@ -2,6 +2,7 @@ using Hisa.Data.Database;
 using Hisa.Core.Abstractions;
 using Hisa.Esi;
 using Hisa.Services.Incursions;
+using Hisa.Services.Routing;
 using Hisa.Services.Storm;
 using Hisa.Services.SystemActivity;
 using Hisa.Services.Wormholes;
@@ -76,6 +77,7 @@ public static class ServiceCollectionExtensions
         services.AddHostedService(sp => sp.GetRequiredService<IntelChatLogFeedHostedService>());
         services.AddSingleton<ISovUpgradeStateService, SovUpgradeStateService>();
         services.AddSingleton<IAnsiblexNetworkStateService, AnsiblexNetworkStateService>();
+        services.AddSingleton<IRouteDistanceService, DijkstraRouteDistanceService>();
         return services;
     }
 }
