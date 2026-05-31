@@ -2723,9 +2723,16 @@ public sealed class MapControl : Control
             return false;
         }
 
+        // When zoomed out we render static rings without orbit icons.
+        // In that mode there is no visual state to animate, so avoid frame-by-frame invalidation.
+        var plot = GetPlotMetrics();
+        if (!ShouldShowInlineLabels(plot))
+        {
+            return false;
+        }
+
         if (_screenPositions.Length != Graph.Nodes.Count)
         {
-            var plot = GetPlotMetrics();
             UpdateScreenPositions(plot, Bounds.Width / 2.0, Bounds.Height / 2.0);
         }
 
@@ -5642,18 +5649,19 @@ public sealed class MapControl : Control
         // Keep intel ring ratios bound to node size so it scales 1:1 with node zoom.
         var scaledRingRadius = nodeRadius * 2.2;
         var corePen = new Pen(new ImmutableSolidColorBrush(Color.FromArgb(220, ringColor.R, ringColor.G, ringColor.B)), Math.Max(1.8, nodeRadius * 0.67));
-        var fadePen1 = new Pen(new ImmutableSolidColorBrush(Color.FromArgb(130, ringColor.R, ringColor.G, ringColor.B)), Math.Max(1.2, nodeRadius * 0.47));
-        var fadePen2 = new Pen(new ImmutableSolidColorBrush(Color.FromArgb(70, ringColor.R, ringColor.G, ringColor.B)), Math.Max(0.9, nodeRadius * 0.31));
         context.DrawEllipse(null, corePen, center, scaledRingRadius, scaledRingRadius);
-        var fadeOffset1 = Math.Max(0.5, nodeRadius * 0.13);
-        var fadeOffset2 = Math.Max(0.9, nodeRadius * 0.25);
-        context.DrawEllipse(null, fadePen1, center, scaledRingRadius + fadeOffset1, scaledRingRadius + fadeOffset1);
-        context.DrawEllipse(null, fadePen2, center, scaledRingRadius + fadeOffset2, scaledRingRadius + fadeOffset2);
 
         if (!showOrbitIcons)
         {
             return;
         }
+
+        var fadePen1 = new Pen(new ImmutableSolidColorBrush(Color.FromArgb(130, ringColor.R, ringColor.G, ringColor.B)), Math.Max(1.2, nodeRadius * 0.47));
+        var fadePen2 = new Pen(new ImmutableSolidColorBrush(Color.FromArgb(70, ringColor.R, ringColor.G, ringColor.B)), Math.Max(0.9, nodeRadius * 0.31));
+        var fadeOffset1 = Math.Max(0.5, nodeRadius * 0.13);
+        var fadeOffset2 = Math.Max(0.9, nodeRadius * 0.25);
+        context.DrawEllipse(null, fadePen1, center, scaledRingRadius + fadeOffset1, scaledRingRadius + fadeOffset1);
+        context.DrawEllipse(null, fadePen2, center, scaledRingRadius + fadeOffset2, scaledRingRadius + fadeOffset2);
 
         var icons = iconKeys.Take(10).ToList();
         if (icons.Count == 0)
