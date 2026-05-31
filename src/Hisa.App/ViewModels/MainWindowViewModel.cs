@@ -5304,16 +5304,23 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 Directory.CreateDirectory(directory);
             }
 
-            using var networkStream = await IntelPortraitHttpClient.GetStreamAsync(url);
-            await using var fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.Read);
-            await networkStream.CopyToAsync(fileStream);
-            await fileStream.FlushAsync();
+            var bytes = await IntelPortraitHttpClient.GetByteArrayAsync(url);
+            try
+            {
+                await using var fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.ReadWrite);
+                await fileStream.WriteAsync(bytes);
+                await fileStream.FlushAsync();
+            }
+            catch (IOException)
+            {
+                // Another process/instance may be touching this file; fallback to whichever file is available.
+            }
 
             return TryLoadBitmapFromFile(filePath);
         }
         catch
         {
-            return null;
+            return TryLoadBitmapFromFile(filePath);
         }
     }
 
@@ -5326,7 +5333,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 return null;
             }
 
-            return new Bitmap(filePath);
+            using var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            return new Bitmap(fileStream);
         }
         catch
         {
