@@ -365,6 +365,9 @@ public sealed class MapControl : Control
     private readonly Dictionary<long, int> _nodeIndexById = [];
     private readonly Dictionary<long, StreamGeometry> _voronoiWorldGeometriesByNodeId = [];
     private readonly Dictionary<uint, IBrush> _brushCache = [];
+    private MapGraph? _activityRangeGraph;
+    private int _activityRangeNodeCount;
+    private readonly Dictionary<MapNodeColorMode, (int Min, int Max)> _activityRangesByMode = [];
     private Dictionary<long, int> _indicatorExplorationOverlapByNodeId = [];
     private HashSet<long> _indicatorExplorationSourceNodeIds = [];
     private Dictionary<long, int> _overlayExplorationOverlapByNodeId = [];
@@ -3445,25 +3448,122 @@ public sealed class MapControl : Control
             MapNodeColorMode.Wormholes => GetHubWormholeColor(node),
             MapNodeColorMode.SovUpgrades => GetSovUpgradeColor(GetVisibleSovUpgrades(node.SovUpgrades, IndicatorSovUpgradeFilterKeys).ToList()),
             MapNodeColorMode.Incursions => node.HasActiveIncursion ? Color.Parse("#A77BFF") : Color.Parse("#98A6B8"),
-            MapNodeColorMode.SystemJumps => GetActivityHeatColor(node.SystemJumps),
-            MapNodeColorMode.ShipKills => GetActivityHeatColor(node.ShipKills),
-            MapNodeColorMode.PodKills => GetActivityHeatColor(node.PodKills),
-            MapNodeColorMode.NpcKills => GetActivityHeatColor(node.NpcKills),
+            MapNodeColorMode.SystemJumps => GetActivityHeatColor(MapNodeColorMode.SystemJumps, node.SystemJumps),
+            MapNodeColorMode.ShipKills => GetActivityHeatColor(MapNodeColorMode.ShipKills, node.ShipKills),
+            MapNodeColorMode.PodKills => GetActivityHeatColor(MapNodeColorMode.PodKills, node.PodKills),
+            MapNodeColorMode.NpcKills => GetActivityHeatColor(MapNodeColorMode.NpcKills, node.NpcKills),
             _ => Color.Parse("#98A6B8")
         };
     }
 
-    private static Color GetActivityHeatColor(int value)
+    private Color GetActivityHeatColor(MapNodeColorMode mode, int value)
     {
-        if (value <= 0)
+        if (mode == MapNodeColorMode.NpcKills)
+        {
+            return GetNpcKillsBandColor(value);
+        }
+
+        EnsureActivityRanges();
+        if (!_activityRangesByMode.TryGetValue(mode, out var range))
         {
             return Color.Parse("#98A6B8");
         }
 
-        var t = Math.Clamp(value / 120.0, 0.0, 1.0);
-        var start = Color.Parse("#3DBB67");
-        var end = Color.Parse("#D83B2F");
-        return BlendColors(start, end, t);
+        var min = range.Min;
+        var max = range.Max;
+        if (max <= min)
+        {
+            max = min + 1;
+        }
+
+        var t = Math.Clamp((value - min) / (double)(max - min), 0.0, 1.0);
+        return GetFourBandRampColor(t);
+    }
+
+    private Color GetNpcKillsBandColor(int value)
+    {
+        if (value <= 10)
+        {
+            return Color.Parse("#98A6B8");
+        }
+
+        if (value <= 500)
+        {
+            var t = Math.Clamp((value - 11) / (double)(500 - 11), 0.0, 1.0);
+            return BlendColors(Color.Parse("#DDF6E6"), Color.Parse("#3DBB67"), t);
+        }
+
+        if (value <= 1000)
+        {
+            var t = Math.Clamp((value - 501) / (double)(1000 - 501), 0.0, 1.0);
+            return BlendColors(Color.Parse("#FFF6BF"), Color.Parse("#F3E66E"), t);
+        }
+
+        if (value <= 1900)
+        {
+            var t = Math.Clamp((value - 1001) / (double)(1900 - 1001), 0.0, 1.0);
+            return BlendColors(Color.Parse("#FFD5A8"), Color.Parse("#F29B38"), t);
+        }
+
+        if (value <= 2400)
+        {
+            var t = Math.Clamp((value - 1901) / (double)(2400 - 1901), 0.0, 1.0);
+            return BlendColors(Color.Parse("#FF8A8A"), Color.Parse("#FF2D2D"), t);
+        }
+
+        var maxUpper = 3000;
+        var tRed = Math.Clamp((value - 2401) / (double)(maxUpper - 2401), 0.0, 1.0);
+        return BlendColors(Color.Parse("#963b73"), Color.Parse("#860053"), tRed);
+    }
+
+    private static Color GetFourBandRampColor(double t)
+    {
+        var c0 = Color.Parse("#DDF6E6");
+        var c1 = Color.Parse("#F3E66E");
+        var c2 = Color.Parse("#F29B38");
+        var c3 = Color.Parse("#FF2D2D");
+        return t switch
+        {
+            <= 1.0 / 3.0 => BlendColors(c0, c1, t * 3.0),
+            <= 2.0 / 3.0 => BlendColors(c1, c2, (t - (1.0 / 3.0)) * 3.0),
+            _ => BlendColors(c2, c3, (t - (2.0 / 3.0)) * 3.0)
+        };
+    }
+
+    private void EnsureActivityRanges()
+    {
+        var currentGraph = Graph;
+        var nodeCount = currentGraph?.Nodes.Count ?? 0;
+        if (ReferenceEquals(currentGraph, _activityRangeGraph) && nodeCount == _activityRangeNodeCount)
+        {
+            return;
+        }
+
+        _activityRangeGraph = currentGraph;
+        _activityRangeNodeCount = nodeCount;
+        _activityRangesByMode.Clear();
+        if (currentGraph is null || nodeCount == 0)
+        {
+            return;
+        }
+
+        BuildActivityRange(currentGraph.Nodes, MapNodeColorMode.SystemJumps, static n => n.SystemJumps);
+        BuildActivityRange(currentGraph.Nodes, MapNodeColorMode.ShipKills, static n => n.ShipKills);
+        BuildActivityRange(currentGraph.Nodes, MapNodeColorMode.PodKills, static n => n.PodKills);
+    }
+
+    private void BuildActivityRange(IReadOnlyList<MapNode> nodes, MapNodeColorMode mode, Func<MapNode, int> selector)
+    {
+        var values = nodes
+            .Select(selector)
+            .Where(v => v > 0)
+            .ToArray();
+        if (values.Length == 0)
+        {
+            return;
+        }
+
+        _activityRangesByMode[mode] = (values.Min(), values.Max());
     }
 
     private static Color GetSovUpgradeColor(IReadOnlyList<SovUpgradeEntry> upgrades)
@@ -4017,76 +4117,52 @@ public sealed class MapControl : Control
             DrawLabelWithHalo(context, starClassText, starClassHalo, new Point(origin.X, y));
         }
 
-        var indicatorIconSlot = 0;
+        var indicatorIconCursorX = rect.X + IndicatorIconLeftPadding;
         if (ShowIndicatorA0StarIcon && IsA0BlueSmall(node))
         {
-            var iconX = rect.X + IndicatorIconLeftPadding + (indicatorIconSlot * (IconSize + IndicatorIconSlotGap));
-            var iconY = rect.Bottom;
-            DrawA0Icon(context, new Point(iconX, iconY), IconSize);
-            indicatorIconSlot++;
+            DrawA0Icon(context, new Point(indicatorIconCursorX, rect.Bottom), IconSize);
+            indicatorIconCursorX += IconSize + IndicatorIconSlotGap;
         }
         if (ShowIndicatorJoveObservatoryIcon && node.HasJoveObservatory)
         {
-            var iconX = rect.X + IndicatorIconLeftPadding + (indicatorIconSlot * (IconSize + IndicatorIconSlotGap));
-            var iconY = rect.Bottom;
-            DrawJoveObservatoryIcon(context, new Point(iconX, iconY), IconSize);
-            indicatorIconSlot++;
+            DrawJoveObservatoryIcon(context, new Point(indicatorIconCursorX, rect.Bottom), IconSize);
+            indicatorIconCursorX += IconSize + IndicatorIconSlotGap;
         }
         if (ShowIndicatorIceBeltsIcon && node.IceFieldCount > 0)
         {
-            var iconX = rect.X + IndicatorIconLeftPadding + (indicatorIconSlot * (IconSize + IndicatorIconSlotGap));
-            var iconY = rect.Bottom;
-            DrawIceFieldIcon(context, new Point(iconX, iconY), IconSize);
-            indicatorIconSlot++;
+            DrawIceFieldIcon(context, new Point(indicatorIconCursorX, rect.Bottom), IconSize);
+            indicatorIconCursorX += IconSize + IndicatorIconSlotGap;
         }
         if (ShowIndicatorStormIcon && node.StormEffects.Count > 0)
         {
-            var iconX = rect.X + IndicatorIconLeftPadding + (indicatorIconSlot * (IconSize + IndicatorIconSlotGap));
-            var iconY = rect.Bottom;
-            DrawStormIcon(context, node, new Point(iconX, iconY), IconSize);
-            indicatorIconSlot++;
+            DrawStormIcon(context, node, new Point(indicatorIconCursorX, rect.Bottom), IconSize);
+            indicatorIconCursorX += IconSize + IndicatorIconSlotGap;
         }
         if (ShowIndicatorWormholeIcon && node.HubWormholeConnections.Count > 0)
         {
-            var iconX = rect.X + IndicatorIconLeftPadding + (indicatorIconSlot * (IconSize + IndicatorIconSlotGap));
-            var iconY = rect.Bottom;
-            DrawHubWormholeIcon(context, node, new Point(iconX, iconY), IconSize);
-            indicatorIconSlot++;
+            DrawHubWormholeIcon(context, node, new Point(indicatorIconCursorX, rect.Bottom), IconSize);
+            indicatorIconCursorX += IconSize + IndicatorIconSlotGap;
         }
         if (ShowIndicatorIncursionIcon && node.HasActiveIncursion)
         {
-            var iconX = rect.X + IndicatorIconLeftPadding + (indicatorIconSlot * (IconSize + IndicatorIconSlotGap));
-            var iconY = rect.Bottom;
-            DrawIncursionIcon(context, new Point(iconX, iconY), IconSize);
-            indicatorIconSlot++;
+            DrawIncursionIcon(context, new Point(indicatorIconCursorX, rect.Bottom), IconSize);
+            indicatorIconCursorX += IconSize + IndicatorIconSlotGap;
         }
         if (ShowIndicatorSystemJumps && node.SystemJumps > 0)
         {
-            var iconX = rect.X + IndicatorIconLeftPadding + (indicatorIconSlot * (IconSize + IndicatorIconSlotGap));
-            var iconY = rect.Bottom;
-            DrawCountIconBadge(context, SystemJumpsIcon.Value, node.SystemJumps, new Point(iconX, iconY), IconSize);
-            indicatorIconSlot++;
+            indicatorIconCursorX += DrawCountIconBadge(context, SystemJumpsIcon.Value, node.SystemJumps, new Point(indicatorIconCursorX, rect.Bottom), IconSize);
         }
         if (ShowIndicatorShipKills && node.ShipKills > 0)
         {
-            var iconX = rect.X + IndicatorIconLeftPadding + (indicatorIconSlot * (IconSize + IndicatorIconSlotGap));
-            var iconY = rect.Bottom;
-            DrawCountIconBadge(context, ShipKillsIcon.Value, node.ShipKills, new Point(iconX, iconY), IconSize);
-            indicatorIconSlot++;
+            indicatorIconCursorX += DrawCountIconBadge(context, ShipKillsIcon.Value, node.ShipKills, new Point(indicatorIconCursorX, rect.Bottom), IconSize);
         }
         if (ShowIndicatorPodKills && node.PodKills > 0)
         {
-            var iconX = rect.X + IndicatorIconLeftPadding + (indicatorIconSlot * (IconSize + IndicatorIconSlotGap));
-            var iconY = rect.Bottom;
-            DrawCountIconBadge(context, PodKillsIcon.Value, node.PodKills, new Point(iconX, iconY), IconSize);
-            indicatorIconSlot++;
+            indicatorIconCursorX += DrawCountIconBadge(context, PodKillsIcon.Value, node.PodKills, new Point(indicatorIconCursorX, rect.Bottom), IconSize);
         }
         if (ShowIndicatorNpcKills && node.NpcKills > 0)
         {
-            var iconX = rect.X + IndicatorIconLeftPadding + (indicatorIconSlot * (IconSize + IndicatorIconSlotGap));
-            var iconY = rect.Bottom;
-            DrawCountIconBadge(context, NpcKillsIcon.Value, node.NpcKills, new Point(iconX, iconY), IconSize);
-            indicatorIconSlot++;
+            indicatorIconCursorX += DrawCountIconBadge(context, NpcKillsIcon.Value, node.NpcKills, new Point(indicatorIconCursorX, rect.Bottom), IconSize);
         }
         FormattedText? jumpRangeIndicatorText = null;
         Bitmap? jumpRangeIndicatorIcon = null;
@@ -4111,7 +4187,7 @@ public sealed class MapControl : Control
         }
 
         // Keep SOV icons on a dedicated second row, but collapse up if first row is empty.
-        var primaryRowHasIcons = indicatorIconSlot > 0;
+        var primaryRowHasIcons = indicatorIconCursorX > (rect.X + IndicatorIconLeftPadding);
         var sovIndicatorRowY = primaryRowHasIcons
             ? rect.Bottom + SovIconSize + 2
             : rect.Bottom;
@@ -5110,76 +5186,52 @@ public sealed class MapControl : Control
             }
         }
 
-        var overlayIconSlot = 0;
+        var overlayIconCursorX = rect.X + IndicatorIconLeftPadding;
         if (InfoBoxShowA0StarIcon && IsA0BlueSmall(node))
         {
-            var iconX = rect.X + IndicatorIconLeftPadding + (overlayIconSlot * (IconSize + IndicatorIconSlotGap));
-            var iconY = rect.Bottom + 3;
-            DrawA0Icon(context, new Point(iconX, iconY), IconSize);
-            overlayIconSlot++;
+            DrawA0Icon(context, new Point(overlayIconCursorX, rect.Bottom + 3), IconSize);
+            overlayIconCursorX += IconSize + IndicatorIconSlotGap;
         }
         if (InfoBoxShowJoveObservatoryIcon && node.HasJoveObservatory)
         {
-            var iconX = rect.X + IndicatorIconLeftPadding + (overlayIconSlot * (IconSize + IndicatorIconSlotGap));
-            var iconY = rect.Bottom + 3;
-            DrawJoveObservatoryIcon(context, new Point(iconX, iconY), IconSize);
-            overlayIconSlot++;
+            DrawJoveObservatoryIcon(context, new Point(overlayIconCursorX, rect.Bottom + 3), IconSize);
+            overlayIconCursorX += IconSize + IndicatorIconSlotGap;
         }
         if (InfoBoxShowIceBeltsIcon && node.IceFieldCount > 0)
         {
-            var iconX = rect.X + IndicatorIconLeftPadding + (overlayIconSlot * (IconSize + IndicatorIconSlotGap));
-            var iconY = rect.Bottom + 3;
-            DrawIceFieldIcon(context, new Point(iconX, iconY), IconSize);
-            overlayIconSlot++;
+            DrawIceFieldIcon(context, new Point(overlayIconCursorX, rect.Bottom + 3), IconSize);
+            overlayIconCursorX += IconSize + IndicatorIconSlotGap;
         }
         if (InfoBoxShowStormIcon && node.StormEffects.Count > 0)
         {
-            var iconX = rect.X + IndicatorIconLeftPadding + (overlayIconSlot * (IconSize + IndicatorIconSlotGap));
-            var iconY = rect.Bottom + 3;
-            DrawStormIcon(context, node, new Point(iconX, iconY), IconSize);
-            overlayIconSlot++;
+            DrawStormIcon(context, node, new Point(overlayIconCursorX, rect.Bottom + 3), IconSize);
+            overlayIconCursorX += IconSize + IndicatorIconSlotGap;
         }
         if (InfoBoxShowWormholeIcon && node.HubWormholeConnections.Count > 0)
         {
-            var iconX = rect.X + IndicatorIconLeftPadding + (overlayIconSlot * (IconSize + IndicatorIconSlotGap));
-            var iconY = rect.Bottom + 3;
-            DrawHubWormholeIcon(context, node, new Point(iconX, iconY), IconSize);
-            overlayIconSlot++;
+            DrawHubWormholeIcon(context, node, new Point(overlayIconCursorX, rect.Bottom + 3), IconSize);
+            overlayIconCursorX += IconSize + IndicatorIconSlotGap;
         }
         if (InfoBoxShowIncursionIcon && node.HasActiveIncursion)
         {
-            var iconX = rect.X + IndicatorIconLeftPadding + (overlayIconSlot * (IconSize + IndicatorIconSlotGap));
-            var iconY = rect.Bottom + 3;
-            DrawIncursionIcon(context, new Point(iconX, iconY), IconSize);
-            overlayIconSlot++;
+            DrawIncursionIcon(context, new Point(overlayIconCursorX, rect.Bottom + 3), IconSize);
+            overlayIconCursorX += IconSize + IndicatorIconSlotGap;
         }
         if (InfoBoxShowSystemJumps && node.SystemJumps > 0)
         {
-            var iconX = rect.X + IndicatorIconLeftPadding + (overlayIconSlot * (IconSize + IndicatorIconSlotGap));
-            var iconY = rect.Bottom + 3;
-            DrawCountIconBadge(context, SystemJumpsIcon.Value, node.SystemJumps, new Point(iconX, iconY), IconSize);
-            overlayIconSlot++;
+            overlayIconCursorX += DrawCountIconBadge(context, SystemJumpsIcon.Value, node.SystemJumps, new Point(overlayIconCursorX, rect.Bottom + 3), IconSize);
         }
         if (InfoBoxShowShipKills && node.ShipKills > 0)
         {
-            var iconX = rect.X + IndicatorIconLeftPadding + (overlayIconSlot * (IconSize + IndicatorIconSlotGap));
-            var iconY = rect.Bottom + 3;
-            DrawCountIconBadge(context, ShipKillsIcon.Value, node.ShipKills, new Point(iconX, iconY), IconSize);
-            overlayIconSlot++;
+            overlayIconCursorX += DrawCountIconBadge(context, ShipKillsIcon.Value, node.ShipKills, new Point(overlayIconCursorX, rect.Bottom + 3), IconSize);
         }
         if (InfoBoxShowPodKills && node.PodKills > 0)
         {
-            var iconX = rect.X + IndicatorIconLeftPadding + (overlayIconSlot * (IconSize + IndicatorIconSlotGap));
-            var iconY = rect.Bottom + 3;
-            DrawCountIconBadge(context, PodKillsIcon.Value, node.PodKills, new Point(iconX, iconY), IconSize);
-            overlayIconSlot++;
+            overlayIconCursorX += DrawCountIconBadge(context, PodKillsIcon.Value, node.PodKills, new Point(overlayIconCursorX, rect.Bottom + 3), IconSize);
         }
         if (InfoBoxShowNpcKills && node.NpcKills > 0)
         {
-            var iconX = rect.X + IndicatorIconLeftPadding + (overlayIconSlot * (IconSize + IndicatorIconSlotGap));
-            var iconY = rect.Bottom + 3;
-            DrawCountIconBadge(context, NpcKillsIcon.Value, node.NpcKills, new Point(iconX, iconY), IconSize);
-            overlayIconSlot++;
+            overlayIconCursorX += DrawCountIconBadge(context, NpcKillsIcon.Value, node.NpcKills, new Point(overlayIconCursorX, rect.Bottom + 3), IconSize);
         }
         // SOV upgrades are rendered inline in the overlay body with icon + label rows.
     }
@@ -5681,15 +5733,15 @@ public sealed class MapControl : Control
         context.DrawImage(icon, src, dst);
     }
 
-    private static void DrawCountIconBadge(DrawingContext context, Bitmap? icon, int value, Point topLeft, double size)
+    private static double DrawCountIconBadge(DrawingContext context, Bitmap? icon, int value, Point topLeft, double size)
     {
         if (icon is null)
         {
-            return;
+            return size + IndicatorIconSlotGap;
         }
 
         DrawBitmap(context, icon, topLeft, size);
-        var label = value > 999 ? "999+" : value.ToString(CultureInfo.InvariantCulture);
+        var label = value.ToString(CultureInfo.InvariantCulture);
         var text = new FormattedText(
             label,
             CultureInfo.InvariantCulture,
@@ -5698,6 +5750,7 @@ public sealed class MapControl : Control
             9.5,
             Brushes.White);
         context.DrawText(text, new Point(topLeft.X + size + 1.5, topLeft.Y + ((size - text.Height) / 2) - 0.5));
+        return size + 1.5 + text.Width + IndicatorIconSlotGap;
     }
 
     private static void DrawIncursionBeacon(DrawingContext context, Point nodePoint, double verticalOffset = 0.0)
