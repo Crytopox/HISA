@@ -14,6 +14,9 @@ namespace Hisa.Services.Background;
 public sealed partial class IntelChatLogFeedHostedService : BackgroundService, IIntelFeed
 {
     private const long InitialReadTailBytes = 512 * 1024;
+    private static readonly TimeSpan DirtyFlushActiveDelay = TimeSpan.FromMilliseconds(120);
+    private static readonly TimeSpan DirtyFlushIdleDelay = TimeSpan.FromMilliseconds(600);
+    private static readonly TimeSpan SnapshotExpirySweepInterval = TimeSpan.FromSeconds(5);
     private const string LogsRootSettingsKey = "Tracking.LogsRootPath";
     private const string IntelEnabledSettingsKey = "Intel.Enabled";
     private const string IntelIncludeChannelsSettingsKey = "Intel.Channels.Include";
@@ -111,11 +114,19 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
 
         try
         {
+            var nextExpirySweepUtc = DateTime.UtcNow + SnapshotExpirySweepInterval;
             while (!stoppingToken.IsCancellationRequested)
             {
                 await FlushDirtyFilesAsync(stoppingToken);
-                ExpireSnapshots(DateTime.UtcNow);
-                await Task.Delay(250, stoppingToken);
+                var nowUtc = DateTime.UtcNow;
+                if (nowUtc >= nextExpirySweepUtc)
+                {
+                    ExpireSnapshots(nowUtc);
+                    nextExpirySweepUtc = nowUtc + SnapshotExpirySweepInterval;
+                }
+
+                var delay = _dirtyFiles.IsEmpty ? DirtyFlushIdleDelay : DirtyFlushActiveDelay;
+                await Task.Delay(delay, stoppingToken);
             }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

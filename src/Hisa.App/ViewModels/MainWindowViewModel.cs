@@ -268,6 +268,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _showIndicatorIncursionIcon = true;
     private bool _showIndicatorJumpRangeLy = true;
     private bool _enableLinkAnimations = true;
+    private bool _enableIntelReportAnimations = true;
     private bool _showAnsiblexNetwork = true;
     private bool _infoBoxShowRegion = true;
     private bool _infoBoxShowConstellation = true;
@@ -379,6 +380,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string ShowInfoBoxCharacterPresenceKey = "Map.ShowInfoBoxCharacterPresence";
     private const string CharacterPresenceHoverMaxNamesKey = "Map.CharacterPresenceHoverMaxNames";
     private const string EnableLinkAnimationsKey = "Map.EnableLinkAnimations";
+    private const string EnableIntelReportAnimationsKey = "Map.EnableIntelReportAnimations";
     private const string ShowAnsiblexNetworkKey = "Map.ShowAnsiblexNetwork";
     private const string InfoBoxShowRegionKey = "Map.InfoBoxShowRegion";
     private const string InfoBoxShowConstellationKey = "Map.InfoBoxShowConstellation";
@@ -844,6 +846,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             if (SetProperty(ref _enableLinkAnimations, value) && !_isInitializing)
             {
                 _ = _settingsService.SetAsync(EnableLinkAnimationsKey, value);
+            }
+        }
+    }
+
+    public bool EnableIntelReportAnimations
+    {
+        get => _enableIntelReportAnimations;
+        set
+        {
+            if (SetProperty(ref _enableIntelReportAnimations, value) && !_isInitializing)
+            {
+                _ = _settingsService.SetAsync(EnableIntelReportAnimationsKey, value);
             }
         }
     }
@@ -1752,6 +1766,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             StatusText = "Intel feed paused: configure included channels in Intel Settings.";
         }
         EnableLinkAnimations = await _settingsService.GetAsync<bool?>(EnableLinkAnimationsKey) ?? true;
+        EnableIntelReportAnimations = await _settingsService.GetAsync<bool?>(EnableIntelReportAnimationsKey) ?? true;
         ShowAnsiblexNetwork = await _settingsService.GetAsync<bool?>(ShowAnsiblexNetworkKey) ?? true;
         LogsRootPath = (await _settingsService.GetAsync<string>(TrackingLogsRootPathKey)) ?? GetDefaultEveLogsRootPath();
         InfoBoxShowRegion = await _settingsService.GetAsync<bool?>(InfoBoxShowRegionKey) ?? true;

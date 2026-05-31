@@ -92,7 +92,11 @@
           <StackPanel Spacing="6">
             <TextBlock Text="Link Animation" FontWeight="SemiBold" Foreground="#C9D9EE" />
             <CheckBox IsChecked="{Binding EnableLinkAnimations}" Content="Enable animated link effects" />
+            <CheckBox IsChecked="{Binding EnableIntelReportAnimations}" Content="Enable animated intel ship rings" />
             <TextBlock Text="Adds animated hover/selection effects on links (small performance impact on dense maps)."
+                       Foreground="#8A96A8"
+                       TextWrapping="Wrap" />
+            <TextBlock Text="When disabled, intel ship icons on hostile rings stay static to reduce map redraw cost."
                        Foreground="#8A96A8"
                        TextWrapping="Wrap" />
           </StackPanel>

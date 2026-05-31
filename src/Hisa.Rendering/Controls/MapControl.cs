@@ -213,6 +213,8 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorJumpRangeLy), true);
     public static readonly StyledProperty<bool> EnableLinkAnimationsProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(EnableLinkAnimations), true);
+    public static readonly StyledProperty<bool> EnableIntelRingAnimationsProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(EnableIntelRingAnimations), true);
     public static readonly StyledProperty<bool> ShowAnsiblexNetworkProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowAnsiblexNetwork), true);
     public static readonly StyledProperty<IEnumerable<MapLink>?> AnsiblexLinksProperty =
@@ -497,6 +499,12 @@ public sealed class MapControl : Control
     {
         get => GetValue(EnableLinkAnimationsProperty);
         set => SetValue(EnableLinkAnimationsProperty, value);
+    }
+
+    public bool EnableIntelRingAnimations
+    {
+        get => GetValue(EnableIntelRingAnimationsProperty);
+        set => SetValue(EnableIntelRingAnimationsProperty, value);
     }
 
     public bool ShowAnsiblexNetwork
@@ -854,9 +862,10 @@ public sealed class MapControl : Control
             IntelRecentReportsByNodeIdProperty,
             IntelHostileScoresByNodeIdProperty,
             ShowInfoBoxCharacterPresenceProperty,
-            CharacterPresenceHoverMaxNamesProperty);
+            CharacterPresenceHoverMaxNamesProperty,
+            EnableIntelRingAnimationsProperty);
         ClipToBounds = true;
-        _linkAnimationTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(24), DispatcherPriority.Render, (_, _) =>
+        _linkAnimationTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(40), DispatcherPriority.Render, (_, _) =>
         {
             _linkAnimationPhase += 0.012;
             if (ShouldAnimateAnyLink() || HasAnimatedIntelRings())
@@ -2619,14 +2628,42 @@ public sealed class MapControl : Control
 
     private bool HasAnimatedIntelRings()
     {
-        if (IntelHostileScoresByNodeId is null || IntelHostileScoresByNodeId.Count == 0)
+        if (!EnableIntelRingAnimations)
         {
             return false;
         }
 
-        foreach (var score in IntelHostileScoresByNodeId.Values)
+        if (Graph is null ||
+            Bounds.Width <= 1 ||
+            Bounds.Height <= 1 ||
+            IntelHostileScoresByNodeId is null ||
+            IntelHostileScoresByNodeId.Count == 0)
         {
-            if (score > 0)
+            return false;
+        }
+
+        if (_screenPositions.Length != Graph.Nodes.Count)
+        {
+            var plot = GetPlotMetrics();
+            UpdateScreenPositions(plot, Bounds.Width / 2.0, Bounds.Height / 2.0);
+        }
+
+        var bounds = Bounds;
+        foreach (var (nodeId, score) in IntelHostileScoresByNodeId)
+        {
+            if (score <= 0)
+            {
+                continue;
+            }
+
+            if (!_nodeIndexById.TryGetValue(nodeId, out var index) ||
+                index < 0 ||
+                index >= _screenPositions.Length)
+            {
+                continue;
+            }
+
+            if (IsPointVisible(_screenPositions[index], bounds, 40))
             {
                 return true;
             }
@@ -5122,7 +5159,7 @@ public sealed class MapControl : Control
             _ => 2.25
         };
         var iconSize = Math.Clamp(nodeRadius * iconScale, 11.0, 33.0);
-        var rotationDegrees = _linkAnimationPhase * 126.0;
+        var rotationDegrees = EnableIntelRingAnimations ? (_linkAnimationPhase * 126.0) : 0.0;
         for (var i = 0; i < icons.Count; i++)
         {
             var angle = (-90.0 + rotationDegrees + ((360.0 / icons.Count) * i)) * (Math.PI / 180.0);

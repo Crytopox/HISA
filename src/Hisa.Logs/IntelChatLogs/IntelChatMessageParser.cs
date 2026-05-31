@@ -490,11 +490,7 @@ public sealed partial class IntelChatMessageParser
             || lower.Contains(" clear ")
             || lower.StartsWith("clear ")
             || lower.Contains(" сlear ")
-            || lower.StartsWith("сlear ")
-            || lower.Contains(" clr du ")
-            || lower.Contains(" clear du ")
-            || lower.EndsWith(" nv ")
-            || lower == "nv";
+            || lower.StartsWith("сlear ");
     }
 
     private static void AddIf(string text, List<IntelShipClass> target, string needle, IntelShipClass value)

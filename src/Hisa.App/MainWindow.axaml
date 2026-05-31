@@ -189,6 +189,7 @@
                               JumpRouteNodeIds="{Binding JumpRouteNodeIdsForView}"
                               JumpRouteSkippedNodeIds="{Binding JumpRouteSkippedNodeIdsForView}"
                               EnableLinkAnimations="{Binding EnableLinkAnimations}"
+                              EnableIntelRingAnimations="{Binding EnableIntelReportAnimations}"
                               AnsiblexLinks="{Binding AnsiblexLinksForView}"
                               ShowAnsiblexNetwork="{Binding ShowAnsiblexNetwork}"
                               ShowIndicatorJumpRangeLy="{Binding ShowIndicatorJumpRangeLy}"
