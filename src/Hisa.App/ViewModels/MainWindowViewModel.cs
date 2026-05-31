@@ -2297,18 +2297,28 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
         var existing = _zkillmailCardsForView.ToList();
         if (report.Killmail?.KillmailId is > 0 and var killmailId &&
-            existing.Any(x => x.KillmailUrl.EndsWith($"/{killmailId}/", StringComparison.OrdinalIgnoreCase)))
+            existing.Any(x =>
+                x.KillmailUrl.EndsWith($"/{killmailId}/", StringComparison.OrdinalIgnoreCase) ||
+                x.MessageText.Contains(killmailId.ToString(), StringComparison.Ordinal)))
         {
             return;
         }
 
-        existing.Insert(0, card);
-        if (existing.Count > MaxIntelOverlayCards)
+        if (existing.Count == 0)
         {
-            existing.RemoveRange(MaxIntelOverlayCards, existing.Count - MaxIntelOverlayCards);
+            _zkillmailCardsForView = [card];
         }
+        else
+        {
+            var insertAt = FindInsertIndexByTimestampDesc(existing, card.TimestampUtc);
+            existing.Insert(insertAt, card);
+            if (existing.Count > MaxIntelOverlayCards)
+            {
+                existing.RemoveRange(MaxIntelOverlayCards, existing.Count - MaxIntelOverlayCards);
+            }
 
-        _zkillmailCardsForView = existing;
+            _zkillmailCardsForView = existing;
+        }
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ZkillmailCardsForView)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ZkillmailOverlayTitle)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasZkillmailOverlayData)));
@@ -2316,6 +2326,26 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
         _ = EnsureShipImagesForIntelCardsAsync();
         _ = EnsureZkillIdentityAssetsAsync();
+    }
+
+    private static int FindInsertIndexByTimestampDesc(IReadOnlyList<ZkillmailOverlayCard> cards, DateTime timestampUtc)
+    {
+        var lo = 0;
+        var hi = cards.Count;
+        while (lo < hi)
+        {
+            var mid = lo + ((hi - lo) / 2);
+            if (cards[mid].TimestampUtc >= timestampUtc)
+            {
+                lo = mid + 1;
+            }
+            else
+            {
+                hi = mid;
+            }
+        }
+
+        return lo;
     }
 
     private void OnIntelSnapshotUpdated(object? sender, IReadOnlyDictionary<long, IntelSystemSnapshot> snapshot)
