@@ -78,8 +78,8 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
     private IntelChatMessageParser? _messageParser;
     private bool _enabled = true;
     private bool _zkillEnabled = true;
-    private TimeSpan _zkillPollDelay = TimeSpan.FromSeconds(3);
-    private static readonly TimeSpan ZkillSuccessDelay = TimeSpan.FromSeconds(5);
+    private TimeSpan _zkillPollDelay = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan ZkillSuccessDelay = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan ZkillNotFoundDelay = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan ZkillRateLimitDelay = TimeSpan.FromSeconds(30);
     private long? _nextZkillSequence;
