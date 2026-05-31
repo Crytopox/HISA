@@ -1,0 +1,34 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:Hisa.App"
+        mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="560"
+        x:Class="Hisa.App.ZkillmailsWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="zKillmails"
+        Background="#0D131D">
+  <Border Margin="10" Padding="10" Background="#121A26" BorderBrush="#263244" BorderThickness="1" CornerRadius="6">
+    <Grid RowDefinitions="Auto,*" RowSpacing="8">
+      <TextBlock Text="{Binding ZkillmailOverlayTitle}" Foreground="#EAF2FF" FontWeight="SemiBold" />
+      <DataGrid Grid.Row="1"
+                ItemsSource="{Binding ZkillmailCardsForView}"
+                IsReadOnly="True"
+                CanUserSortColumns="True"
+                CanUserResizeColumns="True"
+                SelectionMode="Single"
+                GridLinesVisibility="Horizontal"
+                HeadersVisibility="Column">
+        <DataGrid.Columns>
+          <DataGridTextColumn Header="Age" Binding="{Binding AgeSummary}" Width="80" />
+          <DataGridTextColumn Header="System" Binding="{Binding SystemName}" Width="130" />
+          <DataGridTextColumn Header="Constellation" Binding="{Binding ConstellationName}" Width="160" />
+          <DataGridTextColumn Header="Region" Binding="{Binding RegionName}" Width="160" />
+          <DataGridTextColumn Header="Ships" Binding="{Binding ShipSummary}" Width="180" />
+          <DataGridTextColumn Header="Hostiles" Binding="{Binding HostileCount}" Width="80" />
+          <DataGridTextColumn Header="Message" Binding="{Binding MessageText}" Width="*" />
+        </DataGrid.Columns>
+      </DataGrid>
+    </Grid>
+  </Border>
+</Window>

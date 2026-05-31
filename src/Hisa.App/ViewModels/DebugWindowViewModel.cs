@@ -17,6 +17,7 @@ public sealed class DebugWindowViewModel : INotifyPropertyChanged
     private string _categoryFilter = "All";
     private string _sourceFilter = "All";
     private LogLevel? _selectedLevel;
+    private bool _autoScroll = true;
     private readonly DispatcherTimer _esiUiTimer;
 
     public DebugWindowViewModel(AppLogStore store, IEsiMetricsStore esiMetricsStore, IAppLogFileService logFileService)
@@ -76,6 +77,11 @@ public sealed class DebugWindowViewModel : INotifyPropertyChanged
     public string EsiTokenStats => BuildEsiTokenStats();
     public string EsiNextRefresh => BuildEsiNextRefresh();
     public string EsiRateGroup => $"Group: {_esiMetricsStore.CurrentRateState.RateLimitGroup}";
+    public bool AutoScroll
+    {
+        get => _autoScroll;
+        set => SetProperty(ref _autoScroll, value);
+    }
 
     public LogLevelOption? SelectedLevelOption
     {

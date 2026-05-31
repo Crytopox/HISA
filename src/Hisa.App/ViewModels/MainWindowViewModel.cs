@@ -289,6 +289,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _isIncursionsOverlayOpen;
     private bool _isStormsOverlayOpen;
     private bool _isIntelOverlayOpen;
+    private bool _isZkillmailsOverlayOpen;
     private HubWormholeMarkerMode _hubWormholeMarkerMode = HubWormholeMarkerMode.Badge;
     private readonly Dictionary<long, double> _jumpRangeOriginsLyByNodeId = [];
     private readonly Dictionary<long, uint> _jumpRangeOriginColorByNodeId = [];
@@ -302,6 +303,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private IReadOnlyList<IncursionOverlayCard> _incursionCardsForView = [];
     private IReadOnlyList<StormOverlayCard> _stormCardsForView = [];
     private IReadOnlyList<IntelOverlayCard> _intelCardsForView = [];
+    private IReadOnlyList<ZkillmailOverlayCard> _zkillmailCardsForView = [];
     private readonly Dictionary<int, LocalCharacterSystemChange> _localCharacterLocationsByCharacterId = [];
     private readonly Dictionary<int, CharacterTrackingPreference> _characterTrackingPreferencesById = [];
     private readonly ObservableCollection<CharacterTrackingCardViewModel> _characterTrackingCards = [];
@@ -490,6 +492,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public IReadOnlyList<IncursionOverlayCard> IncursionCardsForView => _incursionCardsForView;
     public IReadOnlyList<StormOverlayCard> StormCardsForView => _stormCardsForView;
     public IReadOnlyList<IntelOverlayCard> IntelCardsForView => _intelCardsForView;
+    public IReadOnlyList<ZkillmailOverlayCard> ZkillmailCardsForView => _zkillmailCardsForView;
     public IReadOnlyDictionary<long, int> CharacterPresenceCountsByNodeIdForView => _characterPresenceCountsByNodeId;
     public IReadOnlyDictionary<long, IReadOnlyList<string>> CharacterPresenceNamesByNodeIdForView => _characterPresenceNamesByNodeId;
     public IReadOnlyDictionary<long, IReadOnlyList<int>> CharacterPresenceCharacterIdsByNodeIdForView => _characterPresenceCharacterIdsByNodeId;
@@ -504,6 +507,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public string IncursionOverlayTitle => $"Incursions ({_incursionCardsForView.Count})";
     public string StormOverlayTitle => $"Metaliminal Storms ({_stormCardsForView.Count})";
     public string IntelOverlayTitle => $"Intel Reports ({_intelCardsForView.Count})";
+    public string ZkillmailOverlayTitle => $"zKillmails ({_zkillmailCardsForView.Count})";
     public bool LimitIntelReportsToCurrentRegion
     {
         get => _limitIntelReportsToCurrentRegion;
@@ -1192,10 +1196,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public bool HasIncursionOverlayData => _incursionCardsForView.Count > 0;
     public bool HasStormOverlayData => _stormCardsForView.Count > 0;
     public bool HasIntelOverlayData => _intelCardsForView.Count > 0;
+    public bool HasZkillmailOverlayData => _zkillmailCardsForView.Count > 0;
     public bool HasNoHubWormholeOverlayData => _hubWormholeCardsForView.Count == 0;
     public bool HasNoIncursionOverlayData => _incursionCardsForView.Count == 0;
     public bool HasNoStormOverlayData => _stormCardsForView.Count == 0;
     public bool HasNoIntelOverlayData => _intelCardsForView.Count == 0;
+    public bool HasNoZkillmailOverlayData => _zkillmailCardsForView.Count == 0;
     public Task InitialLoadTask => _initialLoadTask;
 
     public bool IsHubWormholesOverlayOpen
@@ -1220,6 +1226,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsIntelOverlayOpen)));
             }
 
+            if (_isZkillmailsOverlayOpen)
+            {
+                _isZkillmailsOverlayOpen = false;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsZkillmailsOverlayOpen)));
+            }
+
             if (_isStormsOverlayOpen)
             {
                 _isStormsOverlayOpen = false;
@@ -1230,6 +1242,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             {
                 _isIntelOverlayOpen = false;
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsIntelOverlayOpen)));
+            }
+
+            if (_isZkillmailsOverlayOpen)
+            {
+                _isZkillmailsOverlayOpen = false;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsZkillmailsOverlayOpen)));
             }
         }
     }
@@ -1260,6 +1278,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             {
                 _isIntelOverlayOpen = false;
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsIntelOverlayOpen)));
+            }
+
+            if (_isZkillmailsOverlayOpen)
+            {
+                _isZkillmailsOverlayOpen = false;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsZkillmailsOverlayOpen)));
             }
         }
     }
@@ -1861,6 +1885,48 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             {
                 _isStormsOverlayOpen = false;
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsStormsOverlayOpen)));
+            }
+
+            if (_isZkillmailsOverlayOpen)
+            {
+                _isZkillmailsOverlayOpen = false;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsZkillmailsOverlayOpen)));
+            }
+        }
+    }
+
+    public bool IsZkillmailsOverlayOpen
+    {
+        get => _isZkillmailsOverlayOpen;
+        set
+        {
+            if (!SetProperty(ref _isZkillmailsOverlayOpen, value) || !value)
+            {
+                return;
+            }
+
+            if (_isHubWormholesOverlayOpen)
+            {
+                _isHubWormholesOverlayOpen = false;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsHubWormholesOverlayOpen)));
+            }
+
+            if (_isIncursionsOverlayOpen)
+            {
+                _isIncursionsOverlayOpen = false;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsIncursionsOverlayOpen)));
+            }
+
+            if (_isStormsOverlayOpen)
+            {
+                _isStormsOverlayOpen = false;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsStormsOverlayOpen)));
+            }
+
+            if (_isIntelOverlayOpen)
+            {
+                _isIntelOverlayOpen = false;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsIntelOverlayOpen)));
             }
         }
     }
@@ -3306,14 +3372,17 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             _incursionCardsForView = [];
             _stormCardsForView = [];
             _intelCardsForView = [];
+            _zkillmailCardsForView = [];
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HubWormholeCardsForView)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IncursionCardsForView)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StormCardsForView)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelCardsForView)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ZkillmailCardsForView)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HubWormholeOverlayTitle)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IncursionOverlayTitle)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StormOverlayTitle)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelOverlayTitle)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ZkillmailOverlayTitle)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasHubWormholeOverlayData)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasIncursionOverlayData)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasStormOverlayData)));
@@ -3322,6 +3391,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasNoIncursionOverlayData)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasNoStormOverlayData)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasNoIntelOverlayData)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasZkillmailOverlayData)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasNoZkillmailOverlayData)));
             return;
         }
 
@@ -3533,14 +3604,56 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             .Take(MaxIntelOverlayCards)
             .ToList();
 
+        _zkillmailCardsForView = intelHistory
+            .Where(r => string.Equals(r.ChannelName, "zKillboard", StringComparison.OrdinalIgnoreCase)
+                        || r.SourceFilePath.StartsWith("api://zkillboard", StringComparison.OrdinalIgnoreCase))
+            .Select(r =>
+            {
+                var systemName = r.Systems.FirstOrDefault() ?? "Unknown";
+                var regionName = "Unknown Region";
+                var constellationName = "Unknown Constellation";
+                if (graphNodeByName.TryGetValue(systemName, out var node))
+                {
+                    regionName = string.IsNullOrWhiteSpace(node.RegionName) ? regionName : node.RegionName;
+                    constellationName = string.IsNullOrWhiteSpace(node.ConstellationName) ? constellationName : node.ConstellationName;
+                }
+
+                var age = DateTime.UtcNow - r.TimestampUtc;
+                if (age < TimeSpan.Zero)
+                {
+                    age = TimeSpan.Zero;
+                }
+
+                var shipSummary = r.ReportedShipNames.Count > 0
+                    ? string.Join(", ", r.ReportedShipNames.Select(CapitalizeFirstLetter).Distinct(StringComparer.OrdinalIgnoreCase))
+                    : "Unknown";
+
+                return new ZkillmailOverlayCard
+                {
+                    TimestampUtc = r.TimestampUtc,
+                    AgeSummary = FormatOverlayAgeClock(age),
+                    SystemName = systemName,
+                    RegionName = regionName,
+                    ConstellationName = constellationName,
+                    ShipSummary = shipSummary,
+                    HostileCount = Math.Max(1, r.ReportedHostileCount),
+                    MessageText = r.MessageText
+                };
+            })
+            .OrderByDescending(x => x.TimestampUtc)
+            .Take(MaxIntelOverlayCards)
+            .ToList();
+
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HubWormholeCardsForView)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IncursionCardsForView)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StormCardsForView)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelCardsForView)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ZkillmailCardsForView)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HubWormholeOverlayTitle)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IncursionOverlayTitle)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StormOverlayTitle)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelOverlayTitle)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ZkillmailOverlayTitle)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasHubWormholeOverlayData)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasIncursionOverlayData)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasStormOverlayData)));
@@ -3549,6 +3662,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasNoIncursionOverlayData)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasNoStormOverlayData)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasNoIntelOverlayData)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasZkillmailOverlayData)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasNoZkillmailOverlayData)));
 
         _ = ResolveIntelCharacterIdsAsync();
         _ = EnsureShipImagesForIntelCardsAsync();
@@ -3834,7 +3949,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     private void RefreshIntelOverlayCardAges()
     {
-        if (_intelCardsForView.Count == 0)
+        if (_intelCardsForView.Count == 0 && _zkillmailCardsForView.Count == 0)
         {
             return;
         }
@@ -3851,7 +3966,19 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             card.AgeSummary = FormatOverlayAgeClock(age);
         }
 
+        foreach (var card in _zkillmailCardsForView)
+        {
+            var age = now - card.TimestampUtc;
+            if (age < TimeSpan.Zero)
+            {
+                age = TimeSpan.Zero;
+            }
+
+            card.AgeSummary = FormatOverlayAgeClock(age);
+        }
+
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelCardsForView)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ZkillmailCardsForView)));
     }
 
     private static string FormatOverlayAgeClock(TimeSpan age)

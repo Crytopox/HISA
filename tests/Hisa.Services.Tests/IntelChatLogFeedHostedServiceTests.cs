@@ -15,6 +15,7 @@ public class IntelChatLogFeedHostedServiceTests
         var service = new IntelChatLogFeedHostedService(
             new NoopSettingsService(),
             new NoopSdeDatabase(),
+            new NoopHttpClientFactory(),
             NullLogger<IntelChatLogFeedHostedService>.Instance);
 
         var method = typeof(IntelChatLogFeedHostedService).GetMethod(
@@ -80,5 +81,10 @@ public class IntelChatLogFeedHostedServiceTests
         {
             throw new NotSupportedException();
         }
+    }
+
+    private sealed class NoopHttpClientFactory : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) => new();
     }
 }

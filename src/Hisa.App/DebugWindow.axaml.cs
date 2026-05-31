@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using System.Collections.Specialized;
 
 namespace Hisa.App;
 
@@ -16,6 +17,9 @@ public partial class DebugWindow : Window
     {
         _boundVm = vm;
         DataContext = vm;
+        vm.Entries.CollectionChanged += OnEntriesCollectionChanged;
+        vm.EsiEntries.CollectionChanged += OnEsiEntriesCollectionChanged;
+        Closed += OnClosed;
     }
 
     private async void OnExportLogsClicked(object? sender, RoutedEventArgs e)
@@ -49,5 +53,39 @@ public partial class DebugWindow : Window
             }
         };
         await dialog.ShowDialog(this);
+    }
+
+    private void OnClosed(object? sender, EventArgs e)
+    {
+        if (_boundVm is null)
+        {
+            return;
+        }
+
+        _boundVm.Entries.CollectionChanged -= OnEntriesCollectionChanged;
+        _boundVm.EsiEntries.CollectionChanged -= OnEsiEntriesCollectionChanged;
+        Closed -= OnClosed;
+    }
+
+    private void OnEntriesCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (_boundVm is null || !_boundVm.AutoScroll || _boundVm.Entries.Count == 0 || e.Action != NotifyCollectionChangedAction.Add)
+        {
+            return;
+        }
+
+        var last = _boundVm.Entries[^1];
+        DebugLogGrid.ScrollIntoView(last, null);
+    }
+
+    private void OnEsiEntriesCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (_boundVm is null || !_boundVm.AutoScroll || _boundVm.EsiEntries.Count == 0 || e.Action != NotifyCollectionChangedAction.Add)
+        {
+            return;
+        }
+
+        var last = _boundVm.EsiEntries[^1];
+        DebugEsiGrid.ScrollIntoView(last, null);
     }
 }

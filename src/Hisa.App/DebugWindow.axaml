@@ -50,7 +50,7 @@
       <TabItem Header="Logs">
         <Grid RowDefinitions="Auto,*" RowSpacing="10">
           <Border Background="#050505" BorderBrush="#1F2937" BorderThickness="1" CornerRadius="8" Padding="10">
-            <Grid ColumnDefinitions="Auto,150,Auto,190,Auto,120,*,Auto,Auto" ColumnSpacing="10">
+            <Grid ColumnDefinitions="Auto,150,Auto,190,Auto,120,*,Auto,Auto,Auto" ColumnSpacing="10">
               <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="Level" Foreground="#9CA3AF" />
               <ComboBox Grid.Column="1" ItemsSource="{Binding LevelOptions}" SelectedItem="{Binding SelectedLevelOption}" />
               <TextBlock Grid.Column="2" VerticalAlignment="Center" Text="Category" Foreground="#9CA3AF" />
@@ -60,6 +60,7 @@
               <TextBox Grid.Column="6" Watermark="Search logs..." Text="{Binding SearchText}" />
               <Button Grid.Column="7" Content="Export Logs" Click="OnExportLogsClicked" />
               <Button Grid.Column="8" Content="Open Logs Folder" Click="OnOpenLogsFolderClicked" />
+              <CheckBox Grid.Column="9" IsChecked="{Binding AutoScroll}" Content="Auto-scroll" VerticalAlignment="Center" />
             </Grid>
           </Border>
           <Border Grid.Row="1" BorderBrush="#1F2937" BorderThickness="1" Background="#040404" CornerRadius="8" Padding="4">

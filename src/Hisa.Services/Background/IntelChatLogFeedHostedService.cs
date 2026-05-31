@@ -1,5 +1,9 @@
 using System.Collections.Concurrent;
 using System.Globalization;
+using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Hisa.Core.Abstractions;
 using Hisa.Core.Models;
@@ -21,6 +25,13 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
     private const string IntelEnabledSettingsKey = "Intel.Enabled";
     private const string IntelIncludeChannelsSettingsKey = "Intel.Channels.Include";
     private const string IntelSystemExpiryMinutesSettingsKey = "Intel.SystemExpiryMinutes";
+    private const string IntelZkillEnabledSettingsKey = "Intel.Zkill.Enabled";
+    private const string IntelZkillPollSecondsSettingsKey = "Intel.Zkill.PollSeconds";
+    private const string ZkillSequenceEndpoint = "https://r2z2.zkillboard.com/ephemeral/sequence.json";
+    private const string ZkillKillmailEndpointFormat = "https://r2z2.zkillboard.com/ephemeral/{0}.json";
+    private const string ZkillReporterName = "zKillboard";
+    private const string ZkillChannelName = "zKillboard";
+    private const string ZkillSourcePath = "api://zkillboard/r2z2";
 
     private static readonly Regex ChatLineRegex = BuildChatLineRegex();
     private static readonly Regex IntelFileNameRegex = BuildIntelFileNameRegex();
@@ -28,6 +39,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
     private readonly ISettingsService _settingsService;
     private readonly ISdeDatabase _sdeDatabase;
     private readonly ILogger<IntelChatLogFeedHostedService> _logger;
+    private readonly IHttpClientFactory _httpClientFactory;
     private readonly ConcurrentDictionary<string, byte> _dirtyFiles = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, long> _readOffsetsByPath = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, (string Path, DateTime LastWriteUtc)> _activeFileByChannel = new(StringComparer.OrdinalIgnoreCase);
@@ -35,8 +47,11 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
     private readonly object _gate = new();
     private FileSystemWatcher? _watcher;
     private Dictionary<string, long> _systemIdByName = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<long, string> _systemNameById = [];
     private Dictionary<string, IntelShipClass> _shipClassByName = new(StringComparer.OrdinalIgnoreCase);
     private Dictionary<string, int> _shipTypeIdByName = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<int, IntelShipClass> _shipClassByTypeId = [];
+    private Dictionary<int, string> _shipNameByTypeId = [];
     private static readonly IReadOnlyDictionary<string, string> ShipAliases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
     {
         ["kiki"] = "kikimora",
@@ -62,16 +77,22 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
     };
     private IntelChatMessageParser? _messageParser;
     private bool _enabled = true;
+    private bool _zkillEnabled = true;
+    private TimeSpan _zkillPollDelay = TimeSpan.FromSeconds(2);
+    private long? _nextZkillSequence;
+    private DateTime _nextZkillPollAfterUtc = DateTime.MinValue;
     private HashSet<string> _includeChannels = new(StringComparer.OrdinalIgnoreCase);
     private TimeSpan _systemExpiry = TimeSpan.FromMinutes(15);
 
     public IntelChatLogFeedHostedService(
         ISettingsService settingsService,
         ISdeDatabase sdeDatabase,
+        IHttpClientFactory httpClientFactory,
         ILogger<IntelChatLogFeedHostedService> logger)
     {
         _settingsService = settingsService;
         _sdeDatabase = sdeDatabase;
+        _httpClientFactory = httpClientFactory;
         _logger = logger;
     }
 
@@ -99,18 +120,24 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         }
 
         _systemIdByName = await LoadSystemNameMapAsync(stoppingToken);
-        (_shipClassByName, _shipTypeIdByName) = await LoadShipMapsAsync(stoppingToken);
+        (_shipClassByName, _shipTypeIdByName, _shipClassByTypeId, _shipNameByTypeId) = await LoadShipMapsAsync(stoppingToken);
         _messageParser = new IntelChatMessageParser(_systemIdByName, _shipClassByName, ShipAliases);
+        if (_zkillEnabled)
+        {
+            await InitializeZkillSequenceAsync(stoppingToken);
+        }
         var chatLogsDirectory = await ResolveChatLogsDirectoryAsync(stoppingToken);
-        if (chatLogsDirectory is null)
+        if (chatLogsDirectory is null && _includeChannels.Count > 0)
         {
             _logger.LogWarning("Intel chat feed disabled: ChatLogs directory was not found.");
-            return;
         }
 
-        _logger.LogInformation("Starting intel chat feed from: {Path}", chatLogsDirectory);
-        SetupWatcher(chatLogsDirectory);
-        EnqueueAllKnownFiles(chatLogsDirectory, startupOnlyNewestPerChannel: true);
+        if (chatLogsDirectory is not null)
+        {
+            _logger.LogInformation("Starting intel chat feed from: {Path}", chatLogsDirectory);
+            SetupWatcher(chatLogsDirectory);
+            EnqueueAllKnownFiles(chatLogsDirectory, startupOnlyNewestPerChannel: true);
+        }
 
         try
         {
@@ -118,6 +145,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             while (!stoppingToken.IsCancellationRequested)
             {
                 await FlushDirtyFilesAsync(stoppingToken);
+                await PollZkillAsync(stoppingToken);
                 var nowUtc = DateTime.UtcNow;
                 if (nowUtc >= nextExpirySweepUtc)
                 {
@@ -138,6 +166,9 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
     private async Task LoadSettingsAsync(CancellationToken cancellationToken)
     {
         _enabled = await _settingsService.GetAsync<bool?>(IntelEnabledSettingsKey, cancellationToken) ?? true;
+        _zkillEnabled = await _settingsService.GetAsync<bool?>(IntelZkillEnabledSettingsKey, cancellationToken) ?? true;
+        var zkillPollSeconds = Math.Clamp(await _settingsService.GetAsync<int?>(IntelZkillPollSecondsSettingsKey, cancellationToken) ?? 2, 2, 60);
+        _zkillPollDelay = TimeSpan.FromSeconds(zkillPollSeconds);
         var include = await _settingsService.GetAsync<List<string>>(IntelIncludeChannelsSettingsKey, cancellationToken) ?? [];
         _includeChannels = include.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var expiryMinutes = Math.Clamp(await _settingsService.GetAsync<int?>(IntelSystemExpiryMinutesSettingsKey, cancellationToken) ?? 15, 1, 180);
@@ -157,15 +188,18 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             result[reader.GetString(1)] = reader.GetInt64(0);
         }
 
+        _systemNameById = result.ToDictionary(x => x.Value, x => x.Key);
         return result;
     }
 
-    private async Task<(Dictionary<string, IntelShipClass> ClassByName, Dictionary<string, int> TypeIdByName)> LoadShipMapsAsync(CancellationToken cancellationToken)
+    private async Task<(Dictionary<string, IntelShipClass> ClassByName, Dictionary<string, int> TypeIdByName, Dictionary<int, IntelShipClass> ClassByTypeId, Dictionary<int, string> NameByTypeId)> LoadShipMapsAsync(CancellationToken cancellationToken)
     {
         await using var connection = _sdeDatabase.CreateConnection();
         await connection.OpenAsync(cancellationToken);
         var classByName = new Dictionary<string, IntelShipClass>(StringComparer.OrdinalIgnoreCase);
         var typeIdByName = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var classByTypeId = new Dictionary<int, IntelShipClass>();
+        var nameByTypeId = new Dictionary<int, string>();
         var command = connection.CreateCommand();
         command.CommandText = """
             SELECT t.typeID, t.typeName, g.groupName
@@ -188,9 +222,11 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             var key = shipName.ToLowerInvariant();
             classByName[key] = shipClass;
             typeIdByName[key] = typeId;
+            classByTypeId[typeId] = shipClass;
+            nameByTypeId[typeId] = shipName;
         }
 
-        return (classByName, typeIdByName);
+        return (classByName, typeIdByName, classByTypeId, nameByTypeId);
     }
 
     private static IntelShipClass ShipGroupToIntelShipClass(string groupName)
@@ -940,6 +976,219 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         return null;
     }
 
+    private async Task InitializeZkillSequenceAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var client = CreateZkillHttpClient();
+            var seq = await client.GetFromJsonAsync<ZkillSequenceDto>(ZkillSequenceEndpoint, cancellationToken);
+            if (seq?.Sequence is null or <= 0)
+            {
+                return;
+            }
+
+            // Start from the next sequence to avoid historical backfill on startup.
+            _nextZkillSequence = seq.Sequence.Value + 1;
+            _nextZkillPollAfterUtc = DateTime.UtcNow;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to initialize zKillboard sequence.");
+            _nextZkillPollAfterUtc = DateTime.UtcNow + _zkillPollDelay;
+        }
+    }
+
+    private async Task PollZkillAsync(CancellationToken cancellationToken)
+    {
+        if (!_zkillEnabled || _nextZkillSequence is null || DateTime.UtcNow < _nextZkillPollAfterUtc)
+        {
+            return;
+        }
+
+        var client = CreateZkillHttpClient();
+        var sequence = _nextZkillSequence.Value;
+        var maxBatch = 5;
+        var processed = 0;
+        while (processed < maxBatch && !cancellationToken.IsCancellationRequested)
+        {
+            var uri = string.Format(CultureInfo.InvariantCulture, ZkillKillmailEndpointFormat, sequence);
+            using var response = await client.GetAsync(uri, cancellationToken);
+            if (response.StatusCode == HttpStatusCode.NotFound)
+            {
+                _nextZkillSequence = sequence;
+                _nextZkillPollAfterUtc = DateTime.UtcNow + _zkillPollDelay;
+                return;
+            }
+
+            if ((int)response.StatusCode == 429)
+            {
+                var retryAfter = response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(8);
+                _nextZkillSequence = sequence;
+                _nextZkillPollAfterUtc = DateTime.UtcNow + retryAfter;
+                return;
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogDebug("zKillboard sequence {Sequence} returned {StatusCode}", sequence, (int)response.StatusCode);
+                _nextZkillSequence = sequence;
+                _nextZkillPollAfterUtc = DateTime.UtcNow + TimeSpan.FromSeconds(Math.Max(_zkillPollDelay.TotalSeconds, 10));
+                return;
+            }
+
+            await using var responseStream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            using var document = await JsonDocument.ParseAsync(responseStream, cancellationToken: cancellationToken);
+            if (TryBuildZkillIntelReport(document.RootElement, out var report))
+            {
+                ReportReceived?.Invoke(this, report);
+                if (ApplyToSystemSnapshot(report))
+                {
+                    SnapshotUpdated?.Invoke(this, Snapshot);
+                }
+            }
+
+            sequence++;
+            processed++;
+            await Task.Delay(TimeSpan.FromMilliseconds(300), cancellationToken);
+        }
+
+        _nextZkillSequence = sequence;
+        _nextZkillPollAfterUtc = DateTime.UtcNow.AddMilliseconds(250);
+    }
+
+    private HttpClient CreateZkillHttpClient()
+    {
+        var client = _httpClientFactory.CreateClient(nameof(IntelChatLogFeedHostedService));
+        if (!client.DefaultRequestHeaders.UserAgent.Any())
+        {
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("HISA/1.0 (https://github.com/Crytopox/HISA)");
+        }
+
+        client.Timeout = TimeSpan.FromSeconds(15);
+        return client;
+    }
+
+    private bool TryBuildZkillIntelReport(JsonElement root, out IntelChatReport report)
+    {
+        report = default!;
+
+        var killmail = root.TryGetProperty("esi", out var esiKillmail)
+            ? esiKillmail
+            : (root.TryGetProperty("killmail", out var nestedKillmail) ? nestedKillmail : root);
+        if (killmail.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        var systemId = ReadInt64(killmail, "solar_system_id");
+        var victim = killmail.TryGetProperty("victim", out var victimNode) ? victimNode : default;
+        var victimShipTypeId = victim.ValueKind == JsonValueKind.Object ? ReadInt32(victim, "ship_type_id") : null;
+        if (systemId is null || victimShipTypeId is null)
+        {
+            return false;
+        }
+
+        if (!_systemNameById.TryGetValue(systemId.Value, out var systemName) || string.IsNullOrWhiteSpace(systemName))
+        {
+            return false;
+        }
+
+        var timestampUtc = ReadDateTime(killmail, "killmail_time") ?? DateTime.UtcNow;
+        var victimShipClass = _shipClassByTypeId.TryGetValue(victimShipTypeId.Value, out var cls) ? cls : IntelShipClass.Unknown;
+        var victimShipName = _shipNameByTypeId.TryGetValue(victimShipTypeId.Value, out var shipName) ? shipName : $"Type {victimShipTypeId.Value}";
+        var attackerCount = killmail.TryGetProperty("attackers", out var attackersNode) && attackersNode.ValueKind == JsonValueKind.Array
+            ? attackersNode.GetArrayLength()
+            : 0;
+        var zkb = root.TryGetProperty("zkb", out var zkbNode) ? zkbNode : default;
+        var value = zkb.ValueKind == JsonValueKind.Object ? ReadDecimal(zkb, "totalValue") ?? 0m : 0m;
+        var message = $"Killmail: {victimShipName} destroyed ({attackerCount} attacker{(attackerCount == 1 ? string.Empty : "s")}, {value:N0} ISK).";
+
+        report = new IntelChatReport
+        {
+            TimestampUtc = timestampUtc,
+            ChannelName = ZkillChannelName,
+            ReporterName = ZkillReporterName,
+            MessageText = message,
+            SourceFilePath = ZkillSourcePath,
+            Systems = [systemName],
+            ShipClasses = victimShipClass == IntelShipClass.Unknown ? [] : [victimShipClass],
+            ReportedShipNames = [victimShipName],
+            ReportedShipTypeIds = [victimShipTypeId.Value],
+            Alerts = [IntelAlertType.Fight],
+            ReportedHostileNames = [],
+            IsClear = false,
+            ReportedHostileCount = Math.Max(1, attackerCount)
+        };
+
+        return true;
+    }
+
+    private static long? ReadInt64(JsonElement obj, string name)
+    {
+        if (!obj.TryGetProperty(name, out var node))
+        {
+            return null;
+        }
+
+        return node.ValueKind switch
+        {
+            JsonValueKind.Number when node.TryGetInt64(out var n) => n,
+            JsonValueKind.String when long.TryParse(node.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) => n,
+            _ => null
+        };
+    }
+
+    private static int? ReadInt32(JsonElement obj, string name)
+    {
+        if (!obj.TryGetProperty(name, out var node))
+        {
+            return null;
+        }
+
+        return node.ValueKind switch
+        {
+            JsonValueKind.Number when node.TryGetInt32(out var n) => n,
+            JsonValueKind.String when int.TryParse(node.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) => n,
+            _ => null
+        };
+    }
+
+    private static decimal? ReadDecimal(JsonElement obj, string name)
+    {
+        if (!obj.TryGetProperty(name, out var node))
+        {
+            return null;
+        }
+
+        return node.ValueKind switch
+        {
+            JsonValueKind.Number when node.TryGetDecimal(out var n) => n,
+            JsonValueKind.String when decimal.TryParse(node.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var n) => n,
+            _ => null
+        };
+    }
+
+    private static DateTime? ReadDateTime(JsonElement obj, string name)
+    {
+        if (!obj.TryGetProperty(name, out var node) || node.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        var raw = node.GetString();
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        if (!DateTime.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out var parsed))
+        {
+            return null;
+        }
+
+        return DateTime.SpecifyKind(parsed, DateTimeKind.Utc);
+    }
+
     public override void Dispose()
     {
         if (_watcher is not null)
@@ -961,6 +1210,10 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
     [GeneratedRegex(@"^(?<channel>.+)_\d{8}_\d{6}_\d+\.txt$", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
     private static partial Regex BuildIntelFileNameRegex();
 
+    private sealed class ZkillSequenceDto
+    {
+        [JsonPropertyName("sequence")]
+        public long? Sequence { get; init; }
+    }
+
 }
-
-

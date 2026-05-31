@@ -749,6 +749,65 @@
             <TextBlock Text="No intel reports available in this view." Foreground="#7F93AE" IsVisible="{Binding HasNoIntelOverlayData}" />
           </StackPanel>
         </Border>
+
+        <Border HorizontalAlignment="Right"
+                VerticalAlignment="Bottom"
+                Margin="12,12,12,56"
+                Width="320"
+                MaxHeight="440"
+                Padding="10"
+                Background="#D2101826"
+                BorderBrush="#4E6B92C5"
+                BorderThickness="1"
+                CornerRadius="8"
+                IsVisible="{Binding IsZkillmailsOverlayOpen}">
+          <StackPanel Spacing="8">
+            <TextBlock Text="{Binding ZkillmailOverlayTitle}" Foreground="#EAF2FF" FontWeight="SemiBold" />
+            <TextBlock Text="Data source: zKillboard R2Z2" Foreground="#8FA5C4" FontSize="11" />
+            <ScrollViewer MaxHeight="360" VerticalScrollBarVisibility="Auto">
+              <ItemsControl ItemsSource="{Binding ZkillmailCardsForView}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Grid Margin="0,0,0,8" ColumnDefinitions="4,*">
+                      <Border Grid.Column="0" CornerRadius="4,0,0,4" Background="#FFB347" />
+                      <Border Grid.Column="1"
+                              Padding="9,8"
+                              Background="#D01A2232"
+                              BorderThickness="1"
+                              BorderBrush="#3B4262"
+                              CornerRadius="0,7,7,0">
+                        <StackPanel Spacing="5">
+                          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                            <TextBlock Grid.Column="0" Foreground="#F1E8FF" FontWeight="Bold" FontSize="13">
+                              <Run Text="{Binding SystemName}" />
+                              <Run Text=" | " Foreground="#7F779C" />
+                              <Run Text="{Binding ConstellationName}" FontWeight="SemiBold" FontSize="10"/>
+                              <Run Text=" | " Foreground="#7F779C" />
+                              <Run Text="{Binding RegionName}" FontWeight="SemiBold" FontSize="10" />
+                            </TextBlock>
+                            <Border Grid.Column="1" Padding="6,2" CornerRadius="4" Background="#241C35" BorderThickness="1" BorderBrush="#5D83B5">
+                              <TextBlock Text="{Binding AgeSummary}" Foreground="#BFD8FF" FontSize="10" FontWeight="Bold" />
+                            </Border>
+                          </Grid>
+                          <WrapPanel>
+                            <Border Background="#2B3246" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="0,0,4,4" BorderBrush="#4E5C84">
+                              <TextBlock Text="{Binding ShipSummary, StringFormat='Ships: {0}'}" Foreground="#FFFFFF" FontSize="10" FontWeight="SemiBold" />
+                            </Border>
+                            <Border Background="#3A2A2A" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="0,0,4,4" BorderBrush="#8A4C4C">
+                              <TextBlock Text="{Binding HostileCount, StringFormat='Hostiles: {0}'}" Foreground="#FFFFFF" FontSize="10" FontWeight="SemiBold" />
+                            </Border>
+                          </WrapPanel>
+                          <TextBlock Text="{Binding MessageText, StringFormat='Report: {0}'}" Foreground="#E4ECF8" FontSize="10" TextWrapping="Wrap" />
+                        </StackPanel>
+                      </Border>
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+            <TextBlock Text="No zKillmails available in this view." Foreground="#7F93AE" IsVisible="{Binding HasNoZkillmailOverlayData}" />
+          </StackPanel>
+        </Border>
       </Grid>
 
       <Border Grid.Column="1"
@@ -921,6 +980,13 @@
                         Foreground="#D9EBFF"
                         Padding="10,4"
                         MinWidth="92" />
+          <ToggleButton Content="zKillmails"
+                        IsChecked="{Binding IsZkillmailsOverlayOpen, Mode=TwoWay}"
+                        Background="#1E2133"
+                        BorderBrush="#4B5E8E"
+                        Foreground="#D8E6FF"
+                        Padding="10,4"
+                        MinWidth="110" />
           <ToggleButton Content="Intel Reports"
                         IsChecked="{Binding IsIntelOverlayOpen, Mode=TwoWay}"
                         Background="#2D2416"

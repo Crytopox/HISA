@@ -263,3 +263,15 @@ public sealed class IntelOverlayCard
     public required string HostileBadgeBorderHex { get; init; }
     public required string AccentHex { get; init; }
 }
+
+public sealed class ZkillmailOverlayCard
+{
+    public required DateTime TimestampUtc { get; init; }
+    public required string AgeSummary { get; set; }
+    public required string SystemName { get; init; }
+    public required string RegionName { get; init; }
+    public required string ConstellationName { get; init; }
+    public required string ShipSummary { get; init; }
+    public required int HostileCount { get; init; }
+    public required string MessageText { get; init; }
+}
