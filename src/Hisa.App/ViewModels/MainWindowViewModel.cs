@@ -486,7 +486,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _intelOverlayAgeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _intelOverlayAgeTimer.Tick += (_, _) => RefreshIntelOverlayCardAges();
         _intelOverlayAgeTimer.Start();
-        _activityCardsRebuildDebounceTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(120) };
+        _activityCardsRebuildDebounceTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
         _activityCardsRebuildDebounceTimer.Tick += (_, _) =>
         {
             _activityCardsRebuildDebounceTimer.Stop();
@@ -2238,6 +2238,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             return;
         }
 
+        var isZkillReport = string.Equals(report.ChannelName, "zKillboard", StringComparison.OrdinalIgnoreCase)
+                            || report.SourceFilePath.StartsWith("api://zkillboard", StringComparison.OrdinalIgnoreCase);
+
         lock (_intelReportHistory)
         {
             _intelReportHistory.RemoveAll(x => x.TimestampUtc < listMaxAgeUtc);
@@ -2248,7 +2251,50 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             }
         }
 
+        if (isZkillReport)
+        {
+            Dispatcher.UIThread.Post(() => AppendZkillmailCardForView(report));
+            return;
+        }
+
         Dispatcher.UIThread.Post(ScheduleActivityCardsRebuild);
+    }
+
+    private void AppendZkillmailCardForView(IntelChatReport report)
+    {
+        var graphNodeByName = BuildGraphNodeByNameLookup(CurrentGraph);
+        var visibleNodeIds = CurrentGraph?.Nodes.Select(n => n.Id).ToHashSet() ?? new HashSet<long>();
+        var card = BuildZkillmailOverlayCard(
+            report,
+            graphNodeByName,
+            visibleNodeIds,
+            limitToVisibleRegion: LimitZkillmailsToCurrentRegion,
+            applyCachedIdentityData: true);
+        if (card is null)
+        {
+            return;
+        }
+
+        var existing = _zkillmailCardsForView.ToList();
+        if (report.Killmail?.KillmailId is > 0 and var killmailId &&
+            existing.Any(x => x.KillmailUrl.EndsWith($"/{killmailId}/", StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        existing.Insert(0, card);
+        if (existing.Count > MaxIntelOverlayCards)
+        {
+            existing.RemoveRange(MaxIntelOverlayCards, existing.Count - MaxIntelOverlayCards);
+        }
+
+        _zkillmailCardsForView = existing;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ZkillmailCardsForView)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ZkillmailOverlayTitle)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasZkillmailOverlayData)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasNoZkillmailOverlayData)));
+
+        _ = EnsureZkillIdentityAssetsAsync();
     }
 
     private void OnIntelSnapshotUpdated(object? sender, IReadOnlyDictionary<long, IntelSystemSnapshot> snapshot)
@@ -2265,7 +2311,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         Dispatcher.UIThread.Post(() =>
         {
             RebuildIntelPresenceForView();
-            ScheduleActivityCardsRebuild();
         });
     }
 
@@ -2427,7 +2472,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                     .Select(x =>
                     {
                         var victim = BuildZkillVictimCard(x.Report.Killmail, x.Report.ReportedShipNames, x.Report.ReportedShipTypeIds, x.Report.ShipClasses);
-                        var attackers = BuildZkillAttackerCards(x.Report.Killmail).Take(3).ToList();
+                        var allAttackers = BuildZkillAttackerCards(x.Report.Killmail);
+                        var attackers = allAttackers.Take(3).ToList();
                         return new IntelMapHoverKillmail
                         {
                             TimestampUtc = x.Report.TimestampUtc,
@@ -2450,7 +2496,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                                 CorporationTicker = a.CorporationTicker,
                                 AllianceTicker = a.AllianceTicker
                             }).ToList(),
-                            HiddenAttackerCount = Math.Max(0, BuildZkillAttackerCards(x.Report.Killmail).Count - 3),
+                            HiddenAttackerCount = Math.Max(0, allAttackers.Count - 3),
                             IskLostLabel = $"ISK Lost: {FormatCompactIsk(x.Report.Killmail?.TotalValue ?? 0m)}"
                         };
                     })
@@ -3797,166 +3843,115 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             .GroupBy(s => s.SolarSystemName, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.OrderByDescending(x => x.LastUpdatedUtc).First(), StringComparer.OrdinalIgnoreCase);
 
-        _intelCardsForView = intelHistory
-            .Where(r => !(string.Equals(r.ChannelName, "zKillboard", StringComparison.OrdinalIgnoreCase)
-                          || r.SourceFilePath.StartsWith("api://zkillboard", StringComparison.OrdinalIgnoreCase)))
-            .Select(r =>
-            {
-                var systemName = r.Systems.FirstOrDefault() ?? "Unknown";
-                long solarSystemId = 0;
-                string constellationName = "Unknown Constellation";
-                string regionName = "Unknown Region";
-                int? constellationId = null;
-                int? regionId = null;
+        var (intelCards, zkillCards) = await Task.Run(() =>
+        {
+            var nextIntelCards = intelHistory
+                .Where(r => !(string.Equals(r.ChannelName, "zKillboard", StringComparison.OrdinalIgnoreCase)
+                              || r.SourceFilePath.StartsWith("api://zkillboard", StringComparison.OrdinalIgnoreCase)))
+                .Select(r =>
+                {
+                    var systemName = r.Systems.FirstOrDefault() ?? "Unknown";
+                    long solarSystemId = 0;
+                    string constellationName = "Unknown Constellation";
+                    string regionName = "Unknown Region";
+                    int? constellationId = null;
+                    int? regionId = null;
 
-                if (graphNodeByName.TryGetValue(systemName, out var node))
-                {
-                    solarSystemId = node.Id;
-                    constellationName = string.IsNullOrWhiteSpace(node.ConstellationName) ? constellationName : node.ConstellationName;
-                    regionName = string.IsNullOrWhiteSpace(node.RegionName) ? regionName : node.RegionName;
-                    constellationId = node.ConstellationId;
-                    regionId = node.RegionId;
-                }
-                else if (snapshotByName.TryGetValue(systemName, out var snapshotRef))
-                {
-                    solarSystemId = snapshotRef.SolarSystemId;
-                    if (metadataById.TryGetValue(snapshotRef.SolarSystemId, out var metaFromSnapshot))
+                    if (graphNodeByName.TryGetValue(systemName, out var node))
                     {
-                        constellationName = metaFromSnapshot.ConstellationName ?? constellationName;
-                        regionName = metaFromSnapshot.RegionName ?? regionName;
-                        constellationId = metaFromSnapshot.ConstellationId;
-                        regionId = metaFromSnapshot.RegionId;
+                        solarSystemId = node.Id;
+                        constellationName = string.IsNullOrWhiteSpace(node.ConstellationName) ? constellationName : node.ConstellationName;
+                        regionName = string.IsNullOrWhiteSpace(node.RegionName) ? regionName : node.RegionName;
+                        constellationId = node.ConstellationId;
+                        regionId = node.RegionId;
                     }
-                }
-
-                if (LimitIntelReportsToCurrentRegion && solarSystemId > 0 && !visibleNodeIds.Contains(solarSystemId))
-                {
-                    return null;
-                }
-
-                var age = DateTime.UtcNow - r.TimestampUtc;
-                if (age < TimeSpan.Zero)
-                {
-                    age = TimeSpan.Zero;
-                }
-
-                var shipSummary = r.ReportedShipNames.Count > 0
-                    ? string.Join(", ", r.ReportedShipNames.Select(CapitalizeFirstLetter).Distinct(StringComparer.OrdinalIgnoreCase))
-                    : r.ShipClasses.Count > 0
-                        ? string.Join(", ", r.ShipClasses.Select(x => x.ToString()))
-                    : "Unknown";
-                var maxShipTier = GetMaxShipThreatTier(r.ShipClasses);
-                var shipBadgeColors = GetThreatBadgeColors(maxShipTier / 8.0);
-                var hostileScore = Math.Max(0, r.ReportedHostileCount > 0 ? r.ReportedHostileCount : r.ReportedHostileNames.Count);
-                var hostileBadgeColors = GetThreatBadgeColors(Math.Clamp(hostileScore / 12.0, 0.0, 1.0));
-                var hostileCards = BuildIntelHostileCards(r.ReportedHostileNames, r.ReportedShipNames, r.ReportedShipTypeIds, r.ShipClasses);
-                var shipsSummary = BuildIntelShipsSummary(r.ReportedShipNames, r.ReportedShipTypeIds, r.ShipClasses);
-
-                return new IntelOverlayCard
-                {
-                    SortTimestampUtc = r.TimestampUtc,
-                    LastUpdatedUtc = r.TimestampUtc,
-                    SolarSystemId = solarSystemId,
-                    SystemName = systemName,
-                    ConstellationName = constellationName,
-                    RegionName = regionName,
-                    ConstellationId = constellationId,
-                    RegionId = regionId,
-                    ChannelName = r.ChannelName,
-                    ReporterName = r.ReporterName,
-                    AgeSummary = FormatOverlayAgeClock(age),
-                    MessageText = r.MessageText,
-                    Hostiles = hostileCards,
-                    ShipsSummary = shipsSummary,
-                    ShipClassSummary = shipSummary,
-                    HostileCount = hostileScore,
-                    ShipBadgeBackgroundHex = shipBadgeColors.BackgroundHex,
-                    ShipBadgeBorderHex = shipBadgeColors.BorderHex,
-                    HostileBadgeBackgroundHex = hostileBadgeColors.BackgroundHex,
-                    HostileBadgeBorderHex = hostileBadgeColors.BorderHex,
-                    AccentHex = r.IsClear ? "#6FE38E" : "#FFB347"
-                };
-            })
-            .Where(c => c is not null)
-            .Select(c => c!)
-            .OrderByDescending(c => c.SortTimestampUtc)
-            .ThenBy(c => c.SystemName, StringComparer.OrdinalIgnoreCase)
-            .Take(MaxIntelOverlayCards)
-            .ToList();
-
-        _zkillmailCardsForView = intelHistory
-            .Where(r => string.Equals(r.ChannelName, "zKillboard", StringComparison.OrdinalIgnoreCase)
-                        || r.SourceFilePath.StartsWith("api://zkillboard", StringComparison.OrdinalIgnoreCase))
-            .Select(r =>
-            {
-                var systemName = r.Systems.FirstOrDefault() ?? "Unknown";
-                long solarSystemId = 0;
-                var regionName = "Unknown Region";
-                var constellationName = "Unknown Constellation";
-                if (graphNodeByName.TryGetValue(systemName, out var node))
-                {
-                    solarSystemId = node.Id;
-                    regionName = string.IsNullOrWhiteSpace(node.RegionName) ? regionName : node.RegionName;
-                    constellationName = string.IsNullOrWhiteSpace(node.ConstellationName) ? constellationName : node.ConstellationName;
-                }
-                else if (snapshotByName.TryGetValue(systemName, out var snapshotRef))
-                {
-                    solarSystemId = snapshotRef.SolarSystemId;
-                    if (metadataById.TryGetValue(snapshotRef.SolarSystemId, out var metaFromSnapshot))
+                    else if (snapshotByName.TryGetValue(systemName, out var snapshotRef))
                     {
-                        constellationName = metaFromSnapshot.ConstellationName ?? constellationName;
-                        regionName = metaFromSnapshot.RegionName ?? regionName;
+                        solarSystemId = snapshotRef.SolarSystemId;
+                        if (metadataById.TryGetValue(snapshotRef.SolarSystemId, out var metaFromSnapshot))
+                        {
+                            constellationName = metaFromSnapshot.ConstellationName ?? constellationName;
+                            regionName = metaFromSnapshot.RegionName ?? regionName;
+                            constellationId = metaFromSnapshot.ConstellationId;
+                            regionId = metaFromSnapshot.RegionId;
+                        }
                     }
-                }
 
-                if (LimitZkillmailsToCurrentRegion && solarSystemId > 0 && !visibleNodeIds.Contains(solarSystemId))
-                {
-                    return null;
-                }
+                    if (LimitIntelReportsToCurrentRegion && solarSystemId > 0 && !visibleNodeIds.Contains(solarSystemId))
+                    {
+                        return null;
+                    }
 
-                var age = DateTime.UtcNow - r.TimestampUtc;
-                if (age < TimeSpan.Zero)
-                {
-                    age = TimeSpan.Zero;
-                }
+                    var age = DateTime.UtcNow - r.TimestampUtc;
+                    if (age < TimeSpan.Zero)
+                    {
+                        age = TimeSpan.Zero;
+                    }
 
-                var shipSummary = r.ReportedShipNames.Count > 0
-                    ? string.Join(", ", r.ReportedShipNames.Select(CapitalizeFirstLetter).Distinct(StringComparer.OrdinalIgnoreCase))
-                    : "Unknown";
-                var killmail = r.Killmail;
-                var victim = BuildZkillVictimCard(killmail, r.ReportedShipNames, r.ReportedShipTypeIds, r.ShipClasses);
-                var attackers = BuildZkillAttackerCards(killmail);
-                var visibleAttackers = attackers.Take(4).ToList();
-                var hiddenAttackers = Math.Max(0, attackers.Count - visibleAttackers.Count);
-                var shipsSummary = BuildZkillShipsSummary(killmail, r.ReportedShipNames, r.ReportedShipTypeIds, r.ShipClasses);
-                var (iskBg, iskBorder) = GetIskLossBadgeColors(killmail?.TotalValue ?? 0m);
+                    var shipSummary = r.ReportedShipNames.Count > 0
+                        ? string.Join(", ", r.ReportedShipNames.Select(CapitalizeFirstLetter).Distinct(StringComparer.OrdinalIgnoreCase))
+                        : r.ShipClasses.Count > 0
+                            ? string.Join(", ", r.ShipClasses.Select(x => x.ToString()))
+                        : "Unknown";
+                    var maxShipTier = GetMaxShipThreatTier(r.ShipClasses);
+                    var shipBadgeColors = GetThreatBadgeColors(maxShipTier / 8.0);
+                    var hostileScore = Math.Max(0, r.ReportedHostileCount > 0 ? r.ReportedHostileCount : r.ReportedHostileNames.Count);
+                    var hostileBadgeColors = GetThreatBadgeColors(Math.Clamp(hostileScore / 12.0, 0.0, 1.0));
+                    var hostileCards = BuildIntelHostileCards(r.ReportedHostileNames, r.ReportedShipNames, r.ReportedShipTypeIds, r.ShipClasses, applyCachedIdentityData: false);
+                    var shipsSummary = BuildIntelShipsSummary(r.ReportedShipNames, r.ReportedShipTypeIds, r.ShipClasses);
 
-                return new ZkillmailOverlayCard
-                {
-                    TimestampUtc = r.TimestampUtc,
-                    SolarSystemId = solarSystemId,
-                    AgeSummary = FormatOverlayAgeClock(age),
-                    KillmailUrl = killmail?.Url ?? string.Empty,
-                    SystemName = systemName,
-                    RegionName = regionName,
-                    ConstellationName = constellationName,
-                    ShipSummary = shipSummary,
-                    HostileCount = Math.Max(1, r.ReportedHostileCount),
-                    MessageText = r.MessageText,
-                    IskLostLabel = $"ISK Lost: {FormatCompactIsk(killmail?.TotalValue ?? 0m)}",
-                    IskLostBackgroundHex = iskBg,
-                    IskLostBorderHex = iskBorder,
-                    Victim = victim,
-                    VisibleAttackers = visibleAttackers,
-                    HiddenAttackerCount = hiddenAttackers,
-                    ShipsSummary = shipsSummary
-                };
-            })
-            .Where(x => x is not null)
-            .Select(x => x!)
-            .OrderByDescending(x => x.TimestampUtc)
-            .Take(MaxIntelOverlayCards)
-            .ToList();
+                    return new IntelOverlayCard
+                    {
+                        SortTimestampUtc = r.TimestampUtc,
+                        LastUpdatedUtc = r.TimestampUtc,
+                        SolarSystemId = solarSystemId,
+                        SystemName = systemName,
+                        ConstellationName = constellationName,
+                        RegionName = regionName,
+                        ConstellationId = constellationId,
+                        RegionId = regionId,
+                        ChannelName = r.ChannelName,
+                        ReporterName = r.ReporterName,
+                        AgeSummary = FormatOverlayAgeClock(age),
+                        MessageText = r.MessageText,
+                        Hostiles = hostileCards,
+                        ShipsSummary = shipsSummary,
+                        ShipClassSummary = shipSummary,
+                        HostileCount = hostileScore,
+                        ShipBadgeBackgroundHex = shipBadgeColors.BackgroundHex,
+                        ShipBadgeBorderHex = shipBadgeColors.BorderHex,
+                        HostileBadgeBackgroundHex = hostileBadgeColors.BackgroundHex,
+                        HostileBadgeBorderHex = hostileBadgeColors.BorderHex,
+                        AccentHex = r.IsClear ? "#6FE38E" : "#FFB347"
+                    };
+                })
+                .Where(c => c is not null)
+                .Select(c => c!)
+                .OrderByDescending(c => c.SortTimestampUtc)
+                .ThenBy(c => c.SystemName, StringComparer.OrdinalIgnoreCase)
+                .Take(MaxIntelOverlayCards)
+                .ToList();
+
+            var nextZkillCards = intelHistory
+                .Where(r => string.Equals(r.ChannelName, "zKillboard", StringComparison.OrdinalIgnoreCase)
+                            || r.SourceFilePath.StartsWith("api://zkillboard", StringComparison.OrdinalIgnoreCase))
+                .Select(r => BuildZkillmailOverlayCard(
+                    r,
+                    graphNodeByName,
+                    visibleNodeIds,
+                    limitToVisibleRegion: LimitZkillmailsToCurrentRegion,
+                    applyCachedIdentityData: false))
+                .Where(x => x is not null)
+                .Select(x => x!)
+                .OrderByDescending(x => x.TimestampUtc)
+                .Take(MaxIntelOverlayCards)
+                .ToList();
+
+            return (nextIntelCards, nextZkillCards);
+        });
+
+        _intelCardsForView = intelCards;
+        _zkillmailCardsForView = zkillCards;
 
         if (LimitZkillmailsToCurrentRegion && SelectedViewMode == MapViewMode.Region)
         {
@@ -4203,7 +4198,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         IReadOnlyList<string> hostilePilotNames,
         IReadOnlyList<string> shipNames,
         IReadOnlyList<int> shipTypeIds,
-        IReadOnlyList<IntelShipClass> shipClasses)
+        IReadOnlyList<IntelShipClass> shipClasses,
+        bool applyCachedIdentityData = true)
     {
         var names = hostilePilotNames
             .Where(x => !string.IsNullOrWhiteSpace(x))
@@ -4232,14 +4228,20 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 ? shipNamesExpanded[Math.Min(i, shipNamesExpanded.Count - 1)]
                 : ShipClassToDisplayName(shipClass);
             var shipTypeId = shipTypeIds.Count > 0 ? shipTypeIds[Math.Min(i, shipTypeIds.Count - 1)] : (int?)null;
-            result.Add(new IntelOverlayHostileCard
+            var card = new IntelOverlayHostileCard
             {
                 Name = names[i],
                 ShipTypeId = shipTypeId,
                 ShipBitmap = shipTypeId is { } id && IntelShipBitmapCache.TryGetValue(id, out var cachedShip) ? cachedShip : null,
                 ShipDisplayName = NormalizeShipDisplayName(shipName),
                 ShipIconKey = ShipClassToOverlayIconKey(shipClass)
-            });
+            };
+            if (applyCachedIdentityData)
+            {
+                ApplyCachedIntelIdentityData(card);
+            }
+
+            result.Add(card);
         }
 
         return result;
@@ -4249,7 +4251,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         IntelKillmailDetails? killmail,
         IReadOnlyList<string> shipNames,
         IReadOnlyList<int> shipTypeIds,
-        IReadOnlyList<IntelShipClass> shipClasses)
+        IReadOnlyList<IntelShipClass> shipClasses,
+        bool applyCachedIdentityData = true)
     {
         var shipName = shipNames.FirstOrDefault() ?? "Unknown";
         var shipTypeId = killmail?.VictimShipTypeId ?? shipTypeIds.FirstOrDefault();
@@ -4270,11 +4273,15 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             ShipDisplayName = NormalizeShipDisplayName(shipName),
             ShipIconKey = ShipClassToOverlayIconKey(shipClass)
         };
-        ApplyCachedIntelIdentityData(card);
+        if (applyCachedIdentityData)
+        {
+            ApplyCachedIntelIdentityData(card);
+        }
+
         return card;
     }
 
-    private List<IntelOverlayHostileCard> BuildZkillAttackerCards(IntelKillmailDetails? killmail)
+    private List<IntelOverlayHostileCard> BuildZkillAttackerCards(IntelKillmailDetails? killmail, bool applyCachedIdentityData = true)
     {
         if (killmail?.Attackers is null || killmail.Attackers.Count == 0)
         {
@@ -4299,11 +4306,90 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 ShipDisplayName = shipName,
                 ShipIconKey = "crosshair"
             };
-            ApplyCachedIntelIdentityData(card);
+            if (applyCachedIdentityData)
+            {
+                ApplyCachedIntelIdentityData(card);
+            }
+
             result.Add(card);
         }
 
         return result;
+    }
+
+    private ZkillmailOverlayCard? BuildZkillmailOverlayCard(
+        IntelChatReport report,
+        IReadOnlyDictionary<string, MapNode> graphNodeByName,
+        IReadOnlySet<long> visibleNodeIds,
+        bool limitToVisibleRegion,
+        bool applyCachedIdentityData)
+    {
+        var systemName = report.Systems.FirstOrDefault() ?? "Unknown";
+        long solarSystemId = 0;
+        var regionName = "Unknown Region";
+        var constellationName = "Unknown Constellation";
+        if (graphNodeByName.TryGetValue(systemName, out var node))
+        {
+            solarSystemId = node.Id;
+            regionName = string.IsNullOrWhiteSpace(node.RegionName) ? regionName : node.RegionName;
+            constellationName = string.IsNullOrWhiteSpace(node.ConstellationName) ? constellationName : node.ConstellationName;
+        }
+
+        if (limitToVisibleRegion && solarSystemId > 0 && !visibleNodeIds.Contains(solarSystemId))
+        {
+            return null;
+        }
+
+        var age = DateTime.UtcNow - report.TimestampUtc;
+        if (age < TimeSpan.Zero)
+        {
+            age = TimeSpan.Zero;
+        }
+
+        var shipSummary = report.ReportedShipNames.Count > 0
+            ? string.Join(", ", report.ReportedShipNames.Select(CapitalizeFirstLetter).Distinct(StringComparer.OrdinalIgnoreCase))
+            : "Unknown";
+        var killmail = report.Killmail;
+        var victim = BuildZkillVictimCard(killmail, report.ReportedShipNames, report.ReportedShipTypeIds, report.ShipClasses, applyCachedIdentityData);
+        var attackers = BuildZkillAttackerCards(killmail, applyCachedIdentityData);
+        var visibleAttackers = attackers.Take(4).ToList();
+        var hiddenAttackers = Math.Max(0, attackers.Count - visibleAttackers.Count);
+        var shipsSummary = BuildZkillShipsSummary(killmail, report.ReportedShipNames, report.ReportedShipTypeIds, report.ShipClasses);
+        var (iskBg, iskBorder) = GetIskLossBadgeColors(killmail?.TotalValue ?? 0m);
+
+        return new ZkillmailOverlayCard
+        {
+            TimestampUtc = report.TimestampUtc,
+            SolarSystemId = solarSystemId,
+            AgeSummary = FormatOverlayAgeClock(age),
+            KillmailUrl = killmail?.Url ?? string.Empty,
+            SystemName = systemName,
+            RegionName = regionName,
+            ConstellationName = constellationName,
+            ShipSummary = shipSummary,
+            HostileCount = Math.Max(1, report.ReportedHostileCount),
+            MessageText = report.MessageText,
+            IskLostLabel = $"ISK Lost: {FormatCompactIsk(killmail?.TotalValue ?? 0m)}",
+            IskLostBackgroundHex = iskBg,
+            IskLostBorderHex = iskBorder,
+            Victim = victim,
+            VisibleAttackers = visibleAttackers,
+            HiddenAttackerCount = hiddenAttackers,
+            ShipsSummary = shipsSummary
+        };
+    }
+
+    private static Dictionary<string, MapNode> BuildGraphNodeByNameLookup(MapGraph? graph)
+    {
+        if (graph is null || graph.Nodes.Count == 0)
+        {
+            return new Dictionary<string, MapNode>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        return graph.Nodes
+            .Where(n => !string.IsNullOrWhiteSpace(n.Name))
+            .GroupBy(n => n.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key!, g => g.First(), StringComparer.OrdinalIgnoreCase);
     }
 
     private List<IntelOverlayShipSummaryCard> BuildZkillShipsSummary(
@@ -4536,12 +4622,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     private void RefreshIntelOverlayCardAges()
     {
+        if (!_isIntelOverlayOpen && !_isZkillmailsOverlayOpen)
+        {
+            return;
+        }
+
         if (_intelCardsForView.Count == 0 && _zkillmailCardsForView.Count == 0)
         {
             return;
         }
 
         var now = DateTime.UtcNow;
+        var intelChanged = false;
         foreach (var card in _intelCardsForView)
         {
             var age = now - card.LastUpdatedUtc;
@@ -4550,9 +4642,15 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 age = TimeSpan.Zero;
             }
 
-            card.AgeSummary = FormatOverlayAgeClock(age);
+            var nextAge = FormatOverlayAgeClock(age);
+            if (!string.Equals(card.AgeSummary, nextAge, StringComparison.Ordinal))
+            {
+                card.AgeSummary = nextAge;
+                intelChanged = true;
+            }
         }
 
+        var zkillChanged = false;
         foreach (var card in _zkillmailCardsForView)
         {
             var age = now - card.TimestampUtc;
@@ -4561,11 +4659,23 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 age = TimeSpan.Zero;
             }
 
-            card.AgeSummary = FormatOverlayAgeClock(age);
+            var nextAge = FormatOverlayAgeClock(age);
+            if (!string.Equals(card.AgeSummary, nextAge, StringComparison.Ordinal))
+            {
+                card.AgeSummary = nextAge;
+                zkillChanged = true;
+            }
         }
 
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelCardsForView)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ZkillmailCardsForView)));
+        if (intelChanged)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelCardsForView)));
+        }
+
+        if (zkillChanged)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ZkillmailCardsForView)));
+        }
     }
 
     private static string FormatOverlayAgeClock(TimeSpan age)
