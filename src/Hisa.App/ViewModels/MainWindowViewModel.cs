@@ -349,6 +349,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         "IntelImageCache");
     private IReadOnlyDictionary<long, IReadOnlyList<string>> _intelIconKeysByNodeId = new Dictionary<long, IReadOnlyList<string>>();
     private IReadOnlyDictionary<long, IReadOnlyList<IntelMapHoverReport>> _intelRecentReportsByNodeId = new Dictionary<long, IReadOnlyList<IntelMapHoverReport>>();
+    private IReadOnlyDictionary<long, IReadOnlyList<IntelMapHoverKillmail>> _zkillRecentReportsByNodeId = new Dictionary<long, IReadOnlyList<IntelMapHoverKillmail>>();
     private IReadOnlyDictionary<long, int> _intelHostileScoresByNodeId = new Dictionary<long, int>();
     private bool _limitIntelReportsToCurrentRegion;
     private bool _limitZkillmailsToCurrentRegion;
@@ -504,6 +505,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public IReadOnlyDictionary<long, DateTime> CharacterPresenceLastUpdatedUtcByNodeIdForView => _characterPresenceLastUpdatedUtcByNodeId;
     public IReadOnlyDictionary<long, IReadOnlyList<string>> IntelIconKeysByNodeIdForView => _intelIconKeysByNodeId;
     public IReadOnlyDictionary<long, IReadOnlyList<IntelMapHoverReport>> IntelRecentReportsByNodeIdForView => _intelRecentReportsByNodeId;
+    public IReadOnlyDictionary<long, IReadOnlyList<IntelMapHoverKillmail>> ZkillRecentReportsByNodeIdForView => _zkillRecentReportsByNodeId;
     public IReadOnlyDictionary<long, int> IntelHostileScoresByNodeIdForView => _intelHostileScoresByNodeId;
     public ObservableCollection<CharacterTrackingCardViewModel> CharacterTrackingCards => _characterTrackingCards;
     public ObservableCollection<CharacterTrackingCardViewModel> EnabledCharacterTrackingCards => _enabledCharacterTrackingCards;
@@ -2172,17 +2174,24 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         {
             _intelIconKeysByNodeId = new Dictionary<long, IReadOnlyList<string>>();
             _intelRecentReportsByNodeId = new Dictionary<long, IReadOnlyList<IntelMapHoverReport>>();
+            _zkillRecentReportsByNodeId = new Dictionary<long, IReadOnlyList<IntelMapHoverKillmail>>();
             _intelHostileScoresByNodeId = new Dictionary<long, int>();
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelIconKeysByNodeIdForView)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelRecentReportsByNodeIdForView)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ZkillRecentReportsByNodeIdForView)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelHostileScoresByNodeIdForView)));
             return;
         }
 
         Dictionary<long, IntelSystemSnapshot> snapshot;
+        List<IntelChatReport> history;
         lock (_intelSnapshotsBySystemId)
         {
             snapshot = _intelSnapshotsBySystemId.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+        }
+        lock (_intelReportHistory)
+        {
+            history = _intelReportHistory.ToList();
         }
 
         var validNodeIds = graph.Nodes.Select(n => n.Id).ToHashSet();
@@ -2225,55 +2234,98 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             }
 
             hostileScoresByNode[system.SolarSystemId] = Math.Max(0, system.HostileScore);
-            recentReportsByNode[system.SolarSystemId] = system.RecentReports
-                .OrderByDescending(x => x.TimestampUtc)
-                .Take(2)
-                .Select(x => new IntelMapHoverReport
-                {
-                    TimestampUtc = x.TimestampUtc,
-                    ReporterName = x.ReporterName,
-                    MessageText = x.MessageText,
-                    Ships = BuildIntelHoverShips(system.ShipNames, system.ShipTypeIds, system.ShipClasses),
-                    Hostiles = system.HostilePilotNames
-                        .Where(name => !string.IsNullOrWhiteSpace(name))
-                        .Distinct(StringComparer.OrdinalIgnoreCase)
-                        .Take(3)
-                        .Select((name, index) => new IntelMapHoverHostile
-                        {
-                            Name = name,
-                            CharacterId = _characterIdByName.TryGetValue(name, out var characterId) ? characterId : null,
-                            CorporationId = _characterIdByName.TryGetValue(name, out characterId) &&
-                                            IntelAffiliationsByCharacterId.TryGetValue(characterId, out var affiliation)
-                                ? affiliation.CorpId
-                                : null,
-                            AllianceId = _characterIdByName.TryGetValue(name, out characterId) &&
-                                         IntelAffiliationsByCharacterId.TryGetValue(characterId, out affiliation)
-                                ? affiliation.AllianceId
-                                : null,
-                            CorporationTicker = _characterIdByName.TryGetValue(name, out characterId) &&
-                                                IntelAffiliationsByCharacterId.TryGetValue(characterId, out affiliation) &&
-                                                IntelCorporationTickersById.TryGetValue(affiliation.CorpId, out var corporationTicker)
-                                ? corporationTicker
-                                : string.Empty,
-                            AllianceTicker = _characterIdByName.TryGetValue(name, out characterId) &&
-                                             IntelAffiliationsByCharacterId.TryGetValue(characterId, out affiliation) &&
-                                             affiliation.AllianceId is { } allianceId &&
-                                             IntelAllianceTickersById.TryGetValue(allianceId, out var allianceTicker)
-                                ? allianceTicker
-                                : string.Empty
-                        })
-                        .ToList(),
-                    HiddenHostileCount = Math.Max(0, system.HostilePilotNames.Distinct(StringComparer.OrdinalIgnoreCase).Count() - 3),
-                    HostileCount = Math.Max(0, system.HostileScore)
-                })
-                .ToList();
         }
 
+        var nodeByName = graph.Nodes
+            .Where(n => !string.IsNullOrWhiteSpace(n.Name))
+            .GroupBy(n => n.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key!, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+        var intelByNode = history
+            .Where(r => !(string.Equals(r.ChannelName, "zKillboard", StringComparison.OrdinalIgnoreCase)
+                          || r.SourceFilePath.StartsWith("api://zkillboard", StringComparison.OrdinalIgnoreCase)))
+            .Select(r => new { Report = r, System = r.Systems.FirstOrDefault() })
+            .Where(x => !string.IsNullOrWhiteSpace(x.System) && nodeByName.ContainsKey(x.System!))
+            .GroupBy(x => nodeByName[x.System!].Id)
+            .ToDictionary(
+                g => g.Key,
+                g => (IReadOnlyList<IntelMapHoverReport>)g
+                    .OrderByDescending(x => x.Report.TimestampUtc)
+                    .Take(1)
+                    .Select(x => new IntelMapHoverReport
+                    {
+                        TimestampUtc = x.Report.TimestampUtc,
+                        ReporterName = x.Report.ReporterName,
+                        MessageText = x.Report.MessageText,
+                        Ships = BuildIntelHoverShips(x.Report.ReportedShipNames, x.Report.ReportedShipTypeIds, x.Report.ShipClasses),
+                        Hostiles = BuildIntelHostileCards(x.Report.ReportedHostileNames, x.Report.ReportedShipNames, x.Report.ReportedShipTypeIds, x.Report.ShipClasses)
+                            .Take(3)
+                            .Select(h => new IntelMapHoverHostile
+                            {
+                                Name = h.Name,
+                                CharacterId = h.CharacterId,
+                                ShipTypeId = h.ShipTypeId,
+                                CorporationId = h.CorporationId,
+                                AllianceId = h.AllianceId,
+                                CorporationTicker = h.CorporationTicker,
+                                AllianceTicker = h.AllianceTicker
+                            })
+                            .ToList(),
+                        HiddenHostileCount = Math.Max(0, x.Report.ReportedHostileNames.Distinct(StringComparer.OrdinalIgnoreCase).Count() - 3),
+                        HostileCount = Math.Max(1, x.Report.ReportedHostileCount)
+                    })
+                    .ToList());
+
+        var zkillByNode = history
+            .Where(r => string.Equals(r.ChannelName, "zKillboard", StringComparison.OrdinalIgnoreCase)
+                        || r.SourceFilePath.StartsWith("api://zkillboard", StringComparison.OrdinalIgnoreCase))
+            .Select(r => new { Report = r, System = r.Systems.FirstOrDefault() })
+            .Where(x => !string.IsNullOrWhiteSpace(x.System) && nodeByName.ContainsKey(x.System!))
+            .GroupBy(x => nodeByName[x.System!].Id)
+            .ToDictionary(
+                g => g.Key,
+                g => (IReadOnlyList<IntelMapHoverKillmail>)g
+                    .OrderByDescending(x => x.Report.TimestampUtc)
+                    .Take(1)
+                    .Select(x =>
+                    {
+                        var victim = BuildZkillVictimCard(x.Report.Killmail, x.Report.ReportedShipNames, x.Report.ReportedShipTypeIds, x.Report.ShipClasses);
+                        var attackers = BuildZkillAttackerCards(x.Report.Killmail).Take(3).ToList();
+                        return new IntelMapHoverKillmail
+                        {
+                            TimestampUtc = x.Report.TimestampUtc,
+                            MessageText = x.Report.MessageText,
+                            KillmailUrl = x.Report.Killmail?.Url ?? string.Empty,
+                            VictimName = victim.Name,
+                            VictimMembership = victim.MembershipTickerSummary,
+                            VictimCharacterId = victim.CharacterId,
+                            VictimCorporationId = victim.CorporationId,
+                            VictimAllianceId = victim.AllianceId,
+                            VictimShipDisplayName = victim.ShipDisplayName,
+                            VictimShipTypeId = victim.ShipTypeId,
+                            Attackers = attackers.Select(a => new IntelMapHoverHostile
+                            {
+                                Name = a.Name,
+                                CharacterId = a.CharacterId,
+                                ShipTypeId = a.ShipTypeId,
+                                CorporationId = a.CorporationId,
+                                AllianceId = a.AllianceId,
+                                CorporationTicker = a.CorporationTicker,
+                                AllianceTicker = a.AllianceTicker
+                            }).ToList(),
+                            HiddenAttackerCount = Math.Max(0, BuildZkillAttackerCards(x.Report.Killmail).Count - 3),
+                            IskLostLabel = $"ISK Lost: {FormatCompactIsk(x.Report.Killmail?.TotalValue ?? 0m)}"
+                        };
+                    })
+                    .ToList());
+
         _intelIconKeysByNodeId = iconsByNode;
-        _intelRecentReportsByNodeId = recentReportsByNode;
+        _intelRecentReportsByNodeId = intelByNode;
+        _zkillRecentReportsByNodeId = zkillByNode;
         _intelHostileScoresByNodeId = hostileScoresByNode;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelIconKeysByNodeIdForView)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelRecentReportsByNodeIdForView)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ZkillRecentReportsByNodeIdForView)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelHostileScoresByNodeIdForView)));
     }
 

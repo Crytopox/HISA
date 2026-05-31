@@ -173,6 +173,7 @@
                               CharacterPresenceLastUpdatedUtcByNodeId="{Binding CharacterPresenceLastUpdatedUtcByNodeIdForView}"
                               IntelIconKeysByNodeId="{Binding IntelIconKeysByNodeIdForView}"
                               IntelRecentReportsByNodeId="{Binding IntelRecentReportsByNodeIdForView}"
+                              ZkillRecentReportsByNodeId="{Binding ZkillRecentReportsByNodeIdForView}"
                               IntelHostileScoresByNodeId="{Binding IntelHostileScoresByNodeIdForView}"
                               OverlaySovUpgradeFilterKeys="{Binding SelectedOverlaySovUpgradeKeys}"
                               AlwaysShowHubWormholes="{Binding AlwaysShowHubWormholes}"

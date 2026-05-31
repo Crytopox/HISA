@@ -110,6 +110,23 @@ public sealed class IntelMapHoverReport
     public int HostileCount { get; init; }
 }
 
+public sealed class IntelMapHoverKillmail
+{
+    public required DateTime TimestampUtc { get; init; }
+    public required string MessageText { get; init; }
+    public required string KillmailUrl { get; init; }
+    public required string VictimName { get; init; }
+    public required string VictimMembership { get; init; }
+    public int? VictimCharacterId { get; init; }
+    public int? VictimCorporationId { get; init; }
+    public int? VictimAllianceId { get; init; }
+    public required string VictimShipDisplayName { get; init; }
+    public int? VictimShipTypeId { get; init; }
+    public required IReadOnlyList<IntelMapHoverHostile> Attackers { get; init; }
+    public int HiddenAttackerCount { get; init; }
+    public required string IskLostLabel { get; init; }
+}
+
 public sealed class IntelMapHoverShip
 {
     public required string ShipDisplayName { get; init; }
@@ -122,6 +139,7 @@ public sealed class IntelMapHoverHostile
 {
     public required string Name { get; init; }
     public int? CharacterId { get; init; }
+    public int? ShipTypeId { get; init; }
     public int? CorporationId { get; init; }
     public int? AllianceId { get; init; }
     public string CorporationTicker { get; init; } = string.Empty;

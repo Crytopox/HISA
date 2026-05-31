@@ -156,6 +156,7 @@ public sealed class MapControl : Control
     private static readonly Lazy<Bitmap?> StormUnknownIcon = new(() => LoadIcon("storm_unknown.png"));
     private static readonly Lazy<Bitmap?> WormholeIcon = new(() => LoadIcon("wormhole.png"));
     private static readonly Lazy<Bitmap?> IncursionIcon = new(() => LoadIcon("incursion.png"));
+    private static readonly Lazy<Bitmap?> KillmailIcon = new(() => LoadIcon("killmail.png"));
     private static readonly Lazy<Bitmap?> QuestionMarkIcon = new(() => LoadIcon("question-mark.png"));
     private static readonly Lazy<Bitmap?> JumpRangeInRangeIcon = new(() => LoadIcon("jumpRange_onRange.png"));
     private static readonly Lazy<Bitmap?> JumpRangeOutRangeIcon = new(() => LoadIcon("jumpRange_outRange.png"));
@@ -305,6 +306,8 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, IReadOnlyDictionary<long, IReadOnlyList<string>>?>(nameof(IntelIconKeysByNodeId));
     public static readonly StyledProperty<IReadOnlyDictionary<long, IReadOnlyList<IntelMapHoverReport>>?> IntelRecentReportsByNodeIdProperty =
         AvaloniaProperty.Register<MapControl, IReadOnlyDictionary<long, IReadOnlyList<IntelMapHoverReport>>?>(nameof(IntelRecentReportsByNodeId));
+    public static readonly StyledProperty<IReadOnlyDictionary<long, IReadOnlyList<IntelMapHoverKillmail>>?> ZkillRecentReportsByNodeIdProperty =
+        AvaloniaProperty.Register<MapControl, IReadOnlyDictionary<long, IReadOnlyList<IntelMapHoverKillmail>>?>(nameof(ZkillRecentReportsByNodeId));
     public static readonly StyledProperty<IReadOnlyDictionary<long, int>?> IntelHostileScoresByNodeIdProperty =
         AvaloniaProperty.Register<MapControl, IReadOnlyDictionary<long, int>?>(nameof(IntelHostileScoresByNodeId));
     public static readonly StyledProperty<bool> ShowInfoBoxCharacterPresenceProperty =
@@ -777,6 +780,12 @@ public sealed class MapControl : Control
         set => SetValue(IntelRecentReportsByNodeIdProperty, value);
     }
 
+    public IReadOnlyDictionary<long, IReadOnlyList<IntelMapHoverKillmail>>? ZkillRecentReportsByNodeId
+    {
+        get => GetValue(ZkillRecentReportsByNodeIdProperty);
+        set => SetValue(ZkillRecentReportsByNodeIdProperty, value);
+    }
+
     public IReadOnlyDictionary<long, int>? IntelHostileScoresByNodeId
     {
         get => GetValue(IntelHostileScoresByNodeIdProperty);
@@ -860,6 +869,7 @@ public sealed class MapControl : Control
             CharacterPresenceLastUpdatedUtcByNodeIdProperty,
             IntelIconKeysByNodeIdProperty,
             IntelRecentReportsByNodeIdProperty,
+            ZkillRecentReportsByNodeIdProperty,
             IntelHostileScoresByNodeIdProperty,
             ShowInfoBoxCharacterPresenceProperty,
             CharacterPresenceHoverMaxNamesProperty,
@@ -4334,11 +4344,22 @@ public sealed class MapControl : Control
             double TopWidth,
             double Width,
             double Height)>();
+        var zkillRows = new List<(
+            IntelMapHoverKillmail Report,
+            FormattedText Age,
+            FormattedText Isk,
+            FormattedText Victim,
+            FormattedText VictimMembership,
+            IReadOnlyList<(IntelMapHoverHostile Hostile, FormattedText Name, FormattedText Membership)> Attackers,
+            FormattedText? Overflow,
+            FormattedText Message,
+            double Width,
+            double Height)>();
         if (IntelRecentReportsByNodeId is not null &&
             IntelRecentReportsByNodeId.TryGetValue(node.Id, out var reportsForNode) &&
             reportsForNode.Count > 0)
         {
-            foreach (var report in reportsForNode.Take(2))
+            foreach (var report in reportsForNode.Take(1))
             {
                 var age = new FormattedText(
                     FormatRelativeAge(report.TimestampUtc),
@@ -4427,8 +4448,104 @@ public sealed class MapControl : Control
                     Math.Max(age.Height + 4, hostiles.Height + 4) + shipsHeight + identitiesHeight + (overflow is null ? 0 : overflow.Height + 5) + message.Height + 7));
             }
         }
+        if (ZkillRecentReportsByNodeId is not null &&
+            ZkillRecentReportsByNodeId.TryGetValue(node.Id, out var zkillForNode) &&
+            zkillForNode.Count > 0)
+        {
+            foreach (var report in zkillForNode.Take(1))
+            {
+                var age = new FormattedText(
+                    FormatRelativeAge(report.TimestampUtc),
+                    CultureInfo.InvariantCulture,
+                    FlowDirection.LeftToRight,
+                    new Typeface("Inter", FontStyle.Normal, FontWeight.Bold),
+                    10,
+                    new ImmutableSolidColorBrush(Color.Parse("#BFD8FF")));
+                var isk = new FormattedText(
+                    report.IskLostLabel,
+                    CultureInfo.InvariantCulture,
+                    FlowDirection.LeftToRight,
+                    new Typeface("Inter", FontStyle.Normal, FontWeight.SemiBold),
+                    10,
+                    Brushes.White);
+                var victim = new FormattedText(
+                    report.VictimName,
+                    CultureInfo.InvariantCulture,
+                    FlowDirection.LeftToRight,
+                    new Typeface("Inter", FontStyle.Normal, FontWeight.SemiBold),
+                    10,
+                    Brushes.White);
+                var victimMembership = new FormattedText(
+                    report.VictimMembership,
+                    CultureInfo.InvariantCulture,
+                    FlowDirection.LeftToRight,
+                    new Typeface("Inter"),
+                    9,
+                    new ImmutableSolidColorBrush(Color.Parse("#9DB8D8")));
+                var attackers = report.Attackers
+                    .Take(3)
+                    .Select(hostile =>
+                    {
+                        var name = new FormattedText(
+                            hostile.Name,
+                            CultureInfo.InvariantCulture,
+                            FlowDirection.LeftToRight,
+                            new Typeface("Inter", FontStyle.Normal, FontWeight.SemiBold),
+                            10,
+                            Brushes.White);
+                        var membership = new FormattedText(
+                            BuildIntelMembershipTickerSummary(hostile),
+                            CultureInfo.InvariantCulture,
+                            FlowDirection.LeftToRight,
+                            new Typeface("Inter"),
+                            9,
+                            new ImmutableSolidColorBrush(Color.Parse("#9DB8D8")));
+                        return (Hostile: hostile, Name: name, Membership: membership);
+                    })
+                    .ToList<(IntelMapHoverHostile Hostile, FormattedText Name, FormattedText Membership)>();
+                var overflow = report.HiddenAttackerCount > 0
+                    ? new FormattedText(
+                        $"+{report.HiddenAttackerCount}",
+                        CultureInfo.InvariantCulture,
+                        FlowDirection.LeftToRight,
+                        new Typeface("Inter", FontStyle.Normal, FontWeight.Bold),
+                        10,
+                        new ImmutableSolidColorBrush(Color.Parse("#BFD8FF")))
+                    : null;
+                var message = new FormattedText(
+                    TrimIntelReportText(report.MessageText, 58),
+                    CultureInfo.InvariantCulture,
+                    FlowDirection.LeftToRight,
+                    new Typeface("Inter"),
+                    10,
+                    new ImmutableSolidColorBrush(Color.Parse("#D7E1EF")));
+                var attackersWidth = attackers.Count == 0
+                    ? 0
+                    : attackers.Max(x =>
+                        intelIdentityIconSize
+                        + intelIdentityGap
+                        + intelIdentityIconSize
+                        + (x.Hostile.CorporationId is null ? 0 : intelIdentityIconSize + intelIdentityGap)
+                        + (x.Hostile.AllianceId is null ? 0 : intelIdentityIconSize + intelIdentityGap)
+                        + 6
+                        + Math.Max(x.Name.Width, x.Membership.Width));
+                var width = Math.Max(
+                    Math.Max(isk.Width + age.Width + 24, message.Width),
+                    Math.Max(victim.Width + victimMembership.Width + 18 + (intelIdentityIconSize * 3), attackersWidth));
+                var height = Math.Max(age.Height + 4, isk.Height + 4)
+                    + intelIdentityIconSize
+                    + (string.IsNullOrWhiteSpace(report.VictimMembership) ? 0 : victimMembership.Height)
+                    + (attackers.Count * (intelIdentityIconSize + intelIdentityGap))
+                    + (overflow is null ? 0 : overflow.Height + 6)
+                    + message.Height
+                    + 12;
+                zkillRows.Add((report, age, isk, victim, victimMembership, attackers, overflow, message, width, height));
+            }
+        }
         var intelMaxWidth = intelRows.Count == 0 ? 0.0 : intelRows.Max(x => x.Width) + 8;
         var intelHeight = intelRows.Count == 0 ? 0.0 : intelRows.Sum(x => x.Height + 5);
+        var zkillMaxWidth = zkillRows.Count == 0 ? 0.0 : zkillRows.Max(x => x.Width) + 8;
+        var zkillHeight = zkillRows.Count == 0 ? 0.0 : zkillRows.Sum(x => x.Height + 5);
         IReadOnlyList<int>? presentCharacterIds = null;
         IReadOnlyList<string>? presentCharacterNames = null;
         var characterPortraitSize = 28.0;
@@ -4471,12 +4588,13 @@ public sealed class MapControl : Control
         var padX = 8.0;
         var padY = 6.0;
         var headerWidth = headerText.Width + (securityText is null ? 0 : (8 + securityText.Width));
-        var bodyWidth = Math.Max(Math.Max(Math.Max(Math.Max(Math.Max(Math.Max(regionConstellationText?.Width ?? 0, detailsText?.Width ?? 0), wormholeMaxWidth), sovMaxWidth), jumpMaxWidth), characterRowWidth), intelMaxWidth);
+        var bodyWidth = Math.Max(Math.Max(Math.Max(Math.Max(Math.Max(Math.Max(Math.Max(regionConstellationText?.Width ?? 0, detailsText?.Width ?? 0), wormholeMaxWidth), sovMaxWidth), jumpMaxWidth), characterRowWidth), intelMaxWidth), zkillMaxWidth);
         var contentWidth = Math.Max(headerWidth, bodyWidth);
         var contentHeight = headerText.Height
             + (regionConstellationText is null ? 0 : regionConstellationText.Height + 2)
             + (detailsText is null ? 0 : detailsText.Height + 2)
             + intelHeight
+            + zkillHeight
             + (jumpRangeLineTexts.Count == 0 ? 0 : (jumpRangeLineTexts.Count * (jumpLineHeight + 1)))
             + (sovLineTexts.Count == 0 ? 0 : (sovLineTexts.Count * (sovLineHeight + 1)))
             + (wormholes.Count == 0 ? 0 : (wormholes.Count * (wormholeLineHeight + 1)))
@@ -4588,16 +4706,24 @@ public sealed class MapControl : Control
             }
         }
 
-        if (intelRows.Count > 0)
+        if (intelRows.Count > 0 || zkillRows.Count > 0)
         {
             var intelStartY = wormholeStartY + (presentCharacterIds is { Count: > 0 } ? characterRowHeight + 4 : 2);
             var splitterY = intelStartY - 3;
             var splitterPen = new Pen(new ImmutableSolidColorBrush(Color.Parse("#5A6B82")), 1);
             context.DrawLine(splitterPen, new Point(headerOrigin.X, splitterY), new Point(rect.Right - padX, splitterY));
             string? hoveredIntelHostileName = null;
-            foreach (var intelRow in intelRows)
+            var drawIntelFirst = intelRows.Count > 0 && (zkillRows.Count == 0 || intelRows[0].Report.TimestampUtc >= zkillRows[0].Report.TimestampUtc);
+
+            void DrawIntelSection()
             {
-                var rowRect = new Rect(headerOrigin.X, intelStartY, intelMaxWidth, intelRow.Height);
+                var sectionTitle = new FormattedText("Intel Reports", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Inter", FontStyle.Normal, FontWeight.Bold), 10, new ImmutableSolidColorBrush(Color.Parse("#9DB8D8")));
+                context.DrawText(sectionTitle, new Point(headerOrigin.X + 2, intelStartY));
+                intelStartY += sectionTitle.Height + 2;
+
+                foreach (var intelRow in intelRows)
+                {
+                    var rowRect = new Rect(headerOrigin.X, intelStartY, intelMaxWidth, intelRow.Height);
                 context.FillRectangle(new ImmutableSolidColorBrush(Color.Parse("#8A172234")), rowRect, 3);
                 context.DrawRectangle(new Pen(new ImmutableSolidColorBrush(Color.Parse("#4A2A3C58")), 1), rowRect, 3);
 
@@ -4672,6 +4798,146 @@ public sealed class MapControl : Control
                 var messageY = identityY + 1;
                 context.DrawText(intelRow.Message, new Point(headerOrigin.X + 4, messageY));
                 intelStartY += intelRow.Height + 5;
+            }
+            }
+
+            void DrawZkillSection()
+            {
+                var sectionTitle = new FormattedText("zKillmails", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Inter", FontStyle.Normal, FontWeight.Bold), 10, new ImmutableSolidColorBrush(Color.Parse("#9DB8D8")));
+                context.DrawText(sectionTitle, new Point(headerOrigin.X + 2, intelStartY));
+                intelStartY += sectionTitle.Height + 2;
+
+                foreach (var zkillRow in zkillRows)
+                {
+                    var rowRect = new Rect(headerOrigin.X, intelStartY, zkillMaxWidth, zkillRow.Height);
+                    context.FillRectangle(new ImmutableSolidColorBrush(Color.Parse("#8A172234")), rowRect, 3);
+                    context.DrawRectangle(new Pen(new ImmutableSolidColorBrush(Color.Parse("#4A2A3C58")), 1), rowRect, 3);
+
+                    var chipY = intelStartY + 2;
+                    var ageRect = new Rect(rowRect.Right - zkillRow.Age.Width - 10, chipY, zkillRow.Age.Width + 6, zkillRow.Age.Height + 4);
+                    context.FillRectangle(new ImmutableSolidColorBrush(Color.Parse("#3A241C35")), ageRect, 3);
+                    context.DrawRectangle(new Pen(new ImmutableSolidColorBrush(Color.Parse("#5D83B5")), 1), ageRect, 3);
+                    context.DrawText(zkillRow.Age, new Point(ageRect.X + 3, ageRect.Y + 2));
+
+                    var iskRect = new Rect(headerOrigin.X + 4, chipY, zkillRow.Isk.Width + 6, zkillRow.Isk.Height + 4);
+                    context.FillRectangle(new ImmutableSolidColorBrush(Color.Parse("#3A2A2A")), iskRect, 3);
+                    context.DrawRectangle(new Pen(new ImmutableSolidColorBrush(Color.Parse("#8A4C4C")), 1), iskRect, 3);
+                    context.DrawText(zkillRow.Isk, new Point(iskRect.X + 3, iskRect.Y + 2));
+
+                    var lineY = chipY + Math.Max(ageRect.Height, iskRect.Height) + 3;
+                    var iconX = headerOrigin.X + 4;
+                    var iconRect = new Rect(iconX, lineY, intelIdentityIconSize, intelIdentityIconSize);
+                    if (!string.IsNullOrWhiteSpace(zkillRow.Report.KillmailUrl))
+                    {
+                        _intelOverlayLinks.Add((iconRect, zkillRow.Report.KillmailUrl));
+                    }
+                    var killmailIcon = KillmailIcon.Value;
+                    if (killmailIcon is not null)
+                    {
+                        DrawBitmap(context, killmailIcon, new Point(iconRect.X, iconRect.Y), intelIdentityIconSize);
+                    }
+
+                    iconX += intelIdentityIconSize + intelIdentityGap;
+                    DrawIntelShipIcon(
+                        context,
+                        new IntelMapHoverShip
+                        {
+                            ShipDisplayName = zkillRow.Report.VictimShipDisplayName,
+                            ShipIconKey = "unknown",
+                            ShipTypeId = zkillRow.Report.VictimShipTypeId
+                        },
+                        new Point(iconX, lineY),
+                        intelIdentityIconSize);
+                    iconX += intelIdentityIconSize + intelIdentityGap;
+                    DrawCharacterPortraitChip(context, iconX, lineY, intelIdentityIconSize, zkillRow.Report.VictimCharacterId ?? 0, zkillRow.Report.VictimName);
+                    if (zkillRow.Report.VictimCharacterId is { } victimCharacterId)
+                    {
+                        _intelOverlayLinks.Add((new Rect(iconX, lineY, intelIdentityIconSize, intelIdentityIconSize), $"https://zkillboard.com/character/{victimCharacterId}/"));
+                    }
+
+                    iconX += intelIdentityIconSize + intelIdentityGap;
+                    if (zkillRow.Report.VictimCorporationId is { } victimCorporationId)
+                    {
+                        DrawOrganizationLogoChip(context, iconX, lineY, intelIdentityIconSize, "corporations", victimCorporationId);
+                        _intelOverlayLinks.Add((new Rect(iconX, lineY, intelIdentityIconSize, intelIdentityIconSize), $"https://zkillboard.com/corporation/{victimCorporationId}/"));
+                        iconX += intelIdentityIconSize + intelIdentityGap;
+                    }
+                    if (zkillRow.Report.VictimAllianceId is { } victimAllianceId)
+                    {
+                        DrawOrganizationLogoChip(context, iconX, lineY, intelIdentityIconSize, "alliances", victimAllianceId);
+                        _intelOverlayLinks.Add((new Rect(iconX, lineY, intelIdentityIconSize, intelIdentityIconSize), $"https://zkillboard.com/alliance/{victimAllianceId}/"));
+                        iconX += intelIdentityIconSize + intelIdentityGap;
+                    }
+
+                    context.DrawText(zkillRow.Victim, new Point(iconX + 3, lineY));
+                    if (!string.IsNullOrWhiteSpace(zkillRow.Report.VictimMembership))
+                    {
+                        context.DrawText(zkillRow.VictimMembership, new Point(iconX + 3, lineY + zkillRow.Victim.Height));
+                    }
+
+                    lineY += intelIdentityIconSize + 2;
+                    foreach (var attacker in zkillRow.Attackers)
+                    {
+                        var attackerX = headerOrigin.X + 4 + intelIdentityIconSize + intelIdentityGap;
+                        DrawIntelShipIcon(
+                            context,
+                            new IntelMapHoverShip
+                            {
+                                ShipDisplayName = "Unknown",
+                                ShipIconKey = "unknown",
+                                ShipTypeId = attacker.Hostile.ShipTypeId
+                            },
+                            new Point(attackerX, lineY),
+                            intelIdentityIconSize);
+                        attackerX += intelIdentityIconSize + intelIdentityGap;
+                        DrawCharacterPortraitChip(context, attackerX, lineY, intelIdentityIconSize, attacker.Hostile.CharacterId ?? 0, attacker.Hostile.Name);
+                        if (attacker.Hostile.CharacterId is { } attackerCharacterId)
+                        {
+                            _intelOverlayLinks.Add((new Rect(attackerX, lineY, intelIdentityIconSize, intelIdentityIconSize), $"https://zkillboard.com/character/{attackerCharacterId}/"));
+                        }
+                        attackerX += intelIdentityIconSize + intelIdentityGap;
+
+                        if (attacker.Hostile.CorporationId is { } attackerCorporationId)
+                        {
+                            DrawOrganizationLogoChip(context, attackerX, lineY, intelIdentityIconSize, "corporations", attackerCorporationId);
+                            _intelOverlayLinks.Add((new Rect(attackerX, lineY, intelIdentityIconSize, intelIdentityIconSize), $"https://zkillboard.com/corporation/{attackerCorporationId}/"));
+                            attackerX += intelIdentityIconSize + intelIdentityGap;
+                        }
+                        if (attacker.Hostile.AllianceId is { } attackerAllianceId)
+                        {
+                            DrawOrganizationLogoChip(context, attackerX, lineY, intelIdentityIconSize, "alliances", attackerAllianceId);
+                            _intelOverlayLinks.Add((new Rect(attackerX, lineY, intelIdentityIconSize, intelIdentityIconSize), $"https://zkillboard.com/alliance/{attackerAllianceId}/"));
+                            attackerX += intelIdentityIconSize + intelIdentityGap;
+                        }
+
+                        context.DrawText(attacker.Name, new Point(attackerX + 3, lineY));
+                        context.DrawText(attacker.Membership, new Point(attackerX + 3, lineY + attacker.Name.Height));
+                        lineY += intelIdentityIconSize + intelIdentityGap;
+                    }
+
+                    if (zkillRow.Overflow is not null)
+                    {
+                        var overflowRect = new Rect(headerOrigin.X + 4, lineY, zkillRow.Overflow.Width + 10, zkillRow.Overflow.Height + 4);
+                        context.FillRectangle(new ImmutableSolidColorBrush(Color.Parse("#3A241C35")), overflowRect, 3);
+                        context.DrawRectangle(new Pen(new ImmutableSolidColorBrush(Color.Parse("#5D83B5")), 1), overflowRect, 3);
+                        context.DrawText(zkillRow.Overflow, new Point(overflowRect.X + 5, overflowRect.Y + 2));
+                        lineY += overflowRect.Height + 1;
+                    }
+
+                    context.DrawText(zkillRow.Message, new Point(headerOrigin.X + 4, lineY + 1));
+                    intelStartY += zkillRow.Height + 5;
+                }
+            }
+
+            if (drawIntelFirst)
+            {
+                if (intelRows.Count > 0) DrawIntelSection();
+                if (zkillRows.Count > 0) DrawZkillSection();
+            }
+            else
+            {
+                if (zkillRows.Count > 0) DrawZkillSection();
+                if (intelRows.Count > 0) DrawIntelSection();
             }
 
             if (!string.IsNullOrWhiteSpace(hoveredIntelHostileName))
