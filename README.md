@@ -1,32 +1,62 @@
-# HISA
+# HISA - Haakario Interstellar Survey Authority - A fast, Lightweight Intel Map for New Eden
 
-HISA (Haakario Interstellar Survey Authority) is a lightweight desktop intel/map tool for EVE Online, built with .NET and Avalonia.
+An open source EVE Online intel map tool I’ve been working on, maybe you will find it useful.
 
-## Current Features
+The goal was to make something **practical**: a map that helps you quickly see what is going on, track useful intel, check activity, follow wormholes/incursions/storms, plan jumps, and keep an eye on characters without the app getting in your way.
 
-- Interactive map with pan, zoom, selection, search, and region/universe modes
-- Custom map rendering optimized for low overhead
-- Right-click system context menu (copy, open in region/universe, Dotlan, zKillboard)
-- Display toggles for node labels, region/constellation, security, and map indicators
-- Storm, wormhole (Thera/Turnur), SOV upgrade, and incursion overlays
-- Missing-connection markers and map editor support
-- Jump range calculator:
-  - Multi-origin calculations
-  - Presets (6/7/8/10 LY) + custom LY
-  - Overlap visualization with segmented ring colors
-  - Source markers with persistent per-origin colors
-  - Bottom-left jump range legend
-  - Optional LY in indicator and hover overlay
+But most importantly, all of that while staying as lightweight and fast as possible, because a 2D map should not be trying to mine Bitcoin with your GPU.
 
-## Planned Features
+This is the first full release, so most of the core features and important pieces are already in place buuut, **expect a few issues here and there** (hopefully only minor ones xP)
 
-- Hostile indicator ring layer and expanded intel-driven threat overlays
-- Additional jump range UX polish for dense overlap scenarios
-- More advanced route/path and fleet-awareness overlays
-- Expanded alerts/notifications and richer event feed integrations
-- Continued performance and UI polish across map layers and large datasets
+I’m daily driving HISA myself, so anything I run into will be fixed as quickly as I can. If you find bugs, weird behavior, edge cases, or have suggestions, feel free to share them and I’ll be happy to look into them. 
 
-## Updates, Support, and Bug Reports
+This is the early full release, most of the core features and important thigns are there, but also expect issues (I hope only minor ones xP) but expect them to get fixed ASAP as I find them since I'm daily driving it, feel free to share any issues or suggestions and I will be happy to look into them. 
+
+**Available for both Windows and Linux**, but expect compatibility to depend a bit on your distro/setup. 
+
+Go to releases to download the latest version.
+
 
 Join the Official Discord for updates, feedback, and bug reports:  
 https://discord.gg/ByVCvC6UY9
+
+
+## Main Features
+### Interactive EVE Maps
+- Universe, region overview, and individual region map views
+- Custom, combined, and editable map layouts
+- Built in map editor for layout creation and adjustments
+
+### Fast and Lightweight
+- Built to stay as responsive as possible while handling large maps, overlays, and live data
+- Cached refreshes to avoid unnecessary requests
+- Clean map rendering focused on readability and speed
+- Debug telemetry to help track ESI usage and refresh behavior
+
+### Map Visuals and Overlays
+- Multiple map color modes and indicators for security, region, constellation, star class, nullsec true-sec, A0 stars, system activity, intel hostiles, character presence, jump range, wormholes, incursions, storms, ice belts, Jove Observatories, SOV upgrades, and more
+- Activity badges for jumps, ship kills, pod kills, and NPC kills
+- Hover info box with configurable fields and icons, so you can quickly check what matters without opening extra windows
+
+### Intel and Killmail Tools
+- Local intel chat log parsing
+- Hostile scoring and hostile icons shown directly on the map
+- Intel overlay cards with report details
+- zKillmail integration for recent killmail overlays
+
+### Character Tracking
+- Local character location tracking
+- Character names, counts, and markers shown on the map
+
+### Live Data Integrations
+- Live Thera / Turnur wormhole data
+- Live incursion and Metaliminal storm data
+- ESI public data for system kills and jumps
+
+### SOV, Network, and Jump Tools
+- SOV upgrades import, filtering, and map display
+- Ansiblex network links and overlays
+- Jump range overlays and light-year coverage
+- Route planning with route leg summaries
+- Jump range calculator
+- A few more in the plans....
