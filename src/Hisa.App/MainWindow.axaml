@@ -109,7 +109,6 @@
             <MenuFlyout>
               <MenuItem Header="LY Coverage Planner" Click="OnOpenLyCoveragePlannerClicked" />
               <MenuItem Header="Jump Route Optimizer" Click="OnOpenJumpRouteOptimizerClicked" />
-              <MenuItem Header="zKillmails" Click="OnOpenZkillmailsWindowClicked" />
             </MenuFlyout>
           </Button.Flyout>
         </Button>
@@ -396,9 +395,8 @@
                               <Run Text=" | " Foreground="#6F88A8" />
                               <Run Text="{Binding RegionName}" FontWeight="SemiBold" FontSize="10"/>
                             </TextBlock>
-                            <Border Grid.Column="1" Padding="6,2" CornerRadius="4">
+                            <Border Grid.Column="1" Padding="6,2" CornerRadius="4" BorderBrush="{Binding AccentHex}">
                               <Border.Background>#192838</Border.Background>
-                              <Border.BorderBrush>{Binding AccentHex}</Border.BorderBrush>
                               <Border.BorderThickness>1</Border.BorderThickness>
                               <TextBlock Text="{Binding HubSummary}" FontSize="10" FontWeight="Bold" Foreground="{Binding HubLabelColorHex}" />
                             </Border>
