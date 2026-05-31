@@ -4546,6 +4546,24 @@ public sealed class MapControl : Control
         var intelHeight = intelRows.Count == 0 ? 0.0 : intelRows.Sum(x => x.Height + 5);
         var zkillMaxWidth = zkillRows.Count == 0 ? 0.0 : zkillRows.Max(x => x.Width) + 8;
         var zkillHeight = zkillRows.Count == 0 ? 0.0 : zkillRows.Sum(x => x.Height + 5);
+        var intelSectionTitle = new FormattedText("Intel Reports", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Inter", FontStyle.Normal, FontWeight.Bold), 10, new ImmutableSolidColorBrush(Color.Parse("#9DB8D8")));
+        var zkillSectionTitle = new FormattedText("zKillmails", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Inter", FontStyle.Normal, FontWeight.Bold), 10, new ImmutableSolidColorBrush(Color.Parse("#9DB8D8")));
+        var hasOverlaySections = intelRows.Count > 0 || zkillRows.Count > 0;
+        var overlaySectionsHeight = 0.0;
+        if (hasOverlaySections)
+        {
+            // Extra spacer before the section splitter and first section.
+            overlaySectionsHeight += 2;
+            if (intelRows.Count > 0)
+            {
+                overlaySectionsHeight += intelSectionTitle.Height + 2;
+            }
+
+            if (zkillRows.Count > 0)
+            {
+                overlaySectionsHeight += zkillSectionTitle.Height + 2;
+            }
+        }
         IReadOnlyList<int>? presentCharacterIds = null;
         IReadOnlyList<string>? presentCharacterNames = null;
         var characterPortraitSize = 28.0;
@@ -4595,6 +4613,7 @@ public sealed class MapControl : Control
             + (detailsText is null ? 0 : detailsText.Height + 2)
             + intelHeight
             + zkillHeight
+            + overlaySectionsHeight
             + (jumpRangeLineTexts.Count == 0 ? 0 : (jumpRangeLineTexts.Count * (jumpLineHeight + 1)))
             + (sovLineTexts.Count == 0 ? 0 : (sovLineTexts.Count * (sovLineHeight + 1)))
             + (wormholes.Count == 0 ? 0 : (wormholes.Count * (wormholeLineHeight + 1)))
