@@ -301,8 +301,8 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, IReadOnlyDictionary<long, DateTime>?>(nameof(CharacterPresenceLastUpdatedUtcByNodeId));
     public static readonly StyledProperty<IReadOnlyDictionary<long, IReadOnlyList<string>>?> IntelIconKeysByNodeIdProperty =
         AvaloniaProperty.Register<MapControl, IReadOnlyDictionary<long, IReadOnlyList<string>>?>(nameof(IntelIconKeysByNodeId));
-    public static readonly StyledProperty<IReadOnlyDictionary<long, IReadOnlyList<string>>?> IntelRecentReportsByNodeIdProperty =
-        AvaloniaProperty.Register<MapControl, IReadOnlyDictionary<long, IReadOnlyList<string>>?>(nameof(IntelRecentReportsByNodeId));
+    public static readonly StyledProperty<IReadOnlyDictionary<long, IReadOnlyList<IntelMapHoverReport>>?> IntelRecentReportsByNodeIdProperty =
+        AvaloniaProperty.Register<MapControl, IReadOnlyDictionary<long, IReadOnlyList<IntelMapHoverReport>>?>(nameof(IntelRecentReportsByNodeId));
     public static readonly StyledProperty<IReadOnlyDictionary<long, int>?> IntelHostileScoresByNodeIdProperty =
         AvaloniaProperty.Register<MapControl, IReadOnlyDictionary<long, int>?>(nameof(IntelHostileScoresByNodeId));
     public static readonly StyledProperty<bool> ShowInfoBoxCharacterPresenceProperty =
@@ -351,7 +351,10 @@ public sealed class MapControl : Control
     private static readonly ConcurrentDictionary<int, Bitmap?> CharacterPortraitCache = new();
     private static readonly ConcurrentDictionary<int, byte> CharacterPortraitLoading = new();
     private static readonly ConcurrentDictionary<int, DateTime> CharacterPortraitRetryAfterUtc = new();
+    private static readonly ConcurrentDictionary<string, Bitmap?> OrganizationLogoCache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly ConcurrentDictionary<string, byte> OrganizationLogoLoading = new(StringComparer.OrdinalIgnoreCase);
     private static readonly TimeSpan CharacterPortraitRetryDelay = TimeSpan.FromMinutes(2);
+    private readonly List<(Rect Bounds, string Url)> _intelOverlayLinks = [];
     private Point[] _screenPositions = [];
     private double _graphMinX;
     private double _graphMaxX;
@@ -757,7 +760,7 @@ public sealed class MapControl : Control
         set => SetValue(IntelIconKeysByNodeIdProperty, value);
     }
 
-    public IReadOnlyDictionary<long, IReadOnlyList<string>>? IntelRecentReportsByNodeId
+    public IReadOnlyDictionary<long, IReadOnlyList<IntelMapHoverReport>>? IntelRecentReportsByNodeId
     {
         get => GetValue(IntelRecentReportsByNodeIdProperty);
         set => SetValue(IntelRecentReportsByNodeIdProperty, value);
@@ -1227,6 +1230,7 @@ public sealed class MapControl : Control
 
         var bounds = Bounds;
         context.FillRectangle(BackgroundBrush, bounds);
+        _intelOverlayLinks.Clear();
 
         if (Graph is null || Graph.Nodes.Count == 0)
         {
@@ -1776,13 +1780,17 @@ public sealed class MapControl : Control
         base.OnPointerPressed(e);
 
         Focus();
-        if (!UseBuiltInSelection)
+        var point = e.GetPosition(this);
+        var props = e.GetCurrentPoint(this).Properties;
+        if (props.IsLeftButtonPressed && TryOpenIntelOverlayLink(point))
         {
             return;
         }
 
-        var point = e.GetPosition(this);
-        var props = e.GetCurrentPoint(this).Properties;
+        if (!UseBuiltInSelection)
+        {
+            return;
+        }
 
         if (e.ClickCount >= 2 &&
             ViewMode == MapViewMode.UniverseRegions &&
@@ -4273,24 +4281,114 @@ public sealed class MapControl : Control
             jumpLineHeight = Math.Max(jumpLineHeight, Math.Max(14, jumpLine.Text.Height));
             jumpMaxWidth = Math.Max(jumpMaxWidth, 14 + 4 + jumpLine.Text.Width);
         }
-        var intelLineTexts = new List<FormattedText>();
+        const double intelIdentityIconSize = 22.0;
+        const double intelIdentityGap = 3.0;
+        var intelRows = new List<(
+            IntelMapHoverReport Report,
+            FormattedText Age,
+            FormattedText Hostiles,
+            FormattedText Message,
+            IReadOnlyList<(IntelMapHoverShip Ship, FormattedText Text)> Ships,
+            IReadOnlyList<(IntelMapHoverHostile Hostile, FormattedText Name, FormattedText Membership)> Identities,
+            FormattedText? Overflow,
+            double TopWidth,
+            double Width,
+            double Height)>();
         if (IntelRecentReportsByNodeId is not null &&
             IntelRecentReportsByNodeId.TryGetValue(node.Id, out var reportsForNode) &&
             reportsForNode.Count > 0)
         {
-            foreach (var line in reportsForNode.Take(2))
+            foreach (var report in reportsForNode.Take(2))
             {
-                intelLineTexts.Add(new FormattedText(
-                    line,
+                var age = new FormattedText(
+                    FormatRelativeAge(report.TimestampUtc),
+                    CultureInfo.InvariantCulture,
+                    FlowDirection.LeftToRight,
+                    new Typeface("Inter", FontStyle.Normal, FontWeight.Bold),
+                    10,
+                    new ImmutableSolidColorBrush(Color.Parse("#BFD8FF")));
+                var hostiles = new FormattedText(
+                    $"{report.HostileCount} hostile{(report.HostileCount == 1 ? string.Empty : "s")}",
+                    CultureInfo.InvariantCulture,
+                    FlowDirection.LeftToRight,
+                    new Typeface("Inter", FontStyle.Normal, FontWeight.SemiBold),
+                    10,
+                    Brushes.White);
+                var message = new FormattedText(
+                    TrimIntelReportText(report.MessageText, 58),
                     CultureInfo.InvariantCulture,
                     FlowDirection.LeftToRight,
                     new Typeface("Inter"),
-                    11,
-                    new ImmutableSolidColorBrush(Color.Parse("#FFE8C4"))));
+                    10,
+                    new ImmutableSolidColorBrush(Color.Parse("#D7E1EF")));
+                var ships = report.Ships
+                    .Where(s => !string.IsNullOrWhiteSpace(s.ShipDisplayName) &&
+                                !string.Equals(s.ShipDisplayName, "Unknown", StringComparison.OrdinalIgnoreCase))
+                    .Select(s => (s, new FormattedText(
+                        $"{s.ShipDisplayName} x{s.Count}",
+                        CultureInfo.InvariantCulture,
+                        FlowDirection.LeftToRight,
+                        new Typeface("Inter", FontStyle.Normal, FontWeight.SemiBold),
+                        10,
+                        new ImmutableSolidColorBrush(Color.Parse("#EAF2FF")))))
+                    .ToList();
+                var identities = report.Hostiles
+                    .Take(4)
+                    .Select(hostile =>
+                    {
+                        var name = new FormattedText(
+                            hostile.Name,
+                            CultureInfo.InvariantCulture,
+                            FlowDirection.LeftToRight,
+                            new Typeface("Inter", FontStyle.Normal, FontWeight.SemiBold),
+                            10,
+                            Brushes.White);
+                        var membership = new FormattedText(
+                            BuildIntelMembershipTickerSummary(hostile),
+                            CultureInfo.InvariantCulture,
+                            FlowDirection.LeftToRight,
+                            new Typeface("Inter"),
+                            9,
+                            new ImmutableSolidColorBrush(Color.Parse("#9DB8D8")));
+                        return (hostile, name, membership);
+                    })
+                    .ToList();
+                var topWidth = hostiles.Width + age.Width + 22;
+                var identitiesWidth = identities.Count == 0
+                    ? 0
+                    : identities.Max(x =>
+                        intelIdentityIconSize
+                        + (x.hostile.CorporationId is null ? 0 : intelIdentityIconSize + intelIdentityGap)
+                        + (x.hostile.AllianceId is null ? 0 : intelIdentityIconSize + intelIdentityGap)
+                        + 6
+                        + Math.Max(x.name.Width, x.membership.Width));
+                var shipsWidth = ships.Count == 0 ? 0 : ships.Max(x => intelIdentityIconSize + 4 + x.Item2.Width);
+                var shipsHeight = ships.Sum(x => Math.Max(intelIdentityIconSize, x.Item2.Height) + 2);
+                var identitiesHeight = identities.Count * (intelIdentityIconSize + intelIdentityGap);
+                var overflow = report.HiddenHostileCount > 0
+                    ? new FormattedText(
+                        $"+{report.HiddenHostileCount}",
+                        CultureInfo.InvariantCulture,
+                        FlowDirection.LeftToRight,
+                        new Typeface("Inter", FontStyle.Normal, FontWeight.Bold),
+                        10,
+                        new ImmutableSolidColorBrush(Color.Parse("#BFD8FF")))
+                    : null;
+                intelRows.Add((
+                    report,
+                    age,
+                    hostiles,
+                    message,
+                    ships,
+                    identities,
+                    overflow,
+                    topWidth,
+                    Math.Max(Math.Max(Math.Max(topWidth, shipsWidth), identitiesWidth), Math.Max(message.Width, overflow?.Width ?? 0)),
+                    Math.Max(age.Height + 4, hostiles.Height + 4) + shipsHeight + identitiesHeight + (overflow is null ? 0 : overflow.Height + 5) + message.Height + 7));
             }
         }
-        var intelMaxWidth = intelLineTexts.Count == 0 ? 0.0 : intelLineTexts.Max(x => x.Width);
-        var intelLineHeight = intelLineTexts.Count == 0 ? 0.0 : intelLineTexts.Max(x => x.Height);
+        var intelMaxWidth = intelRows.Count == 0 ? 0.0 : intelRows.Max(x => x.Width) + 8;
+        var intelHeight = intelRows.Count == 0 ? 0.0 : intelRows.Sum(x => x.Height + 5);
         IReadOnlyList<int>? presentCharacterIds = null;
         IReadOnlyList<string>? presentCharacterNames = null;
         var characterPortraitSize = 28.0;
@@ -4338,7 +4436,7 @@ public sealed class MapControl : Control
         var contentHeight = headerText.Height
             + (regionConstellationText is null ? 0 : regionConstellationText.Height + 2)
             + (detailsText is null ? 0 : detailsText.Height + 2)
-            + (intelLineTexts.Count == 0 ? 0 : (intelLineTexts.Count * (intelLineHeight + 1)))
+            + intelHeight
             + (jumpRangeLineTexts.Count == 0 ? 0 : (jumpRangeLineTexts.Count * (jumpLineHeight + 1)))
             + (sovLineTexts.Count == 0 ? 0 : (sovLineTexts.Count * (sovLineHeight + 1)))
             + (wormholes.Count == 0 ? 0 : (wormholes.Count * (wormholeLineHeight + 1)))
@@ -4450,16 +4548,95 @@ public sealed class MapControl : Control
             }
         }
 
-        if (intelLineTexts.Count > 0)
+        if (intelRows.Count > 0)
         {
             var intelStartY = wormholeStartY + (presentCharacterIds is { Count: > 0 } ? characterRowHeight + 4 : 2);
             var splitterY = intelStartY - 3;
             var splitterPen = new Pen(new ImmutableSolidColorBrush(Color.Parse("#5A6B82")), 1);
             context.DrawLine(splitterPen, new Point(headerOrigin.X, splitterY), new Point(rect.Right - padX, splitterY));
-            foreach (var intelLine in intelLineTexts)
+            string? hoveredIntelHostileName = null;
+            foreach (var intelRow in intelRows)
             {
-                context.DrawText(intelLine, new Point(headerOrigin.X, intelStartY));
-                intelStartY += intelLineHeight + 1;
+                var rowRect = new Rect(headerOrigin.X, intelStartY, intelMaxWidth, intelRow.Height);
+                context.FillRectangle(new ImmutableSolidColorBrush(Color.Parse("#8A172234")), rowRect, 3);
+                context.DrawRectangle(new Pen(new ImmutableSolidColorBrush(Color.Parse("#4A2A3C58")), 1), rowRect, 3);
+
+                var chipY = intelStartY + 2;
+                var ageRect = new Rect(rowRect.Right - intelRow.Age.Width - 10, chipY, intelRow.Age.Width + 6, intelRow.Age.Height + 4);
+                context.FillRectangle(new ImmutableSolidColorBrush(Color.Parse("#3A241C35")), ageRect, 3);
+                context.DrawRectangle(new Pen(new ImmutableSolidColorBrush(Color.Parse("#5D83B5")), 1), ageRect, 3);
+                context.DrawText(intelRow.Age, new Point(ageRect.X + 3, ageRect.Y + 2));
+
+                var hostilesRect = new Rect(headerOrigin.X + 4, chipY, intelRow.Hostiles.Width + 6, intelRow.Hostiles.Height + 4);
+                var hostileColor = GetIntelHostileColor(intelRow.Report.HostileCount);
+                context.FillRectangle(new ImmutableSolidColorBrush(Color.FromArgb(130, hostileColor.R, hostileColor.G, hostileColor.B)), hostilesRect, 3);
+                context.DrawRectangle(new Pen(new ImmutableSolidColorBrush(hostileColor), 1), hostilesRect, 3);
+                context.DrawText(intelRow.Hostiles, new Point(hostilesRect.X + 3, hostilesRect.Y + 2));
+
+                var identityY = chipY + Math.Max(ageRect.Height, hostilesRect.Height) + 3;
+                foreach (var ship in intelRow.Ships)
+                {
+                    DrawIntelIcon(context, ship.Ship.ShipIconKey, new Point(headerOrigin.X + 4, identityY), intelIdentityIconSize);
+                    context.DrawText(ship.Item2, new Point(headerOrigin.X + 4 + intelIdentityIconSize + 4, identityY + ((intelIdentityIconSize - ship.Item2.Height) / 2)));
+                    identityY += Math.Max(intelIdentityIconSize, ship.Item2.Height) + 2;
+                }
+
+                foreach (var identity in intelRow.Identities)
+                {
+                    var intelX = headerOrigin.X + 4;
+                    var portraitRect = new Rect(intelX, identityY, intelIdentityIconSize, intelIdentityIconSize);
+                    if (identity.Hostile.CharacterId is { } characterId)
+                    {
+                        _intelOverlayLinks.Add((portraitRect, $"https://zkillboard.com/character/{characterId}/"));
+                    }
+                    if (portraitRect.Contains(_lastPointerPosition))
+                    {
+                        hoveredIntelHostileName = identity.Hostile.Name;
+                    }
+
+                    DrawCharacterPortraitChip(
+                        context,
+                        intelX,
+                        identityY,
+                        intelIdentityIconSize,
+                        identity.Hostile.CharacterId ?? 0,
+                        identity.Hostile.Name);
+                    intelX += intelIdentityIconSize + intelIdentityGap;
+                    if (identity.Hostile.CorporationId is { } corporationId)
+                    {
+                        _intelOverlayLinks.Add((new Rect(intelX, identityY, intelIdentityIconSize, intelIdentityIconSize), $"https://zkillboard.com/corporation/{corporationId}/"));
+                        DrawOrganizationLogoChip(context, intelX, identityY, intelIdentityIconSize, "corporations", corporationId);
+                        intelX += intelIdentityIconSize + intelIdentityGap;
+                    }
+                    if (identity.Hostile.AllianceId is { } allianceId)
+                    {
+                        _intelOverlayLinks.Add((new Rect(intelX, identityY, intelIdentityIconSize, intelIdentityIconSize), $"https://zkillboard.com/alliance/{allianceId}/"));
+                        DrawOrganizationLogoChip(context, intelX, identityY, intelIdentityIconSize, "alliances", allianceId);
+                        intelX += intelIdentityIconSize + intelIdentityGap;
+                    }
+
+                    context.DrawText(identity.Name, new Point(intelX + 3, identityY));
+                    context.DrawText(identity.Membership, new Point(intelX + 3, identityY + identity.Name.Height));
+                    identityY += intelIdentityIconSize + intelIdentityGap;
+                }
+
+                if (intelRow.Overflow is not null)
+                {
+                    var overflowRect = new Rect(headerOrigin.X + 4, identityY, intelRow.Overflow.Width + 10, intelRow.Overflow.Height + 4);
+                    context.FillRectangle(new ImmutableSolidColorBrush(Color.Parse("#3A241C35")), overflowRect, 3);
+                    context.DrawRectangle(new Pen(new ImmutableSolidColorBrush(Color.Parse("#5D83B5")), 1), overflowRect, 3);
+                    context.DrawText(intelRow.Overflow, new Point(overflowRect.X + 5, overflowRect.Y + 2));
+                    identityY += overflowRect.Height + 1;
+                }
+
+                var messageY = identityY + 1;
+                context.DrawText(intelRow.Message, new Point(headerOrigin.X + 4, messageY));
+                intelStartY += intelRow.Height + 5;
+            }
+
+            if (!string.IsNullOrWhiteSpace(hoveredIntelHostileName))
+            {
+                DrawCompactTooltip(context, _lastPointerPosition, hoveredIntelHostileName);
             }
         }
 
@@ -5072,6 +5249,103 @@ public sealed class MapControl : Control
         }
     }
 
+    private static string BuildIntelMembershipTickerSummary(IntelMapHoverHostile hostile)
+    {
+        var corporation = string.IsNullOrWhiteSpace(hostile.CorporationTicker) ? null : $"[{hostile.CorporationTicker}]";
+        var alliance = string.IsNullOrWhiteSpace(hostile.AllianceTicker) ? null : $"[{hostile.AllianceTicker}]";
+        return string.Join("  ", new[] { corporation, alliance }.Where(x => x is not null));
+    }
+
+    private bool TryOpenIntelOverlayLink(Point point)
+    {
+        var link = _intelOverlayLinks.LastOrDefault(x => x.Bounds.Contains(point));
+        if (string.IsNullOrWhiteSpace(link.Url))
+        {
+            return false;
+        }
+
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = link.Url,
+                UseShellExecute = true
+            });
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private void DrawOrganizationLogoChip(
+        DrawingContext context,
+        double x,
+        double y,
+        double size,
+        string category,
+        int organizationId)
+    {
+        var rect = new Rect(x, y, size, size);
+        context.FillRectangle(new ImmutableSolidColorBrush(Color.Parse("#233248")), rect, 3);
+        var logo = GetOrganizationLogo(category, organizationId);
+        if (logo is null)
+        {
+            return;
+        }
+
+        var src = new Rect(0, 0, logo.Size.Width, logo.Size.Height);
+        context.DrawImage(logo, src, rect);
+    }
+
+    private Bitmap? GetOrganizationLogo(string category, int organizationId)
+    {
+        if (organizationId <= 0)
+        {
+            return null;
+        }
+
+        var cacheKey = $"{category}:{organizationId}";
+        if (OrganizationLogoCache.TryGetValue(cacheKey, out var cached))
+        {
+            return cached;
+        }
+
+        if (!OrganizationLogoLoading.TryAdd(cacheKey, 0))
+        {
+            return null;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            Bitmap? logo = null;
+            try
+            {
+                var url = $"https://images.evetech.net/{category}/{organizationId}/logo?tenant=tranquility&size=64";
+                using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                using var response = await CharacterPortraitHttpClient.SendAsync(request).ConfigureAwait(false);
+                if (response.IsSuccessStatusCode)
+                {
+                    await using var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+                    logo = new Bitmap(stream);
+                }
+            }
+            catch
+            {
+                logo = null;
+            }
+            finally
+            {
+                OrganizationLogoCache[cacheKey] = logo;
+                OrganizationLogoLoading.TryRemove(cacheKey, out _);
+                Dispatcher.UIThread.Post(InvalidateVisual);
+            }
+        });
+
+        return null;
+    }
+
     private static void DrawCompactTooltip(DrawingContext context, Point anchor, string text)
     {
         var content = new FormattedText(
@@ -5182,6 +5456,14 @@ public sealed class MapControl : Control
         }
 
         return $"{(int)elapsed.TotalDays}d ago";
+    }
+
+    private static string TrimIntelReportText(string text, int maxLength)
+    {
+        var compact = string.Join(" ", text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        return compact.Length <= maxLength
+            ? compact
+            : $"{compact[..Math.Max(1, maxLength - 3)]}...";
     }
 
     private static Color GetCharacterPresenceBadgeColor(int count)

@@ -9,6 +9,8 @@ public sealed class IntelOverlayHostileCard : System.ComponentModel.INotifyPrope
     private Avalonia.Media.Imaging.Bitmap? _shipBitmap;
     private int? _corporationId;
     private int? _allianceId;
+    private string _corporationTicker = string.Empty;
+    private string _allianceTicker = string.Empty;
 
     public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
 
@@ -21,6 +23,8 @@ public sealed class IntelOverlayHostileCard : System.ComponentModel.INotifyPrope
             {
                 _name = value;
                 PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(Name)));
+                PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(PortraitFallbackText)));
+                PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(TooltipText)));
             }
         }
     }
@@ -53,6 +57,49 @@ public sealed class IntelOverlayHostileCard : System.ComponentModel.INotifyPrope
     }
     public bool HasCorporation => CorporationId is not null && CorporationBitmap is not null;
     public bool HasAlliance => AllianceId is not null && AllianceBitmap is not null;
+    public bool HasPortraitBitmap => PortraitBitmap is not null;
+    public bool HasNoPortraitBitmap => PortraitBitmap is null;
+    public string CorporationTicker
+    {
+        get => _corporationTicker;
+        set
+        {
+            if (!string.Equals(_corporationTicker, value, StringComparison.Ordinal))
+            {
+                _corporationTicker = value;
+                PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(CorporationTicker)));
+                PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(MembershipTickerSummary)));
+            }
+        }
+    }
+    public string AllianceTicker
+    {
+        get => _allianceTicker;
+        set
+        {
+            if (!string.Equals(_allianceTicker, value, StringComparison.Ordinal))
+            {
+                _allianceTicker = value;
+                PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(AllianceTicker)));
+                PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(MembershipTickerSummary)));
+            }
+        }
+    }
+    public string MembershipTickerSummary
+    {
+        get
+        {
+            var corporation = string.IsNullOrWhiteSpace(CorporationTicker) ? null : $"[{CorporationTicker}]";
+            var alliance = string.IsNullOrWhiteSpace(AllianceTicker) ? null : $"[{AllianceTicker}]";
+            return string.Join("  ", new[] { corporation, alliance }.Where(x => x is not null));
+        }
+    }
+    public string PortraitFallbackText => string.IsNullOrWhiteSpace(Name)
+        ? "?"
+        : Name.Trim()[..1].ToUpperInvariant();
+    public string TooltipText => string.IsNullOrWhiteSpace(ShipDisplayName) || ShipDisplayName == "Unknown"
+        ? Name
+        : $"{Name}\n{ShipDisplayName}";
     public Avalonia.Media.Imaging.Bitmap? PortraitBitmap
     {
         get => _portraitBitmap;
@@ -62,6 +109,8 @@ public sealed class IntelOverlayHostileCard : System.ComponentModel.INotifyPrope
             {
                 _portraitBitmap = value;
                 PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(PortraitBitmap)));
+                PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(HasPortraitBitmap)));
+                PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(HasNoPortraitBitmap)));
             }
         }
     }
@@ -92,6 +141,8 @@ public sealed class IntelOverlayHostileCard : System.ComponentModel.INotifyPrope
         }
     }
     public int? ShipTypeId { get; set; }
+    public bool HasKnownShip => !string.IsNullOrWhiteSpace(ShipDisplayName) &&
+                                !string.Equals(ShipDisplayName, "Unknown", StringComparison.OrdinalIgnoreCase);
     public bool HasShipBitmap => ShipBitmap is not null;
     public bool HasNoShipBitmap => ShipBitmap is null;
     public Avalonia.Media.Imaging.Bitmap? ShipBitmap
@@ -199,6 +250,10 @@ public sealed class IntelOverlayCard
     public required string AgeSummary { get; set; }
     public required string MessageText { get; init; }
     public required IReadOnlyList<IntelOverlayHostileCard> Hostiles { get; init; }
+    public IReadOnlyList<IntelOverlayHostileCard> VisibleHostiles => Hostiles.Take(4).ToList();
+    public int HiddenHostileCount => Math.Max(0, Hostiles.Count - VisibleHostiles.Count);
+    public bool HasHiddenHostiles => HiddenHostileCount > 0;
+    public string HiddenHostilesSummary => $"+{HiddenHostileCount}";
     public required IReadOnlyList<IntelOverlayShipSummaryCard> ShipsSummary { get; init; }
     public required string ShipClassSummary { get; init; }
     public required int HostileCount { get; init; }

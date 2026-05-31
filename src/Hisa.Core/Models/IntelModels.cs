@@ -74,3 +74,31 @@ public sealed class IntelRecentReport
     public required string ReporterName { get; init; }
     public required string MessageText { get; init; }
 }
+
+public sealed class IntelMapHoverReport
+{
+    public required DateTime TimestampUtc { get; init; }
+    public required string ReporterName { get; init; }
+    public required string MessageText { get; init; }
+    public required IReadOnlyList<IntelMapHoverShip> Ships { get; init; }
+    public required IReadOnlyList<IntelMapHoverHostile> Hostiles { get; init; }
+    public int HiddenHostileCount { get; init; }
+    public int HostileCount { get; init; }
+}
+
+public sealed class IntelMapHoverShip
+{
+    public required string ShipDisplayName { get; init; }
+    public required string ShipIconKey { get; init; }
+    public int Count { get; init; }
+}
+
+public sealed class IntelMapHoverHostile
+{
+    public required string Name { get; init; }
+    public int? CharacterId { get; init; }
+    public int? CorporationId { get; init; }
+    public int? AllianceId { get; init; }
+    public string CorporationTicker { get; init; } = string.Empty;
+    public string AllianceTicker { get; init; } = string.Empty;
+}

@@ -331,13 +331,15 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private static readonly ConcurrentDictionary<int, Bitmap> IntelAllianceBitmapCache = new();
     private static readonly ConcurrentDictionary<int, Bitmap> IntelShipBitmapCache = new();
     private static readonly ConcurrentDictionary<int, (int CorpId, int? AllianceId)> IntelAffiliationsByCharacterId = new();
+    private static readonly ConcurrentDictionary<int, string> IntelCorporationTickersById = new();
+    private static readonly ConcurrentDictionary<int, string> IntelAllianceTickersById = new();
     private static readonly ConcurrentDictionary<int, byte> IntelImageLoadingByCharacterId = new();
     private static readonly string IntelImageCacheRoot = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "HISA",
         "IntelImageCache");
     private IReadOnlyDictionary<long, IReadOnlyList<string>> _intelIconKeysByNodeId = new Dictionary<long, IReadOnlyList<string>>();
-    private IReadOnlyDictionary<long, IReadOnlyList<string>> _intelRecentReportsByNodeId = new Dictionary<long, IReadOnlyList<string>>();
+    private IReadOnlyDictionary<long, IReadOnlyList<IntelMapHoverReport>> _intelRecentReportsByNodeId = new Dictionary<long, IReadOnlyList<IntelMapHoverReport>>();
     private IReadOnlyDictionary<long, int> _intelHostileScoresByNodeId = new Dictionary<long, int>();
     private bool _limitIntelReportsToCurrentRegion;
     private bool _intelEnabled = true;
@@ -474,7 +476,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public IReadOnlyDictionary<long, IReadOnlyList<int>> CharacterPresenceCharacterIdsByNodeIdForView => _characterPresenceCharacterIdsByNodeId;
     public IReadOnlyDictionary<long, DateTime> CharacterPresenceLastUpdatedUtcByNodeIdForView => _characterPresenceLastUpdatedUtcByNodeId;
     public IReadOnlyDictionary<long, IReadOnlyList<string>> IntelIconKeysByNodeIdForView => _intelIconKeysByNodeId;
-    public IReadOnlyDictionary<long, IReadOnlyList<string>> IntelRecentReportsByNodeIdForView => _intelRecentReportsByNodeId;
+    public IReadOnlyDictionary<long, IReadOnlyList<IntelMapHoverReport>> IntelRecentReportsByNodeIdForView => _intelRecentReportsByNodeId;
     public IReadOnlyDictionary<long, int> IntelHostileScoresByNodeIdForView => _intelHostileScoresByNodeId;
     public ObservableCollection<CharacterTrackingCardViewModel> CharacterTrackingCards => _characterTrackingCards;
     public ObservableCollection<CharacterTrackingCardViewModel> EnabledCharacterTrackingCards => _enabledCharacterTrackingCards;
@@ -2001,7 +2003,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         if (graph is null || graph.Nodes.Count == 0 || SelectedViewMode == MapViewMode.UniverseRegions)
         {
             _intelIconKeysByNodeId = new Dictionary<long, IReadOnlyList<string>>();
-            _intelRecentReportsByNodeId = new Dictionary<long, IReadOnlyList<string>>();
+            _intelRecentReportsByNodeId = new Dictionary<long, IReadOnlyList<IntelMapHoverReport>>();
             _intelHostileScoresByNodeId = new Dictionary<long, int>();
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelIconKeysByNodeIdForView)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelRecentReportsByNodeIdForView)));
@@ -2017,7 +2019,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
         var validNodeIds = graph.Nodes.Select(n => n.Id).ToHashSet();
         var iconsByNode = new Dictionary<long, IReadOnlyList<string>>();
-        var recentReportsByNode = new Dictionary<long, IReadOnlyList<string>>();
+        var recentReportsByNode = new Dictionary<long, IReadOnlyList<IntelMapHoverReport>>();
         var hostileScoresByNode = new Dictionary<long, int>();
         foreach (var system in snapshot.Values)
         {
@@ -2057,8 +2059,45 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             hostileScoresByNode[system.SolarSystemId] = Math.Max(0, system.HostileScore);
             recentReportsByNode[system.SolarSystemId] = system.RecentReports
                 .OrderByDescending(x => x.TimestampUtc)
-                .Take(1)
-                .Select(x => $"{FormatOverlayAge(DateTime.UtcNow - x.TimestampUtc)} | {x.MessageText}")
+                .Take(2)
+                .Select(x => new IntelMapHoverReport
+                {
+                    TimestampUtc = x.TimestampUtc,
+                    ReporterName = x.ReporterName,
+                    MessageText = x.MessageText,
+                    Ships = BuildIntelHoverShips(system.ShipNames, system.ShipClasses),
+                    Hostiles = system.HostilePilotNames
+                        .Where(name => !string.IsNullOrWhiteSpace(name))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .Take(3)
+                        .Select((name, index) => new IntelMapHoverHostile
+                        {
+                            Name = name,
+                            CharacterId = _characterIdByName.TryGetValue(name, out var characterId) ? characterId : null,
+                            CorporationId = _characterIdByName.TryGetValue(name, out characterId) &&
+                                            IntelAffiliationsByCharacterId.TryGetValue(characterId, out var affiliation)
+                                ? affiliation.CorpId
+                                : null,
+                            AllianceId = _characterIdByName.TryGetValue(name, out characterId) &&
+                                         IntelAffiliationsByCharacterId.TryGetValue(characterId, out affiliation)
+                                ? affiliation.AllianceId
+                                : null,
+                            CorporationTicker = _characterIdByName.TryGetValue(name, out characterId) &&
+                                                IntelAffiliationsByCharacterId.TryGetValue(characterId, out affiliation) &&
+                                                IntelCorporationTickersById.TryGetValue(affiliation.CorpId, out var corporationTicker)
+                                ? corporationTicker
+                                : string.Empty,
+                            AllianceTicker = _characterIdByName.TryGetValue(name, out characterId) &&
+                                             IntelAffiliationsByCharacterId.TryGetValue(characterId, out affiliation) &&
+                                             affiliation.AllianceId is { } allianceId &&
+                                             IntelAllianceTickersById.TryGetValue(allianceId, out var allianceTicker)
+                                ? allianceTicker
+                                : string.Empty
+                        })
+                        .ToList(),
+                    HiddenHostileCount = Math.Max(0, system.HostilePilotNames.Distinct(StringComparer.OrdinalIgnoreCase).Count() - 3),
+                    HostileCount = Math.Max(0, system.HostileScore)
+                })
                 .ToList();
         }
 
@@ -3384,7 +3423,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 }
 
                 var shipSummary = r.ReportedShipNames.Count > 0
-                    ? string.Join(", ", r.ReportedShipNames.Distinct(StringComparer.OrdinalIgnoreCase))
+                    ? string.Join(", ", r.ReportedShipNames.Select(CapitalizeFirstLetter).Distinct(StringComparer.OrdinalIgnoreCase))
                     : r.ShipClasses.Count > 0
                         ? string.Join(", ", r.ShipClasses.Select(x => x.ToString()))
                     : "Unknown";
@@ -3464,7 +3503,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 }
                 var typeId = shipTypeIds.Count > 0 ? shipTypeIds[Math.Min(i, shipTypeIds.Count - 1)] : (int?)null;
                 var shipClass = shipClasses.Count > 0 ? shipClasses[Math.Min(i, shipClasses.Count - 1)] : IntelShipClass.Unknown;
-                items.Add((name.Trim(), typeId, ShipClassToOverlayIconKey(shipClass)));
+                items.Add((NormalizeShipDisplayName(name), typeId, ShipClassToOverlayIconKey(shipClass)));
             }
         }
 
@@ -3587,7 +3626,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 Name = names[i],
                 ShipTypeId = shipTypeId,
                 ShipBitmap = shipTypeId is { } id && IntelShipBitmapCache.TryGetValue(id, out var cachedShip) ? cachedShip : null,
-                ShipDisplayName = shipName,
+                ShipDisplayName = NormalizeShipDisplayName(shipName),
                 ShipIconKey = ShipClassToOverlayIconKey(shipClass)
             });
         }
@@ -3625,6 +3664,77 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             IntelShipClass.Unknown => "Unknown",
             _ => shipClass.ToString()
         };
+    }
+
+    private static string CapitalizeFirstLetter(string value)
+    {
+        var trimmed = value.Trim();
+        return trimmed.Length == 0
+            ? string.Empty
+            : $"{char.ToUpperInvariant(trimmed[0])}{trimmed[1..]}";
+    }
+
+    private static string NormalizeShipDisplayName(string value)
+    {
+        return SingularizeShipName(CapitalizeFirstLetter(value));
+    }
+
+    private static string SingularizeShipName(string value)
+    {
+        var trimmed = value.Trim();
+        if (trimmed.Length <= 2)
+        {
+            return trimmed;
+        }
+
+        if (trimmed.EndsWith("ss", StringComparison.OrdinalIgnoreCase))
+        {
+            return trimmed;
+        }
+
+        return trimmed.EndsWith("s", StringComparison.OrdinalIgnoreCase)
+            ? trimmed[..^1]
+            : trimmed;
+    }
+
+    private static IReadOnlyList<IntelMapHoverShip> BuildIntelHoverShips(
+        IReadOnlyList<string> shipNames,
+        IReadOnlyList<IntelShipClass> shipClasses)
+    {
+        var entries = new List<(string Name, string IconKey)>();
+        for (var i = 0; i < shipNames.Count; i++)
+        {
+            var raw = shipNames[i];
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                continue;
+            }
+
+            var normalized = NormalizeShipDisplayName(raw);
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                continue;
+            }
+
+            var shipClass = shipClasses.Count > 0 ? shipClasses[Math.Min(i, shipClasses.Count - 1)] : IntelShipClass.Unknown;
+            entries.Add((normalized, ShipClassToOverlayIconKey(shipClass)));
+        }
+
+        return entries
+            .GroupBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(g =>
+            {
+                var first = g.First();
+                return new IntelMapHoverShip
+                {
+                    ShipDisplayName = first.Name,
+                    ShipIconKey = first.IconKey,
+                    Count = g.Count()
+                };
+            })
+            .OrderByDescending(x => x.Count)
+            .ThenBy(x => x.ShipDisplayName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     private static string ShipClassToOverlayIconKey(IntelShipClass shipClass)
@@ -3883,10 +3993,19 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                         {
                             hostile.CorporationBitmap = corp;
                         }
+                        if (IntelCorporationTickersById.TryGetValue(affiliation.CorpId, out var corporationTicker))
+                        {
+                            hostile.CorporationTicker = corporationTicker;
+                        }
                         if (affiliation.AllianceId is { } allianceId &&
                             IntelAllianceBitmapCache.TryGetValue(allianceId, out var alliance))
                         {
                             hostile.AllianceBitmap = alliance;
+                        }
+                        if (affiliation.AllianceId is { } tickerAllianceId &&
+                            IntelAllianceTickersById.TryGetValue(tickerAllianceId, out var allianceTicker))
+                        {
+                            hostile.AllianceTicker = allianceTicker;
                         }
                     }
                     changed = true;
@@ -3932,6 +4051,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
             if (changed)
             {
+                RebuildIntelPresenceForView();
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelCardsForView)));
                 _ = ResolveIntelCharacterIdsAsync();
             }
@@ -3965,6 +4085,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
             Bitmap? corpBitmap = null;
             Bitmap? allianceBitmap = null;
+            var corporationTicker = string.Empty;
+            var allianceTicker = string.Empty;
             if (affiliation.CorpId > 0)
             {
                 corpBitmap = await GetOrLoadCachedBitmapAsync(
@@ -3973,6 +4095,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                     "corporations",
                     $"{affiliation.CorpId}.png",
                     $"https://images.evetech.net/corporations/{affiliation.CorpId}/logo?tenant=tranquility&size=64");
+                corporationTicker = await GetOrLoadCorporationTickerAsync(affiliation.CorpId);
             }
             if (affiliation.AllianceId is { } allianceId && allianceId > 0)
             {
@@ -3982,6 +4105,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                     "alliances",
                     $"{allianceId}.png",
                     $"https://images.evetech.net/alliances/{allianceId}/logo?tenant=tranquility&size=64");
+                allianceTicker = await GetOrLoadAllianceTickerAsync(allianceId);
             }
 
             Dispatcher.UIThread.Post(() =>
@@ -4022,11 +4146,22 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                             hostile.AllianceBitmap = allianceBitmap;
                             changed = true;
                         }
+                        if (!string.Equals(hostile.CorporationTicker, corporationTicker, StringComparison.Ordinal))
+                        {
+                            hostile.CorporationTicker = corporationTicker;
+                            changed = true;
+                        }
+                        if (!string.Equals(hostile.AllianceTicker, allianceTicker, StringComparison.Ordinal))
+                        {
+                            hostile.AllianceTicker = allianceTicker;
+                            changed = true;
+                        }
                     }
                 }
 
                 if (changed)
                 {
+                    RebuildIntelPresenceForView();
                     PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelCardsForView)));
                 }
             });
@@ -4134,6 +4269,58 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
+    private static async Task<string> GetOrLoadCorporationTickerAsync(int corporationId)
+    {
+        if (IntelCorporationTickersById.TryGetValue(corporationId, out var cached))
+        {
+            return cached;
+        }
+
+        var ticker = await LoadPublicTickerAsync($"https://esi.evetech.net/latest/corporations/{corporationId}/?datasource=tranquility");
+        if (!string.IsNullOrWhiteSpace(ticker))
+        {
+            IntelCorporationTickersById[corporationId] = ticker;
+        }
+
+        return ticker;
+    }
+
+    private static async Task<string> GetOrLoadAllianceTickerAsync(int allianceId)
+    {
+        if (IntelAllianceTickersById.TryGetValue(allianceId, out var cached))
+        {
+            return cached;
+        }
+
+        var ticker = await LoadPublicTickerAsync($"https://esi.evetech.net/latest/alliances/{allianceId}/?datasource=tranquility");
+        if (!string.IsNullOrWhiteSpace(ticker))
+        {
+            IntelAllianceTickersById[allianceId] = ticker;
+        }
+
+        return ticker;
+    }
+
+    private static async Task<string> LoadPublicTickerAsync(string url)
+    {
+        try
+        {
+            using var response = await IntelPortraitHttpClient.GetAsync(url);
+            if (!response.IsSuccessStatusCode)
+            {
+                return string.Empty;
+            }
+
+            await using var responseStream = await response.Content.ReadAsStreamAsync();
+            var details = await JsonSerializer.DeserializeAsync<EsiOrganizationDetailsResponse>(responseStream);
+            return details?.Ticker?.Trim() ?? string.Empty;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
     private sealed class EsiUniverseIdsResponse
     {
         [JsonPropertyName("characters")]
@@ -4154,6 +4341,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         public int CorporationId { get; init; }
         [JsonPropertyName("alliance_id")]
         public int? AllianceId { get; init; }
+    }
+
+    private sealed class EsiOrganizationDetailsResponse
+    {
+        [JsonPropertyName("ticker")]
+        public string? Ticker { get; init; }
     }
 
     private static string FormatOverlayAge(TimeSpan age)

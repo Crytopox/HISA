@@ -636,57 +636,6 @@
                             </Border>
                           </WrapPanel>
 
-                          <ItemsControl ItemsSource="{Binding Hostiles}">
-                            <ItemsControl.ItemsPanel>
-                              <ItemsPanelTemplate>
-                                <WrapPanel />
-                              </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                              <DataTemplate>
-                                <Border Background="#1A2639" BorderBrush="#2A3C58" BorderThickness="1" CornerRadius="4" Padding="5,3" Margin="0,0,4,4">
-                                  <StackPanel Orientation="Horizontal" Spacing="6">
-                                    <Button Width="26"
-                                            Height="26"
-                                            Padding="0"
-                                            Background="Transparent"
-                                            BorderThickness="0"
-                                            Cursor="Hand"
-                                            Click="OnIntelHostilePortraitClicked">
-                                      <Image Width="26" Height="26" Stretch="UniformToFill" Source="{Binding PortraitBitmap}" />
-                                    </Button>
-                                    <Button Width="26"
-                                            Height="26"
-                                            Padding="0"
-                                            Background="Transparent"
-                                            BorderThickness="0"
-                                            Cursor="Hand"
-                                            Click="OnIntelHostileCorporationClicked"
-                                            IsVisible="{Binding HasCorporation}">
-                                      <Image Width="26" Height="26" Stretch="UniformToFill" Source="{Binding CorporationBitmap}" />
-                                    </Button>
-                                    <Button Width="26"
-                                            Height="26"
-                                            Padding="0"
-                                            Background="Transparent"
-                                            BorderThickness="0"
-                                            Cursor="Hand"
-                                            Click="OnIntelHostileAllianceClicked"
-                                            IsVisible="{Binding HasAlliance}">
-                                      <Image Width="26" Height="26" Stretch="UniformToFill" Source="{Binding AllianceBitmap}" />
-                                    </Button>
-                                    <StackPanel Spacing="0">
-                                      <TextBlock Text="{Binding Name}" Foreground="#FFFFFF" FontSize="10" FontWeight="SemiBold" />
-                                      <TextBlock Text="{Binding ShipDisplayName}" Foreground="#C6D9F2" FontSize="9" />
-                                    </StackPanel>
-                                    <Image Width="26" Height="26" VerticalAlignment="Center" Source="{Binding ShipBitmap}" IsVisible="{Binding HasShipBitmap}" />
-                                    <Image Width="26" Height="26" VerticalAlignment="Center" Source="{Binding ShipIconKey, StringFormat='avares://Hisa.Rendering/Assets/Icons/Ships/{0}.png'}" IsVisible="{Binding HasNoShipBitmap}" />
-                                  </StackPanel>
-                                </Border>
-                              </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                          </ItemsControl>
-
                           <ItemsControl ItemsSource="{Binding ShipsSummary}">
                             <ItemsControl.ItemsPanel>
                               <ItemsPanelTemplate>
@@ -695,11 +644,17 @@
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                               <DataTemplate>
-                                <Border Background="#172234" BorderBrush="#2A3C58" BorderThickness="1" CornerRadius="4" Padding="5,3" Margin="0,0,4,4">
-                                  <StackPanel Orientation="Horizontal" Spacing="6">
-                                    <Image Width="26" Height="26" Source="{Binding ShipBitmap}" IsVisible="{Binding HasShipBitmap}" />
-                                    <Image Width="26" Height="26" Source="{Binding ShipIconKey, StringFormat='avares://Hisa.Rendering/Assets/Icons/Ships/{0}.png'}" IsVisible="{Binding HasNoShipBitmap}" />
-                                    <TextBlock Foreground="#EAF2FF" FontSize="10">
+                                <Border Background="#172234"
+                                        BorderBrush="#2A3C58"
+                                        BorderThickness="1"
+                                        CornerRadius="4"
+                                        Padding="3"
+                                        Margin="0,0,4,4"
+                                        ToolTip.Tip="{Binding ShipName}">
+                                  <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <Image Width="24" Height="24" Source="{Binding ShipBitmap}" IsVisible="{Binding HasShipBitmap}" />
+                                    <Image Width="24" Height="24" Source="{Binding ShipIconKey, StringFormat='avares://Hisa.Rendering/Assets/Icons/Ships/{0}.png'}" IsVisible="{Binding HasNoShipBitmap}" />
+                                    <TextBlock Foreground="#EAF2FF" FontSize="10" VerticalAlignment="Center">
                                       <Run Text="{Binding ShipName}" />
                                       <Run Text=" x" />
                                       <Run Text="{Binding Count}" />
@@ -709,6 +664,91 @@
                               </DataTemplate>
                             </ItemsControl.ItemTemplate>
                           </ItemsControl>
+
+                          <ItemsControl ItemsSource="{Binding VisibleHostiles}">
+                            <ItemsControl.ItemTemplate>
+                              <DataTemplate>
+                                <Border Background="#1A2639"
+                                        BorderBrush="#2A3C58"
+                                        BorderThickness="1"
+                                        CornerRadius="4"
+                                        Padding="5,4"
+                                        Margin="0,0,0,4"
+                                        ToolTip.Tip="{Binding TooltipText}">
+                                  <StackPanel Spacing="3">
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                      <Button Width="30"
+                                              Height="30"
+                                              Padding="0"
+                                              Background="#202F43"
+                                              BorderThickness="0"
+                                              Cursor="Hand"
+                                              Click="OnIntelHostilePortraitClicked">
+                                        <Grid>
+                                          <Image Width="30"
+                                                 Height="30"
+                                                 Stretch="UniformToFill"
+                                                 Source="{Binding PortraitBitmap}"
+                                                 IsVisible="{Binding HasPortraitBitmap}" />
+                                          <TextBlock Text="{Binding PortraitFallbackText}"
+                                                     Foreground="#DDEAFF"
+                                                     FontSize="12"
+                                                     FontWeight="Bold"
+                                                     HorizontalAlignment="Center"
+                                                     VerticalAlignment="Center"
+                                                     IsVisible="{Binding HasNoPortraitBitmap}" />
+                                        </Grid>
+                                      </Button>
+                                      <Button Width="30"
+                                              Height="30"
+                                              Padding="0"
+                                              Background="Transparent"
+                                              BorderThickness="0"
+                                              Cursor="Hand"
+                                              Click="OnIntelHostileCorporationClicked"
+                                              IsVisible="{Binding HasCorporation}"
+                                              ToolTip.Tip="Open corporation on zKillboard">
+                                        <Image Width="30" Height="30" Stretch="UniformToFill" Source="{Binding CorporationBitmap}" />
+                                      </Button>
+                                      <Button Width="30"
+                                              Height="30"
+                                              Padding="0"
+                                              Background="Transparent"
+                                              BorderThickness="0"
+                                              Cursor="Hand"
+                                              Click="OnIntelHostileAllianceClicked"
+                                              IsVisible="{Binding HasAlliance}"
+                                              ToolTip.Tip="Open alliance on zKillboard">
+                                        <Image Width="30" Height="30" Stretch="UniformToFill" Source="{Binding AllianceBitmap}" />
+                                      </Button>
+                                      <StackPanel Spacing="0" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Name}"
+                                                   Foreground="#FFFFFF"
+                                                   FontSize="10"
+                                                   FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding MembershipTickerSummary}"
+                                                   Foreground="#9DB8D8"
+                                                   FontSize="9" />
+                                      </StackPanel>
+                                    </StackPanel>
+                                  </StackPanel>
+                                </Border>
+                              </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                          </ItemsControl>
+                          <Border HorizontalAlignment="Left"
+                                  Background="#241C35"
+                                  BorderBrush="#5D83B5"
+                                  BorderThickness="1"
+                                  CornerRadius="4"
+                                  Padding="6,2"
+                                  Margin="0,0,0,4"
+                                  IsVisible="{Binding HasHiddenHostiles}">
+                            <TextBlock Text="{Binding HiddenHostilesSummary}"
+                                       Foreground="#BFD8FF"
+                                       FontSize="10"
+                                       FontWeight="Bold" />
+                          </Border>
 
                           <TextBlock Text="{Binding MessageText, StringFormat='Report: {0}'}" Foreground="#E4ECF8" FontSize="10" TextWrapping="Wrap" />
                           <TextBlock Foreground="#9DB8D8" FontSize="10">
