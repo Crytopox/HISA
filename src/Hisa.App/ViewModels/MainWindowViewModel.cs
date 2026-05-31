@@ -331,6 +331,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly Dictionary<long, List<long>> _jumpRangeMembershipByNodeId = [];
     private readonly Dictionary<long, List<JumpRangeDistanceDisplay>> _jumpRangeDistancesByNodeId = [];
     private readonly Dictionary<long, IntelSystemSnapshot> _intelSnapshotsBySystemId = [];
+    private readonly Dictionary<long, (string RegionName, string ConstellationName)> _systemLocationById = [];
+    private readonly object _systemLocationGate = new();
     private readonly List<IntelChatReport> _intelReportHistory = [];
     private readonly Dictionary<string, int> _characterIdByName = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _invalidHostilePilotNames = new(StringComparer.OrdinalIgnoreCase);
@@ -2284,10 +2286,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     {
         var graphNodeByName = BuildGraphNodeByNameLookup(CurrentGraph);
         var visibleNodeIds = CurrentGraph?.Nodes.Select(n => n.Id).ToHashSet() ?? new HashSet<long>();
+        Dictionary<string, IntelSystemSnapshot> snapshotByName;
+        lock (_intelSnapshotsBySystemId)
+        {
+            snapshotByName = _intelSnapshotsBySystemId.Values
+                .GroupBy(s => s.SolarSystemName, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(x => x.LastUpdatedUtc).First(), StringComparer.OrdinalIgnoreCase);
+        }
         var card = BuildZkillmailOverlayCard(
             report,
             graphNodeByName,
             visibleNodeIds,
+            snapshotByName,
             limitToVisibleRegion: LimitZkillmailsToCurrentRegion,
             applyCachedIdentityData: true);
         if (card is null)
@@ -3789,6 +3799,15 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
         var now = DateTimeOffset.UtcNow;
         var metadataById = await _mapDataService.GetSystemMetadataByIdsAsync(allSystemIds);
+        lock (_systemLocationGate)
+        {
+            foreach (var kvp in metadataById)
+            {
+                _systemLocationById[kvp.Key] = (
+                    string.IsNullOrWhiteSpace(kvp.Value.RegionName) ? "Unknown Region" : kvp.Value.RegionName,
+                    string.IsNullOrWhiteSpace(kvp.Value.ConstellationName) ? "Unknown Constellation" : kvp.Value.ConstellationName);
+            }
+        }
         var visibleNodeIds = graph?.Nodes.Select(n => n.Id).ToHashSet() ?? new HashSet<long>();
 
         _hubWormholeCardsForView = wormholeBySystem
@@ -4006,6 +4025,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                     r,
                     graphNodeByName,
                     visibleNodeIds,
+                    snapshotByName,
                     limitToVisibleRegion: LimitZkillmailsToCurrentRegion,
                     applyCachedIdentityData: false))
                 .Where(x => x is not null)
@@ -4019,21 +4039,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
         _intelCardsForView = intelCards;
         _zkillmailCardsForView = zkillCards;
-
-        if (LimitZkillmailsToCurrentRegion && SelectedViewMode == MapViewMode.Region)
-        {
-            var allowedIds = _zkillmailCardsForView.Select(x => x.SolarSystemId).Where(x => x > 0).ToHashSet();
-            lock (_intelReportHistory)
-            {
-                _intelReportHistory.RemoveAll(r =>
-                    (string.Equals(r.ChannelName, "zKillboard", StringComparison.OrdinalIgnoreCase) ||
-                     r.SourceFilePath.StartsWith("api://zkillboard", StringComparison.OrdinalIgnoreCase)) &&
-                    r.Systems.FirstOrDefault() is { } systemName &&
-                    snapshotByName.TryGetValue(systemName, out var snap) &&
-                    snap.SolarSystemId > 0 &&
-                    !allowedIds.Contains(snap.SolarSystemId));
-            }
-        }
 
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HubWormholeCardsForView)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IncursionCardsForView)));
@@ -4415,6 +4420,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         IntelChatReport report,
         IReadOnlyDictionary<string, MapNode> graphNodeByName,
         IReadOnlySet<long> visibleNodeIds,
+        IReadOnlyDictionary<string, IntelSystemSnapshot> snapshotByName,
         bool limitToVisibleRegion,
         bool applyCachedIdentityData)
     {
@@ -4427,6 +4433,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             solarSystemId = node.Id;
             regionName = string.IsNullOrWhiteSpace(node.RegionName) ? regionName : node.RegionName;
             constellationName = string.IsNullOrWhiteSpace(node.ConstellationName) ? constellationName : node.ConstellationName;
+        }
+        else if (snapshotByName.TryGetValue(systemName, out var snapshotRef))
+        {
+            solarSystemId = snapshotRef.SolarSystemId;
+            lock (_systemLocationGate)
+            {
+                if (_systemLocationById.TryGetValue(solarSystemId, out var location))
+                {
+                    regionName = location.RegionName;
+                    constellationName = location.ConstellationName;
+                }
+            }
         }
 
         if (limitToVisibleRegion && solarSystemId > 0 && !visibleNodeIds.Contains(solarSystemId))
