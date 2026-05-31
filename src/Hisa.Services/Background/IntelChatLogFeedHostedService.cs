@@ -78,7 +78,10 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
     private IntelChatMessageParser? _messageParser;
     private bool _enabled = true;
     private bool _zkillEnabled = true;
-    private TimeSpan _zkillPollDelay = TimeSpan.FromSeconds(2);
+    private TimeSpan _zkillPollDelay = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan ZkillSuccessDelay = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan ZkillNotFoundDelay = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan ZkillRateLimitDelay = TimeSpan.FromSeconds(30);
     private long? _nextZkillSequence;
     private DateTime _nextZkillPollAfterUtc = DateTime.MinValue;
     private HashSet<string> _includeChannels = new(StringComparer.OrdinalIgnoreCase);
@@ -1023,15 +1026,15 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             if (response.StatusCode == HttpStatusCode.NotFound)
             {
                 _nextZkillSequence = sequence;
-                _nextZkillPollAfterUtc = DateTime.UtcNow + _zkillPollDelay;
+                _nextZkillPollAfterUtc = DateTime.UtcNow + ZkillNotFoundDelay;
                 return;
             }
 
             if ((int)response.StatusCode == 429)
             {
-                var retryAfter = response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(8);
+                var retryAfter = response.Headers.RetryAfter?.Delta ?? TimeSpan.Zero;
                 _nextZkillSequence = sequence;
-                _nextZkillPollAfterUtc = DateTime.UtcNow + retryAfter;
+                _nextZkillPollAfterUtc = DateTime.UtcNow + (retryAfter > ZkillRateLimitDelay ? retryAfter : ZkillRateLimitDelay);
                 return;
             }
 
@@ -1056,11 +1059,11 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
 
             sequence++;
             processed++;
-            await Task.Delay(TimeSpan.FromMilliseconds(300), cancellationToken);
+            await Task.Delay(ZkillSuccessDelay, cancellationToken);
         }
 
         _nextZkillSequence = sequence;
-        _nextZkillPollAfterUtc = DateTime.UtcNow.AddMilliseconds(250);
+        _nextZkillPollAfterUtc = DateTime.UtcNow + ZkillSuccessDelay;
     }
 
     private HttpClient CreateZkillHttpClient()
