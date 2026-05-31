@@ -82,6 +82,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
     private static readonly TimeSpan ZkillSuccessDelay = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan ZkillNotFoundDelay = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan ZkillRateLimitDelay = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan ZkillAcceptedAgeWindow = TimeSpan.FromMinutes(5);
     private long? _nextZkillSequence;
     private DateTime _nextZkillPollAfterUtc = DateTime.MinValue;
     private HashSet<string> _includeChannels = new(StringComparer.OrdinalIgnoreCase);
@@ -1104,6 +1105,10 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         }
 
         var timestampUtc = ReadDateTime(killmail, "killmail_time") ?? DateTime.UtcNow;
+        if (timestampUtc < DateTime.UtcNow - ZkillAcceptedAgeWindow)
+        {
+            return false;
+        }
         var victimShipClass = _shipClassByTypeId.TryGetValue(victimShipTypeId.Value, out var cls) ? cls : IntelShipClass.Unknown;
         var victimShipName = _shipNameByTypeId.TryGetValue(victimShipTypeId.Value, out var shipName) ? shipName : $"Type {victimShipTypeId.Value}";
         var attackerCount = killmail.TryGetProperty("attackers", out var attackersNode) && attackersNode.ValueKind == JsonValueKind.Array
