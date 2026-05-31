@@ -238,6 +238,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly ISovUpgradeStateService _sovUpgradeStateService;
     private readonly IAnsiblexNetworkStateService _ansiblexNetworkStateService;
     private readonly IIncursionStateService _incursionStateService;
+    private readonly ISystemActivityStateService _systemActivityStateService;
     private readonly ILocalCharacterLocationFeed _localCharacterLocationFeed;
     private readonly IIntelFeed _intelFeed;
     private List<RegionOption> _allRegions = [];
@@ -266,6 +267,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _showIndicatorWormholeIcon = true;
     private bool _showIndicatorSovUpgradeIcon = true;
     private bool _showIndicatorIncursionIcon = true;
+    private bool _showIndicatorSystemJumps = true;
+    private bool _showIndicatorShipKills = true;
+    private bool _showIndicatorPodKills = true;
+    private bool _showIndicatorNpcKills = true;
     private bool _showIndicatorJumpRangeLy = true;
     private bool _enableLinkAnimations = true;
     private bool _enableIntelReportAnimations = true;
@@ -281,6 +286,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _infoBoxShowWormholeIcon = true;
     private bool _infoBoxShowSovUpgradeIcon = true;
     private bool _infoBoxShowIncursionIcon = true;
+    private bool _infoBoxShowSystemJumps = true;
+    private bool _infoBoxShowShipKills = true;
+    private bool _infoBoxShowPodKills = true;
+    private bool _infoBoxShowNpcKills = true;
     private bool _infoBoxShowJumpRangeLy = true;
     private bool _alwaysShowHubWormholes = true;
     private bool _alwaysShowIncursions = true;
@@ -381,6 +390,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string ShowIndicatorWormholeIconKey = "Map.ShowIndicatorWormholeIcon";
     private const string ShowIndicatorSovUpgradeIconKey = "Map.ShowIndicatorSovUpgradeIcon";
     private const string ShowIndicatorIncursionIconKey = "Map.ShowIndicatorIncursionIcon";
+    private const string ShowIndicatorSystemJumpsKey = "Map.ShowIndicatorSystemJumps";
+    private const string ShowIndicatorShipKillsKey = "Map.ShowIndicatorShipKills";
+    private const string ShowIndicatorPodKillsKey = "Map.ShowIndicatorPodKills";
+    private const string ShowIndicatorNpcKillsKey = "Map.ShowIndicatorNpcKills";
     private const string ShowIndicatorJumpRangeLyKey = "Map.ShowIndicatorJumpRangeLy";
     private const string ShowIndicatorCharacterPresenceKey = "Map.ShowIndicatorCharacterPresence";
     private const string ShowInfoBoxCharacterPresenceKey = "Map.ShowInfoBoxCharacterPresence";
@@ -399,6 +412,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string InfoBoxShowWormholeIconKey = "Map.InfoBoxShowWormholeIcon";
     private const string InfoBoxShowSovUpgradeIconKey = "Map.InfoBoxShowSovUpgradeIcon";
     private const string InfoBoxShowIncursionIconKey = "Map.InfoBoxShowIncursionIcon";
+    private const string InfoBoxShowSystemJumpsKey = "Map.InfoBoxShowSystemJumps";
+    private const string InfoBoxShowShipKillsKey = "Map.InfoBoxShowShipKills";
+    private const string InfoBoxShowPodKillsKey = "Map.InfoBoxShowPodKills";
+    private const string InfoBoxShowNpcKillsKey = "Map.InfoBoxShowNpcKills";
     private const string InfoBoxShowJumpRangeLyKey = "Map.InfoBoxShowJumpRangeLy";
     private const string IndicatorSovFilterKeysKey = "Map.IndicatorSovFilter.Keys";
     private const string OverlaySovFilterKeysKey = "Map.OverlaySovFilter.Keys";
@@ -434,6 +451,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         ISovUpgradeStateService sovUpgradeStateService,
         IAnsiblexNetworkStateService ansiblexNetworkStateService,
         IIncursionStateService incursionStateService,
+        ISystemActivityStateService systemActivityStateService,
         ILocalCharacterLocationFeed localCharacterLocationFeed,
         IIntelFeed intelFeed)
     {
@@ -444,6 +462,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _sovUpgradeStateService = sovUpgradeStateService;
         _ansiblexNetworkStateService = ansiblexNetworkStateService;
         _incursionStateService = incursionStateService;
+        _systemActivityStateService = systemActivityStateService;
         _localCharacterLocationFeed = localCharacterLocationFeed;
         _intelFeed = intelFeed;
         ViewModes = new ObservableCollection<MapViewMode>(Enum.GetValues<MapViewMode>());
@@ -460,6 +479,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _sovUpgradeStateService.SnapshotUpdated += OnSovUpgradesSnapshotUpdated;
         _ansiblexNetworkStateService.SnapshotUpdated += OnAnsiblexNetworkSnapshotUpdated;
         _incursionStateService.IncursionSnapshotUpdated += OnIncursionSnapshotUpdated;
+        _systemActivityStateService.SystemActivitySnapshotUpdated += OnSystemActivitySnapshotUpdated;
         _localCharacterLocationFeed.SystemChanged += OnLocalCharacterSystemChanged;
         _intelFeed.ReportReceived += OnIntelReportReceived;
         _intelFeed.SnapshotUpdated += OnIntelSnapshotUpdated;
@@ -823,6 +843,54 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             if (SetProperty(ref _showIndicatorJumpRangeLy, value) && !_isInitializing)
             {
                 _ = _settingsService.SetAsync(ShowIndicatorJumpRangeLyKey, value);
+            }
+        }
+    }
+
+    public bool ShowIndicatorSystemJumps
+    {
+        get => _showIndicatorSystemJumps;
+        set
+        {
+            if (SetProperty(ref _showIndicatorSystemJumps, value) && !_isInitializing)
+            {
+                _ = _settingsService.SetAsync(ShowIndicatorSystemJumpsKey, value);
+            }
+        }
+    }
+
+    public bool ShowIndicatorShipKills
+    {
+        get => _showIndicatorShipKills;
+        set
+        {
+            if (SetProperty(ref _showIndicatorShipKills, value) && !_isInitializing)
+            {
+                _ = _settingsService.SetAsync(ShowIndicatorShipKillsKey, value);
+            }
+        }
+    }
+
+    public bool ShowIndicatorPodKills
+    {
+        get => _showIndicatorPodKills;
+        set
+        {
+            if (SetProperty(ref _showIndicatorPodKills, value) && !_isInitializing)
+            {
+                _ = _settingsService.SetAsync(ShowIndicatorPodKillsKey, value);
+            }
+        }
+    }
+
+    public bool ShowIndicatorNpcKills
+    {
+        get => _showIndicatorNpcKills;
+        set
+        {
+            if (SetProperty(ref _showIndicatorNpcKills, value) && !_isInitializing)
+            {
+                _ = _settingsService.SetAsync(ShowIndicatorNpcKillsKey, value);
             }
         }
     }
@@ -1804,6 +1872,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         ShowIndicatorWormholeIcon = await _settingsService.GetAsync<bool?>(ShowIndicatorWormholeIconKey) ?? true;
         ShowIndicatorSovUpgradeIcon = await _settingsService.GetAsync<bool?>(ShowIndicatorSovUpgradeIconKey) ?? true;
         ShowIndicatorIncursionIcon = await _settingsService.GetAsync<bool?>(ShowIndicatorIncursionIconKey) ?? true;
+        ShowIndicatorSystemJumps = await _settingsService.GetAsync<bool?>(ShowIndicatorSystemJumpsKey) ?? true;
+        ShowIndicatorShipKills = await _settingsService.GetAsync<bool?>(ShowIndicatorShipKillsKey) ?? true;
+        ShowIndicatorPodKills = await _settingsService.GetAsync<bool?>(ShowIndicatorPodKillsKey) ?? true;
+        ShowIndicatorNpcKills = await _settingsService.GetAsync<bool?>(ShowIndicatorNpcKillsKey) ?? true;
         ShowIndicatorJumpRangeLy = await _settingsService.GetAsync<bool?>(ShowIndicatorJumpRangeLyKey) ?? true;
         ShowIndicatorCharacterPresence = await _settingsService.GetAsync<bool?>(ShowIndicatorCharacterPresenceKey) ?? true;
         ShowInfoBoxCharacterPresence = await _settingsService.GetAsync<bool?>(ShowInfoBoxCharacterPresenceKey) ?? true;
@@ -1834,6 +1906,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         InfoBoxShowWormholeIcon = await _settingsService.GetAsync<bool?>(InfoBoxShowWormholeIconKey) ?? true;
         InfoBoxShowSovUpgradeIcon = await _settingsService.GetAsync<bool?>(InfoBoxShowSovUpgradeIconKey) ?? true;
         InfoBoxShowIncursionIcon = await _settingsService.GetAsync<bool?>(InfoBoxShowIncursionIconKey) ?? true;
+        InfoBoxShowSystemJumps = await _settingsService.GetAsync<bool?>(InfoBoxShowSystemJumpsKey) ?? true;
+        InfoBoxShowShipKills = await _settingsService.GetAsync<bool?>(InfoBoxShowShipKillsKey) ?? true;
+        InfoBoxShowPodKills = await _settingsService.GetAsync<bool?>(InfoBoxShowPodKillsKey) ?? true;
+        InfoBoxShowNpcKills = await _settingsService.GetAsync<bool?>(InfoBoxShowNpcKillsKey) ?? true;
         InfoBoxShowJumpRangeLy = await _settingsService.GetAsync<bool?>(InfoBoxShowJumpRangeLyKey) ?? true;
         await _sovUpgradeStateService.InitializeAsync();
         await _ansiblexNetworkStateService.InitializeAsync();
@@ -1887,6 +1963,54 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         await ReloadGraphAsync();
         RebuildCharacterPresenceForView();
         RebuildIntelPresenceForView();
+    }
+
+    public bool InfoBoxShowSystemJumps
+    {
+        get => _infoBoxShowSystemJumps;
+        set
+        {
+            if (SetProperty(ref _infoBoxShowSystemJumps, value) && !_isInitializing)
+            {
+                _ = _settingsService.SetAsync(InfoBoxShowSystemJumpsKey, value);
+            }
+        }
+    }
+
+    public bool InfoBoxShowShipKills
+    {
+        get => _infoBoxShowShipKills;
+        set
+        {
+            if (SetProperty(ref _infoBoxShowShipKills, value) && !_isInitializing)
+            {
+                _ = _settingsService.SetAsync(InfoBoxShowShipKillsKey, value);
+            }
+        }
+    }
+
+    public bool InfoBoxShowPodKills
+    {
+        get => _infoBoxShowPodKills;
+        set
+        {
+            if (SetProperty(ref _infoBoxShowPodKills, value) && !_isInitializing)
+            {
+                _ = _settingsService.SetAsync(InfoBoxShowPodKillsKey, value);
+            }
+        }
+    }
+
+    public bool InfoBoxShowNpcKills
+    {
+        get => _infoBoxShowNpcKills;
+        set
+        {
+            if (SetProperty(ref _infoBoxShowNpcKills, value) && !_isInitializing)
+            {
+                _ = _settingsService.SetAsync(InfoBoxShowNpcKillsKey, value);
+            }
+        }
     }
 
     public bool IsIntelOverlayOpen
@@ -2052,6 +2176,19 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     }
 
     private void OnIncursionSnapshotUpdated(object? sender, IncursionSnapshot snapshot)
+    {
+        if (_isInitializing)
+        {
+            return;
+        }
+
+        Dispatcher.UIThread.Post(async () =>
+        {
+            await ReloadGraphAsync();
+        });
+    }
+
+    private void OnSystemActivitySnapshotUpdated(object? sender, SystemActivitySnapshot snapshot)
     {
         if (_isInitializing)
         {

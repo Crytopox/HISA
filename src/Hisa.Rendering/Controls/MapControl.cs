@@ -156,6 +156,10 @@ public sealed class MapControl : Control
     private static readonly Lazy<Bitmap?> StormUnknownIcon = new(() => LoadIcon("storm_unknown.png"));
     private static readonly Lazy<Bitmap?> WormholeIcon = new(() => LoadIcon("wormhole.png"));
     private static readonly Lazy<Bitmap?> IncursionIcon = new(() => LoadIcon("incursion.png"));
+    private static readonly Lazy<Bitmap?> SystemJumpsIcon = new(() => LoadIcon("jumps.png"));
+    private static readonly Lazy<Bitmap?> ShipKillsIcon = new(() => LoadIcon("kills.png"));
+    private static readonly Lazy<Bitmap?> PodKillsIcon = new(() => LoadIcon("pod.png"));
+    private static readonly Lazy<Bitmap?> NpcKillsIcon = new(() => LoadIcon("npc_kills.png"));
     private static readonly Lazy<Bitmap?> KillmailIcon = new(() => LoadIcon("killmail.png"));
     private static readonly Lazy<Bitmap?> QuestionMarkIcon = new(() => LoadIcon("question-mark.png"));
     private static readonly Lazy<Bitmap?> JumpRangeInRangeIcon = new(() => LoadIcon("jumpRange_onRange.png"));
@@ -208,6 +212,14 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorSovUpgradeIcon), true);
     public static readonly StyledProperty<bool> ShowIndicatorIncursionIconProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorIncursionIcon), true);
+    public static readonly StyledProperty<bool> ShowIndicatorSystemJumpsProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorSystemJumps), true);
+    public static readonly StyledProperty<bool> ShowIndicatorShipKillsProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorShipKills), true);
+    public static readonly StyledProperty<bool> ShowIndicatorPodKillsProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorPodKills), true);
+    public static readonly StyledProperty<bool> ShowIndicatorNpcKillsProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorNpcKills), true);
     public static readonly StyledProperty<bool> ShowIndicatorCharacterPresenceProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorCharacterPresence), true);
     public static readonly StyledProperty<bool> ShowIndicatorJumpRangeLyProperty =
@@ -244,6 +256,14 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowSovUpgradeIcon), true);
     public static readonly StyledProperty<bool> InfoBoxShowIncursionIconProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowIncursionIcon), true);
+    public static readonly StyledProperty<bool> InfoBoxShowSystemJumpsProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowSystemJumps), true);
+    public static readonly StyledProperty<bool> InfoBoxShowShipKillsProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowShipKills), true);
+    public static readonly StyledProperty<bool> InfoBoxShowPodKillsProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowPodKills), true);
+    public static readonly StyledProperty<bool> InfoBoxShowNpcKillsProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowNpcKills), true);
     public static readonly StyledProperty<bool> InfoBoxShowJumpRangeLyProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowJumpRangeLy), true);
     public static readonly StyledProperty<IEnumerable<string>?> OverlaySovUpgradeFilterKeysProperty =
@@ -485,6 +505,26 @@ public sealed class MapControl : Control
         get => GetValue(ShowIndicatorIncursionIconProperty);
         set => SetValue(ShowIndicatorIncursionIconProperty, value);
     }
+    public bool ShowIndicatorSystemJumps
+    {
+        get => GetValue(ShowIndicatorSystemJumpsProperty);
+        set => SetValue(ShowIndicatorSystemJumpsProperty, value);
+    }
+    public bool ShowIndicatorShipKills
+    {
+        get => GetValue(ShowIndicatorShipKillsProperty);
+        set => SetValue(ShowIndicatorShipKillsProperty, value);
+    }
+    public bool ShowIndicatorPodKills
+    {
+        get => GetValue(ShowIndicatorPodKillsProperty);
+        set => SetValue(ShowIndicatorPodKillsProperty, value);
+    }
+    public bool ShowIndicatorNpcKills
+    {
+        get => GetValue(ShowIndicatorNpcKillsProperty);
+        set => SetValue(ShowIndicatorNpcKillsProperty, value);
+    }
 
     public bool ShowIndicatorCharacterPresence
     {
@@ -592,6 +632,26 @@ public sealed class MapControl : Control
     {
         get => GetValue(InfoBoxShowIncursionIconProperty);
         set => SetValue(InfoBoxShowIncursionIconProperty, value);
+    }
+    public bool InfoBoxShowSystemJumps
+    {
+        get => GetValue(InfoBoxShowSystemJumpsProperty);
+        set => SetValue(InfoBoxShowSystemJumpsProperty, value);
+    }
+    public bool InfoBoxShowShipKills
+    {
+        get => GetValue(InfoBoxShowShipKillsProperty);
+        set => SetValue(InfoBoxShowShipKillsProperty, value);
+    }
+    public bool InfoBoxShowPodKills
+    {
+        get => GetValue(InfoBoxShowPodKillsProperty);
+        set => SetValue(InfoBoxShowPodKillsProperty, value);
+    }
+    public bool InfoBoxShowNpcKills
+    {
+        get => GetValue(InfoBoxShowNpcKillsProperty);
+        set => SetValue(InfoBoxShowNpcKillsProperty, value);
     }
 
     public bool InfoBoxShowJumpRangeLy
@@ -821,6 +881,10 @@ public sealed class MapControl : Control
             ShowIndicatorWormholeIconProperty,
             ShowIndicatorSovUpgradeIconProperty,
             ShowIndicatorIncursionIconProperty,
+            ShowIndicatorSystemJumpsProperty,
+            ShowIndicatorShipKillsProperty,
+            ShowIndicatorPodKillsProperty,
+            ShowIndicatorNpcKillsProperty,
             ShowIndicatorCharacterPresenceProperty,
             ShowIndicatorJumpRangeLyProperty,
             EnableLinkAnimationsProperty,
@@ -838,6 +902,10 @@ public sealed class MapControl : Control
             InfoBoxShowWormholeIconProperty,
             InfoBoxShowSovUpgradeIconProperty,
             InfoBoxShowIncursionIconProperty,
+            InfoBoxShowSystemJumpsProperty,
+            InfoBoxShowShipKillsProperty,
+            InfoBoxShowPodKillsProperty,
+            InfoBoxShowNpcKillsProperty,
             InfoBoxShowJumpRangeLyProperty,
             OverlaySovUpgradeFilterKeysProperty,
             AlwaysShowHubWormholesProperty,
@@ -3328,6 +3396,22 @@ public sealed class MapControl : Control
         {
             return;
         }
+        if (NodeBackgroundColorMode == MapNodeColorMode.SystemJumps && node.SystemJumps <= 0)
+        {
+            return;
+        }
+        if (NodeBackgroundColorMode == MapNodeColorMode.ShipKills && node.ShipKills <= 0)
+        {
+            return;
+        }
+        if (NodeBackgroundColorMode == MapNodeColorMode.PodKills && node.PodKills <= 0)
+        {
+            return;
+        }
+        if (NodeBackgroundColorMode == MapNodeColorMode.NpcKills && node.NpcKills <= 0)
+        {
+            return;
+        }
         if (NodeBackgroundColorMode == MapNodeColorMode.Hostiles)
         {
             if (IntelHostileScoresByNodeId is null ||
@@ -3361,8 +3445,25 @@ public sealed class MapControl : Control
             MapNodeColorMode.Wormholes => GetHubWormholeColor(node),
             MapNodeColorMode.SovUpgrades => GetSovUpgradeColor(GetVisibleSovUpgrades(node.SovUpgrades, IndicatorSovUpgradeFilterKeys).ToList()),
             MapNodeColorMode.Incursions => node.HasActiveIncursion ? Color.Parse("#A77BFF") : Color.Parse("#98A6B8"),
+            MapNodeColorMode.SystemJumps => GetActivityHeatColor(node.SystemJumps),
+            MapNodeColorMode.ShipKills => GetActivityHeatColor(node.ShipKills),
+            MapNodeColorMode.PodKills => GetActivityHeatColor(node.PodKills),
+            MapNodeColorMode.NpcKills => GetActivityHeatColor(node.NpcKills),
             _ => Color.Parse("#98A6B8")
         };
+    }
+
+    private static Color GetActivityHeatColor(int value)
+    {
+        if (value <= 0)
+        {
+            return Color.Parse("#98A6B8");
+        }
+
+        var t = Math.Clamp(value / 120.0, 0.0, 1.0);
+        var start = Color.Parse("#3DBB67");
+        var end = Color.Parse("#D83B2F");
+        return BlendColors(start, end, t);
     }
 
     private static Color GetSovUpgradeColor(IReadOnlyList<SovUpgradeEntry> upgrades)
@@ -3959,6 +4060,34 @@ public sealed class MapControl : Control
             DrawIncursionIcon(context, new Point(iconX, iconY), IconSize);
             indicatorIconSlot++;
         }
+        if (ShowIndicatorSystemJumps && node.SystemJumps > 0)
+        {
+            var iconX = rect.X + IndicatorIconLeftPadding + (indicatorIconSlot * (IconSize + IndicatorIconSlotGap));
+            var iconY = rect.Bottom;
+            DrawCountIconBadge(context, SystemJumpsIcon.Value, node.SystemJumps, new Point(iconX, iconY), IconSize);
+            indicatorIconSlot++;
+        }
+        if (ShowIndicatorShipKills && node.ShipKills > 0)
+        {
+            var iconX = rect.X + IndicatorIconLeftPadding + (indicatorIconSlot * (IconSize + IndicatorIconSlotGap));
+            var iconY = rect.Bottom;
+            DrawCountIconBadge(context, ShipKillsIcon.Value, node.ShipKills, new Point(iconX, iconY), IconSize);
+            indicatorIconSlot++;
+        }
+        if (ShowIndicatorPodKills && node.PodKills > 0)
+        {
+            var iconX = rect.X + IndicatorIconLeftPadding + (indicatorIconSlot * (IconSize + IndicatorIconSlotGap));
+            var iconY = rect.Bottom;
+            DrawCountIconBadge(context, PodKillsIcon.Value, node.PodKills, new Point(iconX, iconY), IconSize);
+            indicatorIconSlot++;
+        }
+        if (ShowIndicatorNpcKills && node.NpcKills > 0)
+        {
+            var iconX = rect.X + IndicatorIconLeftPadding + (indicatorIconSlot * (IconSize + IndicatorIconSlotGap));
+            var iconY = rect.Bottom;
+            DrawCountIconBadge(context, NpcKillsIcon.Value, node.NpcKills, new Point(iconX, iconY), IconSize);
+            indicatorIconSlot++;
+        }
         FormattedText? jumpRangeIndicatorText = null;
         Bitmap? jumpRangeIndicatorIcon = null;
         if (ShowIndicatorJumpRangeLy &&
@@ -4189,6 +4318,22 @@ public sealed class MapControl : Control
         if (InfoBoxShowIncursionIcon && node.HasActiveIncursion)
         {
             detailLines.Add("Incursion: Active");
+        }
+        if (InfoBoxShowSystemJumps && node.SystemJumps > 0)
+        {
+            detailLines.Add($"Jumps: {node.SystemJumps}");
+        }
+        if (InfoBoxShowShipKills && node.ShipKills > 0)
+        {
+            detailLines.Add($"Ship Kills: {node.ShipKills}");
+        }
+        if (InfoBoxShowPodKills && node.PodKills > 0)
+        {
+            detailLines.Add($"Pod Kills: {node.PodKills}");
+        }
+        if (InfoBoxShowNpcKills && node.NpcKills > 0)
+        {
+            detailLines.Add($"NPC Kills: {node.NpcKills}");
         }
         if (node.StormEffects.Count > 0)
         {
@@ -5008,6 +5153,34 @@ public sealed class MapControl : Control
             DrawIncursionIcon(context, new Point(iconX, iconY), IconSize);
             overlayIconSlot++;
         }
+        if (InfoBoxShowSystemJumps && node.SystemJumps > 0)
+        {
+            var iconX = rect.X + IndicatorIconLeftPadding + (overlayIconSlot * (IconSize + IndicatorIconSlotGap));
+            var iconY = rect.Bottom + 3;
+            DrawCountIconBadge(context, SystemJumpsIcon.Value, node.SystemJumps, new Point(iconX, iconY), IconSize);
+            overlayIconSlot++;
+        }
+        if (InfoBoxShowShipKills && node.ShipKills > 0)
+        {
+            var iconX = rect.X + IndicatorIconLeftPadding + (overlayIconSlot * (IconSize + IndicatorIconSlotGap));
+            var iconY = rect.Bottom + 3;
+            DrawCountIconBadge(context, ShipKillsIcon.Value, node.ShipKills, new Point(iconX, iconY), IconSize);
+            overlayIconSlot++;
+        }
+        if (InfoBoxShowPodKills && node.PodKills > 0)
+        {
+            var iconX = rect.X + IndicatorIconLeftPadding + (overlayIconSlot * (IconSize + IndicatorIconSlotGap));
+            var iconY = rect.Bottom + 3;
+            DrawCountIconBadge(context, PodKillsIcon.Value, node.PodKills, new Point(iconX, iconY), IconSize);
+            overlayIconSlot++;
+        }
+        if (InfoBoxShowNpcKills && node.NpcKills > 0)
+        {
+            var iconX = rect.X + IndicatorIconLeftPadding + (overlayIconSlot * (IconSize + IndicatorIconSlotGap));
+            var iconY = rect.Bottom + 3;
+            DrawCountIconBadge(context, NpcKillsIcon.Value, node.NpcKills, new Point(iconX, iconY), IconSize);
+            overlayIconSlot++;
+        }
         // SOV upgrades are rendered inline in the overlay body with icon + label rows.
     }
 
@@ -5506,6 +5679,25 @@ public sealed class MapControl : Control
         var src = new Rect(0, 0, icon.Size.Width, icon.Size.Height);
         var dst = new Rect(topLeft.X, topLeft.Y, size, size);
         context.DrawImage(icon, src, dst);
+    }
+
+    private static void DrawCountIconBadge(DrawingContext context, Bitmap? icon, int value, Point topLeft, double size)
+    {
+        if (icon is null)
+        {
+            return;
+        }
+
+        DrawBitmap(context, icon, topLeft, size);
+        var label = value > 999 ? "999+" : value.ToString(CultureInfo.InvariantCulture);
+        var text = new FormattedText(
+            label,
+            CultureInfo.InvariantCulture,
+            FlowDirection.LeftToRight,
+            NodeLabelTypeface,
+            9.5,
+            Brushes.White);
+        context.DrawText(text, new Point(topLeft.X + size + 1.5, topLeft.Y + ((size - text.Height) / 2) - 0.5));
     }
 
     private static void DrawIncursionBeacon(DrawingContext context, Point nodePoint, double verticalOffset = 0.0)

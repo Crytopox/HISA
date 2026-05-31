@@ -3,6 +3,7 @@ using Hisa.Core.Abstractions;
 using Hisa.Esi;
 using Hisa.Services.Incursions;
 using Hisa.Services.Storm;
+using Hisa.Services.SystemActivity;
 using Hisa.Services.Wormholes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -45,6 +46,10 @@ public static class ServiceCollectionExtensions
         {
             options.RefreshIntervalMinutes = 5;
         });
+        services.Configure<SystemActivityRefreshOptions>(options =>
+        {
+            options.RefreshIntervalMinutes = 60;
+        });
         services.AddHttpClient<IStormCenterSource, EveScoutStormCenterSource>(client =>
         {
             client.BaseAddress = new Uri("https://api.eve-scout.com/");
@@ -61,6 +66,8 @@ public static class ServiceCollectionExtensions
         services.AddHostedService<HubWormholeRefreshHostedService>();
         services.AddSingleton<IIncursionStateService, IncursionStateService>();
         services.AddHostedService<IncursionRefreshHostedService>();
+        services.AddSingleton<ISystemActivityStateService, SystemActivityStateService>();
+        services.AddHostedService<SystemActivityRefreshHostedService>();
         services.AddSingleton<LocalCharacterLocationLogFeedHostedService>();
         services.AddSingleton<ILocalCharacterLocationFeed>(sp => sp.GetRequiredService<LocalCharacterLocationLogFeedHostedService>());
         services.AddHostedService(sp => sp.GetRequiredService<LocalCharacterLocationLogFeedHostedService>());

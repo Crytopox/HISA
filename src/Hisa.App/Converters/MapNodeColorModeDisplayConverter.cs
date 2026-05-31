@@ -26,6 +26,10 @@ public sealed class MapNodeColorModeDisplayConverter : IValueConverter
             MapNodeColorMode.Wormholes => "Thera/Turnur Wormholes",
             MapNodeColorMode.SovUpgrades => "SOV Upgrades",
             MapNodeColorMode.Incursions => "Incursions",
+            MapNodeColorMode.SystemJumps => "System Jumps",
+            MapNodeColorMode.ShipKills => "Ship Kills",
+            MapNodeColorMode.PodKills => "Pod Kills",
+            MapNodeColorMode.NpcKills => "NPC Kills",
             _ => mode.ToString()
         };
     }

@@ -12,6 +12,8 @@ namespace Hisa.Esi.Clients;
 public interface IEsiPublicClient
 {
     Task<IReadOnlyList<IncursionInfo>> GetIncursionsAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyDictionary<int, SystemKillInfo>> GetSystemKillsAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyDictionary<int, SystemJumpInfo>> GetSystemJumpsAsync(CancellationToken cancellationToken = default);
 }
 
 public sealed class EsiPublicClient : IEsiPublicClient
@@ -28,6 +30,12 @@ public sealed class EsiPublicClient : IEsiPublicClient
     private string? _incursionsEtag;
     private DateTimeOffset _incursionsNextFetchAtUtc = DateTimeOffset.MinValue;
     private IReadOnlyList<IncursionInfo> _cachedIncursions = [];
+    private string? _systemKillsEtag;
+    private DateTimeOffset _systemKillsNextFetchAtUtc = DateTimeOffset.MinValue;
+    private IReadOnlyDictionary<int, SystemKillInfo> _cachedSystemKills = new Dictionary<int, SystemKillInfo>();
+    private string? _systemJumpsEtag;
+    private DateTimeOffset _systemJumpsNextFetchAtUtc = DateTimeOffset.MinValue;
+    private IReadOnlyDictionary<int, SystemJumpInfo> _cachedSystemJumps = new Dictionary<int, SystemJumpInfo>();
 
     public EsiPublicClient(
         HttpClient httpClient,
@@ -202,5 +210,224 @@ public sealed class EsiPublicClient : IEsiPublicClient
 
         var value = values.FirstOrDefault();
         return int.TryParse(value, out var parsed) ? parsed : null;
+    }
+
+    public async Task<IReadOnlyDictionary<int, SystemKillInfo>> GetSystemKillsAsync(CancellationToken cancellationToken = default)
+    {
+        var now = DateTimeOffset.UtcNow;
+        await _lock.WaitAsync(cancellationToken);
+        try
+        {
+            if (now < _systemKillsNextFetchAtUtc)
+            {
+                _metricsStore.Add(new EsiRequestMetric
+                {
+                    TimestampUtc = now,
+                    Route = "/universe/system_kills/",
+                    RateLimitGroup = "universe.system_kills.public",
+                    FromCache = true,
+                    StatusCode = 200,
+                    ErrorLimitRemain = null,
+                    ErrorLimitResetSeconds = null,
+                    RateLimitRemain = null,
+                    RateLimitResetSeconds = null,
+                    ETag = _systemKillsEtag,
+                    Duration = TimeSpan.Zero,
+                    Message = "served-from-cache"
+                });
+                return _cachedSystemKills;
+            }
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, "universe/system_kills/");
+            if (!string.IsNullOrWhiteSpace(_systemKillsEtag))
+            {
+                request.Headers.TryAddWithoutValidation("If-None-Match", _systemKillsEtag);
+            }
+
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            sw.Stop();
+
+            var errorRemain = ParseIntHeader(response, "X-ESI-Error-Limit-Remain");
+            var errorReset = ParseIntHeader(response, "X-ESI-Error-Limit-Reset");
+            var rateRemain = ParseIntHeader(response, "X-Ratelimit-Remaining");
+            var rateReset = ParseIntHeader(response, "X-Ratelimit-Reset");
+            _systemKillsEtag = response.Headers.ETag?.Tag ?? response.Headers.ETag?.ToString() ?? _systemKillsEtag;
+            var ttl = ResolveTtlSeconds(response, 3600);
+
+            if (response.StatusCode == HttpStatusCode.NotModified)
+            {
+                _systemKillsNextFetchAtUtc = now.AddSeconds(ttl);
+                _metricsStore.Add(new EsiRequestMetric
+                {
+                    TimestampUtc = now,
+                    Route = "/universe/system_kills/",
+                    RateLimitGroup = "universe.system_kills.public",
+                    FromCache = true,
+                    StatusCode = (int)response.StatusCode,
+                    ErrorLimitRemain = errorRemain,
+                    ErrorLimitResetSeconds = errorReset,
+                    RateLimitRemain = rateRemain,
+                    RateLimitResetSeconds = rateReset,
+                    ETag = _systemKillsEtag,
+                    Duration = sw.Elapsed,
+                    Message = "not-modified"
+                });
+                return _cachedSystemKills;
+            }
+
+            response.EnsureSuccessStatusCode();
+            var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            var dto = await JsonSerializer.DeserializeAsync<List<EsiSystemKillDto>>(stream, _jsonOptions, cancellationToken) ?? [];
+            _cachedSystemKills = dto.ToDictionary(
+                x => x.SolarSystemId,
+                x => new SystemKillInfo
+                {
+                    SolarSystemId = x.SolarSystemId,
+                    ShipKills = x.ShipKills,
+                    PodKills = x.PodKills,
+                    NpcKills = x.NpcKills
+                });
+            _systemKillsNextFetchAtUtc = now.AddSeconds(ttl);
+
+            _metricsStore.Add(new EsiRequestMetric
+            {
+                TimestampUtc = now,
+                Route = "/universe/system_kills/",
+                RateLimitGroup = "universe.system_kills.public",
+                FromCache = false,
+                StatusCode = (int)response.StatusCode,
+                ErrorLimitRemain = errorRemain,
+                ErrorLimitResetSeconds = errorReset,
+                RateLimitRemain = rateRemain,
+                RateLimitResetSeconds = rateReset,
+                ETag = _systemKillsEtag,
+                Duration = sw.Elapsed,
+                Message = $"fetched:{_cachedSystemKills.Count}"
+            });
+            return _cachedSystemKills;
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
+    public async Task<IReadOnlyDictionary<int, SystemJumpInfo>> GetSystemJumpsAsync(CancellationToken cancellationToken = default)
+    {
+        var now = DateTimeOffset.UtcNow;
+        await _lock.WaitAsync(cancellationToken);
+        try
+        {
+            if (now < _systemJumpsNextFetchAtUtc)
+            {
+                _metricsStore.Add(new EsiRequestMetric
+                {
+                    TimestampUtc = now,
+                    Route = "/universe/system_jumps/",
+                    RateLimitGroup = "universe.system_jumps.public",
+                    FromCache = true,
+                    StatusCode = 200,
+                    ErrorLimitRemain = null,
+                    ErrorLimitResetSeconds = null,
+                    RateLimitRemain = null,
+                    RateLimitResetSeconds = null,
+                    ETag = _systemJumpsEtag,
+                    Duration = TimeSpan.Zero,
+                    Message = "served-from-cache"
+                });
+                return _cachedSystemJumps;
+            }
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, "universe/system_jumps/");
+            if (!string.IsNullOrWhiteSpace(_systemJumpsEtag))
+            {
+                request.Headers.TryAddWithoutValidation("If-None-Match", _systemJumpsEtag);
+            }
+
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            sw.Stop();
+
+            var errorRemain = ParseIntHeader(response, "X-ESI-Error-Limit-Remain");
+            var errorReset = ParseIntHeader(response, "X-ESI-Error-Limit-Reset");
+            var rateRemain = ParseIntHeader(response, "X-Ratelimit-Remaining");
+            var rateReset = ParseIntHeader(response, "X-Ratelimit-Reset");
+            _systemJumpsEtag = response.Headers.ETag?.Tag ?? response.Headers.ETag?.ToString() ?? _systemJumpsEtag;
+            var ttl = ResolveTtlSeconds(response, 3600);
+
+            if (response.StatusCode == HttpStatusCode.NotModified)
+            {
+                _systemJumpsNextFetchAtUtc = now.AddSeconds(ttl);
+                _metricsStore.Add(new EsiRequestMetric
+                {
+                    TimestampUtc = now,
+                    Route = "/universe/system_jumps/",
+                    RateLimitGroup = "universe.system_jumps.public",
+                    FromCache = true,
+                    StatusCode = (int)response.StatusCode,
+                    ErrorLimitRemain = errorRemain,
+                    ErrorLimitResetSeconds = errorReset,
+                    RateLimitRemain = rateRemain,
+                    RateLimitResetSeconds = rateReset,
+                    ETag = _systemJumpsEtag,
+                    Duration = sw.Elapsed,
+                    Message = "not-modified"
+                });
+                return _cachedSystemJumps;
+            }
+
+            response.EnsureSuccessStatusCode();
+            var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            var dto = await JsonSerializer.DeserializeAsync<List<EsiSystemJumpDto>>(stream, _jsonOptions, cancellationToken) ?? [];
+            _cachedSystemJumps = dto.ToDictionary(
+                x => x.SolarSystemId,
+                x => new SystemJumpInfo
+                {
+                    SolarSystemId = x.SolarSystemId,
+                    ShipJumps = x.ShipJumps
+                });
+            _systemJumpsNextFetchAtUtc = now.AddSeconds(ttl);
+
+            _metricsStore.Add(new EsiRequestMetric
+            {
+                TimestampUtc = now,
+                Route = "/universe/system_jumps/",
+                RateLimitGroup = "universe.system_jumps.public",
+                FromCache = false,
+                StatusCode = (int)response.StatusCode,
+                ErrorLimitRemain = errorRemain,
+                ErrorLimitResetSeconds = errorReset,
+                RateLimitRemain = rateRemain,
+                RateLimitResetSeconds = rateReset,
+                ETag = _systemJumpsEtag,
+                Duration = sw.Elapsed,
+                Message = $"fetched:{_cachedSystemJumps.Count}"
+            });
+            return _cachedSystemJumps;
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
+    private static int ResolveTtlSeconds(HttpResponseMessage response, int fallbackSeconds)
+    {
+        if (response.Headers.CacheControl?.MaxAge is TimeSpan maxAge && maxAge.TotalSeconds > 0)
+        {
+            return Math.Max(1, (int)maxAge.TotalSeconds);
+        }
+
+        if (response.Content.Headers.Expires is DateTimeOffset expires)
+        {
+            var ttl = (int)Math.Round((expires - DateTimeOffset.UtcNow).TotalSeconds);
+            if (ttl > 0)
+            {
+                return ttl;
+            }
+        }
+
+        return Math.Max(1, fallbackSeconds);
     }
 }

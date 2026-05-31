@@ -152,6 +152,10 @@
                               ShowIndicatorWormholeIcon="{Binding ShowIndicatorWormholeIcon}"
                               ShowIndicatorSovUpgradeIcon="{Binding ShowIndicatorSovUpgradeIcon}"
                               ShowIndicatorIncursionIcon="{Binding ShowIndicatorIncursionIcon}"
+                              ShowIndicatorSystemJumps="{Binding ShowIndicatorSystemJumps}"
+                              ShowIndicatorShipKills="{Binding ShowIndicatorShipKills}"
+                              ShowIndicatorPodKills="{Binding ShowIndicatorPodKills}"
+                              ShowIndicatorNpcKills="{Binding ShowIndicatorNpcKills}"
                               ShowIndicatorCharacterPresence="{Binding ShowIndicatorCharacterPresence}"
                               ShowInfoBoxCharacterPresence="{Binding ShowInfoBoxCharacterPresence}"
                               CharacterPresenceHoverMaxNames="{Binding CharacterPresenceHoverMaxNames}"
@@ -167,6 +171,10 @@
                               InfoBoxShowWormholeIcon="{Binding InfoBoxShowWormholeIcon}"
                               InfoBoxShowSovUpgradeIcon="{Binding InfoBoxShowSovUpgradeIcon}"
                               InfoBoxShowIncursionIcon="{Binding InfoBoxShowIncursionIcon}"
+                              InfoBoxShowSystemJumps="{Binding InfoBoxShowSystemJumps}"
+                              InfoBoxShowShipKills="{Binding InfoBoxShowShipKills}"
+                              InfoBoxShowPodKills="{Binding InfoBoxShowPodKills}"
+                              InfoBoxShowNpcKills="{Binding InfoBoxShowNpcKills}"
                               CharacterPresenceCountsByNodeId="{Binding CharacterPresenceCountsByNodeIdForView}"
                               CharacterPresenceNamesByNodeId="{Binding CharacterPresenceNamesByNodeIdForView}"
                               CharacterPresenceCharacterIdsByNodeId="{Binding CharacterPresenceCharacterIdsByNodeIdForView}"
@@ -938,6 +946,10 @@
             <CheckBox IsChecked="{Binding ShowIndicatorStormIcon}" Content="Metaliminal Storms" />
             <CheckBox IsChecked="{Binding ShowIndicatorWormholeIcon}" Content="Thera/Turnur Wormholes" />
             <CheckBox IsChecked="{Binding ShowIndicatorIncursionIcon}" Content="Incursions" />
+            <CheckBox IsChecked="{Binding ShowIndicatorSystemJumps}" Content="System Jumps" />
+            <CheckBox IsChecked="{Binding ShowIndicatorShipKills}" Content="Ship Kills" />
+            <CheckBox IsChecked="{Binding ShowIndicatorPodKills}" Content="Pod Kills" />
+            <CheckBox IsChecked="{Binding ShowIndicatorNpcKills}" Content="NPC Kills" />
             <CheckBox IsChecked="{Binding ShowIndicatorCharacterPresence}" Content="Characters" />
             <CheckBox IsChecked="{Binding ShowIndicatorJumpRangeLy}" Content="Jump Range LY" />
             <CheckBox IsChecked="{Binding ShowAnsiblexNetwork}" Content="Ansiblex Network" />
@@ -990,6 +1002,10 @@
             <CheckBox IsChecked="{Binding InfoBoxShowStormIcon}" Content="Metaliminal Storms" />
             <CheckBox IsChecked="{Binding InfoBoxShowWormholeIcon}" Content="Thera/Turnur Wormholes" />
             <CheckBox IsChecked="{Binding InfoBoxShowIncursionIcon}" Content="Incursions" />
+            <CheckBox IsChecked="{Binding InfoBoxShowSystemJumps}" Content="System Jumps" />
+            <CheckBox IsChecked="{Binding InfoBoxShowShipKills}" Content="Ship Kills" />
+            <CheckBox IsChecked="{Binding InfoBoxShowPodKills}" Content="Pod Kills" />
+            <CheckBox IsChecked="{Binding InfoBoxShowNpcKills}" Content="NPC Kills" />
             <StackPanel Orientation="Horizontal" Spacing="8">
               <CheckBox IsChecked="{Binding ShowInfoBoxCharacterPresence}" Content="Characters" VerticalAlignment="Center" />
               <TextBlock Text="Max" VerticalAlignment="Center" />

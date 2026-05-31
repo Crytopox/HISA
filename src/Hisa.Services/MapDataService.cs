@@ -16,6 +16,7 @@ public sealed class MapDataService : IMapDataService
     private readonly IHubWormholeStateService _hubWormholeStateService;
     private readonly ISovUpgradeStateService _sovUpgradeStateService;
     private readonly IIncursionStateService _incursionStateService;
+    private readonly ISystemActivityStateService _systemActivityStateService;
 
     private sealed record StaticSolarSystemData(bool HasJoveObservatory, int IceFieldCount);
 
@@ -25,7 +26,8 @@ public sealed class MapDataService : IMapDataService
         IStormStateService stormStateService,
         IHubWormholeStateService hubWormholeStateService,
         ISovUpgradeStateService sovUpgradeStateService,
-        IIncursionStateService incursionStateService)
+        IIncursionStateService incursionStateService,
+        ISystemActivityStateService systemActivityStateService)
     {
         _sdeDatabase = sdeDatabase;
         _mapLayoutDataService = mapLayoutDataService;
@@ -33,6 +35,7 @@ public sealed class MapDataService : IMapDataService
         _hubWormholeStateService = hubWormholeStateService;
         _sovUpgradeStateService = sovUpgradeStateService;
         _incursionStateService = incursionStateService;
+        _systemActivityStateService = systemActivityStateService;
     }
 
     public async Task<IReadOnlyList<RegionOption>> GetRegionsAsync(CancellationToken cancellationToken = default)
@@ -241,7 +244,11 @@ public sealed class MapDataService : IMapDataService
                 SovUpgrades = _sovUpgradeStateService.CurrentBySystemId.TryGetValue((int)n.Id, out var upgrades)
                     ? upgrades
                     : [],
-                HasActiveIncursion = _incursionStateService.Current.ActiveSystemIds.Contains((int)n.Id)
+                HasActiveIncursion = _incursionStateService.Current.ActiveSystemIds.Contains((int)n.Id),
+                SystemJumps = _systemActivityStateService.Current.JumpsBySystemId.TryGetValue((int)n.Id, out var layoutJumps) ? layoutJumps.ShipJumps : 0,
+                ShipKills = _systemActivityStateService.Current.KillsBySystemId.TryGetValue((int)n.Id, out var layoutKills) ? layoutKills.ShipKills : 0,
+                PodKills = _systemActivityStateService.Current.KillsBySystemId.TryGetValue((int)n.Id, out var layoutPodKills) ? layoutPodKills.PodKills : 0,
+                NpcKills = _systemActivityStateService.Current.KillsBySystemId.TryGetValue((int)n.Id, out var layoutNpcKills) ? layoutNpcKills.NpcKills : 0
             };
         }).ToList();
 
@@ -337,7 +344,11 @@ public sealed class MapDataService : IMapDataService
                 StormEffects = n.StormEffects,
                 HubWormholeConnections = n.HubWormholeConnections,
                 SovUpgrades = n.SovUpgrades,
-                HasActiveIncursion = n.HasActiveIncursion
+                HasActiveIncursion = n.HasActiveIncursion,
+                SystemJumps = n.SystemJumps,
+                ShipKills = n.ShipKills,
+                PodKills = n.PodKills,
+                NpcKills = n.NpcKills
             })
             .ToList();
 
@@ -656,7 +667,11 @@ public sealed class MapDataService : IMapDataService
                 SovUpgrades = _sovUpgradeStateService.CurrentBySystemId.TryGetValue(solarSystemId, out var upgrades)
                     ? upgrades
                     : [],
-                HasActiveIncursion = _incursionStateService.Current.ActiveSystemIds.Contains(solarSystemId)
+                HasActiveIncursion = _incursionStateService.Current.ActiveSystemIds.Contains(solarSystemId),
+                SystemJumps = _systemActivityStateService.Current.JumpsBySystemId.TryGetValue(solarSystemId, out var jumps) ? jumps.ShipJumps : 0,
+                ShipKills = _systemActivityStateService.Current.KillsBySystemId.TryGetValue(solarSystemId, out var kills) ? kills.ShipKills : 0,
+                PodKills = _systemActivityStateService.Current.KillsBySystemId.TryGetValue(solarSystemId, out var podKills) ? podKills.PodKills : 0,
+                NpcKills = _systemActivityStateService.Current.KillsBySystemId.TryGetValue(solarSystemId, out var npcKills) ? npcKills.NpcKills : 0
             });
         }
 
@@ -777,7 +792,11 @@ public sealed class MapDataService : IMapDataService
                 StormEffects = n.StormEffects,
                 HubWormholeConnections = n.HubWormholeConnections,
                 SovUpgrades = n.SovUpgrades,
-                HasActiveIncursion = n.HasActiveIncursion
+                HasActiveIncursion = n.HasActiveIncursion,
+                SystemJumps = n.SystemJumps,
+                ShipKills = n.ShipKills,
+                PodKills = n.PodKills,
+                NpcKills = n.NpcKills
             });
         }
 

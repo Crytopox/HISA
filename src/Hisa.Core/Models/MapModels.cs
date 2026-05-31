@@ -26,7 +26,11 @@ public enum MapNodeColorMode
     Storms = 7,
     Wormholes = 8,
     SovUpgrades = 9,
-    Incursions = 10
+    Incursions = 10,
+    SystemJumps = 12,
+    ShipKills = 13,
+    PodKills = 14,
+    NpcKills = 15
 }
 
 public sealed class MapGraph
@@ -58,6 +62,10 @@ public sealed class MapNode
     public IReadOnlyList<HubWormholeConnection> HubWormholeConnections { get; init; } = [];
     public IReadOnlyList<SovUpgradeEntry> SovUpgrades { get; init; } = [];
     public bool HasActiveIncursion { get; init; }
+    public int SystemJumps { get; init; }
+    public int ShipKills { get; init; }
+    public int PodKills { get; init; }
+    public int NpcKills { get; init; }
 }
 
 public sealed class SovUpgradeEntry
