@@ -338,6 +338,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly object _characterIdLookupGate = new();
     private readonly DispatcherTimer _intelOverlayAgeTimer;
     private readonly DispatcherTimer _activityCardsRebuildDebounceTimer;
+    private readonly DispatcherTimer _overlayCardUiRefreshDebounceTimer;
+    private bool _pendingIntelCardsUiRefresh;
+    private bool _pendingZkillCardsUiRefresh;
     private int _activityCardsRebuildVersion;
     private int _activityCardsRebuildRunningVersion;
     private bool _activityCardsRebuildInFlight;
@@ -441,6 +444,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const int MaxIntelPortraitBitmapCacheItems = 500;
     private const int MaxIntelCorporationBitmapCacheItems = 500;
     private const int MaxIntelAllianceBitmapCacheItems = 500;
+    private const int MaxParallelImageRequests = 10;
     private readonly Task _initialLoadTask;
 
     public MainWindowViewModel(
@@ -491,6 +495,22 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         {
             _activityCardsRebuildDebounceTimer.Stop();
             _ = RunScheduledActivityCardsRebuildAsync();
+        };
+        _overlayCardUiRefreshDebounceTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(80) };
+        _overlayCardUiRefreshDebounceTimer.Tick += (_, _) =>
+        {
+            _overlayCardUiRefreshDebounceTimer.Stop();
+            if (_pendingIntelCardsUiRefresh)
+            {
+                _pendingIntelCardsUiRefresh = false;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelCardsForView)));
+            }
+
+            if (_pendingZkillCardsUiRefresh)
+            {
+                _pendingZkillCardsUiRefresh = false;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ZkillmailCardsForView)));
+            }
         };
         _initialLoadTask = LoadAsync();
     }
@@ -2294,6 +2314,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasZkillmailOverlayData)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasNoZkillmailOverlayData)));
 
+        _ = EnsureShipImagesForIntelCardsAsync();
         _ = EnsureZkillIdentityAssetsAsync();
     }
 
@@ -2319,6 +2340,22 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         Interlocked.Increment(ref _activityCardsRebuildVersion);
         _activityCardsRebuildDebounceTimer.Stop();
         _activityCardsRebuildDebounceTimer.Start();
+    }
+
+    private void RequestOverlayCardsUiRefresh(bool intelCardsChanged, bool zkillCardsChanged)
+    {
+        if (intelCardsChanged)
+        {
+            _pendingIntelCardsUiRefresh = true;
+        }
+
+        if (zkillCardsChanged)
+        {
+            _pendingZkillCardsUiRefresh = true;
+        }
+
+        _overlayCardUiRefreshDebounceTimer.Stop();
+        _overlayCardUiRefreshDebounceTimer.Start();
     }
 
     private async Task RunScheduledActivityCardsRebuildAsync()
@@ -4004,10 +4041,19 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             .Select(id => id!.Value)
             .Distinct()
             .ToList();
-        foreach (var characterId in characterIds)
+        var throttler = new SemaphoreSlim(MaxParallelImageRequests);
+        var characterTasks = characterIds.Select(async characterId =>
         {
-            _ = EnsureIntelHostileImagesAsync(characterId);
-        }
+            await throttler.WaitAsync();
+            try
+            {
+                await EnsureIntelHostileImagesAsync(characterId);
+            }
+            finally
+            {
+                throttler.Release();
+            }
+        }).ToList();
 
         var corporationIds = _zkillmailCardsForView
             .SelectMany(c =>
@@ -4018,16 +4064,24 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             .Distinct()
             .ToList();
 
-        foreach (var corporationId in corporationIds)
+        var corporationTasks = corporationIds.Select(async corporationId =>
         {
-            await GetOrLoadCachedBitmapAsync(
-                IntelCorporationBitmapCache,
-                corporationId,
-                "corporations",
-                $"{corporationId}.png",
-                $"https://images.evetech.net/corporations/{corporationId}/logo?tenant=tranquility&size=64");
-            await GetOrLoadCorporationTickerAsync(corporationId);
-        }
+            await throttler.WaitAsync();
+            try
+            {
+                await GetOrLoadCachedBitmapAsync(
+                    IntelCorporationBitmapCache,
+                    corporationId,
+                    "corporations",
+                    $"{corporationId}.png",
+                    $"https://images.evetech.net/corporations/{corporationId}/logo?tenant=tranquility&size=64");
+                await GetOrLoadCorporationTickerAsync(corporationId);
+            }
+            finally
+            {
+                throttler.Release();
+            }
+        }).ToList();
 
         var allianceIds = _zkillmailCardsForView
             .SelectMany(c =>
@@ -4038,16 +4092,26 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             .Distinct()
             .ToList();
 
-        foreach (var allianceId in allianceIds)
+        var allianceTasks = allianceIds.Select(async allianceId =>
         {
-            await GetOrLoadCachedBitmapAsync(
-                IntelAllianceBitmapCache,
-                allianceId,
-                "alliances",
-                $"{allianceId}.png",
-                $"https://images.evetech.net/alliances/{allianceId}/logo?tenant=tranquility&size=64");
-            await GetOrLoadAllianceTickerAsync(allianceId);
-        }
+            await throttler.WaitAsync();
+            try
+            {
+                await GetOrLoadCachedBitmapAsync(
+                    IntelAllianceBitmapCache,
+                    allianceId,
+                    "alliances",
+                    $"{allianceId}.png",
+                    $"https://images.evetech.net/alliances/{allianceId}/logo?tenant=tranquility&size=64");
+                await GetOrLoadAllianceTickerAsync(allianceId);
+            }
+            finally
+            {
+                throttler.Release();
+            }
+        }).ToList();
+
+        await Task.WhenAll(characterTasks.Concat(corporationTasks).Concat(allianceTasks));
 
         Dispatcher.UIThread.Post(() =>
         {
@@ -4060,7 +4124,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 }
             }
 
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ZkillmailCardsForView)));
+            RequestOverlayCardsUiRefresh(intelCardsChanged: false, zkillCardsChanged: true);
         });
     }
 
@@ -5108,9 +5172,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
                 if (changed)
                 {
-                    RebuildIntelPresenceForView();
-                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelCardsForView)));
-                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ZkillmailCardsForView)));
+                    RequestOverlayCardsUiRefresh(intelCardsChanged: true, zkillCardsChanged: true);
                 }
             });
         }
