@@ -377,11 +377,15 @@ public partial class MainWindow : Window
             if (_alertPopupSettings.Enabled && alert.Actions.Contains(AlertActionType.ShowPopup))
             {
                 EnsureAlertPopupWindow();
+                var zkillCard = TryFindPopupZkillmailCard(alert);
+                var intelCard = zkillCard is null ? TryFindPopupIntelCard(alert) : null;
                 var card = new AlertPopupCard
                 {
                     Title = $"{alert.SourceEvent.EventType}: {alert.RuleName}",
                     Details = alert.SourceEvent.Summary,
                     TimestampLabel = $"{alert.TriggeredAtUtc:HH:mm:ss} UTC",
+                    IntelCard = intelCard,
+                    ZkillmailCard = zkillCard,
                     ExpiresAtUtc = DateTime.UtcNow.AddSeconds(_alertPopupSettings.AutoDismissSeconds)
                 };
                 _alertPopupCards.Insert(0, card);
@@ -395,6 +399,46 @@ public partial class MainWindow : Window
         });
     }
 
+    private IntelOverlayCard? TryFindPopupIntelCard(AlertTriggered alert)
+    {
+        if (_boundVm is null || alert.SourceEvent.EventType != AlertEventType.IntelReport)
+        {
+            return null;
+        }
+
+        var tolerance = TimeSpan.FromMinutes(5);
+        return _boundVm.IntelCardsForView
+            .Where(c => c.SolarSystemId == alert.SourceEvent.SolarSystemId)
+            .OrderBy(c => Math.Abs((c.SortTimestampUtc - alert.SourceEvent.TimestampUtc).TotalSeconds))
+            .FirstOrDefault(c => Math.Abs((c.SortTimestampUtc - alert.SourceEvent.TimestampUtc).TotalSeconds) <= tolerance.TotalSeconds)
+            ?? _boundVm.IntelCardsForView.FirstOrDefault(c => c.SolarSystemId == alert.SourceEvent.SolarSystemId);
+    }
+
+    private ZkillmailOverlayCard? TryFindPopupZkillmailCard(AlertTriggered alert)
+    {
+        if (_boundVm is null || alert.SourceEvent.EventType != AlertEventType.Killmail)
+        {
+            return null;
+        }
+
+        if (alert.SourceEvent.KillmailId is { } killmailId)
+        {
+            var idToken = $"/kill/{killmailId}/";
+            var byId = _boundVm.ZkillmailCardsForView.FirstOrDefault(c => c.KillmailUrl.Contains(idToken, StringComparison.Ordinal));
+            if (byId is not null)
+            {
+                return byId;
+            }
+        }
+
+        var tolerance = TimeSpan.FromMinutes(10);
+        return _boundVm.ZkillmailCardsForView
+            .Where(c => c.SolarSystemId == alert.SourceEvent.SolarSystemId)
+            .OrderBy(c => Math.Abs((c.TimestampUtc - alert.SourceEvent.TimestampUtc).TotalSeconds))
+            .FirstOrDefault(c => Math.Abs((c.TimestampUtc - alert.SourceEvent.TimestampUtc).TotalSeconds) <= tolerance.TotalSeconds)
+            ?? _boundVm.ZkillmailCardsForView.FirstOrDefault(c => c.SolarSystemId == alert.SourceEvent.SolarSystemId);
+    }
+
     private void EnsureAlertPopupWindow()
     {
         if (_alertPopupWindow is not null)
@@ -405,7 +449,8 @@ public partial class MainWindow : Window
         _alertPopupWindow = new AlertPopupWindow
         {
             Width = 420,
-            Height = 360
+            Height = 360,
+            DataContext = _boundVm
         };
         _alertPopupWindow.DragPositionCommitted += OnAlertPopupDragPositionCommitted;
         _alertPopupWindow.Closed += (_, _) => _alertPopupWindow = null;
@@ -542,6 +587,10 @@ public partial class MainWindow : Window
     {
         if (_alertPopupCards.Count == 0)
         {
+            if (!_isAlertPopupDragMode && _alertPopupWindow is { IsVisible: true })
+            {
+                _alertPopupWindow.Hide();
+            }
             return;
         }
 
@@ -552,6 +601,11 @@ public partial class MainWindow : Window
             {
                 _alertPopupCards.RemoveAt(i);
             }
+        }
+
+        if (_alertPopupCards.Count == 0 && !_isAlertPopupDragMode && _alertPopupWindow is { IsVisible: true })
+        {
+            _alertPopupWindow.Hide();
         }
     }
 
