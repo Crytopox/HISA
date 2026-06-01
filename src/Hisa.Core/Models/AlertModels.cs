@@ -38,6 +38,7 @@ public sealed class AlertRule
     public AlertDistanceMode DistanceMode { get; init; } = AlertDistanceMode.Any;
     public int MaxJumps { get; init; } = 0;
     public bool IncludeAnsiblexLinks { get; init; } = false;
+    public bool ShowClearIntelReports { get; init; } = false;
     public int CooldownSeconds { get; init; } = 0;
     public string SoundFile { get; init; } = "default-alert.wav";
     public double SoundVolume { get; init; } = 1.0;
@@ -51,6 +52,7 @@ public sealed class AlertSourceEvent
     public required long SolarSystemId { get; init; }
     public int? RegionId { get; init; }
     public long? KillmailId { get; init; }
+    public bool IsClearIntelReport { get; init; }
     public string DedupeKey { get; init; } = string.Empty;
     public string Summary { get; init; } = string.Empty;
 }

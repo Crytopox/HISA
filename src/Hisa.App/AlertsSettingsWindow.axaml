@@ -76,9 +76,10 @@
               </StackPanel>
             </Grid>
 
-            <Grid ColumnDefinitions="Auto,Auto" ColumnSpacing="14">
+            <Grid ColumnDefinitions="Auto,Auto,Auto" ColumnSpacing="14">
               <CheckBox Grid.Column="0" x:Name="IncludeAnsiblexCheckBox" Content="Use Ansiblex" Foreground="#DDE7F8"/>
               <CheckBox Grid.Column="1" x:Name="ActionSoundCheckBox" Content="Play Sound" Foreground="#DDE7F8" Checked="OnActionSoundToggleChanged" Unchecked="OnActionSoundToggleChanged"/>
+              <CheckBox Grid.Column="2" x:Name="ShowClearIntelReportsCheckBox" Content="Show clear / CLR reports" Foreground="#DDE7F8"/>
             </Grid>
 
             <Border Padding="8" CornerRadius="6" BorderBrush="#2A3C58" BorderThickness="1" Background="#111A2A">

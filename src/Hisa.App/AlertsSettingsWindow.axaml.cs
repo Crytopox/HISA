@@ -75,6 +75,7 @@ public partial class AlertsSettingsWindow : Window
             DistanceMode = AlertDistanceMode.Any,
             MaxJumps = 3,
             IncludeAnsiblexLinks = false,
+            ShowClearIntelReports = false,
             CooldownSeconds = 30,
             SoundVolume = 1.0,
             Actions = []
@@ -118,6 +119,7 @@ public partial class AlertsSettingsWindow : Window
         DistanceModeComboBox.SelectedItem = rule.DistanceMode;
         MaxJumpsTextBox.Text = rule.MaxJumps.ToString();
         IncludeAnsiblexCheckBox.IsChecked = rule.IncludeAnsiblexLinks;
+        ShowClearIntelReportsCheckBox.IsChecked = rule.ShowClearIntelReports;
         CooldownSecondsTextBox.Text = rule.CooldownSeconds.ToString();
         SoundFileComboBox.Text = string.IsNullOrWhiteSpace(rule.SoundFile) ? "default-alert.wav" : rule.SoundFile;
         var volumePercent = Math.Clamp((int)Math.Round(rule.SoundVolume * 100.0), 0, 100);
@@ -211,6 +213,7 @@ public partial class AlertsSettingsWindow : Window
             DistanceMode = distanceMode,
             MaxJumps = maxJumps,
             IncludeAnsiblexLinks = IncludeAnsiblexCheckBox.IsChecked == true,
+            ShowClearIntelReports = ShowClearIntelReportsCheckBox.IsChecked == true,
             CooldownSeconds = cooldown,
             SoundFile = string.IsNullOrWhiteSpace(SoundFileComboBox.Text) ? "default-alert.wav" : SoundFileComboBox.Text.Trim(),
             SoundVolume = volumePercent / 100.0,
@@ -346,6 +349,7 @@ public partial class AlertsSettingsWindow : Window
         var scopeMode = ScopeModeComboBox.SelectedItem is AlertLocationScopeMode sm ? sm : AlertLocationScopeMode.Global;
         var distanceMode = DistanceModeComboBox.SelectedItem is AlertDistanceMode dm ? dm : AlertDistanceMode.Any;
         var soundEnabled = ActionSoundCheckBox.IsChecked == true;
+        var eventType = EventTypeComboBox.SelectedItem is AlertEventType et ? et : AlertEventType.IntelReport;
 
         CharacterSearchTextBox.IsEnabled = scopeMode == AlertLocationScopeMode.SpecificCharacters;
         CharacterCandidatesListBox.IsEnabled = scopeMode == AlertLocationScopeMode.SpecificCharacters;
@@ -353,6 +357,7 @@ public partial class AlertsSettingsWindow : Window
         CharacterSelectorPanel.IsVisible = scopeMode == AlertLocationScopeMode.SpecificCharacters;
         EventTypeComboBox.IsVisible = true;
         MaxJumpsPanel.IsVisible = distanceMode == AlertDistanceMode.MaxJumps;
+        ShowClearIntelReportsCheckBox.IsVisible = eventType == AlertEventType.IntelReport;
         SoundFileComboBox.IsEnabled = soundEnabled;
         SoundVolumeTextBox.IsEnabled = soundEnabled;
         SoundVolumeSlider.IsEnabled = soundEnabled;

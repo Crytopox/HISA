@@ -2354,6 +2354,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             TimestampUtc = report.TimestampUtc,
             SolarSystemId = solarSystemId,
             KillmailId = report.Killmail?.KillmailId,
+            IsClearIntelReport = !isKillmail && report.IsClear,
             DedupeKey = isKillmail
                 ? (report.Killmail?.KillmailId > 0 ? $"killmail:{report.Killmail!.KillmailId}" : $"killmail:{report.TimestampUtc:O}:{solarSystemId}")
                 : $"intel:{solarSystemId}:{report.TimestampUtc:yyyyMMddHHmm}",
@@ -2431,6 +2432,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             DistanceMode = rule.DistanceMode,
             MaxJumps = Math.Max(0, rule.MaxJumps),
             IncludeAnsiblexLinks = rule.IncludeAnsiblexLinks,
+            ShowClearIntelReports = rule.ShowClearIntelReports,
             CooldownSeconds = Math.Max(0, rule.CooldownSeconds),
             SoundFile = string.IsNullOrWhiteSpace(rule.SoundFile) ? "default-alert.wav" : rule.SoundFile.Trim(),
             SoundVolume = Math.Clamp(rule.SoundVolume, 0.0, 1.0),

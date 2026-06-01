@@ -28,6 +28,13 @@ public sealed class AlertRuleEngine : IAlertRuleEngine
                 continue;
             }
 
+            if (source.EventType == AlertEventType.IntelReport &&
+                source.IsClearIntelReport &&
+                !rule.ShowClearIntelReports)
+            {
+                continue;
+            }
+
             if (!MatchesScope(rule, source, graph, request))
             {
                 continue;
