@@ -119,6 +119,8 @@
               <MenuItem Header="Map Editor" Click="OnOpenMapEditorClicked" />
               <MenuItem Header="Preferences" Click="OnOpenPreferencesClicked" />
               <MenuItem Header="Intel Settings" Click="OnOpenIntelSettingsClicked" />
+              <MenuItem Header="Alerts Settings" Click="OnOpenAlertsSettingsClicked" />
+              <MenuItem Header="Alerts Popup" Click="OnOpenAlertsPopupClicked" />
               <MenuItem Header="Characters" Click="OnOpenCharactersClicked" />
               <MenuItem Header="SOV Upgrades" Click="OnOpenSovUpgradesClicked" />
               <MenuItem Header="Ansiblex Network" Click="OnOpenAnsiblexNetworkClicked" />

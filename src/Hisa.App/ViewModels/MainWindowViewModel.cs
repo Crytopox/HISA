@@ -523,6 +523,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
+    public event EventHandler<AlertTriggered>? AlertTriggered;
 
     public ObservableCollection<MapViewMode> ViewModes { get; }
     public ObservableCollection<MapCoordinateMode> CoordinateModes { get; }
@@ -2368,7 +2369,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
 
         var labels = string.Join(", ", triggered.Select(x => x.RuleName).Distinct(StringComparer.OrdinalIgnoreCase));
-        Dispatcher.UIThread.Post(() => StatusText = $"Alert triggered ({triggered.Count}): {labels}");
+        Dispatcher.UIThread.Post(() =>
+        {
+            StatusText = $"Alert triggered ({triggered.Count}): {labels}";
+            foreach (var item in triggered)
+            {
+                AlertTriggered?.Invoke(this, item);
+            }
+        });
     }
 
     private long ResolveSystemIdByName(string? solarSystemName)
@@ -2398,6 +2406,24 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
 
         return 0;
+    }
+
+    private static AlertRule CloneAlertRule(AlertRule rule)
+    {
+        return new AlertRule
+        {
+            Id = string.IsNullOrWhiteSpace(rule.Id) ? Guid.NewGuid().ToString("N") : rule.Id,
+            Name = rule.Name.Trim(),
+            Enabled = rule.Enabled,
+            EventType = rule.EventType,
+            ScopeMode = rule.ScopeMode,
+            CharacterIds = (rule.CharacterIds ?? []).Distinct().ToList(),
+            DistanceMode = rule.DistanceMode,
+            MaxJumps = Math.Max(0, rule.MaxJumps),
+            IncludeAnsiblexLinks = rule.IncludeAnsiblexLinks,
+            CooldownSeconds = Math.Max(0, rule.CooldownSeconds),
+            Actions = (rule.Actions ?? []).Distinct().ToList()
+        };
     }
 
     private void AppendZkillmailCardForView(IntelChatReport report)
@@ -3265,6 +3291,24 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         await _settingsService.SetAsync(IntelLimitToCurrentRegionKey, LimitIntelReportsToCurrentRegion);
         await _settingsService.SetAsync(ZkillLimitToCurrentRegionKey, LimitZkillmailsToCurrentRegion);
         StatusText = "Intel settings saved. Restart HISA intel feed to apply channel filter changes.";
+    }
+
+    public IReadOnlyList<AlertRule> GetAlertRulesSnapshot()
+    {
+        return _alertRules
+            .Select(CloneAlertRule)
+            .ToList();
+    }
+
+    public async Task SaveAlertRulesAsync(IReadOnlyList<AlertRule> rules)
+    {
+        var sanitized = (rules ?? [])
+            .Where(r => !string.IsNullOrWhiteSpace(r.Name))
+            .Select(CloneAlertRule)
+            .ToList();
+        _alertRules = sanitized;
+        await _settingsService.SetAsync(AlertRulesKey, sanitized);
+        StatusText = $"Alerts settings saved ({sanitized.Count} rule(s)).";
     }
 
     public Task ClearIntelAndKillmailHistoryAsync()

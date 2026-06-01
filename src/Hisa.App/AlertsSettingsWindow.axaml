@@ -1,0 +1,73 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="980" d:DesignHeight="620"
+        x:Class="Hisa.App.AlertsSettingsWindow"
+        Title="Alerts Settings"
+        Background="#0D131D">
+  <Grid Margin="10" ColumnDefinitions="260,*" ColumnSpacing="10">
+    <Border Grid.Column="0" Background="#121A26" BorderBrush="#2A3C58" BorderThickness="1" CornerRadius="6" Padding="8">
+      <StackPanel Spacing="8">
+        <TextBlock Text="Alert Rules" Foreground="#EAF2FF" FontWeight="SemiBold"/>
+        <ListBox x:Name="RulesListBox" SelectionChanged="OnRuleSelectionChanged"/>
+        <Grid ColumnDefinitions="*,*" ColumnSpacing="6">
+          <Button Grid.Column="0" Content="Add" Click="OnAddRuleClicked"/>
+          <Button Grid.Column="1" Content="Delete" Click="OnDeleteRuleClicked"/>
+        </Grid>
+      </StackPanel>
+    </Border>
+
+    <Border Grid.Column="1" Background="#121A26" BorderBrush="#2A3C58" BorderThickness="1" CornerRadius="6" Padding="10">
+      <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Spacing="8">
+          <TextBlock Text="Rule Editor" Foreground="#EAF2FF" FontWeight="SemiBold"/>
+          <TextBox x:Name="RuleNameTextBox" Watermark="Rule name"/>
+          <CheckBox x:Name="RuleEnabledCheckBox" Content="Enabled" Foreground="#DDE7F8"/>
+
+          <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+            <StackPanel Grid.Column="0" Spacing="4">
+              <TextBlock Text="Event" Foreground="#9DB8D8"/>
+              <ComboBox x:Name="EventTypeComboBox" SelectionChanged="OnEditorValueChanged"/>
+            </StackPanel>
+            <StackPanel Grid.Column="1" Spacing="4">
+              <TextBlock Text="Scope" Foreground="#9DB8D8"/>
+              <ComboBox x:Name="ScopeModeComboBox" SelectionChanged="OnEditorValueChanged"/>
+            </StackPanel>
+          </Grid>
+
+          <TextBlock Text="Character IDs (comma-separated for SpecificCharacters)" Foreground="#9DB8D8"/>
+          <TextBox x:Name="CharacterIdsTextBox" Watermark="123456, 789012"/>
+
+          <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+            <StackPanel Grid.Column="0" Spacing="4">
+              <TextBlock Text="Distance Mode" Foreground="#9DB8D8"/>
+              <ComboBox x:Name="DistanceModeComboBox" SelectionChanged="OnEditorValueChanged"/>
+            </StackPanel>
+            <StackPanel Grid.Column="1" Spacing="4">
+              <TextBlock Text="Max Jumps" Foreground="#9DB8D8"/>
+              <TextBox x:Name="MaxJumpsTextBox" Watermark="3"/>
+            </StackPanel>
+          </Grid>
+
+          <CheckBox x:Name="IncludeAnsiblexCheckBox" Content="Include Ansiblex links in distance checks" Foreground="#DDE7F8"/>
+
+          <TextBlock Text="Cooldown Seconds" Foreground="#9DB8D8"/>
+          <TextBox x:Name="CooldownSecondsTextBox" Watermark="0"/>
+
+          <TextBlock Text="Actions" Foreground="#9DB8D8"/>
+          <StackPanel Orientation="Horizontal" Spacing="12">
+            <CheckBox x:Name="ActionPopupCheckBox" Content="Show Popup" Foreground="#DDE7F8"/>
+            <CheckBox x:Name="ActionSoundCheckBox" Content="Play Sound" Foreground="#DDE7F8"/>
+          </StackPanel>
+
+          <Grid ColumnDefinitions="Auto,Auto,Auto" ColumnSpacing="8" Margin="0,8,0,0">
+            <Button Grid.Column="0" Content="Apply" Click="OnApplyRuleClicked"/>
+            <Button Grid.Column="1" Content="Save All" Click="OnSaveAllClicked"/>
+            <Button Grid.Column="2" Content="Close" Click="OnCloseClicked"/>
+          </Grid>
+        </StackPanel>
+      </ScrollViewer>
+    </Border>
+  </Grid>
+</Window>

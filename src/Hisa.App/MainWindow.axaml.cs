@@ -6,7 +6,10 @@ using Avalonia.Media.Imaging;
 using Avalonia;
 using Avalonia.Platform;
 using Avalonia.Threading;
+using Hisa.App.ViewModels;
 using Microsoft.Extensions.DependencyInjection;
+using Hisa.Core.Models;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
@@ -25,6 +28,8 @@ public partial class MainWindow : Window
     private DebugWindow? _debugWindow;
     private PreferencesWindow? _preferencesWindow;
     private IntelSettingsWindow? _intelSettingsWindow;
+    private AlertsSettingsWindow? _alertsSettingsWindow;
+    private AlertPopupWindow? _alertPopupWindow;
     private CharactersWindow? _charactersWindow;
     private MapEditorWindow? _mapEditorWindow;
     private SovUpgradesWindow? _sovUpgradesWindow;
@@ -44,6 +49,7 @@ public partial class MainWindow : Window
     private long? _contextSystemId;
     private int? _contextRegionId;
     private int? _contextConstellationId;
+    private readonly ObservableCollection<AlertPopupCard> _alertPopupCards = [];
 
     public MainWindow()
     {
@@ -114,6 +120,7 @@ public partial class MainWindow : Window
         _debugWindowViewModel = debugWindowViewModel;
         _lastKnownViewMode = vm.SelectedViewMode;
         vm.PropertyChanged += OnViewModelPropertyChanged;
+        vm.AlertTriggered += OnAlertTriggered;
     }
 
     private void OnOpenDebugConsoleClicked(object? sender, RoutedEventArgs e)
@@ -181,6 +188,30 @@ public partial class MainWindow : Window
 
         _intelSettingsWindow.Show();
         _intelSettingsWindow.Activate();
+    }
+
+    private void OnOpenAlertsSettingsClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_alertsSettingsWindow is null)
+        {
+            if (_boundVm is null)
+            {
+                return;
+            }
+
+            _alertsSettingsWindow = new AlertsSettingsWindow(_boundVm);
+            _alertsSettingsWindow.Closed += (_, _) => _alertsSettingsWindow = null;
+        }
+
+        _alertsSettingsWindow.Show();
+        _alertsSettingsWindow.Activate();
+    }
+
+    private void OnOpenAlertsPopupClicked(object? sender, RoutedEventArgs e)
+    {
+        EnsureAlertPopupWindow();
+        _alertPopupWindow!.Show();
+        _alertPopupWindow.Activate();
     }
 
     private void OnOpenMapEditorClicked(object? sender, RoutedEventArgs e)
@@ -291,6 +322,49 @@ public partial class MainWindow : Window
 
         _zkillmailsWindow.Show();
         _zkillmailsWindow.Activate();
+    }
+
+    private void OnAlertTriggered(object? sender, AlertTriggered alert)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            EnsureAlertPopupWindow();
+            var card = new AlertPopupCard
+            {
+                Title = $"{alert.SourceEvent.EventType}: {alert.RuleName}",
+                Details = alert.SourceEvent.Summary,
+                TimestampLabel = $"{alert.TriggeredAtUtc:HH:mm:ss} UTC"
+            };
+            _alertPopupCards.Insert(0, card);
+            const int maxCards = 8;
+            while (_alertPopupCards.Count > maxCards)
+            {
+                _alertPopupCards.RemoveAt(_alertPopupCards.Count - 1);
+            }
+
+            _alertPopupWindow!.Show();
+        });
+    }
+
+    private void EnsureAlertPopupWindow()
+    {
+        if (_alertPopupWindow is not null)
+        {
+            return;
+        }
+
+        _alertPopupWindow = new AlertPopupWindow
+        {
+            Width = 420,
+            Height = 360
+        };
+        _alertPopupWindow.Closed += (_, _) => _alertPopupWindow = null;
+        _alertPopupWindow.Position = new PixelPoint(Position.X + (int)Math.Max(0, Bounds.Width - 450), Position.Y + 80);
+        var itemsControl = _alertPopupWindow.FindControl<ItemsControl>("AlertsItemsControl");
+        if (itemsControl is not null)
+        {
+            itemsControl.ItemsSource = _alertPopupCards;
+        }
     }
 
     private void OnFitCenterClicked(object? sender, RoutedEventArgs e)
