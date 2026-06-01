@@ -3,7 +3,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="clr-namespace:Hisa.App.ViewModels"
-        mc:Ignorable="d" d:DesignWidth="420" d:DesignHeight="360"
+        mc:Ignorable="d" d:DesignWidth="360" d:DesignHeight="320"
         x:Class="Hisa.App.AlertPopupWindow"
         Title="Alerts"
         SystemDecorations="None"
@@ -22,17 +22,17 @@
     <ItemsControl x:Name="AlertsItemsControl">
       <ItemsControl.ItemTemplate>
         <DataTemplate x:DataType="vm:AlertPopupCard">
-          <StackPanel Spacing="0" Margin="0,0,0,8">
-            <Grid ColumnDefinitions="4,*" IsVisible="{Binding HasIntelCard}">
+          <StackPanel Spacing="0" Margin="0,0,0,5">
+            <Grid ColumnDefinitions="3,*" IsVisible="{Binding HasIntelCard}">
               <Border Grid.Column="0" CornerRadius="4,0,0,4" Background="{Binding IntelCard.AccentHex}" />
               <Border Grid.Column="1"
-                      Padding="9,8"
+                      Padding="6,5"
                       Background="#D01A2232"
                       BorderThickness="1"
                       BorderBrush="#2F4566"
                       CornerRadius="0,7,7,0">
-                <StackPanel Spacing="5">
-                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                <StackPanel Spacing="3">
+                  <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="4">
                     <Button Grid.Column="0"
                             HorizontalAlignment="Left"
                             Background="Transparent"
@@ -41,72 +41,74 @@
                             Cursor="Hand"
                             ClickMode="Press"
                             Click="OnIntelCardSystemClicked">
-                      <TextBlock Foreground="#F1E8FF" FontWeight="Bold" FontSize="13">
+                      <TextBlock Foreground="#F1E8FF" FontWeight="Bold" FontSize="12">
                         <Run Text="{Binding IntelCard.SystemName}" />
                         <Run Text=" | " Foreground="#7F779C" />
-                        <Run Text="{Binding IntelCard.ConstellationName}" FontWeight="SemiBold" FontSize="10"/>
-                        <Run Text=" | " Foreground="#7F779C" />
-                        <Run Text="{Binding IntelCard.RegionName}" FontWeight="SemiBold" FontSize="10" />
+                        <Run Text="{Binding IntelCard.RegionName}" FontWeight="SemiBold" FontSize="9" />
                       </TextBlock>
                     </Button>
-                    <Border Grid.Column="1" Padding="6,2" CornerRadius="4" BorderBrush="#5D83B5" BorderThickness="1">
+                    <Border Grid.Column="1" Background="{Binding IntelCard.HostileBadgeBackgroundHex}" BorderThickness="1" CornerRadius="4" Padding="5,1" BorderBrush="{Binding IntelCard.HostileBadgeBorderHex}">
+                      <TextBlock Text="{Binding IntelCard.HostileCount, StringFormat='Hostiles: {0}'}" Foreground="#FFFFFF" FontSize="9" FontWeight="SemiBold" />
+                    </Border>
+                    <Border Grid.Column="2" Padding="5,1" CornerRadius="4" BorderBrush="#5D83B5" BorderThickness="1">
                       <Border.Background>#192838</Border.Background>
-                      <TextBlock Text="{Binding IntelCard.AgeSummary}" Foreground="#BFD8FF" FontSize="10" FontWeight="Bold" />
+                      <TextBlock Text="{Binding IntelCard.AgeSummary}" Foreground="#BFD8FF" FontSize="9" FontWeight="Bold" />
                     </Border>
                   </Grid>
-                  <WrapPanel>
-                    <Border Background="{Binding IntelCard.ShipBadgeBackgroundHex}" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="0,0,4,4" BorderBrush="{Binding IntelCard.ShipBadgeBorderHex}">
-                      <TextBlock Text="{Binding IntelCard.ShipClassSummary}" Foreground="#FFFFFF" FontSize="10" FontWeight="SemiBold" />
-                    </Border>
-                    <Border Background="{Binding IntelCard.HostileBadgeBackgroundHex}" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="0,0,4,4" BorderBrush="{Binding IntelCard.HostileBadgeBorderHex}">
-                      <TextBlock Text="{Binding IntelCard.HostileCount, StringFormat='Hostiles: {0}'}" Foreground="#FFFFFF" FontSize="10" FontWeight="SemiBold" />
-                    </Border>
-                  </WrapPanel>
-                  <ItemsControl ItemsSource="{Binding IntelCard.VisibleHostiles}">
+                  <ItemsControl ItemsSource="{Binding IntelCard.PopupVisibleShips}">
                     <ItemsControl.ItemTemplate>
                       <DataTemplate>
-                        <Border Background="#1A2639" BorderBrush="#2A3C58" BorderThickness="1" CornerRadius="4" Padding="5,4" Margin="0,0,0,4" ToolTip.Tip="{Binding TooltipText}">
-                          <StackPanel Orientation="Horizontal" Spacing="4">
-                            <Button Width="30" Height="30" Padding="0" Background="#202F43" BorderThickness="0" Click="OnIntelHostilePortraitClicked">
+                        <Border HorizontalAlignment="Left" Background="#172234" BorderBrush="#2A3C58" BorderThickness="1" CornerRadius="4" Padding="3,1">
+                          <StackPanel Orientation="Horizontal" Spacing="3">
+                            <Image Width="20" Height="20" Stretch="UniformToFill" Source="{Binding ShipBitmap}" IsVisible="{Binding HasShipBitmap}" />
+                            <Border Width="20" Height="20" Background="#101927" BorderBrush="#2A3C58" BorderThickness="1" IsVisible="{Binding HasNoShipBitmap}">
+                              <TextBlock Text="?" Foreground="#BFD8FF" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <TextBlock Text="{Binding ShipName}" Foreground="#EAF2FF" FontSize="9" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding Count, StringFormat='x{0}'}" Foreground="#9DB8D8" FontSize="8" VerticalAlignment="Center" />
+                          </StackPanel>
+                        </Border>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                  <ItemsControl ItemsSource="{Binding IntelCard.PopupVisibleHostiles}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate>
+                        <Border Background="#1A2639" BorderBrush="#2A3C58" BorderThickness="1" CornerRadius="4" Padding="3,2" Margin="0,0,0,2" ToolTip.Tip="{Binding TooltipText}">
+                          <StackPanel Orientation="Horizontal" Spacing="3">
+                            <Button Width="24" Height="24" Padding="0" Background="#202F43" BorderThickness="0" Click="OnIntelHostilePortraitClicked">
                               <Grid>
-                                <Image Width="30" Height="30" Stretch="UniformToFill" Source="{Binding PortraitBitmap}" IsVisible="{Binding HasPortraitBitmap}" />
-                                <TextBlock Text="{Binding PortraitFallbackText}" Foreground="#DDEAFF" FontSize="12" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding HasNoPortraitBitmap}" />
+                                <Image Width="24" Height="24" Stretch="UniformToFill" Source="{Binding PortraitBitmap}" IsVisible="{Binding HasPortraitBitmap}" />
+                                <TextBlock Text="{Binding PortraitFallbackText}" Foreground="#DDEAFF" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding HasNoPortraitBitmap}" />
                               </Grid>
                             </Button>
-                            <Button Width="30" Height="30" Padding="0" Background="Transparent" BorderThickness="0" Click="OnIntelHostileCorporationClicked" IsVisible="{Binding HasCorporation}">
-                              <Image Width="30" Height="30" Stretch="UniformToFill" Source="{Binding CorporationBitmap}" />
+                            <Button Width="24" Height="24" Padding="0" Background="Transparent" BorderThickness="0" Click="OnIntelHostileCorporationClicked" IsVisible="{Binding HasCorporation}">
+                              <Image Width="24" Height="24" Stretch="UniformToFill" Source="{Binding CorporationBitmap}" />
                             </Button>
-                            <Button Width="30" Height="30" Padding="0" Background="Transparent" BorderThickness="0" Click="OnIntelHostileAllianceClicked" IsVisible="{Binding HasAlliance}">
-                              <Image Width="30" Height="30" Stretch="UniformToFill" Source="{Binding AllianceBitmap}" />
+                            <Button Width="24" Height="24" Padding="0" Background="Transparent" BorderThickness="0" Click="OnIntelHostileAllianceClicked" IsVisible="{Binding HasAlliance}">
+                              <Image Width="24" Height="24" Stretch="UniformToFill" Source="{Binding AllianceBitmap}" />
                             </Button>
                             <StackPanel Spacing="0" VerticalAlignment="Center">
-                              <TextBlock Text="{Binding Name}" Foreground="#FFFFFF" FontSize="10" FontWeight="SemiBold" />
-                              <TextBlock Text="{Binding MembershipTickerSummary}" Foreground="#9DB8D8" FontSize="9" />
+                              <TextBlock Text="{Binding Name}" Foreground="#FFFFFF" FontSize="9" FontWeight="SemiBold" />
+                              <TextBlock Text="{Binding MembershipTickerSummary}" Foreground="#9DB8D8" FontSize="8" />
                             </StackPanel>
                           </StackPanel>
                         </Border>
                       </DataTemplate>
                     </ItemsControl.ItemTemplate>
                   </ItemsControl>
-                  <Border HorizontalAlignment="Left" Background="#241C35" BorderBrush="#5D83B5" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="0,0,0,4" IsVisible="{Binding IntelCard.HasHiddenHostiles}">
-                    <TextBlock Text="{Binding IntelCard.HiddenHostilesSummary}" Foreground="#BFD8FF" FontSize="10" FontWeight="Bold" />
+                  <Border HorizontalAlignment="Left" Background="#241C35" BorderBrush="#5D83B5" BorderThickness="1" CornerRadius="4" Padding="5,1" Margin="0,0,0,2" IsVisible="{Binding IntelCard.PopupHasHiddenHostiles}">
+                    <TextBlock Text="{Binding IntelCard.PopupHiddenHostilesSummary}" Foreground="#BFD8FF" FontSize="9" FontWeight="Bold" />
                   </Border>
-                  <TextBlock Text="{Binding IntelCard.MessageText, StringFormat='Report: {0}'}" Foreground="#E4ECF8" FontSize="10" TextWrapping="Wrap" />
-                  <TextBlock Foreground="#9DB8D8" FontSize="10">
-                    <Run Text="Reporter: " />
-                    <Run Text="{Binding IntelCard.ReporterName}" />
-                    <Run Text="  |  Channel: " />
-                    <Run Text="{Binding IntelCard.ChannelName}" />
-                  </TextBlock>
                 </StackPanel>
               </Border>
             </Grid>
 
-            <Grid ColumnDefinitions="4,*" IsVisible="{Binding HasZkillmailCard}">
+            <Grid ColumnDefinitions="3,*" IsVisible="{Binding HasZkillmailCard}">
               <Border Grid.Column="0" CornerRadius="4,0,0,4" Background="#FFB347" />
-              <Border Grid.Column="1" Padding="9,8" Background="#D01A2232" BorderThickness="1" BorderBrush="#3B4262" CornerRadius="0,7,7,0">
-                <StackPanel Spacing="5">
-                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+              <Border Grid.Column="1" Padding="6,5" Background="#D01A2232" BorderThickness="1" BorderBrush="#3B4262" CornerRadius="0,7,7,0">
+                <StackPanel Spacing="3">
+                  <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="4">
                     <Button Grid.Column="0"
                             HorizontalAlignment="Left"
                             Background="Transparent"
@@ -115,98 +117,88 @@
                             Cursor="Hand"
                             ClickMode="Press"
                             Click="OnZkillCardSystemClicked">
-                      <TextBlock Foreground="#F1E8FF" FontWeight="Bold" FontSize="13">
+                      <TextBlock Foreground="#F1E8FF" FontWeight="Bold" FontSize="12">
                         <Run Text="{Binding ZkillmailCard.SystemName}" />
                         <Run Text=" | " Foreground="#7F779C" />
-                        <Run Text="{Binding ZkillmailCard.ConstellationName}" FontWeight="SemiBold" FontSize="10"/>
-                        <Run Text=" | " Foreground="#7F779C" />
-                        <Run Text="{Binding ZkillmailCard.RegionName}" FontWeight="SemiBold" FontSize="10" />
+                        <Run Text="{Binding ZkillmailCard.RegionName}" FontWeight="SemiBold" FontSize="9" />
                       </TextBlock>
                     </Button>
-                    <Border Grid.Column="1" Padding="6,2" CornerRadius="4" Background="#241C35" BorderThickness="1" BorderBrush="#5D83B5">
-                      <TextBlock Text="{Binding ZkillmailCard.AgeSummary}" Foreground="#BFD8FF" FontSize="10" FontWeight="Bold" />
+                    <Border Grid.Column="1" Background="#3A2A2A" BorderThickness="1" CornerRadius="4" Padding="5,1" BorderBrush="#8A4C4C">
+                      <TextBlock Text="{Binding ZkillmailCard.HostileCount, StringFormat='Hostiles: {0}'}" Foreground="#FFFFFF" FontSize="9" FontWeight="SemiBold" />
+                    </Border>
+                    <Border Grid.Column="2" Padding="5,1" CornerRadius="4" Background="#241C35" BorderThickness="1" BorderBrush="#5D83B5">
+                      <TextBlock Text="{Binding ZkillmailCard.AgeSummary}" Foreground="#BFD8FF" FontSize="9" FontWeight="Bold" />
                     </Border>
                   </Grid>
-                  <WrapPanel>
-                    <Border Background="{Binding ZkillmailCard.IskLostBackgroundHex}" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="0,0,4,4" BorderBrush="{Binding ZkillmailCard.IskLostBorderHex}">
-                      <TextBlock Text="{Binding ZkillmailCard.IskLostLabel}" Foreground="#FFFFFF" FontSize="10" FontWeight="SemiBold" />
-                    </Border>
-                    <Border Background="#2B3246" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="0,0,4,4" BorderBrush="#4E5C84">
-                      <TextBlock Text="{Binding ZkillmailCard.ShipSummary, StringFormat='Ships: {0}'}" Foreground="#FFFFFF" FontSize="10" FontWeight="SemiBold" />
-                    </Border>
-                    <Border Background="#3A2A2A" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="0,0,4,4" BorderBrush="#8A4C4C">
-                      <TextBlock Text="{Binding ZkillmailCard.HostileCount, StringFormat='Hostiles: {0}'}" Foreground="#FFFFFF" FontSize="10" FontWeight="SemiBold" />
-                    </Border>
-                  </WrapPanel>
-                  <Border Background="#1A2639" BorderBrush="#2A3C58" BorderThickness="1" CornerRadius="4" Padding="5,4">
-                    <StackPanel Orientation="Horizontal" Spacing="4">
-                      <Button Width="28" Height="28" Padding="0" Background="Transparent" BorderThickness="0" Click="OnZkillmailLinkClicked" ToolTip.Tip="Open killmail on zKillboard">
-                        <Image Source="avares://HISA/Assets/Icons/killmail.png" Width="28" Height="28" />
+                  <Border Background="#1A2639" BorderBrush="#2A3C58" BorderThickness="1" CornerRadius="4" Padding="3,2">
+                    <StackPanel Orientation="Horizontal" Spacing="3">
+                      <Button Width="24" Height="24" Padding="0" Background="Transparent" BorderThickness="0" Click="OnZkillmailLinkClicked" ToolTip.Tip="Open killmail on zKillboard">
+                        <Image Source="avares://HISA/Assets/Icons/killmail.png" Width="24" Height="24" />
                       </Button>
-                      <Image Width="28" Height="28" Stretch="UniformToFill" Source="{Binding ZkillmailCard.Victim.ShipBitmap}" IsVisible="{Binding ZkillmailCard.Victim.HasShipBitmap}" ToolTip.Tip="{Binding ZkillmailCard.Victim.ShipDisplayName}" />
-                      <Border Width="28" Height="28" Background="#172234" BorderBrush="#2A3C58" BorderThickness="1" IsVisible="{Binding ZkillmailCard.Victim.HasNoShipBitmap}" ToolTip.Tip="{Binding ZkillmailCard.Victim.ShipDisplayName}">
+                      <Image Width="24" Height="24" Stretch="UniformToFill" Source="{Binding ZkillmailCard.Victim.ShipBitmap}" IsVisible="{Binding ZkillmailCard.Victim.HasShipBitmap}" ToolTip.Tip="{Binding ZkillmailCard.Victim.ShipDisplayName}" />
+                      <Border Width="24" Height="24" Background="#172234" BorderBrush="#2A3C58" BorderThickness="1" IsVisible="{Binding ZkillmailCard.Victim.HasNoShipBitmap}" ToolTip.Tip="{Binding ZkillmailCard.Victim.ShipDisplayName}">
                         <TextBlock Text="?" Foreground="#BFD8FF" HorizontalAlignment="Center" VerticalAlignment="Center" />
                       </Border>
-                      <Button Width="28" Height="28" Padding="0" Background="#202F43" BorderThickness="0" Click="OnZkillVictimPortraitClicked" ToolTip.Tip="{Binding ZkillmailCard.Victim.Name}">
+                      <Button Width="24" Height="24" Padding="0" Background="#202F43" BorderThickness="0" Click="OnZkillVictimPortraitClicked" ToolTip.Tip="{Binding ZkillmailCard.Victim.Name}">
                         <Grid>
-                          <Image Width="28" Height="28" Stretch="UniformToFill" Source="{Binding ZkillmailCard.Victim.PortraitBitmap}" IsVisible="{Binding ZkillmailCard.Victim.HasPortraitBitmap}" />
-                          <TextBlock Text="{Binding ZkillmailCard.Victim.PortraitFallbackText}" Foreground="#DDEAFF" FontSize="12" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding ZkillmailCard.Victim.HasNoPortraitBitmap}" />
+                          <Image Width="24" Height="24" Stretch="UniformToFill" Source="{Binding ZkillmailCard.Victim.PortraitBitmap}" IsVisible="{Binding ZkillmailCard.Victim.HasPortraitBitmap}" />
+                          <TextBlock Text="{Binding ZkillmailCard.Victim.PortraitFallbackText}" Foreground="#DDEAFF" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding ZkillmailCard.Victim.HasNoPortraitBitmap}" />
                         </Grid>
                       </Button>
-                      <Button Width="28" Height="28" Padding="0" Background="Transparent" BorderThickness="0" Click="OnZkillVictimCorporationClicked" IsVisible="{Binding ZkillmailCard.Victim.HasCorporation}" ToolTip.Tip="{Binding ZkillmailCard.Victim.CorporationTicker}">
-                        <Image Width="28" Height="28" Stretch="UniformToFill" Source="{Binding ZkillmailCard.Victim.CorporationBitmap}" />
+                      <Button Width="24" Height="24" Padding="0" Background="Transparent" BorderThickness="0" Click="OnZkillVictimCorporationClicked" IsVisible="{Binding ZkillmailCard.Victim.HasCorporation}" ToolTip.Tip="{Binding ZkillmailCard.Victim.CorporationTicker}">
+                        <Image Width="24" Height="24" Stretch="UniformToFill" Source="{Binding ZkillmailCard.Victim.CorporationBitmap}" />
                       </Button>
-                      <Button Width="28" Height="28" Padding="0" Background="Transparent" BorderThickness="0" Click="OnZkillVictimAllianceClicked" IsVisible="{Binding ZkillmailCard.Victim.HasAlliance}" ToolTip.Tip="{Binding ZkillmailCard.Victim.AllianceTicker}">
-                        <Image Width="28" Height="28" Stretch="UniformToFill" Source="{Binding ZkillmailCard.Victim.AllianceBitmap}" />
+                      <Button Width="24" Height="24" Padding="0" Background="Transparent" BorderThickness="0" Click="OnZkillVictimAllianceClicked" IsVisible="{Binding ZkillmailCard.Victim.HasAlliance}" ToolTip.Tip="{Binding ZkillmailCard.Victim.AllianceTicker}">
+                        <Image Width="24" Height="24" Stretch="UniformToFill" Source="{Binding ZkillmailCard.Victim.AllianceBitmap}" />
                       </Button>
                       <StackPanel Spacing="0" VerticalAlignment="Center">
-                        <TextBlock Text="{Binding ZkillmailCard.Victim.Name}" Foreground="#FFFFFF" FontSize="10" FontWeight="SemiBold" />
-                        <TextBlock Text="{Binding ZkillmailCard.Victim.MembershipTickerSummary}" Foreground="#9DB8D8" FontSize="9" />
+                        <TextBlock Text="{Binding ZkillmailCard.Victim.Name}" Foreground="#FFFFFF" FontSize="9" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding ZkillmailCard.Victim.MembershipTickerSummary}" Foreground="#9DB8D8" FontSize="8" />
                       </StackPanel>
                     </StackPanel>
                   </Border>
                   <ItemsControl ItemsSource="{Binding ZkillmailCard.VisibleAttackers}">
                     <ItemsControl.ItemTemplate>
                       <DataTemplate>
-                        <Border Background="#1A2639" BorderBrush="#2A3C58" BorderThickness="1" CornerRadius="4" Padding="5,4" Margin="0,0,0,3">
-                          <StackPanel Orientation="Horizontal" Spacing="4">
-                            <Image Width="24" Height="24" Stretch="UniformToFill" Source="{Binding ShipBitmap}" IsVisible="{Binding HasShipBitmap}" ToolTip.Tip="{Binding ShipDisplayName}" />
-                            <Border Width="24" Height="24" Background="#172234" BorderBrush="#2A3C58" BorderThickness="1" IsVisible="{Binding HasNoShipBitmap}" ToolTip.Tip="{Binding ShipDisplayName}">
+                        <Border Background="#1A2639" BorderBrush="#2A3C58" BorderThickness="1" CornerRadius="4" Padding="3,2" Margin="0,0,0,2">
+                          <StackPanel Orientation="Horizontal" Spacing="3">
+                            <Image Width="20" Height="20" Stretch="UniformToFill" Source="{Binding ShipBitmap}" IsVisible="{Binding HasShipBitmap}" ToolTip.Tip="{Binding ShipDisplayName}" />
+                            <Border Width="20" Height="20" Background="#172234" BorderBrush="#2A3C58" BorderThickness="1" IsVisible="{Binding HasNoShipBitmap}" ToolTip.Tip="{Binding ShipDisplayName}">
                               <TextBlock Text="?" Foreground="#BFD8FF" HorizontalAlignment="Center" VerticalAlignment="Center" />
                             </Border>
-                            <Button Width="24" Height="24" Padding="0" Background="#202F43" BorderThickness="0" Click="OnIntelHostilePortraitClicked" ToolTip.Tip="{Binding Name}">
+                            <Button Width="20" Height="20" Padding="0" Background="#202F43" BorderThickness="0" Click="OnIntelHostilePortraitClicked" ToolTip.Tip="{Binding Name}">
                               <Grid>
-                                <Image Width="24" Height="24" Stretch="UniformToFill" Source="{Binding PortraitBitmap}" IsVisible="{Binding HasPortraitBitmap}" />
-                                <TextBlock Text="{Binding PortraitFallbackText}" Foreground="#DDEAFF" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding HasNoPortraitBitmap}" />
+                                <Image Width="20" Height="20" Stretch="UniformToFill" Source="{Binding PortraitBitmap}" IsVisible="{Binding HasPortraitBitmap}" />
+                                <TextBlock Text="{Binding PortraitFallbackText}" Foreground="#DDEAFF" FontSize="9" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding HasNoPortraitBitmap}" />
                               </Grid>
                             </Button>
-                            <Button Width="24" Height="24" Padding="0" Background="Transparent" BorderThickness="0" Click="OnIntelHostileCorporationClicked" IsVisible="{Binding HasCorporation}" ToolTip.Tip="{Binding CorporationTicker}">
-                              <Image Width="24" Height="24" Stretch="UniformToFill" Source="{Binding CorporationBitmap}" />
+                            <Button Width="20" Height="20" Padding="0" Background="Transparent" BorderThickness="0" Click="OnIntelHostileCorporationClicked" IsVisible="{Binding HasCorporation}" ToolTip.Tip="{Binding CorporationTicker}">
+                              <Image Width="20" Height="20" Stretch="UniformToFill" Source="{Binding CorporationBitmap}" />
                             </Button>
-                            <Button Width="24" Height="24" Padding="0" Background="Transparent" BorderThickness="0" Click="OnIntelHostileAllianceClicked" IsVisible="{Binding HasAlliance}" ToolTip.Tip="{Binding AllianceTicker}">
-                              <Image Width="24" Height="24" Stretch="UniformToFill" Source="{Binding AllianceBitmap}" />
+                            <Button Width="20" Height="20" Padding="0" Background="Transparent" BorderThickness="0" Click="OnIntelHostileAllianceClicked" IsVisible="{Binding HasAlliance}" ToolTip.Tip="{Binding AllianceTicker}">
+                              <Image Width="20" Height="20" Stretch="UniformToFill" Source="{Binding AllianceBitmap}" />
                             </Button>
                             <StackPanel Spacing="0" VerticalAlignment="Center">
-                              <TextBlock Text="{Binding Name}" Foreground="#EAF2FF" FontSize="10" FontWeight="SemiBold" />
-                              <TextBlock Text="{Binding MembershipTickerSummary}" Foreground="#9DB8D8" FontSize="9" />
+                              <TextBlock Text="{Binding Name}" Foreground="#EAF2FF" FontSize="9" FontWeight="SemiBold" />
+                              <TextBlock Text="{Binding MembershipTickerSummary}" Foreground="#9DB8D8" FontSize="8" />
                             </StackPanel>
                           </StackPanel>
                         </Border>
                       </DataTemplate>
                     </ItemsControl.ItemTemplate>
                   </ItemsControl>
-                  <Border HorizontalAlignment="Left" Background="#241C35" BorderBrush="#5D83B5" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="0,0,0,4" IsVisible="{Binding ZkillmailCard.HasHiddenAttackers}">
-                    <TextBlock Text="{Binding ZkillmailCard.HiddenAttackersSummary}" Foreground="#BFD8FF" FontSize="10" FontWeight="Bold" />
+                  <Border HorizontalAlignment="Left" Background="#241C35" BorderBrush="#5D83B5" BorderThickness="1" CornerRadius="4" Padding="5,1" Margin="0,0,0,2" IsVisible="{Binding ZkillmailCard.HasHiddenAttackers}">
+                    <TextBlock Text="{Binding ZkillmailCard.HiddenAttackersSummary}" Foreground="#BFD8FF" FontSize="9" FontWeight="Bold" />
                   </Border>
                   <!-- <TextBlock Text="{Binding ZkillmailCard.MessageText, StringFormat='Report: {0}'}" Foreground="#E4ECF8" FontSize="10" TextWrapping="Wrap" /> -->
                 </StackPanel>
               </Border>
             </Grid>
-            <Border IsVisible="{Binding HasNoOverlayCard}" Padding="8" Background="#182434" BorderBrush="#364D6D" BorderThickness="1" CornerRadius="6">
-              <StackPanel Spacing="4">
-                <TextBlock Text="{Binding Title}" Foreground="#F1E8FF" FontSize="11" FontWeight="Bold"/>
-                <TextBlock Text="{Binding Details}" Foreground="#E4ECF8" FontSize="11" TextWrapping="Wrap"/>
-                <TextBlock Text="{Binding TimestampLabel}" Foreground="#BFD8FF" FontSize="10" FontWeight="Bold"/>
+            <Border IsVisible="{Binding HasNoOverlayCard}" Padding="6" Background="#182434" BorderBrush="#364D6D" BorderThickness="1" CornerRadius="6">
+              <StackPanel Spacing="2">
+                <TextBlock Text="{Binding Title}" Foreground="#F1E8FF" FontSize="10" FontWeight="Bold"/>
+                <TextBlock Text="{Binding Details}" Foreground="#E4ECF8" FontSize="10" TextWrapping="Wrap"/>
+                <TextBlock Text="{Binding TimestampLabel}" Foreground="#BFD8FF" FontSize="9" FontWeight="Bold"/>
               </StackPanel>
             </Border>
 

@@ -448,8 +448,8 @@ public partial class MainWindow : Window
 
         _alertPopupWindow = new AlertPopupWindow
         {
-            Width = 420,
-            Height = 360,
+            Width = 250,
+            Height = 320,
             DataContext = _boundVm
         };
         _alertPopupWindow.DragPositionCommitted += OnAlertPopupDragPositionCommitted;

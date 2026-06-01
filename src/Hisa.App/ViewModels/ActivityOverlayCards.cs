@@ -267,7 +267,12 @@ public sealed class IntelOverlayCard : System.ComponentModel.INotifyPropertyChan
     public int HiddenHostileCount => Math.Max(0, Hostiles.Count - VisibleHostiles.Count);
     public bool HasHiddenHostiles => HiddenHostileCount > 0;
     public string HiddenHostilesSummary => $"+{HiddenHostileCount}";
+    public IReadOnlyList<IntelOverlayHostileCard> PopupVisibleHostiles => Hostiles.Take(3).ToList();
+    public int PopupHiddenHostileCount => Math.Max(0, Hostiles.Count - PopupVisibleHostiles.Count);
+    public bool PopupHasHiddenHostiles => PopupHiddenHostileCount > 0;
+    public string PopupHiddenHostilesSummary => $"+{PopupHiddenHostileCount}";
     public required IReadOnlyList<IntelOverlayShipSummaryCard> ShipsSummary { get; init; }
+    public IReadOnlyList<IntelOverlayShipSummaryCard> PopupVisibleShips => ShipsSummary.Take(1).ToList();
     public required string ShipClassSummary { get; init; }
     public required int HostileCount { get; init; }
     public required string ShipBadgeBackgroundHex { get; init; }
