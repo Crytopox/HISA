@@ -115,6 +115,7 @@ public partial class MainWindow : Window
             SaveWindowPlacementNow();
             SaveViewportNow();
             SaveSelectedViewModeNow();
+            CloseAuxiliaryWindows();
         };
     }
 
@@ -1388,5 +1389,38 @@ public partial class MainWindow : Window
         }
 
         _boundVm.SaveSelectedViewModeAsync().GetAwaiter().GetResult();
+    }
+
+    private void CloseAuxiliaryWindows()
+    {
+        static void TryClose(Window? window)
+        {
+            if (window is null)
+            {
+                return;
+            }
+
+            try
+            {
+                window.Close();
+            }
+            catch
+            {
+            }
+        }
+
+        TryClose(_debugWindow);
+        TryClose(_preferencesWindow);
+        TryClose(_intelSettingsWindow);
+        TryClose(_alertsSettingsWindow);
+        TryClose(_alertPopupSettingsWindow);
+        TryClose(_alertPopupWindow);
+        TryClose(_charactersWindow);
+        TryClose(_mapEditorWindow);
+        TryClose(_sovUpgradesWindow);
+        TryClose(_ansiblexNetworkWindow);
+        TryClose(_lyCoveragePlannerWindow);
+        TryClose(_jumpRouteOptimizerWindow);
+        TryClose(_zkillmailsWindow);
     }
 }
