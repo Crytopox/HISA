@@ -241,6 +241,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly ISystemActivityStateService _systemActivityStateService;
     private readonly ILocalCharacterLocationFeed _localCharacterLocationFeed;
     private readonly IIntelFeed _intelFeed;
+    private readonly IAlertRuleEngine _alertRuleEngine;
     private List<RegionOption> _allRegions = [];
     private bool _isBusy;
     private MapViewMode _selectedViewMode;
@@ -334,6 +335,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly Dictionary<long, (string RegionName, string ConstellationName)> _systemLocationById = [];
     private readonly object _systemLocationGate = new();
     private readonly List<IntelChatReport> _intelReportHistory = [];
+    private IReadOnlyList<AlertRule> _alertRules = [];
     private readonly Dictionary<string, int> _characterIdByName = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _invalidHostilePilotNames = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _characterIdLookupInFlight = new(StringComparer.OrdinalIgnoreCase);
@@ -440,6 +442,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string ZkillLimitToCurrentRegionKey = "Intel.Zkill.Overlay.LimitToCurrentRegion";
     private const string IntelSystemExpiryMinutesKey = "Intel.SystemExpiryMinutes";
     private const string IntelListExpiryMinutesKey = "Intel.ListExpiryMinutes";
+    private const string AlertRulesKey = "Alerts.Rules";
     private const int MaxIntelReportHistory = 350;
     private const int MaxIntelOverlayCards = 140;
     private const int MaxIntelShipBitmapCacheItems = 600;
@@ -459,7 +462,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         IIncursionStateService incursionStateService,
         ISystemActivityStateService systemActivityStateService,
         ILocalCharacterLocationFeed localCharacterLocationFeed,
-        IIntelFeed intelFeed)
+        IIntelFeed intelFeed,
+        IAlertRuleEngine alertRuleEngine)
     {
         _mapDataService = mapDataService;
         _settingsService = settingsService;
@@ -471,6 +475,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _systemActivityStateService = systemActivityStateService;
         _localCharacterLocationFeed = localCharacterLocationFeed;
         _intelFeed = intelFeed;
+        _alertRuleEngine = alertRuleEngine;
         ViewModes = new ObservableCollection<MapViewMode>(Enum.GetValues<MapViewMode>());
         CoordinateModes = new ObservableCollection<MapCoordinateMode>(Enum.GetValues<MapCoordinateMode>());
         var orderedColorModes = new List<MapNodeColorMode> { MapNodeColorMode.None, MapNodeColorMode.Hostiles };
@@ -1905,6 +1910,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         IntelEnabled = await _settingsService.GetAsync<bool?>(IntelEnabledKey) ?? true;
         IntelSystemExpiryMinutes = await _settingsService.GetAsync<int?>(IntelSystemExpiryMinutesKey) ?? 15;
         IntelListExpiryMinutes = await _settingsService.GetAsync<int?>(IntelListExpiryMinutesKey) ?? 30;
+        _alertRules = await _settingsService.GetAsync<List<AlertRule>>(AlertRulesKey) ?? [];
         LimitIntelReportsToCurrentRegion = await _settingsService.GetAsync<bool?>(IntelLimitToCurrentRegionKey) ?? false;
         LimitZkillmailsToCurrentRegion = await _settingsService.GetAsync<bool?>(ZkillLimitToCurrentRegionKey) ?? false;
         var initialIncludeChannels = await _settingsService.GetAsync<List<string>>(IntelIncludeChannelsKey) ?? [];
@@ -2276,10 +2282,122 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         if (isZkillReport)
         {
             Dispatcher.UIThread.Post(() => AppendZkillmailCardForView(report));
+            EvaluateAlertRules(report, isKillmail: true);
             return;
         }
 
+        EvaluateAlertRules(report, isKillmail: false);
         Dispatcher.UIThread.Post(ScheduleActivityCardsRebuild);
+    }
+
+    private void EvaluateAlertRules(IntelChatReport report, bool isKillmail)
+    {
+        if (_alertRules.Count == 0)
+        {
+            return;
+        }
+
+        long solarSystemId = 0;
+        var systemName = report.Systems.FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(systemName))
+        {
+            if (CurrentGraph is { Nodes.Count: > 0 } graph)
+            {
+                var node = graph.Nodes.FirstOrDefault(n => string.Equals(n.Name, systemName, StringComparison.OrdinalIgnoreCase));
+                if (node is not null)
+                {
+                    solarSystemId = node.Id;
+                }
+            }
+
+            if (solarSystemId <= 0)
+            {
+                lock (_intelSnapshotsBySystemId)
+                {
+                    var snap = _intelSnapshotsBySystemId.Values.FirstOrDefault(x =>
+                        string.Equals(x.SolarSystemName, systemName, StringComparison.OrdinalIgnoreCase));
+                    if (snap is not null)
+                    {
+                        solarSystemId = snap.SolarSystemId;
+                    }
+                }
+            }
+        }
+
+        if (solarSystemId <= 0)
+        {
+            return;
+        }
+
+        var characterLocations = new Dictionary<int, long>();
+        lock (_localCharacterLocationsByCharacterId)
+        {
+            foreach (var kvp in _localCharacterLocationsByCharacterId)
+            {
+                var sourceSystemId = ResolveSystemIdByName(kvp.Value.SolarSystemName);
+                if (sourceSystemId > 0)
+                {
+                    characterLocations[kvp.Key] = sourceSystemId;
+                }
+            }
+        }
+
+        var sourceEvent = new AlertSourceEvent
+        {
+            EventType = isKillmail ? AlertEventType.Killmail : AlertEventType.IntelReport,
+            TimestampUtc = report.TimestampUtc,
+            SolarSystemId = solarSystemId,
+            KillmailId = report.Killmail?.KillmailId,
+            DedupeKey = isKillmail
+                ? (report.Killmail?.KillmailId > 0 ? $"killmail:{report.Killmail!.KillmailId}" : $"killmail:{report.TimestampUtc:O}:{solarSystemId}")
+                : $"intel:{solarSystemId}:{report.TimestampUtc:yyyyMMddHHmm}",
+            Summary = report.MessageText
+        };
+
+        var triggered = _alertRuleEngine.Evaluate(new AlertEvaluationRequest
+        {
+            Rules = _alertRules,
+            SourceEvent = sourceEvent,
+            Graph = CurrentGraph,
+            CharacterLocationsByCharacterId = characterLocations,
+            AnsiblexLinks = _ansiblexNetworkStateService.CurrentLinks
+        });
+        if (triggered.Count == 0)
+        {
+            return;
+        }
+
+        var labels = string.Join(", ", triggered.Select(x => x.RuleName).Distinct(StringComparer.OrdinalIgnoreCase));
+        Dispatcher.UIThread.Post(() => StatusText = $"Alert triggered ({triggered.Count}): {labels}");
+    }
+
+    private long ResolveSystemIdByName(string? solarSystemName)
+    {
+        if (string.IsNullOrWhiteSpace(solarSystemName))
+        {
+            return 0;
+        }
+
+        if (CurrentGraph is { Nodes.Count: > 0 } graph)
+        {
+            var node = graph.Nodes.FirstOrDefault(n => string.Equals(n.Name, solarSystemName, StringComparison.OrdinalIgnoreCase));
+            if (node is not null)
+            {
+                return node.Id;
+            }
+        }
+
+        lock (_intelSnapshotsBySystemId)
+        {
+            var snapshot = _intelSnapshotsBySystemId.Values.FirstOrDefault(x =>
+                string.Equals(x.SolarSystemName, solarSystemName, StringComparison.OrdinalIgnoreCase));
+            if (snapshot is not null)
+            {
+                return snapshot.SolarSystemId;
+            }
+        }
+
+        return 0;
     }
 
     private void AppendZkillmailCardForView(IntelChatReport report)

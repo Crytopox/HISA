@@ -2,6 +2,7 @@ using Hisa.Data.Database;
 using Hisa.Core.Abstractions;
 using Hisa.Esi;
 using Hisa.Services.Incursions;
+using Hisa.Services.Alerts;
 using Hisa.Services.Routing;
 using Hisa.Services.Storm;
 using Hisa.Services.SystemActivity;
@@ -78,6 +79,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ISovUpgradeStateService, SovUpgradeStateService>();
         services.AddSingleton<IAnsiblexNetworkStateService, AnsiblexNetworkStateService>();
         services.AddSingleton<IRouteDistanceService, DijkstraRouteDistanceService>();
+        services.AddSingleton<IAlertRuleEngine, AlertRuleEngine>();
         return services;
     }
 }
