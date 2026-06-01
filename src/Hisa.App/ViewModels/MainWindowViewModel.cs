@@ -1989,9 +1989,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         lock (_intelSnapshotsBySystemId)
         {
             _intelSnapshotsBySystemId.Clear();
+            var nowUtc = DateTime.UtcNow;
             foreach (var kvp in _intelFeed.Snapshot)
             {
-                _intelSnapshotsBySystemId[kvp.Key] = kvp.Value;
+                if (IsIntelSnapshotFresh(kvp.Value, nowUtc))
+                {
+                    _intelSnapshotsBySystemId[kvp.Key] = kvp.Value;
+                }
             }
         }
         await ReloadGraphAsync();
@@ -2617,9 +2621,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         lock (_intelSnapshotsBySystemId)
         {
             _intelSnapshotsBySystemId.Clear();
+            var nowUtc = DateTime.UtcNow;
             foreach (var kvp in snapshot)
             {
-                _intelSnapshotsBySystemId[kvp.Key] = kvp.Value;
+                if (IsIntelSnapshotFresh(kvp.Value, nowUtc))
+                {
+                    _intelSnapshotsBySystemId[kvp.Key] = kvp.Value;
+                }
             }
         }
 
@@ -2704,16 +2712,21 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
         lock (_intelReportHistory)
         {
-            history = _intelReportHistory.ToList();
+            var listCutoffUtc = DateTime.UtcNow - TimeSpan.FromMinutes(IntelListExpiryMinutes);
+            history = _intelReportHistory
+                .Where(report => report.TimestampUtc >= listCutoffUtc)
+                .ToList();
         }
 
         var validNodeIds = graph.Nodes.Select(n => n.Id).ToHashSet();
         var iconsByNode = new Dictionary<long, IReadOnlyList<string>>();
         var recentReportsByNode = new Dictionary<long, IReadOnlyList<IntelMapHoverReport>>();
         var hostileScoresByNode = new Dictionary<long, int>();
+        var snapshotCutoffUtc = DateTime.UtcNow - TimeSpan.FromMinutes(IntelSystemExpiryMinutes);
         foreach (var system in snapshot.Values)
         {
-            if (!validNodeIds.Contains(system.SolarSystemId))
+            if (system.LastUpdatedUtc < snapshotCutoffUtc ||
+                !validNodeIds.Contains(system.SolarSystemId))
             {
                 continue;
             }
@@ -2837,6 +2850,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                     })
                     .ToList());
 
+        // Snapshot state and hover history are updated independently. Do not render a ring
+        // when its supporting report has already expired or was not loaded during startup.
+        var reportNodeIds = intelByNode.Keys
+            .Concat(zkillByNode.Keys)
+            .ToHashSet();
+        iconsByNode = iconsByNode
+            .Where(kvp => reportNodeIds.Contains(kvp.Key))
+            .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+        hostileScoresByNode = hostileScoresByNode
+            .Where(kvp => reportNodeIds.Contains(kvp.Key))
+            .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+
         _intelIconKeysByNodeId = iconsByNode;
         _intelRecentReportsByNodeId = intelByNode;
         _zkillRecentReportsByNodeId = zkillByNode;
@@ -2845,6 +2870,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelRecentReportsByNodeIdForView)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ZkillRecentReportsByNodeIdForView)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelHostileScoresByNodeIdForView)));
+    }
+
+    private bool IsIntelSnapshotFresh(IntelSystemSnapshot snapshot, DateTime nowUtc)
+    {
+        return snapshot.LastUpdatedUtc >= nowUtc - TimeSpan.FromMinutes(IntelSystemExpiryMinutes);
     }
 
     private static string? ShipClassToIconKey(IntelShipClass shipClass)

@@ -555,7 +555,8 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
                 continue;
             }
 
-            if (timestampUtc < _startupHistoryCutoffUtc)
+            if (timestampUtc < _startupHistoryCutoffUtc ||
+                timestampUtc < DateTime.UtcNow - _systemExpiry)
             {
                 continue;
             }
