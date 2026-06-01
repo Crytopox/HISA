@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.IO;
 using System.Linq;
+using System.Net.Sockets;
 using System.Runtime.ExceptionServices;
 using Avalonia;
 using Microsoft.Extensions.Hosting;
@@ -71,6 +72,11 @@ internal static class Program
         }
 
         var ex = args.Exception;
+        if (IsExpectedTransportShutdownException(ex))
+        {
+            return;
+        }
+
         var signature = $"{ex.GetType().FullName}|{ex.Message}|{ex.StackTrace?.Split('\n').FirstOrDefault() ?? string.Empty}";
         var count = FirstChanceSignatureCounts.AddOrUpdate(signature, 1, static (_, old) => old + 1);
         if (count > 5)
@@ -98,5 +104,27 @@ internal static class Program
         }
 
         logger?.LogWarning(ex, "First-chance {ExceptionType} (count={Count}). See {LogPath}", ex.GetType().Name, count, FirstChanceLogPath);
+    }
+
+    private static bool IsExpectedTransportShutdownException(Exception ex)
+    {
+        if (ex is not IOException io)
+        {
+            return false;
+        }
+
+        if (io.InnerException is SocketException socketEx && socketEx.ErrorCode == 995)
+        {
+            return true;
+        }
+
+        if (io.InnerException is ObjectDisposedException od &&
+            (string.Equals(od.ObjectName, "System.Net.Sockets.NetworkStream", StringComparison.Ordinal) ||
+             string.Equals(od.ObjectName, "System.Net.Security.SslStream", StringComparison.Ordinal)))
+        {
+            return true;
+        }
+
+        return false;
     }
 }
