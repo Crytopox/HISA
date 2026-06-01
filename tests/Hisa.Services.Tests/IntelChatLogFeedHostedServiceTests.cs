@@ -9,59 +9,6 @@ namespace Hisa.Services.Tests;
 
 public class IntelChatLogFeedHostedServiceTests
 {
-    [Fact]
-    public void TryPromoteActiveFile_OnlyPromotesNewestFilePerChannel()
-    {
-        var service = new IntelChatLogFeedHostedService(
-            new NoopSettingsService(),
-            new NoopSdeDatabase(),
-            new NoopHttpClientFactory(),
-            NullLogger<IntelChatLogFeedHostedService>.Instance);
-
-        var method = typeof(IntelChatLogFeedHostedService).GetMethod(
-            "TryPromoteActiveFile",
-            BindingFlags.Instance | BindingFlags.NonPublic);
-        Assert.NotNull(method);
-
-        var tempDir = Path.Combine(Path.GetTempPath(), "hisa-tests", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(tempDir);
-
-        try
-        {
-            var olderPath = Path.Combine(tempDir, "Intel_20260101_120000_0000001.txt");
-            var newerPath = Path.Combine(tempDir, "Intel_20260101_120500_0000002.txt");
-            File.WriteAllText(olderPath, "old");
-            File.WriteAllText(newerPath, "new");
-
-            var olderWriteUtc = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
-            var newerWriteUtc = olderWriteUtc.AddMinutes(5);
-            File.SetLastWriteTimeUtc(olderPath, olderWriteUtc);
-            File.SetLastWriteTimeUtc(newerPath, newerWriteUtc);
-
-            var firstArgs = new object?[] { "Intel", olderPath, null };
-            var firstAccepted = (bool)method!.Invoke(service, firstArgs)!;
-            Assert.True(firstAccepted);
-            Assert.Equal(olderPath, Assert.IsType<string>(firstArgs[2]));
-
-            var secondArgs = new object?[] { "Intel", newerPath, null };
-            var secondAccepted = (bool)method.Invoke(service, secondArgs)!;
-            Assert.True(secondAccepted);
-            Assert.Equal(newerPath, Assert.IsType<string>(secondArgs[2]));
-
-            var thirdArgs = new object?[] { "Intel", olderPath, null };
-            var thirdAccepted = (bool)method.Invoke(service, thirdArgs)!;
-            Assert.False(thirdAccepted);
-            Assert.Equal(newerPath, Assert.IsType<string>(thirdArgs[2]));
-        }
-        finally
-        {
-            if (Directory.Exists(tempDir))
-            {
-                Directory.Delete(tempDir, recursive: true);
-            }
-        }
-    }
-
     [Theory]
     [InlineData("Kill: Rave Maulerant (Thorax)", true)]
     [InlineData("kill: Some Pilot (Drake Navy Issue)", true)]
@@ -76,6 +23,24 @@ public class IntelChatLogFeedHostedServiceTests
 
         var result = (bool)method!.Invoke(null, [message])!;
         Assert.Equal(expectedIgnored, result);
+    }
+
+    [Fact]
+    public void ShouldReadChannel_WhenIncludeListIsEmpty_ReturnsTrue()
+    {
+        var service = new IntelChatLogFeedHostedService(
+            new NoopSettingsService(),
+            new NoopSdeDatabase(),
+            new NoopHttpClientFactory(),
+            NullLogger<IntelChatLogFeedHostedService>.Instance);
+
+        var method = typeof(IntelChatLogFeedHostedService).GetMethod(
+            "ShouldReadChannel",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(method);
+
+        var result = (bool)method!.Invoke(service, ["Any Intel Channel"])!;
+        Assert.True(result);
     }
 
     private sealed class NoopSettingsService : ISettingsService
