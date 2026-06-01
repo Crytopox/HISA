@@ -9,6 +9,7 @@ public partial class AlertPopupSettingsWindow : Window
     private readonly MainWindowViewModel? _vm;
     private bool _placementModeActive;
     public event EventHandler<bool>? PlacementModeChanged;
+    public event EventHandler? SettingsSaved;
 
     public AlertPopupSettingsWindow()
     {
@@ -31,9 +32,10 @@ public partial class AlertPopupSettingsWindow : Window
 
         var popup = _vm.GetAlertPopupSettingsSnapshot();
         PopupEnabledCheckBox.IsChecked = popup.Enabled;
-        PopupClickThroughCheckBox.IsChecked = popup.ClickThrough;
         PopupMaxCardsTextBox.Text = popup.MaxCards.ToString();
         PopupAutoDismissTextBox.Text = popup.AutoDismissSeconds.ToString();
+        PopupWidthTextBox.Text = popup.Width.ToString();
+        PopupHeightTextBox.Text = popup.Height.ToString();
         PopupOpacitySlider.Value = Math.Clamp(popup.Opacity * 100.0, 20.0, 100.0);
         PopupAnchorComboBox.SelectedItem = popup.Anchor;
         PopupOffsetXTextBox.Text = popup.OffsetX.ToString();
@@ -49,6 +51,8 @@ public partial class AlertPopupSettingsWindow : Window
 
         var maxCards = int.TryParse(PopupMaxCardsTextBox.Text, out var mc) ? mc : 8;
         var dismiss = int.TryParse(PopupAutoDismissTextBox.Text, out var ds) ? ds : 18;
+        var width = int.TryParse(PopupWidthTextBox.Text, out var w) ? w : 250;
+        var height = int.TryParse(PopupHeightTextBox.Text, out var h) ? h : 320;
         var opacity = Math.Clamp(PopupOpacitySlider.Value / 100.0, 0.2, 1.0);
         var offsetX = int.TryParse(PopupOffsetXTextBox.Text, out var ox) ? ox : 12;
         var offsetY = int.TryParse(PopupOffsetYTextBox.Text, out var oy) ? oy : 56;
@@ -57,14 +61,16 @@ public partial class AlertPopupSettingsWindow : Window
         await _vm.SaveAlertPopupSettingsAsync(new AlertPopupSettings
         {
             Enabled = PopupEnabledCheckBox.IsChecked == true,
-            ClickThrough = PopupClickThroughCheckBox.IsChecked == true,
             MaxCards = maxCards,
             AutoDismissSeconds = dismiss,
+            Width = width,
+            Height = height,
             Opacity = opacity,
             Anchor = anchor,
             OffsetX = offsetX,
             OffsetY = offsetY
         });
+        SettingsSaved?.Invoke(this, EventArgs.Empty);
     }
 
     private void OnPlacementToggleClicked(object? sender, RoutedEventArgs e)

@@ -20,16 +20,26 @@
             <TextBlock Text="Click 'Start Placement', drag the popup to where you want it, then click 'Stop Placement'. Offsets update automatically." TextWrapping="Wrap" Foreground="#9DB8D8" FontSize="11"/>
           </StackPanel>
         </Border>
-        <Grid ColumnDefinitions="Auto,Auto,*,*" ColumnSpacing="10">
+        <Grid ColumnDefinitions="Auto,*,*" ColumnSpacing="10">
           <CheckBox Grid.Column="0" x:Name="PopupEnabledCheckBox" Content="Enable Popup" Foreground="#DDE7F8"/>
-          <CheckBox Grid.Column="1" x:Name="PopupClickThroughCheckBox" Content="Click-through" Foreground="#DDE7F8"/>
-          <StackPanel Grid.Column="2" Spacing="3">
+          <StackPanel Grid.Column="1" Spacing="3">
             <TextBlock Text="Max Cards" Foreground="#9DB8D8"/>
             <TextBox x:Name="PopupMaxCardsTextBox" Width="90" Watermark="8"/>
           </StackPanel>
-          <StackPanel Grid.Column="3" Spacing="3">
+          <StackPanel Grid.Column="2" Spacing="3">
             <TextBlock Text="Auto-dismiss (s)" Foreground="#9DB8D8"/>
             <TextBox x:Name="PopupAutoDismissTextBox" Width="110" Watermark="18"/>
+          </StackPanel>
+        </Grid>
+
+        <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="10">
+          <StackPanel Grid.Column="0" Spacing="3">
+            <TextBlock Text="Popup Width" Foreground="#9DB8D8"/>
+            <TextBox x:Name="PopupWidthTextBox" Width="90" Watermark="250"/>
+          </StackPanel>
+          <StackPanel Grid.Column="1" Spacing="3">
+            <TextBlock Text="Popup Height" Foreground="#9DB8D8"/>
+            <TextBox x:Name="PopupHeightTextBox" Width="90" Watermark="320"/>
           </StackPanel>
         </Grid>
 

@@ -241,6 +241,7 @@ public partial class MainWindow : Window
         {
             _alertPopupSettingsWindow = new AlertPopupSettingsWindow(_boundVm);
             _alertPopupSettingsWindow.PlacementModeChanged += OnPopupPlacementModeChanged;
+            _alertPopupSettingsWindow.SettingsSaved += OnAlertPopupSettingsSaved;
             _alertPopupSettingsWindow.Closed += (_, _) =>
             {
                 _alertPopupSettingsWindow = null;
@@ -253,6 +254,17 @@ public partial class MainWindow : Window
         _alertPopupSettingsWindow.Show();
         _alertPopupSettingsWindow.Activate();
         _alertPopupSettingsWindow.SetPlacementModeState(_isAlertPopupDragMode);
+    }
+
+    private void OnAlertPopupSettingsSaved(object? sender, EventArgs e)
+    {
+        if (_boundVm is null)
+        {
+            return;
+        }
+
+        _alertPopupSettings = _boundVm.GetAlertPopupSettingsSnapshot();
+        ApplyAlertPopupWindowSettings();
     }
 
     private void OnOpenMapEditorClicked(object? sender, RoutedEventArgs e)
@@ -448,8 +460,9 @@ public partial class MainWindow : Window
 
         _alertPopupWindow = new AlertPopupWindow
         {
-            Width = 250,
-            Height = 320,
+            Width = _alertPopupSettings.Width,
+            Height = _alertPopupSettings.Height,
+            ShowActivated = false,
             DataContext = _boundVm
         };
         _alertPopupWindow.DragPositionCommitted += OnAlertPopupDragPositionCommitted;
@@ -470,7 +483,9 @@ public partial class MainWindow : Window
         }
 
         _alertPopupWindow.Opacity = _alertPopupSettings.Opacity;
-        _alertPopupWindow.IsHitTestVisible = _isAlertPopupDragMode || !_alertPopupSettings.ClickThrough;
+        _alertPopupWindow.Width = _alertPopupSettings.Width;
+        _alertPopupWindow.Height = _alertPopupSettings.Height;
+        _alertPopupWindow.IsHitTestVisible = true;
         _alertPopupWindow.IsDragModeEnabled = _isAlertPopupDragMode;
         var width = (int)Math.Max(0, _alertPopupWindow.Width);
         var height = (int)Math.Max(0, _alertPopupWindow.Height);
@@ -506,7 +521,6 @@ public partial class MainWindow : Window
         EnsureAlertPopupWindow();
         ApplyAlertPopupWindowSettings();
         _alertPopupWindow!.Show();
-        _alertPopupWindow.Activate();
         _alertPopupSettingsWindow?.SetPlacementModeState(true);
     }
 
@@ -575,7 +589,8 @@ public partial class MainWindow : Window
             MaxCards = _alertPopupSettings.MaxCards,
             AutoDismissSeconds = _alertPopupSettings.AutoDismissSeconds,
             Opacity = _alertPopupSettings.Opacity,
-            ClickThrough = _alertPopupSettings.ClickThrough,
+            Width = _alertPopupSettings.Width,
+            Height = _alertPopupSettings.Height,
             Anchor = _alertPopupSettings.Anchor,
             OffsetX = offsetX,
             OffsetY = offsetY

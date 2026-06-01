@@ -14,7 +14,8 @@ public sealed class AlertPopupSettings
     public int MaxCards { get; init; } = 8;
     public int AutoDismissSeconds { get; init; } = 18;
     public double Opacity { get; init; } = 0.95;
-    public bool ClickThrough { get; init; } = false;
+    public int Width { get; init; } = 250;
+    public int Height { get; init; } = 320;
     public AlertPopupAnchor Anchor { get; init; } = AlertPopupAnchor.TopRight;
     public int OffsetX { get; init; } = 12;
     public int OffsetY { get; init; } = 56;

@@ -100,6 +100,7 @@
                   <Border HorizontalAlignment="Left" Background="#241C35" BorderBrush="#5D83B5" BorderThickness="1" CornerRadius="4" Padding="5,1" Margin="0,0,0,2" IsVisible="{Binding IntelCard.PopupHasHiddenHostiles}">
                     <TextBlock Text="{Binding IntelCard.PopupHiddenHostilesSummary}" Foreground="#BFD8FF" FontSize="9" FontWeight="Bold" />
                   </Border>
+                  <TextBlock Text="{Binding IntelCard.MessageText}" Foreground="#C9D7EA" FontSize="9" TextWrapping="Wrap" />
                 </StackPanel>
               </Border>
             </Grid>

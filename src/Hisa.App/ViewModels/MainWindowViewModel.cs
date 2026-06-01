@@ -2446,7 +2446,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             MaxCards = Math.Clamp(settings.MaxCards, 1, 30),
             AutoDismissSeconds = Math.Clamp(settings.AutoDismissSeconds, 3, 300),
             Opacity = Math.Clamp(settings.Opacity, 0.2, 1.0),
-            ClickThrough = settings.ClickThrough,
+            Width = Math.Clamp(settings.Width, 180, 1200),
+            Height = Math.Clamp(settings.Height, 120, 1200),
             Anchor = settings.Anchor,
             OffsetX = Math.Clamp(settings.OffsetX, -10000, 10000),
             OffsetY = Math.Clamp(settings.OffsetY, -10000, 10000)
@@ -3428,7 +3429,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         MaxCards = _alertPopupSettings.MaxCards,
         AutoDismissSeconds = _alertPopupSettings.AutoDismissSeconds,
         Opacity = _alertPopupSettings.Opacity,
-        ClickThrough = _alertPopupSettings.ClickThrough,
+        Width = _alertPopupSettings.Width,
+        Height = _alertPopupSettings.Height,
         Anchor = _alertPopupSettings.Anchor,
         OffsetX = _alertPopupSettings.OffsetX,
         OffsetY = _alertPopupSettings.OffsetY
