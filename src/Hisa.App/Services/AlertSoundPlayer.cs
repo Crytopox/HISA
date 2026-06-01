@@ -124,8 +124,9 @@ internal static class AlertSoundPlayer
         }
 
         var audioFormat = ReadUInt16(wavBytes, fmtOffset + 8);
+        var channels = ReadUInt16(wavBytes, fmtOffset + 10);
         var bitsPerSample = ReadUInt16(wavBytes, fmtOffset + 22);
-        if (audioFormat != 1)
+        if (channels <= 0)
         {
             return null;
         }
@@ -138,12 +139,15 @@ internal static class AlertSoundPlayer
         }
 
         var output = (byte[])wavBytes.Clone();
-        if (bitsPerSample == 8)
+        var normalizeGain = ComputeNormalizationGain(output, dataStart, dataSize, audioFormat, bitsPerSample);
+        var gain = Math.Clamp(volume, 0.0, 1.0) * normalizeGain;
+
+        if (audioFormat == 1 && bitsPerSample == 8)
         {
             for (var i = dataStart; i < dataStart + dataSize; i++)
             {
                 var centered = output[i] - 128;
-                var scaled = (int)Math.Round(centered * volume);
+                var scaled = (int)Math.Round(centered * gain);
                 scaled = Math.Clamp(scaled, -128, 127);
                 output[i] = (byte)(scaled + 128);
             }
@@ -151,16 +155,57 @@ internal static class AlertSoundPlayer
             return output;
         }
 
-        if (bitsPerSample == 16)
+        if (audioFormat == 1 && bitsPerSample == 16)
         {
             for (var i = dataStart; i + 1 < dataStart + dataSize; i += 2)
             {
                 var sample = BitConverter.ToInt16(output, i);
-                var scaled = (int)Math.Round(sample * volume);
+                var scaled = (int)Math.Round(sample * gain);
                 scaled = Math.Clamp(scaled, short.MinValue, short.MaxValue);
                 var packed = BitConverter.GetBytes((short)scaled);
                 output[i] = packed[0];
                 output[i + 1] = packed[1];
+            }
+
+            return output;
+        }
+
+        if (audioFormat == 1 && bitsPerSample == 24)
+        {
+            for (var i = dataStart; i + 2 < dataStart + dataSize; i += 3)
+            {
+                var sample = ReadInt24(output, i);
+                var scaled = (int)Math.Round(sample * gain);
+                scaled = Math.Clamp(scaled, -8_388_608, 8_388_607);
+                WriteInt24(output, i, scaled);
+            }
+
+            return output;
+        }
+
+        if (audioFormat == 1 && bitsPerSample == 32)
+        {
+            for (var i = dataStart; i + 3 < dataStart + dataSize; i += 4)
+            {
+                var sample = BitConverter.ToInt32(output, i);
+                var scaled = (long)Math.Round(sample * gain);
+                scaled = Math.Clamp(scaled, int.MinValue, int.MaxValue);
+                var packed = BitConverter.GetBytes((int)scaled);
+                Buffer.BlockCopy(packed, 0, output, i, 4);
+            }
+
+            return output;
+        }
+
+        // IEEE float WAV
+        if (audioFormat == 3 && bitsPerSample == 32)
+        {
+            for (var i = dataStart; i + 3 < dataStart + dataSize; i += 4)
+            {
+                var sample = BitConverter.ToSingle(output, i);
+                var scaled = (float)Math.Clamp(sample * gain, -1.0, 1.0);
+                var packed = BitConverter.GetBytes(scaled);
+                Buffer.BlockCopy(packed, 0, output, i, 4);
             }
 
             return output;
@@ -180,7 +225,13 @@ internal static class AlertSoundPlayer
                 return i;
             }
 
-            i += 8 + Math.Max(0, size);
+            var padded = Math.Max(0, size);
+            if ((padded & 1) == 1)
+            {
+                padded++;
+            }
+
+            i += 8 + padded;
         }
 
         return -1;
@@ -188,4 +239,72 @@ internal static class AlertSoundPlayer
 
     private static ushort ReadUInt16(byte[] bytes, int offset) => BitConverter.ToUInt16(bytes, offset);
     private static int ReadInt32(byte[] bytes, int offset) => BitConverter.ToInt32(bytes, offset);
+
+    private static int ReadInt24(byte[] bytes, int offset)
+    {
+        var value = bytes[offset] | (bytes[offset + 1] << 8) | (bytes[offset + 2] << 16);
+        if ((value & 0x800000) != 0)
+        {
+            value |= unchecked((int)0xFF000000);
+        }
+
+        return value;
+    }
+
+    private static void WriteInt24(byte[] bytes, int offset, int value)
+    {
+        bytes[offset] = (byte)(value & 0xFF);
+        bytes[offset + 1] = (byte)((value >> 8) & 0xFF);
+        bytes[offset + 2] = (byte)((value >> 16) & 0xFF);
+    }
+
+    private static double ComputeNormalizationGain(byte[] bytes, int dataStart, int dataSize, ushort audioFormat, ushort bitsPerSample)
+    {
+        const double targetPeak = 0.95;
+        double peak = 0.0;
+
+        if (audioFormat == 1 && bitsPerSample == 8)
+        {
+            for (var i = dataStart; i < dataStart + dataSize; i++)
+            {
+                peak = Math.Max(peak, Math.Abs((bytes[i] - 128) / 128.0));
+            }
+        }
+        else if (audioFormat == 1 && bitsPerSample == 16)
+        {
+            for (var i = dataStart; i + 1 < dataStart + dataSize; i += 2)
+            {
+                peak = Math.Max(peak, Math.Abs(BitConverter.ToInt16(bytes, i) / 32768.0));
+            }
+        }
+        else if (audioFormat == 1 && bitsPerSample == 24)
+        {
+            for (var i = dataStart; i + 2 < dataStart + dataSize; i += 3)
+            {
+                peak = Math.Max(peak, Math.Abs(ReadInt24(bytes, i) / 8388608.0));
+            }
+        }
+        else if (audioFormat == 1 && bitsPerSample == 32)
+        {
+            for (var i = dataStart; i + 3 < dataStart + dataSize; i += 4)
+            {
+                peak = Math.Max(peak, Math.Abs(BitConverter.ToInt32(bytes, i) / 2147483648.0));
+            }
+        }
+        else if (audioFormat == 3 && bitsPerSample == 32)
+        {
+            for (var i = dataStart; i + 3 < dataStart + dataSize; i += 4)
+            {
+                peak = Math.Max(peak, Math.Abs(BitConverter.ToSingle(bytes, i)));
+            }
+        }
+
+        if (peak <= 0.000001)
+        {
+            return 1.0;
+        }
+
+        var gain = targetPeak / peak;
+        return Math.Clamp(gain, 1.0, 4.0);
+    }
 }

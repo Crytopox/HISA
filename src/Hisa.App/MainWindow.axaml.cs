@@ -30,8 +30,10 @@ public partial class MainWindow : Window
     private PreferencesWindow? _preferencesWindow;
     private IntelSettingsWindow? _intelSettingsWindow;
     private AlertsSettingsWindow? _alertsSettingsWindow;
+    private AlertPopupSettingsWindow? _alertPopupSettingsWindow;
     private AlertPopupWindow? _alertPopupWindow;
     private AlertPopupSettings _alertPopupSettings = new();
+    private bool _isAlertPopupDragMode;
     private CharactersWindow? _charactersWindow;
     private MapEditorWindow? _mapEditorWindow;
     private SovUpgradesWindow? _sovUpgradesWindow;
@@ -208,6 +210,7 @@ public partial class MainWindow : Window
             _alertsSettingsWindow = new AlertsSettingsWindow(_boundVm);
             _alertsSettingsWindow.Closed += (_, _) =>
             {
+                _isAlertPopupDragMode = false;
                 _alertsSettingsWindow = null;
                 if (_boundVm is not null)
                 {
@@ -221,11 +224,34 @@ public partial class MainWindow : Window
         _alertsSettingsWindow.Activate();
     }
 
-    private void OnOpenAlertsPopupClicked(object? sender, RoutedEventArgs e)
+    private void OnOpenAlertPopupSettingsClicked(object? sender, RoutedEventArgs e)
     {
-        EnsureAlertPopupWindow();
-        _alertPopupWindow!.Show();
-        _alertPopupWindow.Activate();
+        OnOpenAlertPopupSettingsRequested(sender, EventArgs.Empty);
+    }
+
+    private void OnOpenAlertPopupSettingsRequested(object? sender, EventArgs e)
+    {
+        if (_boundVm is null)
+        {
+            return;
+        }
+
+        if (_alertPopupSettingsWindow is null)
+        {
+            _alertPopupSettingsWindow = new AlertPopupSettingsWindow(_boundVm);
+            _alertPopupSettingsWindow.PlacementModeChanged += OnPopupPlacementModeChanged;
+            _alertPopupSettingsWindow.Closed += (_, _) =>
+            {
+                _alertPopupSettingsWindow = null;
+                _isAlertPopupDragMode = false;
+                _alertPopupSettings = _boundVm.GetAlertPopupSettingsSnapshot();
+                ApplyAlertPopupWindowSettings();
+            };
+        }
+
+        _alertPopupSettingsWindow.Show();
+        _alertPopupSettingsWindow.Activate();
+        _alertPopupSettingsWindow.SetPlacementModeState(_isAlertPopupDragMode);
     }
 
     private void OnOpenMapEditorClicked(object? sender, RoutedEventArgs e)
@@ -380,6 +406,7 @@ public partial class MainWindow : Window
             Width = 420,
             Height = 360
         };
+        _alertPopupWindow.DragPositionCommitted += OnAlertPopupDragPositionCommitted;
         _alertPopupWindow.Closed += (_, _) => _alertPopupWindow = null;
         var itemsControl = _alertPopupWindow.FindControl<ItemsControl>("AlertsItemsControl");
         if (itemsControl is not null)
@@ -397,7 +424,8 @@ public partial class MainWindow : Window
         }
 
         _alertPopupWindow.Opacity = _alertPopupSettings.Opacity;
-        _alertPopupWindow.IsHitTestVisible = !_alertPopupSettings.ClickThrough;
+        _alertPopupWindow.IsHitTestVisible = _isAlertPopupDragMode || !_alertPopupSettings.ClickThrough;
+        _alertPopupWindow.IsDragModeEnabled = _isAlertPopupDragMode;
         var width = (int)Math.Max(0, _alertPopupWindow.Width);
         var height = (int)Math.Max(0, _alertPopupWindow.Height);
         var x = Position.X;
@@ -410,20 +438,103 @@ public partial class MainWindow : Window
                 y += _alertPopupSettings.OffsetY;
                 break;
             case AlertPopupAnchor.BottomRight:
-                x += Math.Max(0, (int)Bounds.Width - width - _alertPopupSettings.OffsetX);
-                y += Math.Max(0, (int)Bounds.Height - height - _alertPopupSettings.OffsetY);
+                x += ((int)Bounds.Width - width - _alertPopupSettings.OffsetX);
+                y += ((int)Bounds.Height - height - _alertPopupSettings.OffsetY);
                 break;
             case AlertPopupAnchor.BottomLeft:
                 x += _alertPopupSettings.OffsetX;
-                y += Math.Max(0, (int)Bounds.Height - height - _alertPopupSettings.OffsetY);
+                y += ((int)Bounds.Height - height - _alertPopupSettings.OffsetY);
                 break;
             default:
-                x += Math.Max(0, (int)Bounds.Width - width - _alertPopupSettings.OffsetX);
+                x += ((int)Bounds.Width - width - _alertPopupSettings.OffsetX);
                 y += _alertPopupSettings.OffsetY;
                 break;
         }
 
         _alertPopupWindow.Position = new PixelPoint(x, y);
+    }
+
+    private void OnEnterPopupDragModeRequested(object? sender, EventArgs e)
+    {
+        _isAlertPopupDragMode = true;
+        EnsureAlertPopupWindow();
+        ApplyAlertPopupWindowSettings();
+        _alertPopupWindow!.Show();
+        _alertPopupWindow.Activate();
+        _alertPopupSettingsWindow?.SetPlacementModeState(true);
+    }
+
+    private void OnExitPopupDragModeRequested(object? sender, EventArgs e)
+    {
+        _isAlertPopupDragMode = false;
+        ApplyAlertPopupWindowSettings();
+        _alertPopupSettingsWindow?.SetPlacementModeState(false);
+        if (_boundVm is not null)
+        {
+            _ = _boundVm.SaveAlertPopupSettingsAsync(_alertPopupSettings);
+        }
+    }
+
+    private void OnPopupPlacementModeChanged(object? sender, bool enabled)
+    {
+        if (enabled)
+        {
+            OnEnterPopupDragModeRequested(sender, EventArgs.Empty);
+        }
+        else
+        {
+            OnExitPopupDragModeRequested(sender, EventArgs.Empty);
+        }
+    }
+
+    private void OnAlertPopupDragPositionCommitted(object? sender, PixelPoint popupPosition)
+    {
+        if (!_isAlertPopupDragMode || _boundVm is null || _alertPopupWindow is null)
+        {
+            return;
+        }
+
+        var width = Math.Max(0, (int)_alertPopupWindow.Width);
+        var height = Math.Max(0, (int)_alertPopupWindow.Height);
+        var relX = popupPosition.X - Position.X;
+        var relY = popupPosition.Y - Position.Y;
+        var mainW = (int)Bounds.Width;
+        var mainH = (int)Bounds.Height;
+
+        var offsetX = _alertPopupSettings.OffsetX;
+        var offsetY = _alertPopupSettings.OffsetY;
+        switch (_alertPopupSettings.Anchor)
+        {
+            case AlertPopupAnchor.TopLeft:
+                offsetX = relX;
+                offsetY = relY;
+                break;
+            case AlertPopupAnchor.BottomRight:
+                offsetX = mainW - width - relX;
+                offsetY = mainH - height - relY;
+                break;
+            case AlertPopupAnchor.BottomLeft:
+                offsetX = relX;
+                offsetY = mainH - height - relY;
+                break;
+            default:
+                offsetX = mainW - width - relX;
+                offsetY = relY;
+                break;
+        }
+
+        _alertPopupSettings = new AlertPopupSettings
+        {
+            Enabled = _alertPopupSettings.Enabled,
+            MaxCards = _alertPopupSettings.MaxCards,
+            AutoDismissSeconds = _alertPopupSettings.AutoDismissSeconds,
+            Opacity = _alertPopupSettings.Opacity,
+            ClickThrough = _alertPopupSettings.ClickThrough,
+            Anchor = _alertPopupSettings.Anchor,
+            OffsetX = offsetX,
+            OffsetY = offsetY
+        };
+        _alertPopupSettingsWindow?.UpdateOffsetsFromPlacement(offsetX, offsetY);
     }
 
     private void CleanupExpiredAlertPopupCards()

@@ -2447,8 +2447,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             Opacity = Math.Clamp(settings.Opacity, 0.2, 1.0),
             ClickThrough = settings.ClickThrough,
             Anchor = settings.Anchor,
-            OffsetX = Math.Clamp(settings.OffsetX, 0, 2400),
-            OffsetY = Math.Clamp(settings.OffsetY, 0, 2400)
+            OffsetX = Math.Clamp(settings.OffsetX, -10000, 10000),
+            OffsetY = Math.Clamp(settings.OffsetY, -10000, 10000)
         };
     }
 

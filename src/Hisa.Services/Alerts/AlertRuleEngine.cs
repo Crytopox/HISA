@@ -33,20 +33,24 @@ public sealed class AlertRuleEngine : IAlertRuleEngine
                 continue;
             }
 
-            var dedupe = BuildCooldownKey(rule, source);
-            if (IsCoolingDown(dedupe, now))
+            var actions = new List<AlertActionType> { AlertActionType.ShowPopup };
+            var wantsSound = rule.Actions.Contains(AlertActionType.PlaySound);
+            if (wantsSound)
             {
-                continue;
+                var dedupe = BuildCooldownKey(rule, source);
+                if (!IsCoolingDown(dedupe, now))
+                {
+                    actions.Add(AlertActionType.PlaySound);
+                    SetCooldown(dedupe, now, Math.Max(0, rule.CooldownSeconds));
+                }
             }
-
-            SetCooldown(dedupe, now, Math.Max(0, rule.CooldownSeconds));
             result.Add(new AlertTriggered
             {
                 RuleId = rule.Id,
                 RuleName = rule.Name,
                 SourceEvent = source,
                 TriggeredAtUtc = now,
-                Actions = rule.Actions,
+                Actions = actions,
                 SoundFile = string.IsNullOrWhiteSpace(rule.SoundFile) ? "default-alert.wav" : rule.SoundFile,
                 SoundVolume = Math.Clamp(rule.SoundVolume, 0.0, 1.0)
             });

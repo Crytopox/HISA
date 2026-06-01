@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Input;
 using Hisa.App.Services;
 using Hisa.Core.Models;
 
@@ -9,6 +10,8 @@ public partial class AlertsSettingsWindow : Window
 {
     private readonly MainWindowViewModel? _vm;
     private readonly List<AlertRule> _rules = [];
+    private readonly List<string> _allTrackedCharacterNames = [];
+    private readonly HashSet<string> _selectedCharacterNames = new(StringComparer.OrdinalIgnoreCase);
     private int _selectedIndex = -1;
 
     public AlertsSettingsWindow()
@@ -17,7 +20,6 @@ public partial class AlertsSettingsWindow : Window
         EventTypeComboBox.ItemsSource = Enum.GetValues<AlertEventType>();
         ScopeModeComboBox.ItemsSource = Enum.GetValues<AlertLocationScopeMode>();
         DistanceModeComboBox.ItemsSource = Enum.GetValues<AlertDistanceMode>();
-        PopupAnchorComboBox.ItemsSource = Enum.GetValues<AlertPopupAnchor>();
         SoundVolumeSlider.PropertyChanged += (_, e) =>
         {
             if (e.Property.Name == "Value")
@@ -48,25 +50,16 @@ public partial class AlertsSettingsWindow : Window
 
         if (_vm is not null)
         {
-            CharacterNamesComboBox.ItemsSource = _vm.GetTrackedCharacterNamesSnapshot();
+            _allTrackedCharacterNames.Clear();
+            _allTrackedCharacterNames.AddRange(_vm.GetTrackedCharacterNamesSnapshot());
         }
+        RefreshCharacterCandidatesList();
+        RefreshSelectedCharactersList();
         SoundFileComboBox.ItemsSource = AlertSoundPlayer.GetAvailableSoundFiles();
 
         RefreshRulesList();
         RulesListBox.SelectedIndex = 0;
 
-        if (_vm is not null)
-        {
-            var popup = _vm.GetAlertPopupSettingsSnapshot();
-            PopupEnabledCheckBox.IsChecked = popup.Enabled;
-            PopupClickThroughCheckBox.IsChecked = popup.ClickThrough;
-            PopupMaxCardsTextBox.Text = popup.MaxCards.ToString();
-            PopupAutoDismissTextBox.Text = popup.AutoDismissSeconds.ToString();
-            PopupOpacityTextBox.Text = popup.Opacity.ToString("0.##");
-            PopupAnchorComboBox.SelectedItem = popup.Anchor;
-            PopupOffsetXTextBox.Text = popup.OffsetX.ToString();
-            PopupOffsetYTextBox.Text = popup.OffsetY.ToString();
-        }
     }
 
     private static AlertRule CreateDefaultRule()
@@ -84,7 +77,7 @@ public partial class AlertsSettingsWindow : Window
             IncludeAnsiblexLinks = false,
             CooldownSeconds = 30,
             SoundVolume = 1.0,
-            Actions = [AlertActionType.ShowPopup]
+            Actions = []
         };
     }
 
@@ -114,7 +107,14 @@ public partial class AlertsSettingsWindow : Window
                 .Where(x => !string.IsNullOrWhiteSpace(x))
                 .ToList();
         }
-        CharacterNamesComboBox.Text = string.Join(", ", characterNames);
+        _selectedCharacterNames.Clear();
+        foreach (var name in characterNames)
+        {
+            _selectedCharacterNames.Add(name.Trim());
+        }
+        CharacterSearchTextBox.Text = string.Empty;
+        RefreshCharacterCandidatesList();
+        RefreshSelectedCharactersList();
         DistanceModeComboBox.SelectedItem = rule.DistanceMode;
         MaxJumpsTextBox.Text = rule.MaxJumps.ToString();
         IncludeAnsiblexCheckBox.IsChecked = rule.IncludeAnsiblexLinks;
@@ -123,13 +123,18 @@ public partial class AlertsSettingsWindow : Window
         var volumePercent = Math.Clamp((int)Math.Round(rule.SoundVolume * 100.0), 0, 100);
         SoundVolumeSlider.Value = volumePercent;
         SoundVolumeTextBox.Text = volumePercent.ToString();
-        ActionPopupCheckBox.IsChecked = rule.Actions.Contains(AlertActionType.ShowPopup);
         ActionSoundCheckBox.IsChecked = rule.Actions.Contains(AlertActionType.PlaySound);
+        UpdateEditorVisibility();
     }
 
     private void OnEditorValueChanged(object? sender, SelectionChangedEventArgs e)
     {
-        // no-op: explicit Apply button commits changes
+        UpdateEditorVisibility();
+    }
+
+    private void OnActionSoundToggleChanged(object? sender, RoutedEventArgs e)
+    {
+        UpdateEditorVisibility();
     }
 
     private void OnAddRuleClicked(object? sender, RoutedEventArgs e)
@@ -172,10 +177,8 @@ public partial class AlertsSettingsWindow : Window
         var scopeMode = ScopeModeComboBox.SelectedItem is AlertLocationScopeMode sm ? sm : AlertLocationScopeMode.Global;
         var distanceMode = DistanceModeComboBox.SelectedItem is AlertDistanceMode dm ? dm : AlertDistanceMode.Any;
 
-        var characterNames = (CharacterNamesComboBox.Text ?? string.Empty)
-            .Split([',', ';', ' ', '\n', '\r', '\t'], StringSplitOptions.RemoveEmptyEntries)
-            .Select(x => x.Trim())
-            .Where(x => x.Length > 0)
+        var characterNames = _selectedCharacterNames
+            .Where(x => !string.IsNullOrWhiteSpace(x))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
         var characterIds = _vm is null
@@ -191,11 +194,6 @@ public partial class AlertsSettingsWindow : Window
         SoundVolumeTextBox.Text = volumePercent.ToString();
 
         var actions = new List<AlertActionType>();
-        if (ActionPopupCheckBox.IsChecked == true)
-        {
-            actions.Add(AlertActionType.ShowPopup);
-        }
-
         if (ActionSoundCheckBox.IsChecked == true)
         {
             actions.Add(AlertActionType.PlaySound);
@@ -232,39 +230,6 @@ public partial class AlertsSettingsWindow : Window
         }
 
         await _vm.SaveAlertRulesAsync(_rules);
-        await SavePopupSettingsInternalAsync();
-    }
-
-    private async void OnSavePopupSettingsClicked(object? sender, RoutedEventArgs e)
-    {
-        await SavePopupSettingsInternalAsync();
-    }
-
-    private async Task SavePopupSettingsInternalAsync()
-    {
-        if (_vm is null)
-        {
-            return;
-        }
-
-        var maxCards = int.TryParse(PopupMaxCardsTextBox.Text, out var mc) ? mc : 8;
-        var dismiss = int.TryParse(PopupAutoDismissTextBox.Text, out var ds) ? ds : 18;
-        var opacity = double.TryParse(PopupOpacityTextBox.Text, out var op) ? op : 0.95;
-        var offsetX = int.TryParse(PopupOffsetXTextBox.Text, out var ox) ? ox : 12;
-        var offsetY = int.TryParse(PopupOffsetYTextBox.Text, out var oy) ? oy : 56;
-        var anchor = PopupAnchorComboBox.SelectedItem is AlertPopupAnchor a ? a : AlertPopupAnchor.TopRight;
-
-        await _vm.SaveAlertPopupSettingsAsync(new AlertPopupSettings
-        {
-            Enabled = PopupEnabledCheckBox.IsChecked == true,
-            ClickThrough = PopupClickThroughCheckBox.IsChecked == true,
-            MaxCards = maxCards,
-            AutoDismissSeconds = dismiss,
-            Opacity = opacity,
-            Anchor = anchor,
-            OffsetX = offsetX,
-            OffsetY = offsetY
-        });
     }
 
     private void OnCloseClicked(object? sender, RoutedEventArgs e)
@@ -281,5 +246,115 @@ public partial class AlertsSettingsWindow : Window
         SoundVolumeSlider.Value = volumePercent;
         SoundVolumeTextBox.Text = volumePercent.ToString();
         AlertSoundPlayer.Play(sound, volumePercent / 100.0);
+    }
+
+    private void OnCharacterSearchTextChanged(object? sender, TextChangedEventArgs e)
+    {
+        RefreshCharacterCandidatesList();
+    }
+
+    private void OnCharacterSearchKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            AddCharacterFromPicker();
+            e.Handled = true;
+        }
+    }
+
+    private void OnCharacterCandidateDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        AddCharacterFromPicker();
+    }
+
+    private void OnSelectedCharacterDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        RemoveSelectedCharacterFromPicker();
+    }
+
+    private void OnAddCharacterClicked(object? sender, RoutedEventArgs e)
+    {
+        AddCharacterFromPicker();
+    }
+
+    private void AddCharacterFromPicker()
+    {
+        var picked = CharacterCandidatesListBox.SelectedItem as string;
+        if (string.IsNullOrWhiteSpace(picked))
+        {
+            var typed = CharacterSearchTextBox.Text?.Trim();
+            if (!string.IsNullOrWhiteSpace(typed))
+            {
+                picked = typed;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(picked))
+        {
+            return;
+        }
+
+        _selectedCharacterNames.Add(picked.Trim());
+        CharacterSearchTextBox.Text = string.Empty;
+        RefreshCharacterCandidatesList();
+        RefreshSelectedCharactersList();
+    }
+
+    private void OnRemoveCharacterClicked(object? sender, RoutedEventArgs e)
+    {
+        RemoveSelectedCharacterFromPicker();
+    }
+
+    private void RemoveSelectedCharacterFromPicker()
+    {
+        var picked = SelectedCharactersListBox.SelectedItem as string;
+        if (string.IsNullOrWhiteSpace(picked))
+        {
+            return;
+        }
+
+        _selectedCharacterNames.Remove(picked.Trim());
+        RefreshCharacterCandidatesList();
+        RefreshSelectedCharactersList();
+    }
+
+    private void RefreshCharacterCandidatesList()
+    {
+        var query = CharacterSearchTextBox.Text?.Trim() ?? string.Empty;
+        var candidates = _allTrackedCharacterNames
+            .Where(x => !_selectedCharacterNames.Contains(x))
+            .Where(x => query.Length == 0 || x.Contains(query, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+            .Take(80)
+            .ToList();
+        CharacterCandidatesListBox.ItemsSource = candidates;
+        if (candidates.Count > 0)
+        {
+            CharacterCandidatesListBox.SelectedIndex = 0;
+        }
+    }
+
+    private void RefreshSelectedCharactersList()
+    {
+        SelectedCharactersListBox.ItemsSource = _selectedCharacterNames
+            .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private void UpdateEditorVisibility()
+    {
+        var scopeMode = ScopeModeComboBox.SelectedItem is AlertLocationScopeMode sm ? sm : AlertLocationScopeMode.Global;
+        var distanceMode = DistanceModeComboBox.SelectedItem is AlertDistanceMode dm ? dm : AlertDistanceMode.Any;
+        var soundEnabled = ActionSoundCheckBox.IsChecked == true;
+
+        CharacterSearchTextBox.IsEnabled = scopeMode == AlertLocationScopeMode.SpecificCharacters;
+        CharacterCandidatesListBox.IsEnabled = scopeMode == AlertLocationScopeMode.SpecificCharacters;
+        SelectedCharactersListBox.IsEnabled = scopeMode == AlertLocationScopeMode.SpecificCharacters;
+        CharacterSelectorPanel.IsVisible = scopeMode == AlertLocationScopeMode.SpecificCharacters;
+        EventTypeComboBox.IsVisible = true;
+        MaxJumpsPanel.IsVisible = distanceMode == AlertDistanceMode.MaxJumps;
+        SoundFileComboBox.IsEnabled = soundEnabled;
+        SoundVolumeTextBox.IsEnabled = soundEnabled;
+        SoundVolumeSlider.IsEnabled = soundEnabled;
     }
 }

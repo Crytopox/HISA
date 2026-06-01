@@ -11,12 +11,15 @@
         Topmost="True"
         Background="Transparent"
         TransparencyLevelHint="AcrylicBlur,Blur,Transparent">
-  <Border Margin="8"
+  <Border x:Name="RootBorder"
+          Margin="8"
           Padding="8"
           CornerRadius="8"
           Background="#0F1521CC"
           BorderBrush="#355178"
-          BorderThickness="1">
+          BorderThickness="1"
+          PointerPressed="OnRootPointerPressed"
+          PointerReleased="OnRootPointerReleased">
     <ItemsControl x:Name="AlertsItemsControl">
       <ItemsControl.ItemTemplate>
         <DataTemplate x:DataType="vm:AlertPopupCard">
