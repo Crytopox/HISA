@@ -827,9 +827,109 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
                 };
                 changed = true;
             }
+
+            if (changed)
+            {
+                EnforceSingleSystemPerHostile();
+            }
         }
 
         return changed;
+    }
+
+    private void EnforceSingleSystemPerHostile()
+    {
+        var entries = new List<(long SystemId, DateTime LastUpdatedUtc, string Name)>();
+        foreach (var pair in _snapshotBySystemId)
+        {
+            if (pair.Value.IsClear || pair.Value.HostilePilotNames.Count == 0)
+            {
+                continue;
+            }
+
+            foreach (var name in pair.Value.HostilePilotNames)
+            {
+                if (!string.IsNullOrWhiteSpace(name))
+                {
+                    entries.Add((pair.Key, pair.Value.LastUpdatedUtc, name.Trim()));
+                }
+            }
+        }
+
+        if (entries.Count <= 1)
+        {
+            return;
+        }
+
+        var canonicalBySystem = new Dictionary<long, List<string>>();
+        for (var i = 0; i < entries.Count; i++)
+        {
+            var candidate = entries[i];
+            var best = candidate;
+            for (var j = 0; j < entries.Count; j++)
+            {
+                if (i == j)
+                {
+                    continue;
+                }
+
+                var other = entries[j];
+                if (!HostileNamesMatch(candidate.Name, other.Name))
+                {
+                    continue;
+                }
+
+                if (other.LastUpdatedUtc > best.LastUpdatedUtc ||
+                    (other.LastUpdatedUtc == best.LastUpdatedUtc && other.SystemId > best.SystemId))
+                {
+                    best = other;
+                }
+            }
+
+            if (!canonicalBySystem.TryGetValue(best.SystemId, out var names))
+            {
+                names = [];
+                canonicalBySystem[best.SystemId] = names;
+            }
+
+            if (!names.Any(existing => HostileNamesMatch(existing, candidate.Name)))
+            {
+                names.Add(candidate.Name);
+            }
+        }
+
+        foreach (var pair in _snapshotBySystemId.ToList())
+        {
+            if (pair.Value.IsClear)
+            {
+                continue;
+            }
+
+            var keptNames = canonicalBySystem.TryGetValue(pair.Key, out var canonical)
+                ? canonical
+                : [];
+            var derivedHostileScore = Math.Max(
+                keptNames.Count,
+                Math.Max(pair.Value.ShipClasses.Count, pair.Value.Alerts.Any(a => a != IntelAlertType.Clear) ? 1 : 0));
+
+            _snapshotBySystemId[pair.Key] = new IntelSystemSnapshot
+            {
+                SolarSystemId = pair.Value.SolarSystemId,
+                SolarSystemName = pair.Value.SolarSystemName,
+                LastUpdatedUtc = pair.Value.LastUpdatedUtc,
+                LastChannelName = pair.Value.LastChannelName,
+                LastReporterName = pair.Value.LastReporterName,
+                LastMessageText = pair.Value.LastMessageText,
+                ShipClasses = pair.Value.ShipClasses,
+                ShipNames = pair.Value.ShipNames,
+                ShipTypeIds = pair.Value.ShipTypeIds,
+                Alerts = pair.Value.Alerts,
+                HostilePilotNames = keptNames,
+                RecentReports = pair.Value.RecentReports,
+                HostileScore = derivedHostileScore,
+                IsClear = pair.Value.IsClear
+            };
+        }
     }
 
     private void ExpireSnapshots(DateTime nowUtc)
