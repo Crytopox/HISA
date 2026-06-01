@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia;
+using Avalonia.Media;
 using Hisa.App.ViewModels;
 using System.Diagnostics;
 
@@ -9,13 +10,44 @@ namespace Hisa.App;
 
 public partial class AlertPopupWindow : Window
 {
-    public bool IsDragModeEnabled { get; set; }
+    private bool _isDragModeEnabled;
+
+    public bool IsDragModeEnabled
+    {
+        get => _isDragModeEnabled;
+        set
+        {
+            if (_isDragModeEnabled == value)
+            {
+                return;
+            }
+
+            _isDragModeEnabled = value;
+            ApplyDragModeVisuals();
+        }
+    }
     public event EventHandler<PixelPoint>? DragPositionCommitted;
 
     public AlertPopupWindow()
     {
         InitializeComponent();
         PositionChanged += OnWindowPositionChanged;
+    }
+
+    private void ApplyDragModeVisuals()
+    {
+        RootBorder.Background = IsDragModeEnabled
+            ? Brush.Parse("#B01A2232")
+            : Brushes.Transparent;
+        RootBorder.BorderBrush = IsDragModeEnabled
+            ? Brush.Parse("#5D83B5")
+            : Brushes.Transparent;
+        RootBorder.BorderThickness = IsDragModeEnabled
+            ? new Thickness(1)
+            : new Thickness(0);
+        RootBorder.CornerRadius = IsDragModeEnabled
+            ? new CornerRadius(6)
+            : new CornerRadius(0);
     }
 
     private void OnRootPointerPressed(object? sender, PointerPressedEventArgs e)
