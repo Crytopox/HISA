@@ -149,13 +149,24 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             var nextExpirySweepUtc = DateTime.UtcNow + SnapshotExpirySweepInterval;
             while (!stoppingToken.IsCancellationRequested)
             {
-                await FlushDirtyFilesAsync(stoppingToken);
-                await PollZkillAsync(stoppingToken);
-                var nowUtc = DateTime.UtcNow;
-                if (nowUtc >= nextExpirySweepUtc)
+                try
                 {
-                    ExpireSnapshots(nowUtc);
-                    nextExpirySweepUtc = nowUtc + SnapshotExpirySweepInterval;
+                    await FlushDirtyFilesAsync(stoppingToken);
+                    await PollZkillAsync(stoppingToken);
+                    var nowUtc = DateTime.UtcNow;
+                    if (nowUtc >= nextExpirySweepUtc)
+                    {
+                        ExpireSnapshots(nowUtc);
+                        nextExpirySweepUtc = nowUtc + SnapshotExpirySweepInterval;
+                    }
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Intel chat feed loop iteration failed; continuing.");
                 }
 
                 var delay = _dirtyFiles.IsEmpty ? DirtyFlushIdleDelay : DirtyFlushActiveDelay;
@@ -438,7 +449,18 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         foreach (var file in files)
         {
             _dirtyFiles.TryRemove(file, out _);
-            await ProcessFileAsync(file, cancellationToken);
+            try
+            {
+                await ProcessFileAsync(file, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to process intel chat log file {FilePath}", file);
+            }
         }
     }
 
