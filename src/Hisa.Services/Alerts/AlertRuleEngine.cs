@@ -46,7 +46,9 @@ public sealed class AlertRuleEngine : IAlertRuleEngine
                 RuleName = rule.Name,
                 SourceEvent = source,
                 TriggeredAtUtc = now,
-                Actions = rule.Actions
+                Actions = rule.Actions,
+                SoundFile = string.IsNullOrWhiteSpace(rule.SoundFile) ? "default-alert.wav" : rule.SoundFile,
+                SoundVolume = Math.Clamp(rule.SoundVolume, 0.0, 1.0)
             });
         }
 

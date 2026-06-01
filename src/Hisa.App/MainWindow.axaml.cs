@@ -13,6 +13,7 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
+using Hisa.App.Services;
 
 namespace Hisa.App;
 
@@ -30,6 +31,7 @@ public partial class MainWindow : Window
     private IntelSettingsWindow? _intelSettingsWindow;
     private AlertsSettingsWindow? _alertsSettingsWindow;
     private AlertPopupWindow? _alertPopupWindow;
+    private AlertPopupSettings _alertPopupSettings = new();
     private CharactersWindow? _charactersWindow;
     private MapEditorWindow? _mapEditorWindow;
     private SovUpgradesWindow? _sovUpgradesWindow;
@@ -50,6 +52,7 @@ public partial class MainWindow : Window
     private int? _contextRegionId;
     private int? _contextConstellationId;
     private readonly ObservableCollection<AlertPopupCard> _alertPopupCards = [];
+    private readonly DispatcherTimer _alertPopupCleanupTimer = new() { Interval = TimeSpan.FromSeconds(1) };
 
     public MainWindow()
     {
@@ -121,6 +124,9 @@ public partial class MainWindow : Window
         _lastKnownViewMode = vm.SelectedViewMode;
         vm.PropertyChanged += OnViewModelPropertyChanged;
         vm.AlertTriggered += OnAlertTriggered;
+        _alertPopupSettings = vm.GetAlertPopupSettingsSnapshot();
+        _alertPopupCleanupTimer.Tick += (_, _) => CleanupExpiredAlertPopupCards();
+        _alertPopupCleanupTimer.Start();
     }
 
     private void OnOpenDebugConsoleClicked(object? sender, RoutedEventArgs e)
@@ -200,7 +206,15 @@ public partial class MainWindow : Window
             }
 
             _alertsSettingsWindow = new AlertsSettingsWindow(_boundVm);
-            _alertsSettingsWindow.Closed += (_, _) => _alertsSettingsWindow = null;
+            _alertsSettingsWindow.Closed += (_, _) =>
+            {
+                _alertsSettingsWindow = null;
+                if (_boundVm is not null)
+                {
+                    _alertPopupSettings = _boundVm.GetAlertPopupSettingsSnapshot();
+                    ApplyAlertPopupWindowSettings();
+                }
+            };
         }
 
         _alertsSettingsWindow.Show();
@@ -328,21 +342,29 @@ public partial class MainWindow : Window
     {
         Dispatcher.UIThread.Post(() =>
         {
-            EnsureAlertPopupWindow();
-            var card = new AlertPopupCard
+            if (alert.Actions.Contains(AlertActionType.PlaySound))
             {
-                Title = $"{alert.SourceEvent.EventType}: {alert.RuleName}",
-                Details = alert.SourceEvent.Summary,
-                TimestampLabel = $"{alert.TriggeredAtUtc:HH:mm:ss} UTC"
-            };
-            _alertPopupCards.Insert(0, card);
-            const int maxCards = 8;
-            while (_alertPopupCards.Count > maxCards)
-            {
-                _alertPopupCards.RemoveAt(_alertPopupCards.Count - 1);
+                AlertSoundPlayer.Play(alert.SoundFile, alert.SoundVolume);
             }
 
-            _alertPopupWindow!.Show();
+            if (_alertPopupSettings.Enabled && alert.Actions.Contains(AlertActionType.ShowPopup))
+            {
+                EnsureAlertPopupWindow();
+                var card = new AlertPopupCard
+                {
+                    Title = $"{alert.SourceEvent.EventType}: {alert.RuleName}",
+                    Details = alert.SourceEvent.Summary,
+                    TimestampLabel = $"{alert.TriggeredAtUtc:HH:mm:ss} UTC",
+                    ExpiresAtUtc = DateTime.UtcNow.AddSeconds(_alertPopupSettings.AutoDismissSeconds)
+                };
+                _alertPopupCards.Insert(0, card);
+                while (_alertPopupCards.Count > _alertPopupSettings.MaxCards)
+                {
+                    _alertPopupCards.RemoveAt(_alertPopupCards.Count - 1);
+                }
+
+                _alertPopupWindow!.Show();
+            }
         });
     }
 
@@ -359,11 +381,65 @@ public partial class MainWindow : Window
             Height = 360
         };
         _alertPopupWindow.Closed += (_, _) => _alertPopupWindow = null;
-        _alertPopupWindow.Position = new PixelPoint(Position.X + (int)Math.Max(0, Bounds.Width - 450), Position.Y + 80);
         var itemsControl = _alertPopupWindow.FindControl<ItemsControl>("AlertsItemsControl");
         if (itemsControl is not null)
         {
             itemsControl.ItemsSource = _alertPopupCards;
+        }
+        ApplyAlertPopupWindowSettings();
+    }
+
+    private void ApplyAlertPopupWindowSettings()
+    {
+        if (_alertPopupWindow is null)
+        {
+            return;
+        }
+
+        _alertPopupWindow.Opacity = _alertPopupSettings.Opacity;
+        _alertPopupWindow.IsHitTestVisible = !_alertPopupSettings.ClickThrough;
+        var width = (int)Math.Max(0, _alertPopupWindow.Width);
+        var height = (int)Math.Max(0, _alertPopupWindow.Height);
+        var x = Position.X;
+        var y = Position.Y;
+
+        switch (_alertPopupSettings.Anchor)
+        {
+            case AlertPopupAnchor.TopLeft:
+                x += _alertPopupSettings.OffsetX;
+                y += _alertPopupSettings.OffsetY;
+                break;
+            case AlertPopupAnchor.BottomRight:
+                x += Math.Max(0, (int)Bounds.Width - width - _alertPopupSettings.OffsetX);
+                y += Math.Max(0, (int)Bounds.Height - height - _alertPopupSettings.OffsetY);
+                break;
+            case AlertPopupAnchor.BottomLeft:
+                x += _alertPopupSettings.OffsetX;
+                y += Math.Max(0, (int)Bounds.Height - height - _alertPopupSettings.OffsetY);
+                break;
+            default:
+                x += Math.Max(0, (int)Bounds.Width - width - _alertPopupSettings.OffsetX);
+                y += _alertPopupSettings.OffsetY;
+                break;
+        }
+
+        _alertPopupWindow.Position = new PixelPoint(x, y);
+    }
+
+    private void CleanupExpiredAlertPopupCards()
+    {
+        if (_alertPopupCards.Count == 0)
+        {
+            return;
+        }
+
+        var nowUtc = DateTime.UtcNow;
+        for (var i = _alertPopupCards.Count - 1; i >= 0; i--)
+        {
+            if (_alertPopupCards[i].ExpiresAtUtc <= nowUtc)
+            {
+                _alertPopupCards.RemoveAt(i);
+            }
         }
     }
 

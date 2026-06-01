@@ -36,8 +36,8 @@
             </StackPanel>
           </Grid>
 
-          <TextBlock Text="Character IDs (comma-separated for SpecificCharacters)" Foreground="#9DB8D8"/>
-          <TextBox x:Name="CharacterIdsTextBox" Watermark="123456, 789012"/>
+          <TextBlock Text="Characters (comma-separated for SpecificCharacters)" Foreground="#9DB8D8"/>
+          <ComboBox x:Name="CharacterNamesComboBox" IsEditable="True"/>
 
           <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
             <StackPanel Grid.Column="0" Spacing="4">
@@ -54,6 +54,19 @@
 
           <TextBlock Text="Cooldown Seconds" Foreground="#9DB8D8"/>
           <TextBox x:Name="CooldownSecondsTextBox" Watermark="0"/>
+          <TextBlock Text="Sound file" Foreground="#9DB8D8"/>
+          <ComboBox x:Name="SoundFileComboBox" IsEditable="True"/>
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <StackPanel Grid.Column="0" Spacing="4">
+              <TextBlock Text="Sound Volume (0-100%)" Foreground="#9DB8D8"/>
+              <Slider x:Name="SoundVolumeSlider" Minimum="0" Maximum="100" Value="100"/>
+            </StackPanel>
+            <StackPanel Grid.Column="1" Spacing="4">
+              <TextBlock Text="Volume %" Foreground="#9DB8D8"/>
+              <TextBox x:Name="SoundVolumeTextBox" Width="72" Text="100"/>
+            </StackPanel>
+          </Grid>
+          <Button Content="Test Sound" Click="OnTestSoundClicked"/>
 
           <TextBlock Text="Actions" Foreground="#9DB8D8"/>
           <StackPanel Orientation="Horizontal" Spacing="12">
@@ -66,6 +79,45 @@
             <Button Grid.Column="1" Content="Save All" Click="OnSaveAllClicked"/>
             <Button Grid.Column="2" Content="Close" Click="OnCloseClicked"/>
           </Grid>
+
+          <Border Margin="0,12,0,0" Padding="8" Background="#111A2A" BorderBrush="#2A3C58" BorderThickness="1" CornerRadius="6">
+            <StackPanel Spacing="6">
+              <TextBlock Text="Popup Behavior" Foreground="#EAF2FF" FontWeight="SemiBold"/>
+              <CheckBox x:Name="PopupEnabledCheckBox" Content="Enable popup window alerts" Foreground="#DDE7F8"/>
+              <CheckBox x:Name="PopupClickThroughCheckBox" Content="Click-through popup window" Foreground="#DDE7F8"/>
+              <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                <StackPanel Grid.Column="0" Spacing="4">
+                  <TextBlock Text="Max Cards" Foreground="#9DB8D8"/>
+                  <TextBox x:Name="PopupMaxCardsTextBox" Watermark="8"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Spacing="4">
+                  <TextBlock Text="Auto-dismiss (s)" Foreground="#9DB8D8"/>
+                  <TextBox x:Name="PopupAutoDismissTextBox" Watermark="18"/>
+                </StackPanel>
+              </Grid>
+              <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                <StackPanel Grid.Column="0" Spacing="4">
+                  <TextBlock Text="Opacity (0.2-1.0)" Foreground="#9DB8D8"/>
+                  <TextBox x:Name="PopupOpacityTextBox" Watermark="0.95"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Spacing="4">
+                  <TextBlock Text="Anchor" Foreground="#9DB8D8"/>
+                  <ComboBox x:Name="PopupAnchorComboBox"/>
+                </StackPanel>
+              </Grid>
+              <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                <StackPanel Grid.Column="0" Spacing="4">
+                  <TextBlock Text="Offset X" Foreground="#9DB8D8"/>
+                  <TextBox x:Name="PopupOffsetXTextBox" Watermark="12"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Spacing="4">
+                  <TextBlock Text="Offset Y" Foreground="#9DB8D8"/>
+                  <TextBox x:Name="PopupOffsetYTextBox" Watermark="56"/>
+                </StackPanel>
+              </Grid>
+              <Button Content="Save Popup Settings" Click="OnSavePopupSettingsClicked" />
+            </StackPanel>
+          </Border>
         </StackPanel>
       </ScrollViewer>
     </Border>

@@ -34,10 +34,13 @@ public sealed class AlertRule
     public AlertEventType EventType { get; init; } = AlertEventType.IntelReport;
     public AlertLocationScopeMode ScopeMode { get; init; } = AlertLocationScopeMode.Global;
     public IReadOnlyList<int> CharacterIds { get; init; } = [];
+    public IReadOnlyList<string> CharacterNames { get; init; } = [];
     public AlertDistanceMode DistanceMode { get; init; } = AlertDistanceMode.Any;
     public int MaxJumps { get; init; } = 0;
     public bool IncludeAnsiblexLinks { get; init; } = false;
     public int CooldownSeconds { get; init; } = 0;
+    public string SoundFile { get; init; } = "default-alert.wav";
+    public double SoundVolume { get; init; } = 1.0;
     public IReadOnlyList<AlertActionType> Actions { get; init; } = [];
 }
 
@@ -59,6 +62,8 @@ public sealed class AlertTriggered
     public required AlertSourceEvent SourceEvent { get; init; }
     public required DateTime TriggeredAtUtc { get; init; }
     public required IReadOnlyList<AlertActionType> Actions { get; init; }
+    public required string SoundFile { get; init; }
+    public double SoundVolume { get; init; } = 1.0;
 }
 
 public sealed class AlertEvaluationRequest

@@ -336,6 +336,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly object _systemLocationGate = new();
     private readonly List<IntelChatReport> _intelReportHistory = [];
     private IReadOnlyList<AlertRule> _alertRules = [];
+    private AlertPopupSettings _alertPopupSettings = new();
     private readonly Dictionary<string, int> _characterIdByName = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _invalidHostilePilotNames = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _characterIdLookupInFlight = new(StringComparer.OrdinalIgnoreCase);
@@ -443,6 +444,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string IntelSystemExpiryMinutesKey = "Intel.SystemExpiryMinutes";
     private const string IntelListExpiryMinutesKey = "Intel.ListExpiryMinutes";
     private const string AlertRulesKey = "Alerts.Rules";
+    private const string AlertPopupSettingsKey = "Alerts.Popup.Settings";
     private const int MaxIntelReportHistory = 350;
     private const int MaxIntelOverlayCards = 140;
     private const int MaxIntelShipBitmapCacheItems = 600;
@@ -1912,6 +1914,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         IntelSystemExpiryMinutes = await _settingsService.GetAsync<int?>(IntelSystemExpiryMinutesKey) ?? 15;
         IntelListExpiryMinutes = await _settingsService.GetAsync<int?>(IntelListExpiryMinutesKey) ?? 30;
         _alertRules = await _settingsService.GetAsync<List<AlertRule>>(AlertRulesKey) ?? [];
+        _alertPopupSettings = SanitizeAlertPopupSettings(
+            await _settingsService.GetAsync<AlertPopupSettings>(AlertPopupSettingsKey) ?? new AlertPopupSettings());
         LimitIntelReportsToCurrentRegion = await _settingsService.GetAsync<bool?>(IntelLimitToCurrentRegionKey) ?? false;
         LimitZkillmailsToCurrentRegion = await _settingsService.GetAsync<bool?>(ZkillLimitToCurrentRegionKey) ?? false;
         var initialIncludeChannels = await _settingsService.GetAsync<List<string>>(IntelIncludeChannelsKey) ?? [];
@@ -2418,11 +2422,33 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             EventType = rule.EventType,
             ScopeMode = rule.ScopeMode,
             CharacterIds = (rule.CharacterIds ?? []).Distinct().ToList(),
+            CharacterNames = (rule.CharacterNames ?? [])
+                .Select(x => x.Trim())
+                .Where(x => x.Length > 0)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList(),
             DistanceMode = rule.DistanceMode,
             MaxJumps = Math.Max(0, rule.MaxJumps),
             IncludeAnsiblexLinks = rule.IncludeAnsiblexLinks,
             CooldownSeconds = Math.Max(0, rule.CooldownSeconds),
+            SoundFile = string.IsNullOrWhiteSpace(rule.SoundFile) ? "default-alert.wav" : rule.SoundFile.Trim(),
+            SoundVolume = Math.Clamp(rule.SoundVolume, 0.0, 1.0),
             Actions = (rule.Actions ?? []).Distinct().ToList()
+        };
+    }
+
+    private static AlertPopupSettings SanitizeAlertPopupSettings(AlertPopupSettings settings)
+    {
+        return new AlertPopupSettings
+        {
+            Enabled = settings.Enabled,
+            MaxCards = Math.Clamp(settings.MaxCards, 1, 30),
+            AutoDismissSeconds = Math.Clamp(settings.AutoDismissSeconds, 3, 300),
+            Opacity = Math.Clamp(settings.Opacity, 0.2, 1.0),
+            ClickThrough = settings.ClickThrough,
+            Anchor = settings.Anchor,
+            OffsetX = Math.Clamp(settings.OffsetX, 0, 2400),
+            OffsetY = Math.Clamp(settings.OffsetY, 0, 2400)
         };
     }
 
@@ -3309,6 +3335,124 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _alertRules = sanitized;
         await _settingsService.SetAsync(AlertRulesKey, sanitized);
         StatusText = $"Alerts settings saved ({sanitized.Count} rule(s)).";
+    }
+
+    public AlertPopupSettings GetAlertPopupSettingsSnapshot() => new()
+    {
+        Enabled = _alertPopupSettings.Enabled,
+        MaxCards = _alertPopupSettings.MaxCards,
+        AutoDismissSeconds = _alertPopupSettings.AutoDismissSeconds,
+        Opacity = _alertPopupSettings.Opacity,
+        ClickThrough = _alertPopupSettings.ClickThrough,
+        Anchor = _alertPopupSettings.Anchor,
+        OffsetX = _alertPopupSettings.OffsetX,
+        OffsetY = _alertPopupSettings.OffsetY
+    };
+
+    public async Task SaveAlertPopupSettingsAsync(AlertPopupSettings settings)
+    {
+        _alertPopupSettings = SanitizeAlertPopupSettings(settings);
+        await _settingsService.SetAsync(AlertPopupSettingsKey, _alertPopupSettings);
+        StatusText = "Alert popup settings saved.";
+    }
+
+    public IReadOnlyList<string> GetTrackedCharacterNamesSnapshot()
+    {
+        var names = _characterTrackingPreferencesById.Values
+            .Select(x => x.CharacterName?.Trim() ?? string.Empty)
+            .Where(x => x.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        return names;
+    }
+
+    public string GetTrackedCharacterNameById(int characterId)
+    {
+        if (_characterTrackingPreferencesById.TryGetValue(characterId, out var pref) &&
+            !string.IsNullOrWhiteSpace(pref.CharacterName))
+        {
+            return pref.CharacterName.Trim();
+        }
+
+        lock (_localCharacterLocationsByCharacterId)
+        {
+            if (_localCharacterLocationsByCharacterId.TryGetValue(characterId, out var local) &&
+                !string.IsNullOrWhiteSpace(local.CharacterName))
+            {
+                return local.CharacterName.Trim();
+            }
+        }
+
+        return characterId.ToString();
+    }
+
+    public async Task<IReadOnlyList<int>> ResolveCharacterIdsByNamesAsync(IReadOnlyList<string> characterNames)
+    {
+        var names = (characterNames ?? [])
+            .Select(x => x.Trim())
+            .Where(x => x.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (names.Count == 0)
+        {
+            return [];
+        }
+
+        var resolved = new HashSet<int>();
+        var unresolved = new List<string>();
+
+        foreach (var name in names)
+        {
+            var localMatch = _characterTrackingPreferencesById.Values
+                .FirstOrDefault(x => string.Equals(x.CharacterName, name, StringComparison.OrdinalIgnoreCase));
+            if (localMatch is not null)
+            {
+                resolved.Add(localMatch.CharacterId);
+                _characterIdByName[name] = localMatch.CharacterId;
+                continue;
+            }
+
+            if (_characterIdByName.TryGetValue(name, out var cachedId) && cachedId > 0)
+            {
+                resolved.Add(cachedId);
+                continue;
+            }
+
+            unresolved.Add(name);
+        }
+
+        if (unresolved.Count > 0)
+        {
+            try
+            {
+                var payload = JsonSerializer.Serialize(unresolved);
+                using var request = new HttpRequestMessage(HttpMethod.Post, "https://esi.evetech.net/latest/universe/ids/?datasource=tranquility");
+                request.Content = new StringContent(payload, Encoding.UTF8, "application/json");
+                using var response = await IntelPortraitHttpClient.SendAsync(request);
+                if (response.IsSuccessStatusCode)
+                {
+                    await using var responseStream = await response.Content.ReadAsStreamAsync();
+                    var result = await JsonSerializer.DeserializeAsync<EsiUniverseIdsResponse>(responseStream);
+                    foreach (var match in result?.Characters ?? [])
+                    {
+                        if (match.Id <= 0 || string.IsNullOrWhiteSpace(match.Name))
+                        {
+                            continue;
+                        }
+
+                        resolved.Add(match.Id);
+                        _characterIdByName[match.Name] = match.Id;
+                    }
+                }
+            }
+            catch
+            {
+                // Ignore lookup failures; unresolved names are kept as names in the rule.
+            }
+        }
+
+        return resolved.ToList();
     }
 
     public Task ClearIntelAndKillmailHistoryAsync()
