@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Runtime.CompilerServices;
@@ -452,6 +452,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const int MaxIntelCorporationBitmapCacheItems = 500;
     private const int MaxIntelAllianceBitmapCacheItems = 500;
     private const int MaxParallelImageRequests = 10;
+    private static readonly TimeSpan OverlayAgeChipRefreshInterval = TimeSpan.FromSeconds(1);
     private readonly Task _initialLoadTask;
 
     public MainWindowViewModel(
@@ -496,7 +497,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _localCharacterLocationFeed.SystemChanged += OnLocalCharacterSystemChanged;
         _intelFeed.ReportReceived += OnIntelReportReceived;
         _intelFeed.SnapshotUpdated += OnIntelSnapshotUpdated;
-        _intelOverlayAgeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        _intelOverlayAgeTimer = new DispatcherTimer { Interval = OverlayAgeChipRefreshInterval };
         _intelOverlayAgeTimer.Tick += (_, _) => RefreshIntelOverlayCardAges();
         _intelOverlayAgeTimer.Start();
         _activityCardsRebuildDebounceTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
@@ -2292,7 +2293,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
 
         EvaluateAlertRules(report, isKillmail: false);
-        Dispatcher.UIThread.Post(ScheduleActivityCardsRebuild);
+        Dispatcher.UIThread.Post(() => AppendIntelCardForView(report));
     }
 
     private void EvaluateAlertRules(IntelChatReport report, bool isKillmail)
@@ -2508,6 +2509,65 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _ = EnsureZkillIdentityAssetsAsync();
     }
 
+    private void AppendIntelCardForView(IntelChatReport report)
+    {
+        var graphNodeByName = BuildGraphNodeByNameLookup(CurrentGraph);
+        var visibleNodeIds = CurrentGraph?.Nodes.Select(n => n.Id).ToHashSet() ?? new HashSet<long>();
+        Dictionary<string, IntelSystemSnapshot> snapshotByName;
+        lock (_intelSnapshotsBySystemId)
+        {
+            snapshotByName = _intelSnapshotsBySystemId.Values
+                .GroupBy(s => s.SolarSystemName, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(x => x.LastUpdatedUtc).First(), StringComparer.OrdinalIgnoreCase);
+        }
+
+        var card = BuildIntelOverlayCard(
+            report,
+            graphNodeByName,
+            visibleNodeIds,
+            snapshotByName,
+            limitToVisibleRegion: LimitIntelReportsToCurrentRegion,
+            applyCachedIdentityData: true);
+        if (card is null)
+        {
+            return;
+        }
+
+        var existing = _intelCardsForView.ToList();
+        if (existing.Any(x =>
+                x.SortTimestampUtc == card.SortTimestampUtc &&
+                string.Equals(x.SystemName, card.SystemName, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(x.ReporterName, card.ReporterName, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(x.MessageText, card.MessageText, StringComparison.Ordinal)))
+        {
+            return;
+        }
+
+        if (existing.Count == 0)
+        {
+            _intelCardsForView = [card];
+        }
+        else
+        {
+            var insertAt = FindInsertIndexByTimestampDesc(existing, card.SortTimestampUtc);
+            existing.Insert(insertAt, card);
+            if (existing.Count > MaxIntelOverlayCards)
+            {
+                existing.RemoveRange(MaxIntelOverlayCards, existing.Count - MaxIntelOverlayCards);
+            }
+
+            _intelCardsForView = existing;
+        }
+
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelCardsForView)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelOverlayTitle)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasIntelOverlayData)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasNoIntelOverlayData)));
+
+        _ = ResolveIntelCharacterIdsAsync();
+        _ = EnsureShipImagesForIntelCardsAsync();
+    }
+
     private static int FindInsertIndexByTimestampDesc(IReadOnlyList<ZkillmailOverlayCard> cards, DateTime timestampUtc)
     {
         var lo = 0;
@@ -2516,6 +2576,26 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         {
             var mid = lo + ((hi - lo) / 2);
             if (cards[mid].TimestampUtc >= timestampUtc)
+            {
+                lo = mid + 1;
+            }
+            else
+            {
+                hi = mid;
+            }
+        }
+
+        return lo;
+    }
+
+    private static int FindInsertIndexByTimestampDesc(IReadOnlyList<IntelOverlayCard> cards, DateTime timestampUtc)
+    {
+        var lo = 0;
+        var hi = cards.Count;
+        while (lo < hi)
+        {
+            var mid = lo + ((hi - lo) / 2);
+            if (cards[mid].SortTimestampUtc >= timestampUtc)
             {
                 lo = mid + 1;
             }
@@ -4304,7 +4384,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                         RegionId = regionId,
                         ChannelName = r.ChannelName,
                         ReporterName = r.ReporterName,
-                        AgeSummary = FormatOverlayAgeClock(age),
+                        AgeSummary = FormatOverlayAge(age),
                         MessageText = r.MessageText,
                         Hostiles = hostileCards,
                         ShipsSummary = shipsSummary,
@@ -4779,7 +4859,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         {
             TimestampUtc = report.TimestampUtc,
             SolarSystemId = solarSystemId,
-            AgeSummary = FormatOverlayAgeClock(age),
+            AgeSummary = FormatOverlayAge(age),
             KillmailUrl = killmail?.Url ?? string.Empty,
             SystemName = systemName,
             RegionName = regionName,
@@ -4794,6 +4874,91 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             VisibleAttackers = visibleAttackers,
             HiddenAttackerCount = hiddenAttackers,
             ShipsSummary = shipsSummary
+        };
+    }
+
+    private IntelOverlayCard? BuildIntelOverlayCard(
+        IntelChatReport report,
+        IReadOnlyDictionary<string, MapNode> graphNodeByName,
+        IReadOnlySet<long> visibleNodeIds,
+        IReadOnlyDictionary<string, IntelSystemSnapshot> snapshotByName,
+        bool limitToVisibleRegion,
+        bool applyCachedIdentityData)
+    {
+        var systemName = report.Systems.FirstOrDefault() ?? "Unknown";
+        long solarSystemId = 0;
+        string constellationName = "Unknown Constellation";
+        string regionName = "Unknown Region";
+        int? constellationId = null;
+        int? regionId = null;
+
+        if (graphNodeByName.TryGetValue(systemName, out var node))
+        {
+            solarSystemId = node.Id;
+            constellationName = string.IsNullOrWhiteSpace(node.ConstellationName) ? constellationName : node.ConstellationName;
+            regionName = string.IsNullOrWhiteSpace(node.RegionName) ? regionName : node.RegionName;
+            constellationId = node.ConstellationId;
+            regionId = node.RegionId;
+        }
+        else if (snapshotByName.TryGetValue(systemName, out var snapshotRef))
+        {
+            solarSystemId = snapshotRef.SolarSystemId;
+            lock (_systemLocationGate)
+            {
+                if (_systemLocationById.TryGetValue(solarSystemId, out var location))
+                {
+                    regionName = location.RegionName;
+                    constellationName = location.ConstellationName;
+                }
+            }
+        }
+
+        if (limitToVisibleRegion && solarSystemId > 0 && !visibleNodeIds.Contains(solarSystemId))
+        {
+            return null;
+        }
+
+        var age = DateTime.UtcNow - report.TimestampUtc;
+        if (age < TimeSpan.Zero)
+        {
+            age = TimeSpan.Zero;
+        }
+
+        var shipSummary = report.ReportedShipNames.Count > 0
+            ? string.Join(", ", report.ReportedShipNames.Select(CapitalizeFirstLetter).Distinct(StringComparer.OrdinalIgnoreCase))
+            : report.ShipClasses.Count > 0
+                ? string.Join(", ", report.ShipClasses.Select(x => x.ToString()))
+                : "Unknown";
+        var maxShipTier = GetMaxShipThreatTier(report.ShipClasses);
+        var shipBadgeColors = GetThreatBadgeColors(maxShipTier / 8.0);
+        var hostileScore = Math.Max(0, report.ReportedHostileCount > 0 ? report.ReportedHostileCount : report.ReportedHostileNames.Count);
+        var hostileBadgeColors = GetThreatBadgeColors(Math.Clamp(hostileScore / 12.0, 0.0, 1.0));
+        var hostileCards = BuildIntelHostileCards(report.ReportedHostileNames, report.ReportedShipNames, report.ReportedShipTypeIds, report.ShipClasses, applyCachedIdentityData);
+        var shipsSummary = BuildIntelShipsSummary(report.ReportedShipNames, report.ReportedShipTypeIds, report.ShipClasses);
+
+        return new IntelOverlayCard
+        {
+            SortTimestampUtc = report.TimestampUtc,
+            LastUpdatedUtc = report.TimestampUtc,
+            SolarSystemId = solarSystemId,
+            SystemName = systemName,
+            ConstellationName = constellationName,
+            RegionName = regionName,
+            ConstellationId = constellationId,
+            RegionId = regionId,
+            ChannelName = report.ChannelName,
+            ReporterName = report.ReporterName,
+            AgeSummary = FormatOverlayAge(age),
+            MessageText = report.MessageText,
+            Hostiles = hostileCards,
+            ShipsSummary = shipsSummary,
+            ShipClassSummary = shipSummary,
+            HostileCount = hostileScore,
+            ShipBadgeBackgroundHex = shipBadgeColors.BackgroundHex,
+            ShipBadgeBorderHex = shipBadgeColors.BorderHex,
+            HostileBadgeBackgroundHex = hostileBadgeColors.BackgroundHex,
+            HostileBadgeBorderHex = hostileBadgeColors.BorderHex,
+            AccentHex = report.IsClear ? "#6FE38E" : "#FFB347"
         };
     }
 
@@ -5040,11 +5205,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     private void RefreshIntelOverlayCardAges()
     {
-        if (!_isIntelOverlayOpen && !_isZkillmailsOverlayOpen)
-        {
-            return;
-        }
-
         if (_intelCardsForView.Count == 0 && _zkillmailCardsForView.Count == 0)
         {
             return;
@@ -5060,7 +5220,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 age = TimeSpan.Zero;
             }
 
-            var nextAge = FormatOverlayAgeClock(age);
+            var nextAge = FormatOverlayAge(age);
             if (!string.Equals(card.AgeSummary, nextAge, StringComparison.Ordinal))
             {
                 card.AgeSummary = nextAge;
@@ -5077,7 +5237,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 age = TimeSpan.Zero;
             }
 
-            var nextAge = FormatOverlayAgeClock(age);
+            var nextAge = FormatOverlayAge(age);
             if (!string.Equals(card.AgeSummary, nextAge, StringComparison.Ordinal))
             {
                 card.AgeSummary = nextAge;
@@ -6502,6 +6662,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         };
     }
 }
+
+
 
 
 

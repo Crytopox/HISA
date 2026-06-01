@@ -235,8 +235,10 @@ public sealed class StormOverlayCard
     public required string AccentHex { get; init; }
 }
 
-public sealed class IntelOverlayCard
+public sealed class IntelOverlayCard : System.ComponentModel.INotifyPropertyChanged
 {
+    private string _ageSummary = string.Empty;
+    public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
     public required DateTime SortTimestampUtc { get; init; }
     public required DateTime LastUpdatedUtc { get; init; }
     public required long SolarSystemId { get; init; }
@@ -247,7 +249,18 @@ public sealed class IntelOverlayCard
     public int? RegionId { get; init; }
     public required string ChannelName { get; init; }
     public required string ReporterName { get; init; }
-    public required string AgeSummary { get; set; }
+    public required string AgeSummary
+    {
+        get => _ageSummary;
+        set
+        {
+            if (!string.Equals(_ageSummary, value, StringComparison.Ordinal))
+            {
+                _ageSummary = value;
+                PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(AgeSummary)));
+            }
+        }
+    }
     public required string MessageText { get; init; }
     public required IReadOnlyList<IntelOverlayHostileCard> Hostiles { get; init; }
     public IReadOnlyList<IntelOverlayHostileCard> VisibleHostiles => Hostiles.Take(4).ToList();
@@ -264,11 +277,24 @@ public sealed class IntelOverlayCard
     public required string AccentHex { get; init; }
 }
 
-public sealed class ZkillmailOverlayCard
+public sealed class ZkillmailOverlayCard : System.ComponentModel.INotifyPropertyChanged
 {
+    private string _ageSummary = string.Empty;
+    public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
     public required DateTime TimestampUtc { get; init; }
     public long SolarSystemId { get; init; }
-    public required string AgeSummary { get; set; }
+    public required string AgeSummary
+    {
+        get => _ageSummary;
+        set
+        {
+            if (!string.Equals(_ageSummary, value, StringComparison.Ordinal))
+            {
+                _ageSummary = value;
+                PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(AgeSummary)));
+            }
+        }
+    }
     public required string KillmailUrl { get; init; }
     public required string SystemName { get; init; }
     public required string RegionName { get; init; }
