@@ -2566,6 +2566,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
         _ = ResolveIntelCharacterIdsAsync();
         _ = EnsureShipImagesForIntelCardsAsync();
+        _ = EnsureIntelIdentityAssetsAsync();
     }
 
     private static int FindInsertIndexByTimestampDesc(IReadOnlyList<ZkillmailOverlayCard> cards, DateTime timestampUtc)
@@ -2774,6 +2775,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                                 Name = h.Name,
                                 CharacterId = h.CharacterId,
                                 ShipTypeId = h.ShipTypeId,
+                                ShipDisplayName = h.ShipDisplayName,
+                                ShipIconKey = h.ShipIconKey,
                                 CorporationId = h.CorporationId,
                                 AllianceId = h.AllianceId,
                                 CorporationTicker = h.CorporationTicker,
@@ -2818,6 +2821,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                                 Name = a.Name,
                                 CharacterId = a.CharacterId,
                                 ShipTypeId = a.ShipTypeId,
+                                ShipDisplayName = a.ShipDisplayName,
+                                ShipIconKey = a.ShipIconKey,
                                 CorporationId = a.CorporationId,
                                 AllianceId = a.AllianceId,
                                 CorporationTicker = a.CorporationTicker,
@@ -4449,7 +4454,39 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
         _ = ResolveIntelCharacterIdsAsync();
         _ = EnsureShipImagesForIntelCardsAsync();
+        _ = EnsureIntelIdentityAssetsAsync();
         _ = EnsureZkillIdentityAssetsAsync();
+    }
+
+    private async Task EnsureIntelIdentityAssetsAsync()
+    {
+        var characterIds = _intelCardsForView
+            .SelectMany(c => c.Hostiles)
+            .Select(h => h.CharacterId)
+            .Where(id => id is > 0)
+            .Select(id => id!.Value)
+            .Distinct()
+            .ToList();
+        if (characterIds.Count == 0)
+        {
+            return;
+        }
+
+        var throttler = new SemaphoreSlim(MaxParallelImageRequests);
+        var characterTasks = characterIds.Select(async characterId =>
+        {
+            await throttler.WaitAsync();
+            try
+            {
+                await EnsureIntelHostileImagesAsync(characterId);
+            }
+            finally
+            {
+                throttler.Release();
+            }
+        }).ToList();
+
+        await Task.WhenAll(characterTasks);
     }
 
     private async Task EnsureZkillIdentityAssetsAsync()
@@ -4716,6 +4753,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             var card = new IntelOverlayHostileCard
             {
                 Name = names[i],
+                CharacterId = _characterIdByName.TryGetValue(names[i], out var characterId) && characterId > 0
+                    ? characterId
+                    : null,
                 ShipTypeId = shipTypeId,
                 ShipBitmap = shipTypeId is { } id && IntelShipBitmapCache.TryGetValue(id, out var cachedShip) ? cachedShip : null,
                 ShipDisplayName = NormalizeShipDisplayName(shipName),
@@ -5686,6 +5726,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
                 if (changed)
                 {
+                    RebuildIntelPresenceForView();
                     RequestOverlayCardsUiRefresh(intelCardsChanged: true, zkillCardsChanged: true);
                 }
             });

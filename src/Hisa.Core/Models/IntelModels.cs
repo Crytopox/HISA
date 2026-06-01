@@ -140,6 +140,8 @@ public sealed class IntelMapHoverHostile
     public required string Name { get; init; }
     public int? CharacterId { get; init; }
     public int? ShipTypeId { get; init; }
+    public string ShipDisplayName { get; init; } = "Unknown";
+    public string ShipIconKey { get; init; } = "unknown";
     public int? CorporationId { get; init; }
     public int? AllianceId { get; init; }
     public string CorporationTicker { get; init; } = string.Empty;

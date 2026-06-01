@@ -384,6 +384,7 @@ public sealed class MapControl : Control
     private static readonly ConcurrentDictionary<int, DateTime> ShipTypeIconRetryAfterUtc = new();
     private static readonly ConcurrentDictionary<string, Bitmap?> OrganizationLogoCache = new(StringComparer.OrdinalIgnoreCase);
     private static readonly ConcurrentDictionary<string, byte> OrganizationLogoLoading = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly ConcurrentDictionary<string, DateTime> OrganizationLogoRetryAfterUtc = new(StringComparer.OrdinalIgnoreCase);
     private static readonly TimeSpan CharacterPortraitRetryDelay = TimeSpan.FromMinutes(2);
     private readonly List<(Rect Bounds, string Url)> _intelOverlayLinks = [];
     private Point[] _screenPositions = [];
@@ -4990,8 +4991,8 @@ public sealed class MapControl : Control
                 foreach (var ship in intelRow.Ships)
                 {
                     DrawIntelShipIcon(context, ship.Ship, new Point(headerOrigin.X + 4, identityY), intelIdentityIconSize);
-                    context.DrawText(ship.Item2, new Point(headerOrigin.X + 4 + intelIdentityIconSize + 4, identityY + ((intelIdentityIconSize - ship.Item2.Height) / 2)));
-                    identityY += Math.Max(intelIdentityIconSize, ship.Item2.Height) + 2;
+                    context.DrawText(ship.Text, new Point(headerOrigin.X + 4 + intelIdentityIconSize + 4, identityY + ((intelIdentityIconSize - ship.Text.Height) / 2)));
+                    identityY += Math.Max(intelIdentityIconSize, ship.Text.Height) + 2;
                 }
 
                 foreach (var identity in intelRow.Identities)
@@ -5889,6 +5890,19 @@ public sealed class MapControl : Control
         var logo = GetOrganizationLogo(category, organizationId);
         if (logo is null)
         {
+            var fallbackGlyph = string.Equals(category, "alliances", StringComparison.OrdinalIgnoreCase) ? "A" : "C";
+            var fallbackText = new FormattedText(
+                fallbackGlyph,
+                CultureInfo.InvariantCulture,
+                FlowDirection.LeftToRight,
+                new Typeface("Inter", FontStyle.Normal, FontWeight.SemiBold),
+                10,
+                Brushes.White);
+            context.DrawText(
+                fallbackText,
+                new Point(
+                    rect.X + ((rect.Width - fallbackText.Width) / 2),
+                    rect.Y + ((rect.Height - fallbackText.Height) / 2) - 0.5));
             return;
         }
 
@@ -5908,6 +5922,11 @@ public sealed class MapControl : Control
         {
             return cached;
         }
+        if (OrganizationLogoRetryAfterUtc.TryGetValue(cacheKey, out var retryAfterUtc) &&
+            DateTime.UtcNow < retryAfterUtc)
+        {
+            return null;
+        }
 
         if (!OrganizationLogoLoading.TryAdd(cacheKey, 0))
         {
@@ -5921,6 +5940,7 @@ public sealed class MapControl : Control
             {
                 var url = $"https://images.evetech.net/{category}/{organizationId}/logo?tenant=tranquility&size=64";
                 using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                request.Headers.UserAgent.ParseAdd("HISA/1.0");
                 using var response = await CharacterPortraitHttpClient.SendAsync(request).ConfigureAwait(false);
                 if (response.IsSuccessStatusCode)
                 {
@@ -5934,7 +5954,15 @@ public sealed class MapControl : Control
             }
             finally
             {
-                OrganizationLogoCache[cacheKey] = logo;
+                if (logo is not null)
+                {
+                    OrganizationLogoCache[cacheKey] = logo;
+                    OrganizationLogoRetryAfterUtc.TryRemove(cacheKey, out _);
+                }
+                else
+                {
+                    OrganizationLogoRetryAfterUtc[cacheKey] = DateTime.UtcNow + CharacterPortraitRetryDelay;
+                }
                 OrganizationLogoLoading.TryRemove(cacheKey, out _);
                 Dispatcher.UIThread.Post(InvalidateVisual);
             }

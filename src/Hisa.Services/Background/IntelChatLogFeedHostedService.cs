@@ -907,8 +907,10 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
                 ? canonical
                 : [];
             var derivedHostileScore = Math.Max(
-                keptNames.Count,
-                Math.Max(pair.Value.ShipClasses.Count, pair.Value.Alerts.Any(a => a != IntelAlertType.Clear) ? 1 : 0));
+                pair.Value.HostileScore,
+                Math.Max(
+                    keptNames.Count,
+                    Math.Max(pair.Value.ShipClasses.Count, pair.Value.Alerts.Any(a => a != IntelAlertType.Clear) ? 1 : 0)));
 
             _snapshotBySystemId[pair.Key] = new IntelSystemSnapshot
             {
@@ -972,8 +974,10 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             }
 
             var derivedHostileScore = Math.Max(
-                remaining.Count,
-                Math.Max(pair.Value.ShipClasses.Count, pair.Value.Alerts.Any(a => a != IntelAlertType.Clear) ? 1 : 0));
+                pair.Value.HostileScore,
+                Math.Max(
+                    remaining.Count,
+                    Math.Max(pair.Value.ShipClasses.Count, pair.Value.Alerts.Any(a => a != IntelAlertType.Clear) ? 1 : 0)));
 
             _snapshotBySystemId[pair.Key] = new IntelSystemSnapshot
             {
