@@ -35,6 +35,9 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
 
     private static readonly Regex ChatLineRegex = BuildChatLineRegex();
     private static readonly Regex IntelFileNameRegex = BuildIntelFileNameRegex();
+    private static readonly Regex InGameKillmailLinkRegex = new(
+        @"^Kill:\s+.+\s+\(.+\)$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
     private readonly ISettingsService _settingsService;
     private readonly ISdeDatabase _sdeDatabase;
@@ -526,6 +529,11 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
                 continue;
             }
 
+            if (IsIgnoredIntelMessage(message))
+            {
+                continue;
+            }
+
             var report = ParseIntelReport(timestampUtc, channelName, reporter, message, filePath);
             if (report.Systems.Count == 0)
             {
@@ -682,6 +690,16 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
     {
         return reporter.Equals("EVE System", StringComparison.OrdinalIgnoreCase)
             && message.StartsWith("Channel MOTD:", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsIgnoredIntelMessage(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return false;
+        }
+
+        return InGameKillmailLinkRegex.IsMatch(message.Trim());
     }
 
     private IntelChatReport ParseIntelReport(DateTime timestampUtc, string channelName, string reporter, string message, string sourcePath)

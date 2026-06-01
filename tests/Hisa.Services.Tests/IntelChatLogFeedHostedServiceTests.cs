@@ -62,6 +62,22 @@ public class IntelChatLogFeedHostedServiceTests
         }
     }
 
+    [Theory]
+    [InlineData("Kill: Rave Maulerant (Thorax)", true)]
+    [InlineData("kill: Some Pilot (Drake Navy Issue)", true)]
+    [InlineData("Kill: Rave Maulerant Thorax", false)]
+    [InlineData("3 in local", false)]
+    public void IsIgnoredIntelMessage_MatchesInGameKillmailFormat(string message, bool expectedIgnored)
+    {
+        var method = typeof(IntelChatLogFeedHostedService).GetMethod(
+            "IsIgnoredIntelMessage",
+            BindingFlags.Static | BindingFlags.NonPublic);
+        Assert.NotNull(method);
+
+        var result = (bool)method!.Invoke(null, [message])!;
+        Assert.Equal(expectedIgnored, result);
+    }
+
     private sealed class NoopSettingsService : ISettingsService
     {
         public Task<T?> GetAsync<T>(string key, CancellationToken cancellationToken = default)
