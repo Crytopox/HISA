@@ -1918,7 +1918,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _alertPopupSettings = SanitizeAlertPopupSettings(
             await _settingsService.GetAsync<AlertPopupSettings>(AlertPopupSettingsKey) ?? new AlertPopupSettings());
         LimitIntelReportsToCurrentRegion = await _settingsService.GetAsync<bool?>(IntelLimitToCurrentRegionKey) ?? false;
-        LimitZkillmailsToCurrentRegion = await _settingsService.GetAsync<bool?>(ZkillLimitToCurrentRegionKey) ?? false;
+        LimitZkillmailsToCurrentRegion = await _settingsService.GetAsync<bool?>(ZkillLimitToCurrentRegionKey) ?? true;
         var initialIncludeChannels = await _settingsService.GetAsync<List<string>>(IntelIncludeChannelsKey) ?? [];
         IntelIncludeChannelsText = string.Join(Environment.NewLine, initialIncludeChannels);
         if (IntelEnabled && initialIncludeChannels.Count == 0)
@@ -2291,8 +2291,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
         if (isZkillReport)
         {
+            var includeInCurrentView = ShouldIncludeZkillmailReportInCurrentView(report);
             Dispatcher.UIThread.Post(() => AppendZkillmailCardForView(report));
-            EvaluateAlertRules(report, isKillmail: true);
+            if (includeInCurrentView)
+            {
+                EvaluateAlertRules(report, isKillmail: true);
+            }
             return;
         }
 
@@ -2416,6 +2420,24 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
 
         return 0;
+    }
+
+    private bool ShouldIncludeZkillmailReportInCurrentView(IntelChatReport report)
+    {
+        if (!LimitZkillmailsToCurrentRegion)
+        {
+            return true;
+        }
+
+        var visibleNodeIds = CurrentGraph?.Nodes.Select(n => n.Id).ToHashSet() ?? new HashSet<long>();
+        if (visibleNodeIds.Count == 0)
+        {
+            return false;
+        }
+
+        var systemName = report.Systems.FirstOrDefault();
+        var solarSystemId = ResolveSystemIdByName(systemName);
+        return solarSystemId > 0 && visibleNodeIds.Contains(solarSystemId);
     }
 
     private static AlertRule CloneAlertRule(AlertRule rule)
@@ -5005,7 +5027,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             }
         }
 
-        if (limitToVisibleRegion && solarSystemId > 0 && !visibleNodeIds.Contains(solarSystemId))
+        if (limitToVisibleRegion && (solarSystemId <= 0 || !visibleNodeIds.Contains(solarSystemId)))
         {
             return null;
         }
