@@ -26,6 +26,35 @@ public class IntelChatLogFeedHostedServiceTests
         Assert.Equal(expectedIgnored, result);
     }
 
+    [Theory]
+    [InlineData("Branch.Intel_20250601_153012_95465499.txt", true, "Branch.Intel", "2025-06-01T15:30:12Z")]
+    [InlineData("Delve_20240115_080000_90000001.txt", true, "Delve", "2024-01-15T08:00:00Z")]
+    [InlineData("Local_20250601_153012_95465499.txt", true, "Local", "2025-06-01T15:30:12Z")]
+    [InlineData("notanintelfile.txt", false, null, null)]
+    [InlineData("Channel_2025_153012_95465499.txt", false, null, null)]
+    public void TryParseIntelFileName_ExtractsChannelAndSessionTimestamp(
+        string fileName, bool expectedSuccess, string? expectedChannel, string? expectedSessionUtc)
+    {
+        var method = typeof(IntelChatLogFeedHostedService).GetMethod(
+            "TryParseIntelFileName",
+            BindingFlags.Static | BindingFlags.NonPublic);
+        Assert.NotNull(method);
+
+        object?[] args = [fileName, null, null];
+        var success = (bool)method!.Invoke(null, args)!;
+
+        Assert.Equal(expectedSuccess, success);
+        if (!expectedSuccess)
+        {
+            return;
+        }
+
+        Assert.Equal(expectedChannel, (string?)args[1]);
+        var sessionStartedUtc = (DateTime)args[2]!;
+        Assert.Equal(DateTimeKind.Utc, sessionStartedUtc.Kind);
+        Assert.Equal(DateTimeOffset.Parse(expectedSessionUtc!).UtcDateTime, sessionStartedUtc);
+    }
+
     [Fact]
     public void ShouldReadChannel_WhenIncludeListIsEmpty_ReturnsTrue()
     {
