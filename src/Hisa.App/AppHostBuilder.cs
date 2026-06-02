@@ -1,5 +1,6 @@
 using System.IO;
 using Hisa.App.Diagnostics;
+using Hisa.App.Services;
 using Hisa.Data.Database;
 using Hisa.Services;
 using Hisa.Services.Background;
@@ -29,6 +30,7 @@ internal static class AppHostBuilder
 
         builder.Services.AddSingleton(appLogStore);
         builder.Services.AddSingleton<IAppLogFileService, AppLogFileService>();
+        builder.Services.AddSingleton<GitHubUpdateService>();
         builder.Services.AddSingleton<MainWindowViewModel>();
         builder.Services.AddSingleton<MainWindow>();
         builder.Services.AddSingleton<MapEditorViewModel>();

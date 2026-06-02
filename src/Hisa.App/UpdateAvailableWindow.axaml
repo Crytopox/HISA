@@ -1,0 +1,43 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Hisa.App.UpdateAvailableWindow"
+        Title="HISA Update Available"
+        Icon="avares://HISA/Assets/HISA-Logo.ico"
+        Width="430"
+        Height="190"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner"
+        Background="#0D131D">
+  <Border Margin="12"
+          Padding="14"
+          Background="#121A26"
+          BorderBrush="#263244"
+          BorderThickness="1"
+          CornerRadius="6">
+    <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="8">
+      <TextBlock Text="A HISA update is available"
+                 FontSize="16"
+                 FontWeight="SemiBold"
+                 Foreground="#D8E5F8" />
+      <TextBlock Grid.Row="1"
+                 x:Name="VersionTextBlock"
+                 Foreground="#A9BDD7" />
+      <TextBlock Grid.Row="2"
+                 Text="You can keep using this version and update whenever convenient."
+                 Foreground="#8A96A8"
+                 TextWrapping="Wrap" />
+      <StackPanel Grid.Row="3"
+                  Orientation="Horizontal"
+                  HorizontalAlignment="Right"
+                  Spacing="8">
+        <Button Content="Later"
+                MinWidth="84"
+                Click="OnLaterClicked" />
+        <Button Content="Open Releases"
+                MinWidth="112"
+                Click="OnOpenReleasesClicked" />
+      </StackPanel>
+    </Grid>
+  </Border>
+</Window>

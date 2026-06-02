@@ -26,6 +26,8 @@ public partial class MainWindow : Window
     private MainWindowViewModel? _boundVm;
     private Hisa.Core.Models.MapViewMode _lastKnownViewMode;
     private readonly DebugWindowViewModel? _debugWindowViewModel;
+    private readonly GitHubUpdateService? _updateService;
+    private bool _startupUpdateReminderShown;
     private DebugWindow? _debugWindow;
     private PreferencesWindow? _preferencesWindow;
     private IntelSettingsWindow? _intelSettingsWindow;
@@ -120,17 +122,22 @@ public partial class MainWindow : Window
         };
     }
 
-    public MainWindow(MainWindowViewModel vm, DebugWindowViewModel debugWindowViewModel) : this()
+    public MainWindow(
+        MainWindowViewModel vm,
+        DebugWindowViewModel debugWindowViewModel,
+        GitHubUpdateService updateService) : this()
     {
         DataContext = vm;
         _boundVm = vm;
         _debugWindowViewModel = debugWindowViewModel;
+        _updateService = updateService;
         _lastKnownViewMode = vm.SelectedViewMode;
         vm.PropertyChanged += OnViewModelPropertyChanged;
         vm.AlertTriggered += OnAlertTriggered;
         _alertPopupSettings = vm.GetAlertPopupSettingsSnapshot();
         _alertPopupCleanupTimer.Tick += (_, _) => CleanupExpiredAlertPopupCards();
         _alertPopupCleanupTimer.Start();
+        Opened += OnCheckForUpdatesOnStartup;
     }
 
     private void OnOpenDebugConsoleClicked(object? sender, RoutedEventArgs e)
@@ -170,12 +177,34 @@ public partial class MainWindow : Window
     {
         if (_aboutWindow is null)
         {
-            _aboutWindow = new AboutWindow();
+            _aboutWindow = _updateService is null
+                ? new AboutWindow()
+                : new AboutWindow(_updateService);
             _aboutWindow.Closed += (_, _) => _aboutWindow = null;
             _aboutWindow.Show(this);
         }
 
         _aboutWindow.Activate();
+    }
+
+    private async void OnCheckForUpdatesOnStartup(object? sender, EventArgs e)
+    {
+        if (_startupUpdateReminderShown || _updateService is null)
+        {
+            return;
+        }
+
+        _startupUpdateReminderShown = true;
+        var update = await _updateService.CheckForUpdatesAsync();
+        if (update is not { IsUpdateAvailable: true } ||
+            !IsVisible ||
+            !await _updateService.ShouldShowStartupReminderAsync(update))
+        {
+            return;
+        }
+
+        var reminder = new UpdateAvailableWindow(update);
+        reminder.Show(this);
     }
 
     private void OnOpenCharactersClicked(object? sender, RoutedEventArgs e)

@@ -1,10 +1,9 @@
-using System.Diagnostics;
 using System.Net.Http;
-using System.Reflection;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
+using Hisa.App.Services;
 
 namespace Hisa.App;
 
@@ -14,28 +13,23 @@ public partial class AboutWindow : Window
     private const string GitHubUrl = "https://github.com/Crytopox/HISA";
     private const int AuthorCharacterId = 96469091;
     private static readonly HttpClient PortraitHttpClient = new();
+    private readonly GitHubUpdateService _updateService;
     private bool _authorPortraitLoaded;
 
-    public AboutWindow()
+    public AboutWindow() : this(new GitHubUpdateService())
     {
-        InitializeComponent();
-        VersionTextBlock.Text = $"Version {GetApplicationVersion()}";
-        Opened += async (_, _) => await LoadAuthorPortraitAsync();
     }
 
-    private static string GetApplicationVersion()
+    public AboutWindow(GitHubUpdateService updateService)
     {
-        var assembly = typeof(AboutWindow).Assembly;
-        var informationalVersion = assembly
-            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
-            .InformationalVersion;
-
-        if (!string.IsNullOrWhiteSpace(informationalVersion))
+        InitializeComponent();
+        _updateService = updateService;
+        VersionTextBlock.Text = $"Version {GitHubUpdateService.GetCurrentVersionText()}";
+        Opened += async (_, _) =>
         {
-            return informationalVersion.Split('+')[0];
-        }
-
-        return assembly.GetName().Version?.ToString(3) ?? "unknown";
+            await LoadAuthorPortraitAsync();
+            await RefreshUpdateStatusAsync();
+        };
     }
 
     private void OnOpenGitHubClicked(object? sender, RoutedEventArgs e)
@@ -46,6 +40,29 @@ public partial class AboutWindow : Window
 
     private void OnCloseClicked(object? sender, RoutedEventArgs e)
         => Close();
+
+    private void OnOpenReleasesClicked(object? sender, RoutedEventArgs e)
+        => ExternalUrlLauncher.Open(GitHubUpdateService.ReleasesUrl);
+
+    private async Task RefreshUpdateStatusAsync()
+    {
+        UpdateStatusTextBlock.Text = "Checking for updates...";
+        var update = await _updateService.CheckForUpdatesAsync(forceRefresh: true);
+        if (update is null)
+        {
+            UpdateStatusTextBlock.Text = "Unable to check for updates";
+            return;
+        }
+
+        if (update.IsUpdateAvailable)
+        {
+            UpdateStatusTextBlock.Text = $"{update.LatestTag} available";
+            OpenReleasesButton.IsVisible = true;
+            return;
+        }
+
+        UpdateStatusTextBlock.Text = "Up to date";
+    }
 
     private async Task LoadAuthorPortraitAsync()
     {
@@ -75,18 +92,5 @@ public partial class AboutWindow : Window
     }
 
     private static void OpenUrl(string url)
-    {
-        try
-        {
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = url,
-                UseShellExecute = true
-            });
-        }
-        catch
-        {
-            // External links are best-effort only.
-        }
-    }
+        => ExternalUrlLauncher.Open(url);
 }
