@@ -60,3 +60,12 @@ https://discord.gg/ByVCvC6UY9
 - Route planning with route leg summaries
 - Jump range calculator
 - A few more in the plans....
+
+## Image previews
+![Preview1](https://i.imgur.com/XDrbQEh.png)
+---
+![Preview2](https://i.imgur.com/mfQaxLM.png)
+---
+![Preview3](https://i.imgur.com/uksm640.png)
+---
+![Preview4](https://i.imgur.com/AjQowco.png)
