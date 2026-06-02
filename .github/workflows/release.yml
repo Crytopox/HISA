@@ -1,9 +1,7 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -16,24 +14,26 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Check out tagged source
+      - name: Check out main branch
         uses: actions/checkout@v6
+        with:
+          ref: main
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: "10.0.x"
 
-      - name: Validate release tag
+      - name: Set release metadata
         shell: pwsh
         run: |
           [xml]$project = Get-Content -LiteralPath "src/Hisa.App/Hisa.App.csproj"
           $version = $project.SelectSingleNode("/Project/PropertyGroup/Version").InnerText.Trim()
-          $expectedTag = "v$version"
+          $releaseTag = "v$version"
+          $releaseTarget = git rev-parse HEAD
 
-          if ("${{ github.ref_name }}" -ne $expectedTag) {
-              throw "Release tag '${{ github.ref_name }}' does not match project version '$expectedTag'."
-          }
+          "RELEASE_TAG=$releaseTag" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "RELEASE_TARGET=$releaseTarget" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Restore dependencies
         run: dotnet restore HISA.slnx
@@ -69,9 +69,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" \
+          gh release create "${RELEASE_TAG}" \
             build/releases/windows/win-x64/*.zip \
             build/releases/linux/*/*.tar.gz \
             build/releases/SHA256SUMS.txt \
-            --verify-tag \
+            --target "${RELEASE_TARGET}" \
             --generate-notes

@@ -20,25 +20,22 @@ https://discord.gg/ByVCvC6UY9
 
 ## Publishing a release
 
-Releases are built by GitHub Actions from tagged source code. The release workflow
-builds the solution, runs the test suite, publishes the Windows and Linux
-packages, generates SHA-256 checksums and signed build provenance, and attaches
-the resulting files to a GitHub Release.
+Releases are built manually from the current `main` branch by GitHub Actions. The
+release workflow builds the solution, runs the test suite, publishes the Windows
+and Linux packages, generates SHA-256 checksums and signed build provenance, and
+attaches the resulting files to a GitHub Release.
 
 To publish a release:
 
 1. Update `<Version>` in `src/Hisa.App/Hisa.App.csproj`.
-2. Commit and push the release-ready code.
-3. Create and push a matching tag, such as `v1.2.0` for `<Version>1.2.0</Version>`:
+2. Commit and push the release-ready code to `main`.
+3. Open the repository's **Actions** tab on GitHub.
+4. Select **Release**, click **Run workflow**, and run it.
 
-   ```powershell
-   git tag v1.2.0
-   git push origin v1.2.0
-   ```
-
-The workflow rejects tags that do not match the project version. Local publish
-scripts remain available in `build/` for development checks, but published
-release files are produced by GitHub Actions.
+The workflow checks out `main` explicitly and creates a matching release tag,
+such as `v1.2.0` for `<Version>1.2.0</Version>`. Local publish scripts remain
+available in `build/` for development checks, but published release files are
+produced by GitHub Actions.
 
 After downloading a release package, its provenance can be verified with the
 GitHub CLI:
@@ -46,6 +43,33 @@ GitHub CLI:
 ```powershell
 gh attestation verify HISA-win-x64-v1.2.0.zip --repo Crytopox/HISA
 ```
+
+## Building locally
+
+The repository includes the trimmed `src/Hisa.App/Data/eve-hk-sde.db` database
+required by HISA. A normal source checkout is sufficient for local development
+and publishing.
+
+To regenerate or refresh that database, build the full SDE SQLite database with
+[Crytopox/HKSDEImporter](https://github.com/Crytopox/HKSDEImporter), place a copy
+at `src/Hisa.App/Data/eve-hk-sde.db`, then run the HISA-specific SQLite trimming
+script:
+
+```powershell
+sqlite3 src/Hisa.App/Data/eve-hk-sde.db ".read build/trim-eve-hk-sde.sql"
+sqlite3 src/Hisa.App/Data/eve-hk-sde.db "VACUUM;"
+```
+
+Use the PowerShell publish scripts when building release archives locally:
+
+```powershell
+./build/publish-windows.ps1
+./build/publish-linux.ps1
+```
+
+The Windows script produces the `win-x64` ZIP archive. The Linux script produces
+`linux-x64`, `linux-arm64`, and `linux-musl-x64` tar archives. Output is written
+under `build/releases/`.
 
 ## Main Features
 ### Interactive EVE Maps
