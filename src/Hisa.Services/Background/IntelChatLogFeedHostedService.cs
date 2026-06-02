@@ -22,6 +22,11 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
     private static readonly TimeSpan DirtyFlushIdleDelay = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan SnapshotExpirySweepInterval = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan ChannelFileSweepInterval = TimeSpan.FromMilliseconds(600);
+    // Periodic discovery only needs the currently-active log per channel. EVE creates one file
+    // per channel per session and never appends to old ones, so files whose session start (encoded
+    // in the file name) is older than this window are skipped during the sweep. This keeps the sweep
+    // cheap even when the ChatLogs directory has accumulated tens of thousands of historical files.
+    private static readonly TimeSpan ChannelFileRecencyWindow = TimeSpan.FromDays(2);
     private const string LogsRootSettingsKey = "Tracking.LogsRootPath";
     private const string IntelEnabledSettingsKey = "Intel.Enabled";
     private const string IntelIncludeChannelsSettingsKey = "Intel.Channels.Include";
@@ -399,6 +404,41 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         return channelName.Length > 0;
     }
 
+    // Extracts both the channel and the session-start timestamp encoded in the file name
+    // (Channel_yyyyMMdd_HHmmss_characterId.txt). The timestamp lets the periodic sweep determine
+    // recency and pick the newest file per channel without a per-file stat syscall, which is the
+    // dominant cost when the directory holds tens of thousands of files (especially on cloud-synced
+    // folders such as OneDrive where each metadata query is comparatively expensive).
+    private static bool TryParseIntelFileName(string fileName, out string channelName, out DateTime sessionStartedUtc)
+    {
+        channelName = string.Empty;
+        sessionStartedUtc = default;
+        var match = IntelFileNameRegex.Match(fileName);
+        if (!match.Success)
+        {
+            return false;
+        }
+
+        channelName = match.Groups["channel"].Value;
+        if (channelName.Length == 0)
+        {
+            return false;
+        }
+
+        if (!DateTime.TryParseExact(
+                $"{match.Groups["date"].Value} {match.Groups["time"].Value}",
+                "yyyyMMdd HHmmss",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out var parsed))
+        {
+            return false;
+        }
+
+        sessionStartedUtc = DateTime.SpecifyKind(parsed, DateTimeKind.Utc);
+        return true;
+    }
+
     private void EnqueueAllKnownFiles(string chatLogsDirectory, bool startupOnlyNewestPerChannel)
     {
         string[] files;
@@ -414,7 +454,8 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
 
         if (startupOnlyNewestPerChannel)
         {
-            var newestByChannel = new Dictionary<string, (string Path, DateTime LastWriteUtc)>(StringComparer.OrdinalIgnoreCase);
+            var cutoffUtc = DateTime.UtcNow - ChannelFileRecencyWindow;
+            var newestByChannel = new Dictionary<string, (string Path, DateTime SessionStartedUtc)>(StringComparer.OrdinalIgnoreCase);
             foreach (var filePath in files)
             {
                 var fileName = Path.GetFileName(filePath);
@@ -423,23 +464,21 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
                     continue;
                 }
 
-                if (!TryExtractChannelNameFromFileName(fileName, out var channelFromName) || !ShouldReadChannel(channelFromName))
+                if (!TryParseIntelFileName(fileName, out var channelFromName, out var sessionStartedUtc) || !ShouldReadChannel(channelFromName))
                 {
                     continue;
                 }
 
-                DateTime lastWriteUtc;
-                try
-                {
-                    lastWriteUtc = File.GetLastWriteTimeUtc(filePath);
-                }
-                catch
+                // Skip historical session files without touching disk; only the current session per
+                // channel is of interest, and active files keep flowing in via the FileSystemWatcher.
+                if (sessionStartedUtc < cutoffUtc)
                 {
                     continue;
                 }
-                if (!newestByChannel.TryGetValue(channelFromName, out var existing) || lastWriteUtc > existing.LastWriteUtc)
+
+                if (!newestByChannel.TryGetValue(channelFromName, out var existing) || sessionStartedUtc > existing.SessionStartedUtc)
                 {
-                    newestByChannel[channelFromName] = (filePath, lastWriteUtc);
+                    newestByChannel[channelFromName] = (filePath, sessionStartedUtc);
                 }
             }
 
@@ -1409,7 +1448,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
     [GeneratedRegex(@"^\[\s*(?<timestamp>\d{4}\.\d{2}\.\d{2}\s+\d{2}:\d{2}:\d{2})\s*\]\s*(?<reporter>.+?)\s*>\s*(?<message>.+)$", RegexOptions.Compiled | RegexOptions.CultureInvariant)]
     private static partial Regex BuildChatLineRegex();
 
-    [GeneratedRegex(@"^(?<channel>.+)_\d{8}_\d{6}_\d+\.txt$", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"^(?<channel>.+)_(?<date>\d{8})_(?<time>\d{6})_\d+\.txt$", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
     private static partial Regex BuildIntelFileNameRegex();
 
     private sealed class ZkillSequenceDto
