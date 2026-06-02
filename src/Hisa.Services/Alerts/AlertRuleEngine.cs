@@ -5,9 +5,12 @@ namespace Hisa.Services.Alerts;
 
 public sealed class AlertRuleEngine : IAlertRuleEngine
 {
+    private static readonly TimeSpan EmittedAlertRetention = TimeSpan.FromDays(1);
     private readonly IRouteDistanceService _routeDistanceService;
     private readonly object _cooldownGate = new();
     private readonly Dictionary<string, DateTime> _cooldownUntilByKey = [];
+    private readonly object _emittedAlertGate = new();
+    private readonly Dictionary<string, DateTime> _emittedAlertAtByKey = [];
 
     public AlertRuleEngine(IRouteDistanceService routeDistanceService)
     {
@@ -40,11 +43,16 @@ public sealed class AlertRuleEngine : IAlertRuleEngine
                 continue;
             }
 
+            var dedupe = BuildAlertKey(rule, source);
+            if (!TryMarkAlertEmitted(dedupe, now))
+            {
+                continue;
+            }
+
             var actions = new List<AlertActionType> { AlertActionType.ShowPopup };
             var wantsSound = rule.Actions.Contains(AlertActionType.PlaySound);
             if (wantsSound)
             {
-                var dedupe = BuildCooldownKey(rule, source);
                 if (!IsCoolingDown(dedupe, now))
                 {
                     actions.Add(AlertActionType.PlaySound);
@@ -147,12 +155,35 @@ public sealed class AlertRuleEngine : IAlertRuleEngine
         return distance <= Math.Max(0, rule.MaxJumps);
     }
 
-    private static string BuildCooldownKey(AlertRule rule, AlertSourceEvent source)
+    private static string BuildAlertKey(AlertRule rule, AlertSourceEvent source)
     {
         var dedupe = !string.IsNullOrWhiteSpace(source.DedupeKey)
             ? source.DedupeKey
-            : (source.KillmailId?.ToString() ?? $"{source.SolarSystemId}:{source.TimestampUtc:yyyyMMddHHmm}");
+            : (source.KillmailId?.ToString() ?? $"{source.SolarSystemId}:{source.TimestampUtc:O}");
         return $"{rule.Id}:{source.EventType}:{dedupe}";
+    }
+
+    private bool TryMarkAlertEmitted(string key, DateTime now)
+    {
+        lock (_emittedAlertGate)
+        {
+            var cutoff = now - EmittedAlertRetention;
+            foreach (var expiredKey in _emittedAlertAtByKey
+                         .Where(x => x.Value < cutoff)
+                         .Select(x => x.Key)
+                         .ToList())
+            {
+                _emittedAlertAtByKey.Remove(expiredKey);
+            }
+
+            if (_emittedAlertAtByKey.ContainsKey(key))
+            {
+                return false;
+            }
+
+            _emittedAlertAtByKey[key] = now;
+            return true;
+        }
     }
 
     private bool IsCoolingDown(string key, DateTime now)

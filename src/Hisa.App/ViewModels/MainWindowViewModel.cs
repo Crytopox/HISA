@@ -2361,7 +2361,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             IsClearIntelReport = !isKillmail && report.IsClear,
             DedupeKey = isKillmail
                 ? (report.Killmail?.KillmailId > 0 ? $"killmail:{report.Killmail!.KillmailId}" : $"killmail:{report.TimestampUtc:O}:{solarSystemId}")
-                : $"intel:{solarSystemId}:{report.TimestampUtc:yyyyMMddHHmm}",
+                : $"intel:{solarSystemId}:{report.TimestampUtc:O}:{report.ChannelName}:{report.ReporterName}:{report.MessageText}",
             Summary = report.MessageText
         };
 
