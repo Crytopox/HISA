@@ -6,6 +6,7 @@ using Avalonia.Media.Immutable;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Hisa.Core.Models;
 using System.Globalization;
 using System.Security.Cryptography;
@@ -398,6 +399,7 @@ public sealed class MapControl : Control
     private const double EditorFitPadding = 60.0;
     private const double EditorFitPaddingWide = 40.0;
     private readonly DispatcherTimer _linkAnimationTimer;
+    private bool _isAttachedToVisualTree;
     private double _linkAnimationPhase;
 
     private const double DenseSpacingLow = 0.02;
@@ -949,13 +951,63 @@ public sealed class MapControl : Control
         ClipToBounds = true;
         _linkAnimationTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(40), DispatcherPriority.Render, (_, _) =>
         {
-            _linkAnimationPhase += 0.012;
-            if (ShouldAnimateAnyLink() || HasAnimatedIntelRings())
+            if (!ShouldAnimateAnyLink() && !HasAnimatedIntelRings())
             {
-                InvalidateVisual();
+                _linkAnimationTimer?.Stop();
+                return;
             }
+
+            _linkAnimationPhase += 0.012;
+            InvalidateVisual();
         });
-        _linkAnimationTimer.Start();
+    }
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        _isAttachedToVisualTree = true;
+        UpdateAnimationTimerState();
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        _isAttachedToVisualTree = false;
+        _linkAnimationTimer.Stop();
+        base.OnDetachedFromVisualTree(e);
+    }
+
+    protected override void OnSizeChanged(SizeChangedEventArgs e)
+    {
+        base.OnSizeChanged(e);
+        UpdateAnimationTimerState();
+    }
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property == GraphProperty ||
+            change.Property == SelectedNodeIdProperty ||
+            change.Property == ViewModeProperty ||
+            change.Property == EnableLinkAnimationsProperty ||
+            change.Property == EnableIntelRingAnimationsProperty ||
+            change.Property == ShowAnsiblexNetworkProperty ||
+            change.Property == AnsiblexLinksProperty ||
+            change.Property == IntelHostileScoresByNodeIdProperty)
+        {
+            UpdateAnimationTimerState();
+        }
+    }
+
+    private void UpdateAnimationTimerState()
+    {
+        if (!_isAttachedToVisualTree ||
+            (!ShouldAnimateAnyLink() && !HasAnimatedIntelRings()))
+        {
+            _linkAnimationTimer?.Stop();
+            return;
+        }
+
+        _linkAnimationTimer?.Start();
     }
 
     public void FitToView()
@@ -964,6 +1016,7 @@ public sealed class MapControl : Control
         {
             _zoom = 1.0;
             _panOffset = new Point(0, 0);
+            UpdateAnimationTimerState();
             InvalidateVisual();
             return;
         }
@@ -1000,6 +1053,7 @@ public sealed class MapControl : Control
             : Math.Clamp(low, GetMinZoom(), maxZoom);
         _panOffset = ComputePanForWorldCenter(plot, worldCenterX, worldCenterY, _zoom);
 
+        UpdateAnimationTimerState();
         InvalidateVisual();
     }
 
@@ -1060,6 +1114,7 @@ public sealed class MapControl : Control
     {
         _zoom = Math.Clamp(state.Zoom, GetMinZoom(), GetMaxZoom());
         _panOffset = new Point(state.PanOffsetX, state.PanOffsetY);
+        UpdateAnimationTimerState();
         InvalidateVisual();
     }
 
@@ -1077,6 +1132,7 @@ public sealed class MapControl : Control
             _graphMinY = 0;
             _graphMaxY = 0;
             _typicalLinkSpacing = 0.01;
+            UpdateAnimationTimerState();
             return;
         }
 
@@ -1098,6 +1154,7 @@ public sealed class MapControl : Control
         }
 
         _typicalLinkSpacing = EstimateTypicalLinkSpacing(Graph.Nodes, Graph.Links);
+        UpdateAnimationTimerState();
     }
 
     private void EnsureScreenPositionBuffer()
@@ -1249,6 +1306,7 @@ public sealed class MapControl : Control
     public void PanBy(double dxPixels, double dyPixels)
     {
         _panOffset = new Point(_panOffset.X + dxPixels, _panOffset.Y + dyPixels);
+        UpdateAnimationTimerState();
         InvalidateVisual();
     }
 
@@ -1281,6 +1339,7 @@ public sealed class MapControl : Control
         _panOffset = new Point(
             center.X - (((newBaseX - viewCenterX) * _zoom) + viewCenterX),
             center.Y - (((newBaseY - viewCenterY) * _zoom) + viewCenterY));
+        UpdateAnimationTimerState();
         InvalidateVisual();
     }
 
@@ -1950,6 +2009,7 @@ public sealed class MapControl : Control
         _leftDragPanned = true;
         _panOffset += delta;
         _lastPanPoint = point;
+        UpdateAnimationTimerState();
         InvalidateVisual();
     }
 
@@ -2001,6 +2061,7 @@ public sealed class MapControl : Control
             mouse.X - (((newBaseX - viewCenterX) * _zoom) + viewCenterX),
             mouse.Y - (((newBaseY - viewCenterY) * _zoom) + viewCenterY));
 
+        UpdateAnimationTimerState();
         InvalidateVisual();
     }
 
@@ -2058,6 +2119,7 @@ public sealed class MapControl : Control
 
         if (changed)
         {
+            UpdateAnimationTimerState();
             InvalidateVisual();
         }
     }

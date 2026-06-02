@@ -21,7 +21,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
     private static readonly TimeSpan DirtyFlushActiveDelay = TimeSpan.FromMilliseconds(20);
     private static readonly TimeSpan DirtyFlushIdleDelay = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan SnapshotExpirySweepInterval = TimeSpan.FromSeconds(5);
-    private static readonly TimeSpan ChannelFileSweepInterval = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan ChannelFileSweepInterval = TimeSpan.FromSeconds(15);
     private const string LogsRootSettingsKey = "Tracking.LogsRootPath";
     private const string IntelEnabledSettingsKey = "Intel.Enabled";
     private const string IntelIncludeChannelsSettingsKey = "Intel.Channels.Include";
