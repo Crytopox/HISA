@@ -10,8 +10,6 @@ This is the first full release, so most of the core features and important piece
 
 I’m daily driving HISA myself, so anything I run into will be fixed as quickly as I can. If you find bugs, weird behavior, edge cases, or have suggestions, feel free to share them and I’ll be happy to look into them. 
 
-This is the early full release, most of the core features and important thigns are there, but also expect issues (I hope only minor ones xP) but expect them to get fixed ASAP as I find them since I'm daily driving it, feel free to share any issues or suggestions and I will be happy to look into them. 
-
 **Available for both Windows and Linux**, but expect compatibility to depend a bit on your distro/setup. 
 
 Go to releases to download the latest version.
