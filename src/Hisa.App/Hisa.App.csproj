@@ -30,7 +30,7 @@
     <AssemblyName>HISA</AssemblyName>
     <Product>HISA</Product>
     <Title>HISA</Title>
-    <Version>1.2.1</Version>
+    <Version>1.3.0</Version>
     <ApplicationIcon>Assets\HISA-Logo.ico</ApplicationIcon>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <AvaloniaDisableTelemetry>true</AvaloniaDisableTelemetry>
