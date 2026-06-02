@@ -41,6 +41,7 @@ public partial class MainWindow : Window
     private LyCoveragePlannerWindow? _lyCoveragePlannerWindow;
     private JumpRouteOptimizerWindow? _jumpRouteOptimizerWindow;
     private ZkillmailsWindow? _zkillmailsWindow;
+    private AboutWindow? _aboutWindow;
     private readonly ContextMenu _mapNodeContextMenu;
     private readonly MenuItem _copySystemNameMenuItem;
     private readonly MenuItem _openInViewMenuItem;
@@ -163,6 +164,18 @@ public partial class MainWindow : Window
 
         _preferencesWindow.Show();
         _preferencesWindow.Activate();
+    }
+
+    private void OnOpenAboutClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_aboutWindow is null)
+        {
+            _aboutWindow = new AboutWindow();
+            _aboutWindow.Closed += (_, _) => _aboutWindow = null;
+            _aboutWindow.Show(this);
+        }
+
+        _aboutWindow.Activate();
     }
 
     private void OnOpenCharactersClicked(object? sender, RoutedEventArgs e)
@@ -1491,5 +1504,6 @@ public partial class MainWindow : Window
         TryClose(_lyCoveragePlannerWindow);
         TryClose(_jumpRouteOptimizerWindow);
         TryClose(_zkillmailsWindow);
+        TryClose(_aboutWindow);
     }
 }

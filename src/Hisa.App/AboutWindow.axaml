@@ -1,0 +1,152 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Hisa.App.AboutWindow"
+        Title="About HISA"
+        Icon="avares://HISA/Assets/HISA-Logo.ico"
+        Width="680"
+        Height="680"
+        MinWidth="540"
+        MinHeight="460"
+        WindowStartupLocation="CenterOwner"
+        Background="#0D131D">
+  <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <StackPanel Margin="16" Spacing="14">
+      <Border Padding="16"
+              Background="#121A26"
+              BorderBrush="#263244"
+              BorderThickness="1"
+              CornerRadius="8">
+        <Grid ColumnDefinitions="112,*" ColumnSpacing="16">
+          <Border Width="112"
+                  Height="112"
+                  Background="#101826"
+                  BorderBrush="#2B3C55"
+                  BorderThickness="1"
+                  CornerRadius="8">
+            <Image Source="avares://HISA/Assets/HISA-Logo.png"
+                   Margin="8"
+                   Stretch="Uniform" />
+          </Border>
+          <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="7">
+            <TextBlock Text="HISA"
+                       FontSize="26"
+                       FontWeight="Bold"
+                       Foreground="#EAF3FF" />
+            <TextBlock Text="Haakario Interstellar Survey Authority"
+                       FontSize="15"
+                       Foreground="#A9BDD7" />
+            <TextBlock Text="A fast, lightweight intel map for New Eden."
+                       Foreground="#8A96A8" />
+            <Border HorizontalAlignment="Left"
+                    Margin="0,4,0,0"
+                    Padding="9,4"
+                    Background="#18352F"
+                    BorderBrush="#3D796E"
+                    BorderThickness="1"
+                    CornerRadius="12">
+              <TextBlock x:Name="VersionTextBlock"
+                         Foreground="#9FE3D6"
+                         FontSize="12"
+                         FontWeight="SemiBold" />
+            </Border>
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <TextBlock Text="HISA is an open-source EVE Online intel map built to keep useful information visible without getting in your way. Track local intel, activity, characters, wormholes, incursions, storms, jump ranges, and more from one lightweight desktop app."
+                 Foreground="#C7D6EA"
+                 TextWrapping="Wrap" />
+
+      <Grid ColumnDefinitions="*,*" ColumnSpacing="14">
+        <Border Grid.Column="0"
+                Padding="12"
+                Background="#121A26"
+                BorderBrush="#263244"
+                BorderThickness="1"
+                CornerRadius="6">
+          <StackPanel Spacing="9">
+            <TextBlock Text="Project"
+                       FontSize="15"
+                       FontWeight="SemiBold"
+                       Foreground="#D8E5F8" />
+            <TextBlock Text="Source code, releases, and an alternative place to report issues."
+                       Foreground="#8A96A8"
+                       TextWrapping="Wrap" />
+            <Button Content="Open GitHub Repository"
+                    HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Left"
+                    Click="OnOpenGitHubClicked" />
+          </StackPanel>
+        </Border>
+
+        <Border Grid.Column="1"
+                Padding="12"
+                Background="#121A26"
+                BorderBrush="#263244"
+                BorderThickness="1"
+                CornerRadius="6">
+          <StackPanel Spacing="9">
+            <TextBlock Text="Community"
+                       FontSize="15"
+                       FontWeight="SemiBold"
+                       Foreground="#D8E5F8" />
+            <TextBlock Text="Get updates, share feedback, or report bugs."
+                       Foreground="#8A96A8"
+                       TextWrapping="Wrap" />
+            <Button Content="Join the Discord Server"
+                    HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Left"
+                    Click="OnOpenDiscordClicked" />
+          </StackPanel>
+        </Border>
+      </Grid>
+
+      <Border Padding="12"
+              Background="#121A26"
+              BorderBrush="#263244"
+              BorderThickness="1"
+              CornerRadius="6">
+        <Grid ColumnDefinitions="72,*" ColumnSpacing="12">
+          <Border Width="72"
+                  Height="72"
+                  Background="#101826"
+                  BorderBrush="#2B3C55"
+                  BorderThickness="1"
+                  CornerRadius="6">
+            <Image x:Name="AuthorPortraitImage"
+                   Source="avares://HISA/Assets/HISA-Logo.png"
+                   Stretch="UniformToFill" />
+          </Border>
+          <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
+            <TextBlock Text="Built and maintained by"
+                       Foreground="#8A96A8" />
+            <TextBlock Text="Crytopox Haakario"
+                       FontSize="15"
+                       FontWeight="SemiBold"
+                       Foreground="#D8E5F8" />
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <Border Padding="12"
+              Background="#101826"
+              BorderBrush="#243247"
+              BorderThickness="1"
+              CornerRadius="6">
+        <StackPanel Spacing="5">
+          <TextBlock Text="Fan Project"
+                     FontWeight="SemiBold"
+                     Foreground="#C9D9EE" />
+          <TextBlock Text="HISA is not affiliated with Fenris Creations (formerly CCP Games). EVE Online and related logos are the property of Fenris Creations."
+                     Foreground="#8A96A8"
+                     TextWrapping="Wrap" />
+        </StackPanel>
+      </Border>
+
+      <Button Content="Close"
+              MinWidth="92"
+              HorizontalAlignment="Right"
+              Click="OnCloseClicked" />
+    </StackPanel>
+  </ScrollViewer>
+</Window>

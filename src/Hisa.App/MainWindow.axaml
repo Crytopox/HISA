@@ -125,6 +125,8 @@
               <MenuItem Header="SOV Upgrades" Click="OnOpenSovUpgradesClicked" />
               <MenuItem Header="Ansiblex Network" Click="OnOpenAnsiblexNetworkClicked" />
               <MenuItem Header="Debug Window" Click="OnOpenDebugConsoleClicked" />
+              <Separator />
+              <MenuItem Header="About HISA" Click="OnOpenAboutClicked" />
             </MenuFlyout>
           </Button.Flyout>
         </Button>
