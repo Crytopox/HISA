@@ -9,9 +9,15 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $projectPath = Join-Path $repoRoot "src/Hisa.App/Hisa.App.csproj"
+[xml]$project = Get-Content -LiteralPath $projectPath
+$versionNode = $project.SelectSingleNode("/Project/PropertyGroup/Version")
+if ($null -eq $versionNode -or [string]::IsNullOrWhiteSpace($versionNode.InnerText)) {
+    throw "Project version was not found in: $projectPath"
+}
+$version = $versionNode.InnerText.Trim()
 $publishRoot = Join-Path $repoRoot "build/releases/windows/$Runtime"
 $publishDir = Join-Path $publishRoot "publish"
-$zipPath = Join-Path $publishRoot "HISA-$Runtime.zip"
+$zipPath = Join-Path $publishRoot "HISA-$Runtime-v$version.zip"
 
 Write-Host "Publishing HISA for Windows ($Runtime)..."
 
