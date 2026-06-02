@@ -18,14 +18,11 @@ namespace Hisa.Services.Background;
 public sealed partial class IntelChatLogFeedHostedService : BackgroundService, IIntelFeed
 {
     private const long InitialReadTailBytes = 512 * 1024;
-    private static readonly TimeSpan DirtyFlushActiveDelay = TimeSpan.FromMilliseconds(20);
-    private static readonly TimeSpan DirtyFlushIdleDelay = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan DirtyFlushDebounceDelay = TimeSpan.FromMilliseconds(125);
+    private static readonly TimeSpan KnownActiveFileSweepInterval = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan SnapshotExpirySweepInterval = TimeSpan.FromSeconds(5);
-    private static readonly TimeSpan ChannelFileSweepInterval = TimeSpan.FromMilliseconds(600);
-    // Periodic discovery only needs the currently-active log per channel. EVE creates one file
-    // per channel per session and never appends to old ones, so files whose session start (encoded
-    // in the file name) is older than this window are skipped during the sweep. This keeps the sweep
-    // cheap even when the ChatLogs directory has accumulated tens of thousands of historical files.
+    private static readonly TimeSpan ChannelFileSweepInterval = TimeSpan.FromSeconds(10);
+    // Only consider / read files newer than this value, utcNow + ChannelFileRecencyWindow
     private static readonly TimeSpan ChannelFileRecencyWindow = TimeSpan.FromDays(2);
     private const string LogsRootSettingsKey = "Tracking.LogsRootPath";
     private const string IntelEnabledSettingsKey = "Intel.Enabled";
@@ -167,14 +164,39 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
 
     private async Task RunIntelLogLoopAsync(string? chatLogsDirectory, CancellationToken stoppingToken)
     {
+        var nextKnownFileSweepUtc = DateTime.UtcNow + KnownActiveFileSweepInterval;
         var nextExpirySweepUtc = DateTime.UtcNow + SnapshotExpirySweepInterval;
         var nextChannelSweepUtc = DateTime.UtcNow + ChannelFileSweepInterval;
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                await FlushDirtyFilesAsync(stoppingToken);
                 var nowUtc = DateTime.UtcNow;
+                var delayUntilKnownFileSweep = nextKnownFileSweepUtc - nowUtc;
+                var delayUntilExpirySweep = nextExpirySweepUtc - nowUtc;
+                var delayUntilChannelSweep = chatLogsDirectory is null
+                    ? Timeout.InfiniteTimeSpan
+                    : nextChannelSweepUtc - nowUtc;
+                var waitDelay = MinPositiveDelay(delayUntilKnownFileSweep, delayUntilExpirySweep, delayUntilChannelSweep);
+
+                if (await _dirtySignal.WaitAsync(waitDelay, stoppingToken))
+                {
+                    // Coalesce a burst of file watcher events for the same active session log before
+                    // reopening files. Offsets still guarantee we only consume each appended line once.
+                    while (await _dirtySignal.WaitAsync(DirtyFlushDebounceDelay, stoppingToken))
+                    {
+                    }
+
+                    await FlushDirtyFilesAsync(stoppingToken);
+                    nowUtc = DateTime.UtcNow;
+                }
+
+                if (nowUtc >= nextKnownFileSweepUtc)
+                {
+                    EnqueueKnownActiveFiles();
+                    nextKnownFileSweepUtc = nowUtc + KnownActiveFileSweepInterval;
+                }
+
                 if (nowUtc >= nextExpirySweepUtc)
                 {
                     ExpireSnapshots(nowUtc);
@@ -196,9 +218,45 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
                 _logger.LogWarning(ex, "Intel chat log loop iteration failed; continuing.");
             }
 
-            var delay = _dirtyFiles.IsEmpty ? DirtyFlushIdleDelay : DirtyFlushActiveDelay;
-            await _dirtySignal.WaitAsync(delay, stoppingToken);
         }
+    }
+
+    private void EnqueueKnownActiveFiles()
+    {
+        string[] knownFiles;
+        lock (_gate)
+        {
+            knownFiles = _readOffsetsByPath.Keys.ToArray();
+        }
+
+        foreach (var filePath in knownFiles)
+        {
+            EnqueueDirtyFile(filePath);
+        }
+    }
+
+    private static TimeSpan MinPositiveDelay(params TimeSpan[] delays)
+    {
+        var best = Timeout.InfiniteTimeSpan;
+        foreach (var delay in delays)
+        {
+            if (delay <= TimeSpan.Zero)
+            {
+                return TimeSpan.Zero;
+            }
+
+            if (delay == Timeout.InfiniteTimeSpan)
+            {
+                continue;
+            }
+
+            if (best == Timeout.InfiniteTimeSpan || delay < best)
+            {
+                best = delay;
+            }
+        }
+
+        return best;
     }
 
     private async Task RunZkillLoopAsync(CancellationToken stoppingToken)
@@ -404,11 +462,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         return channelName.Length > 0;
     }
 
-    // Extracts both the channel and the session-start timestamp encoded in the file name
-    // (Channel_yyyyMMdd_HHmmss_characterId.txt). The timestamp lets the periodic sweep determine
-    // recency and pick the newest file per channel without a per-file stat syscall, which is the
-    // dominant cost when the directory holds tens of thousands of files (especially on cloud-synced
-    // folders such as OneDrive where each metadata query is comparatively expensive).
+    // Extracts both the channel and the session-start timestamp encoded in the file name (Channel_yyyyMMdd_HHmmss_characterId.txt)
     private static bool TryParseIntelFileName(string fileName, out string channelName, out DateTime sessionStartedUtc)
     {
         channelName = string.Empty;
