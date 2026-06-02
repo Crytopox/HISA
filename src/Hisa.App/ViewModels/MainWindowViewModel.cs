@@ -2723,6 +2723,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         var recentReportsByNode = new Dictionary<long, IReadOnlyList<IntelMapHoverReport>>();
         var hostileScoresByNode = new Dictionary<long, int>();
         var snapshotCutoffUtc = DateTime.UtcNow - TimeSpan.FromMinutes(IntelSystemExpiryMinutes);
+        var latestSnapshotSystemByCharacterId = BuildLatestIntelSystemByCharacterId(
+            snapshot.Values.Select(system => (
+                system.SolarSystemId,
+                system.LastUpdatedUtc,
+                system.HostilePilotNames)));
         foreach (var system in snapshot.Values)
         {
             if (system.LastUpdatedUtc < snapshotCutoffUtc ||
@@ -2737,7 +2742,17 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 continue;
             }
 
-            var iconKeys = BuildIntelRingIconKeys(system).ToList();
+            var movedResolvedHostileCount = CountMovedResolvedHostiles(
+                system.SolarSystemId,
+                system.HostilePilotNames,
+                latestSnapshotSystemByCharacterId);
+            var activeHostileScore = Math.Max(0, system.HostileScore - movedResolvedHostileCount);
+            if (movedResolvedHostileCount > 0 && activeHostileScore == 0)
+            {
+                continue;
+            }
+
+            var iconKeys = BuildIntelRingIconKeys(system, activeHostileScore).ToList();
 
             foreach (var alert in system.Alerts.Distinct())
             {
@@ -2759,7 +2774,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 iconsByNode[system.SolarSystemId] = iconKeys;
             }
 
-            hostileScoresByNode[system.SolarSystemId] = Math.Max(0, system.HostileScore);
+            hostileScoresByNode[system.SolarSystemId] = activeHostileScore;
         }
 
         var nodeByName = graph.Nodes
@@ -2767,24 +2782,45 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             .GroupBy(n => n.Name, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key!, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
-        var intelByNode = history
+        var intelHistory = history
             .Where(r => !(string.Equals(r.ChannelName, "zKillboard", StringComparison.OrdinalIgnoreCase)
                           || r.SourceFilePath.StartsWith("api://zkillboard", StringComparison.OrdinalIgnoreCase)))
             .Select(r => new { Report = r, System = r.Systems.FirstOrDefault() })
             .Where(x => !string.IsNullOrWhiteSpace(x.System) && nodeByName.ContainsKey(x.System!))
+            .ToList();
+        var latestHistorySystemByCharacterId = BuildLatestIntelSystemByCharacterId(
+            intelHistory.Select(x => (
+                nodeByName[x.System!].Id,
+                x.Report.TimestampUtc,
+                x.Report.ReportedHostileNames)));
+        var intelByNode = intelHistory
             .GroupBy(x => nodeByName[x.System!].Id)
             .ToDictionary(
                 g => g.Key,
                 g => (IReadOnlyList<IntelMapHoverReport>)g
                     .OrderByDescending(x => x.Report.TimestampUtc)
-                    .Take(1)
-                    .Select(x => new IntelMapHoverReport
+                    .Select(x =>
                     {
-                        TimestampUtc = x.Report.TimestampUtc,
-                        ReporterName = x.Report.ReporterName,
-                        MessageText = x.Report.MessageText,
-                        Ships = BuildIntelHoverShips(x.Report.ReportedShipNames, x.Report.ReportedShipTypeIds, x.Report.ShipClasses),
-                        Hostiles = BuildIntelHostileCards(x.Report.ReportedHostileNames, x.Report.ReportedShipNames, x.Report.ReportedShipTypeIds, x.Report.ShipClasses)
+                        var hostileCards = FilterMovedResolvedHostiles(
+                            g.Key,
+                            BuildIntelHostileCards(x.Report.ReportedHostileNames, x.Report.ReportedShipNames, x.Report.ReportedShipTypeIds, x.Report.ShipClasses),
+                            latestHistorySystemByCharacterId);
+                        if (x.Report.ReportedHostileNames.Count > 0 && hostileCards.Count == 0)
+                        {
+                            return null;
+                        }
+
+                        var movedResolvedHostileCount = CountMovedResolvedHostiles(
+                            g.Key,
+                            x.Report.ReportedHostileNames,
+                            latestHistorySystemByCharacterId);
+                        return new IntelMapHoverReport
+                        {
+                            TimestampUtc = x.Report.TimestampUtc,
+                            ReporterName = x.Report.ReporterName,
+                            MessageText = x.Report.MessageText,
+                            Ships = BuildIntelHoverShips(x.Report.ReportedShipNames, x.Report.ReportedShipTypeIds, x.Report.ShipClasses),
+                            Hostiles = hostileCards
                             .Take(3)
                             .Select(h => new IntelMapHoverHostile
                             {
@@ -2799,10 +2835,16 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                                 AllianceTicker = h.AllianceTicker
                             })
                             .ToList(),
-                        HiddenHostileCount = Math.Max(0, x.Report.ReportedHostileNames.Distinct(StringComparer.OrdinalIgnoreCase).Count() - 3),
-                        HostileCount = Math.Max(1, x.Report.ReportedHostileCount)
+                            HiddenHostileCount = Math.Max(0, hostileCards.Count - 3),
+                            HostileCount = Math.Max(hostileCards.Count, x.Report.ReportedHostileCount - movedResolvedHostileCount)
+                        };
                     })
-                    .ToList());
+                    .Where(x => x is not null)
+                    .Take(1)
+                    .Select(x => x!)
+                    .ToList())
+            .Where(x => x.Value.Count > 0)
+            .ToDictionary(x => x.Key, x => x.Value);
 
         var zkillByNode = history
             .Where(r => string.Equals(r.ChannelName, "zKillboard", StringComparison.OrdinalIgnoreCase)
@@ -2901,12 +2943,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         };
     }
 
-    private static IReadOnlyList<string> BuildIntelRingIconKeys(IntelSystemSnapshot system)
+    private static IReadOnlyList<string> BuildIntelRingIconKeys(IntelSystemSnapshot system, int? hostileOverride = null)
     {
         var classCounts = system.ShipClasses
             .GroupBy(x => x)
             .ToDictionary(g => g.Key, g => g.Count());
-        var hostile = Math.Max(0, system.HostileScore);
+        var hostile = Math.Max(0, hostileOverride ?? system.HostileScore);
         if (hostile <= 0)
         {
             return [];
@@ -2992,6 +3034,62 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
 
         return icons;
+    }
+
+    private Dictionary<int, long> BuildLatestIntelSystemByCharacterId(
+        IEnumerable<(long SystemId, DateTime TimestampUtc, IReadOnlyList<string> HostileNames)> sightings)
+    {
+        var latestByCharacterId = new Dictionary<int, (DateTime TimestampUtc, long SystemId)>();
+        foreach (var sighting in sightings)
+        {
+            foreach (var hostileName in sighting.HostileNames)
+            {
+                if (!TryGetResolvedIntelCharacterId(hostileName, out var characterId))
+                {
+                    continue;
+                }
+
+                if (!latestByCharacterId.TryGetValue(characterId, out var latest) ||
+                    sighting.TimestampUtc >= latest.TimestampUtc)
+                {
+                    latestByCharacterId[characterId] = (sighting.TimestampUtc, sighting.SystemId);
+                }
+            }
+        }
+
+        return latestByCharacterId.ToDictionary(x => x.Key, x => x.Value.SystemId);
+    }
+
+    private int CountMovedResolvedHostiles(
+        long systemId,
+        IReadOnlyList<string> hostileNames,
+        IReadOnlyDictionary<int, long> latestSystemByCharacterId)
+    {
+        return hostileNames
+            .Select(name => TryGetResolvedIntelCharacterId(name, out var characterId) ? characterId : 0)
+            .Where(characterId => characterId > 0)
+            .Distinct()
+            .Count(characterId =>
+                latestSystemByCharacterId.TryGetValue(characterId, out var latestSystemId) &&
+                latestSystemId != systemId);
+    }
+
+    private static List<IntelOverlayHostileCard> FilterMovedResolvedHostiles(
+        long systemId,
+        IReadOnlyList<IntelOverlayHostileCard> hostiles,
+        IReadOnlyDictionary<int, long> latestSystemByCharacterId)
+    {
+        return hostiles
+            .Where(hostile =>
+                hostile.CharacterId is not { } characterId ||
+                !latestSystemByCharacterId.TryGetValue(characterId, out var latestSystemId) ||
+                latestSystemId == systemId)
+            .ToList();
+    }
+
+    private bool TryGetResolvedIntelCharacterId(string hostileName, out int characterId)
+    {
+        return _characterIdByName.TryGetValue(hostileName.Trim(), out characterId) && characterId > 0;
     }
 
     private static IReadOnlyList<IntelShipClass> BuildWeightedClassSequence(
@@ -5527,7 +5625,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                         hostile.Name = resolvedName;
                         changed = true;
                     }
-                    hostile.CharacterId = characterId;
+                    if (hostile.CharacterId != characterId)
+                    {
+                        hostile.CharacterId = characterId;
+                        changed = true;
+                    }
                     if (IntelPortraitBitmapCache.TryGetValue(characterId, out var portrait))
                     {
                         hostile.PortraitBitmap = portrait;
