@@ -1442,6 +1442,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 _isIntelOverlayOpen = false;
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsIntelOverlayOpen)));
             }
+
+            if (_isZkillmailsOverlayOpen)
+            {
+                _isZkillmailsOverlayOpen = false;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsZkillmailsOverlayOpen)));
+            }
         }
     }
 
@@ -4379,6 +4385,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
                     return new WormholeOverlayCard
                     {
+                        SolarSystemId = systemId,
                         SystemName = meta?.SolarSystemName ?? $"System {systemId}",
                         RegionName = meta?.RegionName ?? "Unknown Region",
                         ConstellationName = meta?.ConstellationName ?? "Unknown Constellation",
@@ -4417,6 +4424,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 var bossColor = i.HasBoss ? "#FF6A7D" : "#7E8EA8";
                 return new IncursionOverlayCard
                 {
+                    SolarSystemId = i.StagingSolarSystemId,
                     StagingSystemName = stagingMeta?.SolarSystemName ?? $"System {i.StagingSolarSystemId}",
                     ConstellationName = stagingMeta?.ConstellationName ?? $"Constellation {i.ConstellationId}",
                     RegionName = stagingMeta?.RegionName ?? "Unknown Region",
@@ -4450,6 +4458,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 var (typeLabel, typeColor) = GetStormTypeDisplay(center.Type);
                 return new StormOverlayCard
                 {
+                    SolarSystemId = center.SolarSystemId,
                     CenterSystemName = centerMeta?.SolarSystemName ?? center.DisplayName ?? $"System {center.SolarSystemId}",
                     ConstellationName = centerMeta?.ConstellationName ?? "Unknown Constellation",
                     RegionName = centerMeta?.RegionName ?? "Unknown Region",

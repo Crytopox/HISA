@@ -191,6 +191,7 @@ public sealed class IntelOverlayShipSummaryCard : System.ComponentModel.INotifyP
 
 public sealed class WormholeOverlayCard
 {
+    public required long SolarSystemId { get; init; }
     public required string SystemName { get; init; }
     public required string RegionName { get; init; }
     public required string ConstellationName { get; init; }
@@ -207,6 +208,7 @@ public sealed class WormholeOverlayCard
 
 public sealed class IncursionOverlayCard
 {
+    public required long SolarSystemId { get; init; }
     public required string StagingSystemName { get; init; }
     public required string ConstellationName { get; init; }
     public required string RegionName { get; init; }
@@ -224,6 +226,7 @@ public sealed class IncursionOverlayCard
 
 public sealed class StormOverlayCard
 {
+    public required long SolarSystemId { get; init; }
     public required string CenterSystemName { get; init; }
     public required string ConstellationName { get; init; }
     public required string RegionName { get; init; }

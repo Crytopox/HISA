@@ -976,6 +976,31 @@ public partial class MainWindow : Window
         await FocusSelectedNodeAtZoomAsync(systemId, 0.9);
     }
 
+    private async void OnActivityCardSystemClicked(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel vm)
+        {
+            return;
+        }
+
+        var systemId = sender switch
+        {
+            Control { DataContext: WormholeOverlayCard wormholeCard } => wormholeCard.SolarSystemId,
+            Control { DataContext: IncursionOverlayCard incursionCard } => incursionCard.SolarSystemId,
+            Control { DataContext: StormOverlayCard stormCard } => stormCard.SolarSystemId,
+            _ => 0
+        };
+        if (systemId <= 0)
+        {
+            return;
+        }
+
+        await vm.NavigateToSystemFromReportAsync(systemId);
+        vm.SelectedNodeId = systemId;
+        MainMapControl.FocusOnNodeWithZoomPercent(systemId, 0.9);
+        await FocusSelectedNodeAtZoomAsync(systemId, 0.9);
+    }
+
     private async void OnZkillmailCardSystemClicked(object? sender, RoutedEventArgs e)
     {
         OnIntelCardSystemClicked(sender, e);

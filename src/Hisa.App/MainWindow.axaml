@@ -392,13 +392,22 @@
                               CornerRadius="0,7,7,0">
                         <StackPanel Spacing="5">
                           <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="6">
-                            <TextBlock Grid.Column="0" Foreground="#E9F4FF" FontWeight="Bold" FontSize="14" >
-                              <Run Text="{Binding SystemName}" FontSize="14" />
-                              <Run Text=" | " Foreground="#6F88A8"/>
-                              <Run Text="{Binding ConstellationName}" FontWeight="SemiBold" FontSize="10"/>
-                              <Run Text=" | " Foreground="#6F88A8" />
-                              <Run Text="{Binding RegionName}" FontWeight="SemiBold" FontSize="10"/>
-                            </TextBlock>
+                            <Button Grid.Column="0"
+                                    HorizontalAlignment="Left"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Padding="0"
+                                    Cursor="Hand"
+                                    ClickMode="Press"
+                                    Click="OnActivityCardSystemClicked">
+                              <TextBlock Foreground="#E9F4FF" FontWeight="Bold" FontSize="14" >
+                                <Run Text="{Binding SystemName}" FontSize="14" />
+                                <Run Text=" | " Foreground="#6F88A8"/>
+                                <Run Text="{Binding ConstellationName}" FontWeight="SemiBold" FontSize="10"/>
+                                <Run Text=" | " Foreground="#6F88A8" />
+                                <Run Text="{Binding RegionName}" FontWeight="SemiBold" FontSize="10"/>
+                              </TextBlock>
+                            </Button>
                             <Border Grid.Column="1" Padding="6,2" CornerRadius="4" BorderBrush="{Binding AccentHex}">
                               <Border.Background>#192838</Border.Background>
                               <Border.BorderThickness>1</Border.BorderThickness>
@@ -463,13 +472,22 @@
                               CornerRadius="0,7,7,0">
                         <StackPanel Spacing="5">
                           <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
-                            <TextBlock Grid.Column="0" Foreground="#F1E8FF" FontWeight="Bold" FontSize="14" >
-                              <Run Text="{Binding StagingSystemName}" FontWeight="Bold" FontSize="14"/>
-                              <Run Text=" | " Foreground="#7F779C" />
-                              <Run Text="{Binding ConstellationName}" FontWeight="SemiBold" FontSize="10"/>
-                              <Run Text=" | " Foreground="#7F779C" />
-                              <Run Text="{Binding RegionName}" FontWeight="SemiBold" FontSize="10" />
-                            </TextBlock>
+                            <Button Grid.Column="0"
+                                    HorizontalAlignment="Left"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Padding="0"
+                                    Cursor="Hand"
+                                    ClickMode="Press"
+                                    Click="OnActivityCardSystemClicked">
+                              <TextBlock Foreground="#F1E8FF" FontWeight="Bold" FontSize="14" >
+                                <Run Text="{Binding StagingSystemName}" FontWeight="Bold" FontSize="14"/>
+                                <Run Text=" | " Foreground="#7F779C" />
+                                <Run Text="{Binding ConstellationName}" FontWeight="SemiBold" FontSize="10"/>
+                                <Run Text=" | " Foreground="#7F779C" />
+                                <Run Text="{Binding RegionName}" FontWeight="SemiBold" FontSize="10" />
+                              </TextBlock>
+                            </Button>
                             <Border Grid.Column="1" Padding="6,2" CornerRadius="4" Background="#241C35" BorderThickness="1" BorderBrush="{Binding StateColorHex}">
                               <TextBlock Text="{Binding StateLabel}" Foreground="{Binding StateColorHex}" FontSize="10" FontWeight="Bold" />
                             </Border>
@@ -532,13 +550,22 @@
                               CornerRadius="0,7,7,0">
                         <StackPanel Spacing="5">
                           <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
-                            <TextBlock Grid.Column="0" Foreground="#EAF3FF" FontWeight="Bold" FontSize="14" >
-                              <Run Text="{Binding CenterSystemName}" FontWeight="Bold" FontSize="14"/>
-                              <Run Text=" | " Foreground="#7F8EA1" />
-                              <Run Text="{Binding ConstellationName}" FontWeight="SemiBold" FontSize="10"/>
-                              <Run Text=" | " Foreground="#7F8EA1" />
-                              <Run Text="{Binding RegionName}" FontWeight="SemiBold" FontSize="10" />
-                            </TextBlock>
+                            <Button Grid.Column="0"
+                                    HorizontalAlignment="Left"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Padding="0"
+                                    Cursor="Hand"
+                                    ClickMode="Press"
+                                    Click="OnActivityCardSystemClicked">
+                              <TextBlock Foreground="#EAF3FF" FontWeight="Bold" FontSize="14" >
+                                <Run Text="{Binding CenterSystemName}" FontWeight="Bold" FontSize="14"/>
+                                <Run Text=" | " Foreground="#7F8EA1" />
+                                <Run Text="{Binding ConstellationName}" FontWeight="SemiBold" FontSize="10"/>
+                                <Run Text=" | " Foreground="#7F8EA1" />
+                                <Run Text="{Binding RegionName}" FontWeight="SemiBold" FontSize="10" />
+                              </TextBlock>
+                            </Button>
                             <Border Grid.Column="1" Padding="6,2" CornerRadius="4" Background="#1C2838" BorderThickness="1" BorderBrush="{Binding StormTypeColorHex}">
                               <TextBlock Text="{Binding StormTypeLabel}" Foreground="{Binding StormTypeColorHex}" FontSize="10" FontWeight="Bold" />
                             </Border>
