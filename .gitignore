@@ -17,6 +17,8 @@
 /tests/Hisa.Core.Tests/obj
 /tests/Hisa.Logs.Tests/bin/Debug/net10.0
 /tests/Hisa.Logs.Tests/obj
+/tests/*/bin/*
+/tests/*/obj
 /HISA_Project_Plan.md
 src/Hisa.App/Data/eve-hk-sde.db
 src/Hisa.App/bin/*

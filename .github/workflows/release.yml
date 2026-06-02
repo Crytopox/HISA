@@ -1,0 +1,77 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    name: Build and publish release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v6
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Validate release tag
+        shell: pwsh
+        run: |
+          [xml]$project = Get-Content -LiteralPath "src/Hisa.App/Hisa.App.csproj"
+          $version = $project.SelectSingleNode("/Project/PropertyGroup/Version").InnerText.Trim()
+          $expectedTag = "v$version"
+
+          if ("${{ github.ref_name }}" -ne $expectedTag) {
+              throw "Release tag '${{ github.ref_name }}' does not match project version '$expectedTag'."
+          }
+
+      - name: Restore dependencies
+        run: dotnet restore HISA.slnx
+
+      - name: Build solution
+        run: dotnet build HISA.slnx --configuration Release --no-restore
+
+      - name: Run tests
+        run: dotnet test HISA.slnx --configuration Release --no-build --no-restore
+
+      - name: Publish Windows package
+        shell: pwsh
+        run: ./build/publish-windows.ps1
+
+      - name: Publish Linux packages
+        shell: pwsh
+        run: ./build/publish-linux.ps1
+
+      - name: Generate checksums
+        shell: bash
+        run: |
+          find build/releases -type f \( -name "*.zip" -o -name "*.tar.gz" \) -print0 \
+            | sort -z \
+            | xargs -0 sha256sum \
+            > build/releases/SHA256SUMS.txt
+
+      - name: Attest release packages
+        uses: actions/attest@v4
+        with:
+          subject-checksums: build/releases/SHA256SUMS.txt
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            build/releases/windows/win-x64/*.zip \
+            build/releases/linux/*/*.tar.gz \
+            build/releases/SHA256SUMS.txt \
+            --verify-tag \
+            --generate-notes

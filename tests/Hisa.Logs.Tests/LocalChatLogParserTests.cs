@@ -9,7 +9,10 @@ public sealed class LocalChatLogParserTests
     [Fact]
     public void Parse_ExtractsListenerAndSystemChanges_FromSampleOne()
     {
-        var text = ReadSample("Local_20260304_163622_2123313092.txt");
+        var text = BuildSample(
+            "Praefectus Manufactorum XV",
+            "2026.03.04 16:36:22",
+            "GPLB-C", "D-P1EH", "J-RXYN", "RYC-19", "GK5Z-T", "38NZ-1", "DG-8VJ", "0-6VZ5", "GPLB-C");
 
         var parsed = _parser.Parse(text);
 
@@ -23,7 +26,10 @@ public sealed class LocalChatLogParserTests
     [Fact]
     public void Parse_ExtractsListenerAndSystemChanges_FromSampleTwo()
     {
-        var text = ReadSample("Local_20260317_221218_97100207.txt");
+        var text = BuildSample(
+            "Veikath Haakario",
+            "2026.03.17 22:12:18",
+            "C-J6MT", "W-MF6J", "6-L4YC", "5E-CMA", "H6-EYX", "GPLB-C", "C-J6MT");
 
         var parsed = _parser.Parse(text);
 
@@ -34,9 +40,20 @@ public sealed class LocalChatLogParserTests
         Assert.Equal("C-J6MT", parsed.SystemChanges[^1].SolarSystemName);
     }
 
-    private static string ReadSample(string fileName)
+    private static string BuildSample(string listener, string sessionStarted, params string[] systems)
     {
-        var path = Path.Combine(AppContext.BaseDirectory, fileName);
-        return File.ReadAllText(path);
+        var lines = new List<string>
+        {
+            "\uFEFF------------------------------------------------------------",
+            $"  Listener:        {listener}",
+            $"  Session started: {sessionStarted}",
+            "------------------------------------------------------------",
+            "[ 2026.03.04 16:36:23 ] Random Pilot > ignored chat message"
+        };
+
+        lines.AddRange(systems.Select((system, index) =>
+            $"[ 2026.03.04 16:{37 + index:00}:00 ] EVE System > Channel changed to Local : {system}"));
+
+        return string.Join("\r\n", lines);
     }
 }

@@ -18,6 +18,34 @@ Go to releases to download the latest version.
 Join the Official Discord for updates, feedback, and bug reports:  
 https://discord.gg/ByVCvC6UY9
 
+## Publishing a release
+
+Releases are built by GitHub Actions from tagged source code. The release workflow
+builds the solution, runs the test suite, publishes the Windows and Linux
+packages, generates SHA-256 checksums and signed build provenance, and attaches
+the resulting files to a GitHub Release.
+
+To publish a release:
+
+1. Update `<Version>` in `src/Hisa.App/Hisa.App.csproj`.
+2. Commit and push the release-ready code.
+3. Create and push a matching tag, such as `v1.2.0` for `<Version>1.2.0</Version>`:
+
+   ```powershell
+   git tag v1.2.0
+   git push origin v1.2.0
+   ```
+
+The workflow rejects tags that do not match the project version. Local publish
+scripts remain available in `build/` for development checks, but published
+release files are produced by GitHub Actions.
+
+After downloading a release package, its provenance can be verified with the
+GitHub CLI:
+
+```powershell
+gh attestation verify HISA-win-x64-v1.2.0.zip --repo Crytopox/HISA
+```
 
 ## Main Features
 ### Interactive EVE Maps

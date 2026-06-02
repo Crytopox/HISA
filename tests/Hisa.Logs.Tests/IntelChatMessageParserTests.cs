@@ -58,14 +58,14 @@ public sealed class IntelChatMessageParserTests
     }
 
     [Fact]
-    public void Parse_NvReport_ResolvesSystemAndClear()
+    public void Parse_NvReport_ResolvesSystemWithoutClearing()
     {
         var parser = CreateParser();
         var result = parser.Parse("0-6VZ5  Nervous Energy nv");
 
         Assert.Contains("0-6VZ5", result.Systems, StringComparer.OrdinalIgnoreCase);
-        Assert.True(result.IsClear);
-        Assert.Contains(IntelAlertType.Clear, result.Alerts);
+        Assert.False(result.IsClear);
+        Assert.DoesNotContain(IntelAlertType.Clear, result.Alerts);
     }
 
     [Fact]
