@@ -103,7 +103,7 @@
                      Foreground="#D8E5F8" />
           </Border>
         </Popup>
-        <Button Grid.Column="5" Content="Fit / Center" Click="OnFitCenterClicked" MinWidth="96" />
+        <Button Grid.Column="5" Content="Fit Screen" Click="OnFitCenterClicked" MinWidth="96" />
         <Button Grid.Column="6" Content="Tools" MinWidth="80">
           <Button.Flyout>
             <MenuFlyout>
@@ -112,7 +112,7 @@
             </MenuFlyout>
           </Button.Flyout>
         </Button>
-        <ToggleButton Grid.Column="7" Content="Display" IsChecked="{Binding IsDisplaySettingsOpen, Mode=TwoWay}" />
+        <ToggleButton Grid.Column="7" Content="Map Filters" IsChecked="{Binding IsDisplaySettingsOpen, Mode=TwoWay}" />
         <Button Grid.Column="8" Content="Settings" MinWidth="90">
           <Button.Flyout>
             <MenuFlyout>
