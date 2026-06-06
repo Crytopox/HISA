@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia;
 using Avalonia.Platform;
@@ -49,7 +50,9 @@ public partial class MainWindow : Window
     private readonly MenuItem _openInViewMenuItem;
     private readonly MenuItem _openInDotlanMenuItem;
     private readonly MenuItem _openInZkillboardMenuItem;
+    private readonly MenuItem _openInKillmailAppMenuItem;
     private readonly MenuItem _jumpRangeMenuItem;
+    private readonly KillmailAppService _killmailAppService;
     private Point? _mapRightPressPoint;
     private bool _mapRightMoved;
     private string? _contextSystemName;
@@ -61,6 +64,7 @@ public partial class MainWindow : Window
 
     public MainWindow()
     {
+        _killmailAppService = new KillmailAppService();
         InitializeComponent();
 
         int subMenufontSize = 13;
@@ -103,12 +107,22 @@ public partial class MainWindow : Window
         };
         _openInZkillboardMenuItem.Classes.Add("map-node-menu-item");
         _openInZkillboardMenuItem.Click += OnOpenInZkillboardClicked;
+        _openInKillmailAppMenuItem = new MenuItem
+        {
+            Header = "Open in killmail.app",
+            FontSize = subMenufontSize,
+            FontWeight = Avalonia.Media.FontWeight.SemiBold,
+            Padding = new Thickness(8, 3),
+            Icon = BuildKillmailAppMenuIcon()
+        };
+        _openInKillmailAppMenuItem.Classes.Add("map-node-menu-item");
+        _openInKillmailAppMenuItem.Click += OnOpenInKillmailAppClicked;
         _jumpRangeMenuItem = BuildJumpRangeMenu(subMenufontSize);
         _mapNodeContextMenu = new ContextMenu
         {
             MinWidth = 0,
             FontSize = subMenufontSize,
-            ItemsSource = new object[] { _copySystemNameMenuItem, _openInViewMenuItem, _jumpRangeMenuItem, new Separator(), _openInDotlanMenuItem, _openInZkillboardMenuItem }
+            ItemsSource = new object[] { _copySystemNameMenuItem, _openInViewMenuItem, _jumpRangeMenuItem, new Separator(), _openInDotlanMenuItem, _openInKillmailAppMenuItem, _openInZkillboardMenuItem }
         };
         _mapNodeContextMenu.Classes.Add("map-node-menu");
         MainMapControl.UniverseRegionNodeDoubleClicked += OnUniverseRegionNodeClicked;
@@ -125,12 +139,14 @@ public partial class MainWindow : Window
     public MainWindow(
         MainWindowViewModel vm,
         DebugWindowViewModel debugWindowViewModel,
-        GitHubUpdateService updateService) : this()
+        GitHubUpdateService updateService,
+        KillmailAppService killmailAppService) : this()
     {
         DataContext = vm;
         _boundVm = vm;
         _debugWindowViewModel = debugWindowViewModel;
         _updateService = updateService;
+        _killmailAppService = killmailAppService;
         _lastKnownViewMode = vm.SelectedViewMode;
         vm.PropertyChanged += OnViewModelPropertyChanged;
         vm.AlertTriggered += OnAlertTriggered;
@@ -926,6 +942,27 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void OnOpenInKillmailAppClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_contextSystemId is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var url = await _killmailAppService.CreateBattleReportLaunchTargetAsync(_contextSystemId.Value, DateTimeOffset.UtcNow);
+            if (!string.IsNullOrWhiteSpace(url))
+            {
+                TryOpenUrl(url);
+            }
+        }
+        catch
+        {
+            // Ignore failures from HTTP or shell/browser launch.
+        }
+    }
+
     private async void OnOpenInViewClicked(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not MainWindowViewModel vm || _contextSystemId is null || string.IsNullOrWhiteSpace(_contextSystemName))
@@ -1238,6 +1275,19 @@ public partial class MainWindow : Window
         {
             return null;
         }
+    }
+
+    private static Control BuildKillmailAppMenuIcon()
+    {
+        var geometry = StreamGeometry.Parse("M92,104a28,28,0,1,0,28,28A28,28,0,0,0,92,104Zm0,40a12,12,0,1,1,12-12A12,12,0,0,1,92,144Zm72-40a28,28,0,1,0,28,28A28,28,0,0,0,164,104Zm0,40a12,12,0,1,1,12-12A12,12,0,0,1,164,144ZM128,16C70.65,16,24,60.86,24,116c0,34.1,18.27,66,48,84.28V216a16,16,0,0,0,16,16h80a16,16,0,0,0,16-16V200.28C213.73,182,232,150.1,232,116,232,60.86,185.35,16,128,16Zm44.12,172.69a8,8,0,0,0-4.12,7V216H152V192a8,8,0,0,0-16,0v24H120V192a8,8,0,0,0-16,0v24H88V195.69a8,8,0,0,0-4.12-7C56.81,173.69,40,145.84,40,116c0-46.32,39.48-84,88-84s88,37.68,88,84C216,145.83,199.19,173.69,172.12,188.69Z");
+
+        return new PathIcon
+        {
+            Data = geometry,
+            Width = 12,
+            Height = 12,
+            Foreground = new SolidColorBrush(Color.Parse("#C9D9EE"))
+        };
     }
 
     private MenuItem BuildJumpRangeMenu(int subMenuFontSize)
