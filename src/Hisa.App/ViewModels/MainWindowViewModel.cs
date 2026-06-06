@@ -4012,7 +4012,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             return null;
         }
 
-        if (SelectedViewMode == MapViewMode.Region && pick.RegionId is not null)
+        var preserveZoomInCurrentLayout = SelectedViewMode == MapViewMode.Region && IsCandidatePresentInCurrentRegionLayout(pick);
+
+        if (SelectedViewMode == MapViewMode.Region && pick.RegionId is not null && !preserveZoomInCurrentLayout)
         {
             var targetRegion = _allRegions.FirstOrDefault(r => r.RegionId == pick.RegionId.Value);
             if (targetRegion is not null && (_selectedRegion?.RegionId != targetRegion.RegionId))
@@ -4029,7 +4031,27 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             Kind = pick.Kind,
             RegionId = pick.RegionId,
             ConstellationId = pick.ConstellationId,
-            SolarSystemId = pick.SolarSystemId
+            SolarSystemId = pick.SolarSystemId,
+            PreferPreserveZoom = preserveZoomInCurrentLayout
+        };
+    }
+
+    private bool IsCandidatePresentInCurrentRegionLayout(MapSearchCandidate pick)
+    {
+        if (SelectedViewMode != MapViewMode.Region || CurrentGraph is null || CurrentGraph.Nodes.Count == 0)
+        {
+            return false;
+        }
+
+        return pick.Kind switch
+        {
+            MapSearchKind.SolarSystem when pick.SolarSystemId is > 0 and var solarSystemId =>
+                CurrentGraph.Nodes.Any(n => n.Id == solarSystemId),
+            MapSearchKind.Constellation when pick.ConstellationId is > 0 and var constellationId =>
+                CurrentGraph.Nodes.Any(n => n.ConstellationId == constellationId),
+            MapSearchKind.Region when pick.RegionId is > 0 and var regionId =>
+                _selectedRegion?.RegionId == regionId,
+            _ => false
         };
     }
 

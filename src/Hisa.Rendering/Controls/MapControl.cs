@@ -2140,11 +2140,25 @@ public sealed class MapControl : Control
             {
                 _searchHighlightedNodeId = focus.SolarSystemId.Value;
                 SelectedNodeId = focus.SolarSystemId.Value;
+
+                if (focus.PreferPreserveZoom)
+                {
+                    FocusOnNode(focus.SolarSystemId.Value);
+                    InvalidateVisual();
+                    return;
+                }
             }
             else if (focus.Kind == MapSearchKind.Constellation && focus.ConstellationId is not null)
             {
                 _searchHighlightedConstellationId = focus.ConstellationId.Value;
                 SelectedNodeId = null;
+
+                if (focus.PreferPreserveZoom)
+                {
+                    CenterOnConstellation(focus.ConstellationId.Value);
+                    InvalidateVisual();
+                    return;
+                }
             }
             else
             {
@@ -2207,8 +2221,7 @@ public sealed class MapControl : Control
             return;
         }
 
-        var targetZoom = ViewMode == MapViewMode.Universe ? 8.0 : 10.0;
-        CenterOnWorld(node.X, node.Y, targetZoom);
+        CenterOnWorld(node.X, node.Y, _zoom);
     }
 
     public bool FocusOnNodeWithZoomPercent(long nodeId, double zoomPercent)
@@ -2245,6 +2258,22 @@ public sealed class MapControl : Control
         }
 
         FocusOnNodes(nodes, 130);
+    }
+
+    private void CenterOnConstellation(int constellationId)
+    {
+        if (Graph is null)
+        {
+            return;
+        }
+
+        var nodes = Graph.Nodes.Where(n => n.ConstellationId == constellationId).ToList();
+        if (nodes.Count == 0)
+        {
+            return;
+        }
+
+        CenterOnNodes(nodes);
     }
 
     private void FocusOnRegion(int regionId)
@@ -2288,6 +2317,23 @@ public sealed class MapControl : Control
         var zoomX = availableWidth / graphWidthPx;
         var zoomY = availableHeight / graphHeightPx;
         _zoom = Math.Clamp(Math.Min(zoomX, zoomY), GetMinZoom(), GetMaxZoom());
+
+        var centerX = (minX + maxX) * 0.5;
+        var centerY = (minY + maxY) * 0.5;
+        CenterOnWorld(centerX, centerY, _zoom);
+    }
+
+    private void CenterOnNodes(IReadOnlyList<MapNode> nodes)
+    {
+        if (nodes.Count == 0)
+        {
+            return;
+        }
+
+        var minX = nodes.Min(n => n.X);
+        var maxX = nodes.Max(n => n.X);
+        var minY = nodes.Min(n => n.Y);
+        var maxY = nodes.Max(n => n.Y);
 
         var centerX = (minX + maxX) * 0.5;
         var centerY = (minY + maxY) * 0.5;

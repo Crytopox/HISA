@@ -402,14 +402,15 @@ public sealed class MapDataService : IMapDataService
                     Kind = kind,
                     Name = reader.GetString(1),
                     RegionId = reader.IsDBNull(2) ? null : reader.GetInt32(2),
-                    ConstellationId = reader.IsDBNull(3) ? null : reader.GetInt32(3),
-                    SolarSystemId = reader.IsDBNull(4) ? null : reader.GetInt32(4)
+                    RegionName = reader.IsDBNull(3) ? null : reader.GetString(3),
+                    ConstellationId = reader.IsDBNull(4) ? null : reader.GetInt32(4),
+                    SolarSystemId = reader.IsDBNull(5) ? null : reader.GetInt32(5)
                 });
             }
         }
 
         await RunAsync("""
-            SELECT r.regionID AS id, r.regionName, r.regionID, NULL AS constellationID, NULL AS solarSystemID
+            SELECT r.regionID AS id, r.regionName, r.regionID, r.regionName, NULL AS constellationID, NULL AS solarSystemID
             FROM mapRegions r
             WHERE r.regionName LIKE $term
               AND r.regionID IN (
@@ -422,16 +423,18 @@ public sealed class MapDataService : IMapDataService
             """, MapSearchKind.Region);
 
         await RunAsync("""
-            SELECT c.constellationID AS id, c.constellationName, c.regionID, c.constellationID, NULL AS solarSystemID
+            SELECT c.constellationID AS id, c.constellationName, c.regionID, r.regionName, c.constellationID, NULL AS solarSystemID
             FROM mapConstellations c
+            LEFT JOIN mapRegions r ON r.regionID = c.regionID
             WHERE c.constellationName LIKE $term
             ORDER BY c.constellationName
             LIMIT 30;
             """, MapSearchKind.Constellation);
 
         await RunAsync("""
-            SELECT s.solarSystemID AS id, s.solarSystemName, s.regionID, s.constellationID, s.solarSystemID
+            SELECT s.solarSystemID AS id, s.solarSystemName, s.regionID, r.regionName, s.constellationID, s.solarSystemID
             FROM mapSolarSystems s
+            LEFT JOIN mapRegions r ON r.regionID = s.regionID
             WHERE s.solarSystemName LIKE $term
             ORDER BY s.solarSystemName
             LIMIT 60;
