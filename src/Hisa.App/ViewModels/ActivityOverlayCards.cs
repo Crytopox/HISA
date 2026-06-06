@@ -169,6 +169,7 @@ public sealed class IntelOverlayShipSummaryCard : System.ComponentModel.INotifyP
     public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
     public required string ShipName { get; init; }
     public int Count { get; init; }
+    public int ThreatTier { get; init; }
     public int? ShipTypeId { get; init; }
     public string ShipIconKey { get; init; } = "crosshair";
     public bool HasShipBitmap => ShipBitmap is not null;
@@ -275,7 +276,7 @@ public sealed class IntelOverlayCard : System.ComponentModel.INotifyPropertyChan
     public bool PopupHasHiddenHostiles => PopupHiddenHostileCount > 0;
     public string PopupHiddenHostilesSummary => $"+{PopupHiddenHostileCount}";
     public required IReadOnlyList<IntelOverlayShipSummaryCard> ShipsSummary { get; init; }
-    public IReadOnlyList<IntelOverlayShipSummaryCard> PopupVisibleShips => ShipsSummary.Take(1).ToList();
+    public IReadOnlyList<IntelOverlayShipSummaryCard> PopupVisibleShips => ShipsSummary.Take(6).ToList();
     public required string ShipClassSummary { get; init; }
     public required int HostileCount { get; init; }
     public required string ShipBadgeBackgroundHex { get; init; }

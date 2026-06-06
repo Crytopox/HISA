@@ -4793,6 +4793,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         IReadOnlyList<IntelShipClass> shipClasses)
     {
         var items = new List<(string Name, int? TypeId, string IconKey)>();
+        var classByName = new Dictionary<string, IntelShipClass>(StringComparer.OrdinalIgnoreCase);
         if (shipNames.Count > 0)
         {
             for (var i = 0; i < shipNames.Count; i++)
@@ -4804,7 +4805,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 }
                 var typeId = shipTypeIds.Count > 0 ? shipTypeIds[Math.Min(i, shipTypeIds.Count - 1)] : (int?)null;
                 var shipClass = shipClasses.Count > 0 ? shipClasses[Math.Min(i, shipClasses.Count - 1)] : IntelShipClass.Unknown;
-                items.Add((NormalizeShipDisplayName(name), typeId, ShipClassToOverlayIconKey(shipClass)));
+                var normalizedName = NormalizeShipDisplayName(name);
+                items.Add((normalizedName, typeId, ShipClassToOverlayIconKey(shipClass)));
+                if (!classByName.TryGetValue(normalizedName, out var existingClass) ||
+                    GetShipClassThreatTier(shipClass) > GetShipClassThreatTier(existingClass))
+                {
+                    classByName[normalizedName] = shipClass;
+                }
             }
         }
 
@@ -4822,12 +4829,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 {
                     ShipName = first.Name,
                     Count = g.Count(),
+                    ThreatTier = classByName.TryGetValue(first.Name, out var groupClass) ? GetShipClassThreatTier(groupClass) : 0,
                     ShipTypeId = first.TypeId,
                     ShipIconKey = first.IconKey,
                     ShipBitmap = bitmap
                 };
             })
-            .OrderByDescending(x => x.Count)
+            .OrderByDescending(x => x.ThreatTier)
+            .ThenByDescending(x => x.Count)
             .ThenBy(x => x.ShipName, StringComparer.OrdinalIgnoreCase)
             .ToList();
 

@@ -122,6 +122,55 @@ public class IntelChatLogFeedHostedServiceTests
         Assert.True(TryRegisterReport(service, second));
     }
 
+    [Fact]
+    public void TryParseExternalIntelLinkData_DscanInfoHtml_ExtractsShipsClassesAndSystem()
+    {
+        const string html = """
+            <div class="panel-heading lead headline">System: <b><a href="#">5C-RPA</a></b></div>
+            <ul class="list-group" id="ships">
+                <li class="list-group-item shipclass26" data-sclid="26"><span class="badge label label-default">2</span><b>Augoror</b></li>
+                <li class="list-group-item shipclass25" data-sclid="25"><span class="badge label label-default">1</span><b>Astero</b></li>
+            </ul>
+            """;
+
+        var parsed = ParseExternalIntelLinkData("https://dscan.info/v/example", html);
+        var systems = GetStringSet(parsed, "Systems");
+        var shipNames = GetStringList(parsed, "ShipNames");
+        var shipClasses = GetShipClassList(parsed, "ShipClasses");
+
+        Assert.Contains("5C-RPA", systems, StringComparer.OrdinalIgnoreCase);
+        Assert.Equal(3, shipNames.Count);
+        Assert.Equal(2, shipNames.Count(x => x == "Augoror"));
+        Assert.Contains(IntelShipClass.Cruiser, shipClasses);
+        Assert.Contains(IntelShipClass.Frigate, shipClasses);
+    }
+
+    [Fact]
+    public void TryParseExternalIntelLinkData_AdashboardHtml_ExtractsShipsAndClasses()
+    {
+        const string html = """
+            <table class="table table-condensed">
+              <tr data-race="2" style="background: #c7e8c7;">
+                <td style="vertical-align: middle;" title="Interceptor"><span data-typeID="11198">&nbsp;</span>&nbsp;Stiletto</td>
+                <td style="text-align: right; width: 10%;"><span>2</span></td>
+              </tr>
+              <tr data-race="2" style="background: #ededed;">
+                <td style="vertical-align: middle;" title="Cruiser"><span data-typeID="17720">&nbsp;</span>&nbsp;Cynabal</td>
+                <td style="text-align: right; width: 10%;"><span>1</span></td>
+              </tr>
+            </table>
+            """;
+
+        var parsed = ParseExternalIntelLinkData("https://adashboard.info/intel/dscan/view/example", html);
+        var shipNames = GetStringList(parsed, "ShipNames");
+        var shipClasses = GetShipClassList(parsed, "ShipClasses");
+
+        Assert.Equal(3, shipNames.Count);
+        Assert.Equal(2, shipNames.Count(x => x == "Stiletto"));
+        Assert.Contains(IntelShipClass.Frigate, shipClasses);
+        Assert.Contains(IntelShipClass.Cruiser, shipClasses);
+    }
+
     private static IntelChatLogFeedHostedService CreateServiceWithSystems()
     {
         var service = new IntelChatLogFeedHostedService(
@@ -137,6 +186,23 @@ public class IntelChatLogFeedHostedServiceTests
         {
             ["Old System"] = 1,
             ["New System"] = 2
+        });
+        return service;
+    }
+
+    private static IntelChatLogFeedHostedService CreateServiceWithSystemsAndShips()
+    {
+        var service = CreateServiceWithSystems();
+        var shipField = typeof(IntelChatLogFeedHostedService).GetField(
+            "_shipClassByName",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(shipField);
+        shipField!.SetValue(service, new Dictionary<string, IntelShipClass>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Augoror"] = IntelShipClass.Cruiser,
+            ["Astero"] = IntelShipClass.Frigate,
+            ["Stiletto"] = IntelShipClass.Frigate,
+            ["Cynabal"] = IntelShipClass.Cruiser
         });
         return service;
     }
@@ -157,6 +223,48 @@ public class IntelChatLogFeedHostedServiceTests
             BindingFlags.Instance | BindingFlags.NonPublic);
         Assert.NotNull(method);
         return (bool)method!.Invoke(service, [report])!;
+    }
+
+    private static object ParseExternalIntelLinkData(string url, string html)
+    {
+        var service = CreateServiceWithSystemsAndShips();
+        var method = typeof(IntelChatLogFeedHostedService).GetMethod(
+            "TryParseExternalIntelLinkData",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(method);
+
+        object?[] args = [url, html, null];
+        var success = (bool)method!.Invoke(service, args)!;
+        Assert.True(success);
+        Assert.NotNull(args[2]);
+        return args[2]!;
+    }
+
+    private static HashSet<string> GetStringSet(object instance, string propertyName)
+    {
+        var property = instance.GetType().GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public);
+        Assert.NotNull(property);
+        var value = property!.GetValue(instance);
+        Assert.IsAssignableFrom<HashSet<string>>(value);
+        return (HashSet<string>)value!;
+    }
+
+    private static List<string> GetStringList(object instance, string propertyName)
+    {
+        var property = instance.GetType().GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public);
+        Assert.NotNull(property);
+        var value = property!.GetValue(instance);
+        Assert.IsAssignableFrom<List<string>>(value);
+        return (List<string>)value!;
+    }
+
+    private static List<IntelShipClass> GetShipClassList(object instance, string propertyName)
+    {
+        var property = instance.GetType().GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public);
+        Assert.NotNull(property);
+        var value = property!.GetValue(instance);
+        Assert.IsAssignableFrom<List<IntelShipClass>>(value);
+        return (List<IntelShipClass>)value!;
     }
 
     private static IntelChatReport CreateReport(string systemName, params string[] hostileNames)

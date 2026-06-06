@@ -41,6 +41,18 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
     private static readonly Regex InGameKillmailLinkRegex = new(
         @"^Kill:\s+.+\s+\(.+\)$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+    private static readonly Regex ExternalIntelLinkRegex = new(
+        @"https?://(?:(?:www\.)?adashboard\.info/intel/dscan/view/[A-Za-z0-9]+|(?:www\.)?dscan\.info/v/[A-Za-z0-9]+)",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+    private static readonly Regex DscanInfoSystemRegex = new(
+        @"System:\s*<b><a[^>]*>(?<system>[^<]+)</a>",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+    private static readonly Regex DscanInfoShipItemRegex = new(
+        @"<li[^>]*data-sclid=""[^""]+""[^>]*>\s*<span[^>]*>\s*(?<count>\d+)\s*</span>\s*<b>(?<name>[^<]+)</b>",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase | RegexOptions.Singleline);
+    private static readonly Regex DashboardShipRowRegex = new(
+        @"<tr[^>]*>\s*<td[^>]*title=""(?<class>[^""]+)""[^>]*>.*?&nbsp;(?<name>[^<]+)</td>\s*<td[^>]*>\s*<span>\s*(?<count>\d+)\s*</span>",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase | RegexOptions.Singleline);
 
     private readonly ISettingsService _settingsService;
     private readonly ISdeDatabase _sdeDatabase;
@@ -666,7 +678,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
                 continue;
             }
 
-            var report = ParseIntelReport(timestampUtc, channelName, reporter, message, filePath);
+            var report = await ParseIntelReportAsync(timestampUtc, channelName, reporter, message, filePath, cancellationToken);
             if (report.Systems.Count == 0)
             {
                 continue;
@@ -783,9 +795,10 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         return InGameKillmailLinkRegex.IsMatch(message.Trim());
     }
 
-    private IntelChatReport ParseIntelReport(DateTime timestampUtc, string channelName, string reporter, string message, string sourcePath)
+    private async Task<IntelChatReport> ParseIntelReportAsync(DateTime timestampUtc, string channelName, string reporter, string message, string sourcePath, CancellationToken cancellationToken)
     {
-        var parsed = _messageParser?.Parse(message) ?? new IntelParseResult
+        var sanitizedMessage = RemoveExternalIntelLinks(message);
+        var parsed = _messageParser?.Parse(sanitizedMessage) ?? new IntelParseResult
         {
             Systems = [],
             ShipClasses = [],
@@ -795,7 +808,31 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             IsClear = false,
             HostileCount = 0
         };
-        var reportedShipTypeIds = ResolveShipTypeIds(parsed.ShipNames);
+        var linkedData = await TryLoadExternalIntelLinkDataAsync(message, cancellationToken);
+        var mergedSystems = parsed.Systems.Count > 0
+            ? parsed.Systems.ToHashSet(StringComparer.OrdinalIgnoreCase)
+            : (linkedData?.Systems?.ToHashSet(StringComparer.OrdinalIgnoreCase) ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        var mergedShipNames = parsed.ShipNames.ToList();
+        if (linkedData is not null)
+        {
+            mergedShipNames.AddRange(linkedData.ShipNames);
+        }
+
+        var mergedShipClasses = parsed.ShipClasses.ToList();
+        if (linkedData is not null)
+        {
+            mergedShipClasses.AddRange(linkedData.ShipClasses);
+        }
+
+        if (mergedShipClasses.Count == 0 && mergedShipNames.Count > 0)
+        {
+            mergedShipClasses.AddRange(ResolveShipClasses(mergedShipNames));
+        }
+
+        var reportedShipTypeIds = ResolveShipTypeIds(mergedShipNames);
+        var hostileCount = parsed.IsClear
+            ? 0
+            : Math.Max(parsed.HostileCount, Math.Max(mergedShipNames.Count, mergedShipClasses.Count));
         return new IntelChatReport
         {
             DedupeKey = BuildIntelReportDedupeKey(timestampUtc, reporter, message),
@@ -804,16 +841,254 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             ReporterName = reporter,
             MessageText = message,
             SourceFilePath = sourcePath,
-            Systems = parsed.Systems.ToList(),
-            ShipClasses = parsed.ShipClasses,
-            ReportedShipNames = parsed.ShipNames,
+            Systems = mergedSystems.ToList(),
+            ShipClasses = mergedShipClasses,
+            ReportedShipNames = mergedShipNames,
             ReportedShipTypeIds = reportedShipTypeIds,
             Alerts = parsed.Alerts,
             ReportedHostileNames = parsed.HostileNames,
             IsClear = parsed.IsClear,
-            ReportedHostileCount = parsed.HostileCount,
+            ReportedHostileCount = hostileCount,
             Killmail = null
         };
+    }
+
+    private IReadOnlyList<IntelShipClass> ResolveShipClasses(IReadOnlyList<string> shipNames)
+    {
+        if (shipNames.Count == 0)
+        {
+            return [];
+        }
+
+        var result = new List<IntelShipClass>(shipNames.Count);
+        foreach (var rawName in shipNames)
+        {
+            var key = (rawName ?? string.Empty).Trim();
+            if (key.Length == 0)
+            {
+                continue;
+            }
+
+            if (_shipClassByName.TryGetValue(key, out var shipClass) && shipClass != IntelShipClass.Unknown)
+            {
+                result.Add(shipClass);
+            }
+        }
+
+        return result;
+    }
+
+    private async Task<ExternalIntelLinkData?> TryLoadExternalIntelLinkDataAsync(string message, CancellationToken cancellationToken)
+    {
+        var urls = ExternalIntelLinkRegex.Matches(message ?? string.Empty)
+            .Select(x => x.Value.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (urls.Count == 0)
+        {
+            return null;
+        }
+
+        var mergedSystems = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var mergedShipNames = new List<string>();
+        var mergedShipClasses = new List<IntelShipClass>();
+        var client = CreateIntelLinkHttpClient();
+        foreach (var url in urls)
+        {
+            try
+            {
+                using var response = await client.GetAsync(url, cancellationToken);
+                if (!response.IsSuccessStatusCode)
+                {
+                    continue;
+                }
+
+                var html = await response.Content.ReadAsStringAsync(cancellationToken);
+                if (!TryParseExternalIntelLinkData(url, html, out var parsed))
+                {
+                    continue;
+                }
+
+                foreach (var system in parsed.Systems)
+                {
+                    mergedSystems.Add(system);
+                }
+
+                mergedShipNames.AddRange(parsed.ShipNames);
+                mergedShipClasses.AddRange(parsed.ShipClasses);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Failed to enrich intel report from external dscan link {Url}.", url);
+            }
+        }
+
+        if (mergedSystems.Count == 0 && mergedShipNames.Count == 0 && mergedShipClasses.Count == 0)
+        {
+            return null;
+        }
+
+        if (mergedShipClasses.Count == 0 && mergedShipNames.Count > 0)
+        {
+            mergedShipClasses.AddRange(ResolveShipClasses(mergedShipNames));
+        }
+
+        return new ExternalIntelLinkData
+        {
+            Systems = mergedSystems,
+            ShipNames = mergedShipNames,
+            ShipClasses = mergedShipClasses
+        };
+    }
+
+    private HttpClient CreateIntelLinkHttpClient()
+    {
+        var client = _httpClientFactory.CreateClient(nameof(IntelChatLogFeedHostedService));
+        if (!client.DefaultRequestHeaders.UserAgent.Any())
+        {
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("HISA/1.0 (https://github.com/Crytopox/HISA)");
+        }
+
+        client.Timeout = TimeSpan.FromSeconds(10);
+        return client;
+    }
+
+    private bool TryParseExternalIntelLinkData(string url, string html, out ExternalIntelLinkData data)
+    {
+        data = new ExternalIntelLinkData();
+        if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(html))
+        {
+            return false;
+        }
+
+        if (url.Contains("dscan.info", StringComparison.OrdinalIgnoreCase))
+        {
+            return TryParseDscanInfoHtml(html, out data);
+        }
+
+        if (url.Contains("adashboard.info", StringComparison.OrdinalIgnoreCase))
+        {
+            return TryParseAdashboardHtml(html, out data);
+        }
+
+        return false;
+    }
+
+    private bool TryParseDscanInfoHtml(string html, out ExternalIntelLinkData data)
+    {
+        data = new ExternalIntelLinkData();
+        var systems = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var systemMatch = DscanInfoSystemRegex.Match(html);
+        if (systemMatch.Success)
+        {
+            var systemName = WebUtility.HtmlDecode(systemMatch.Groups["system"].Value).Trim();
+            if (systemName.Length > 0)
+            {
+                systems.Add(systemName);
+            }
+        }
+
+        var shipNames = new List<string>();
+        foreach (Match match in DscanInfoShipItemRegex.Matches(html))
+        {
+            var shipName = WebUtility.HtmlDecode(match.Groups["name"].Value).Trim();
+            if (!int.TryParse(match.Groups["count"].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var count) || shipName.Length == 0)
+            {
+                continue;
+            }
+
+            for (var i = 0; i < count; i++)
+            {
+                shipNames.Add(shipName);
+            }
+        }
+
+        var shipClasses = ResolveShipClasses(shipNames).ToList();
+        data = new ExternalIntelLinkData
+        {
+            Systems = systems,
+            ShipNames = shipNames,
+            ShipClasses = shipClasses
+        };
+        return systems.Count > 0 || shipNames.Count > 0 || shipClasses.Count > 0;
+    }
+
+    private bool TryParseAdashboardHtml(string html, out ExternalIntelLinkData data)
+    {
+        data = new ExternalIntelLinkData();
+        var shipNames = new List<string>();
+        var shipClasses = new List<IntelShipClass>();
+        foreach (Match match in DashboardShipRowRegex.Matches(html))
+        {
+            var shipName = WebUtility.HtmlDecode(match.Groups["name"].Value).Trim();
+            var shipClassName = WebUtility.HtmlDecode(match.Groups["class"].Value).Trim();
+            if (!int.TryParse(match.Groups["count"].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var count) || shipName.Length == 0)
+            {
+                continue;
+            }
+
+            var mappedClass = MapExternalShipClass(shipClassName);
+            for (var i = 0; i < count; i++)
+            {
+                shipNames.Add(shipName);
+                if (mappedClass != IntelShipClass.Unknown)
+                {
+                    shipClasses.Add(mappedClass);
+                }
+            }
+        }
+
+        if (shipClasses.Count == 0 && shipNames.Count > 0)
+        {
+            shipClasses.AddRange(ResolveShipClasses(shipNames));
+        }
+
+        data = new ExternalIntelLinkData
+        {
+            Systems = new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+            ShipNames = shipNames,
+            ShipClasses = shipClasses
+        };
+        return shipNames.Count > 0 || shipClasses.Count > 0;
+    }
+
+    private static string RemoveExternalIntelLinks(string message)
+    {
+        return ExternalIntelLinkRegex.Replace(message ?? string.Empty, " ").Trim();
+    }
+
+    private static IntelShipClass MapExternalShipClass(string className)
+    {
+        return className.Trim().ToLowerInvariant() switch
+        {
+            "frigate" => IntelShipClass.Frigate,
+            "assault frigate" => IntelShipClass.Frigate,
+            "interceptor" => IntelShipClass.Frigate,
+            "destroyer" => IntelShipClass.Destroyer,
+            "interdictor" => IntelShipClass.Destroyer,
+            "cruiser" => IntelShipClass.Cruiser,
+            "battlecruiser" => IntelShipClass.Battlecruiser,
+            "battleship" => IntelShipClass.Battleship,
+            "capital" => IntelShipClass.Capital,
+            "industrial" => IntelShipClass.Industrial,
+            "industrial command" => IntelShipClass.IndustrialCommand,
+            "freighter" => IntelShipClass.Freighter,
+            "capsule" => IntelShipClass.Capsule,
+            "shuttle" => IntelShipClass.Shuttle,
+            "rookie ship" => IntelShipClass.Rookie,
+            _ => IntelShipClass.Unknown
+        };
+    }
+
+    private sealed class ExternalIntelLinkData
+    {
+        public HashSet<string> Systems { get; init; } = new(StringComparer.OrdinalIgnoreCase);
+        public List<string> ShipNames { get; init; } = [];
+        public List<IntelShipClass> ShipClasses { get; init; } = [];
     }
 
     private bool TryRegisterReport(IntelChatReport report)

@@ -55,15 +55,20 @@
                     </Border>
                   </Grid>
                   <ItemsControl ItemsSource="{Binding IntelCard.PopupVisibleShips}">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate>
+                        <WrapPanel Orientation="Horizontal" ItemWidth="74" />
+                      </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                       <DataTemplate>
-                        <Border HorizontalAlignment="Left" Background="#172234" BorderBrush="#2A3C58" BorderThickness="1" CornerRadius="4" Padding="3,1">
+                        <Border HorizontalAlignment="Left" Margin="0,0,4,4" Background="#172234" BorderBrush="#2A3C58" BorderThickness="1" CornerRadius="4" Padding="3,1" Width="70">
                           <StackPanel Orientation="Horizontal" Spacing="3">
-                            <Image Width="20" Height="20" Stretch="UniformToFill" Source="{Binding ShipBitmap}" IsVisible="{Binding HasShipBitmap}" />
-                            <Border Width="20" Height="20" Background="#101927" BorderBrush="#2A3C58" BorderThickness="1" IsVisible="{Binding HasNoShipBitmap}">
+                            <Image Width="16" Height="16" Stretch="UniformToFill" Source="{Binding ShipBitmap}" IsVisible="{Binding HasShipBitmap}" />
+                            <Border Width="16" Height="16" Background="#101927" BorderBrush="#2A3C58" BorderThickness="1" IsVisible="{Binding HasNoShipBitmap}">
                               <TextBlock Text="?" Foreground="#BFD8FF" HorizontalAlignment="Center" VerticalAlignment="Center" />
                             </Border>
-                            <TextBlock Text="{Binding ShipName}" Foreground="#EAF2FF" FontSize="9" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding ShipName}" Foreground="#EAF2FF" FontSize="8" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="34" />
                             <TextBlock Text="{Binding Count, StringFormat='x{0}'}" Foreground="#9DB8D8" FontSize="8" VerticalAlignment="Center" />
                           </StackPanel>
                         </Border>
