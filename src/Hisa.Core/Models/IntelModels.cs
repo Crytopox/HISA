@@ -35,6 +35,7 @@ public enum IntelAlertType
 
 public sealed class IntelChatReport
 {
+    public required string DedupeKey { get; init; }
     public required DateTime TimestampUtc { get; init; }
     public required string ChannelName { get; init; }
     public required string ReporterName { get; init; }

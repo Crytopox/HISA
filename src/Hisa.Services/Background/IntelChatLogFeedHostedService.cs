@@ -89,11 +89,13 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
     private static readonly TimeSpan ZkillNotFoundDelay = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan ZkillRateLimitDelay = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan ZkillAcceptedAgeWindow = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan ReportDedupeRetention = TimeSpan.FromHours(1);
     private long? _nextZkillSequence;
     private DateTime _nextZkillPollAfterUtc = DateTime.MinValue;
     private HashSet<string> _includeChannels = new(StringComparer.OrdinalIgnoreCase);
     private TimeSpan _systemExpiry = TimeSpan.FromMinutes(15);
     private readonly DateTime _startupHistoryCutoffUtc = DateTime.UtcNow - TimeSpan.FromMinutes(10);
+    private readonly Dictionary<string, DateTime> _recentReportKeys = new(StringComparer.Ordinal);
 
     public IntelChatLogFeedHostedService(
         ISettingsService settingsService,
@@ -670,6 +672,11 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
                 continue;
             }
 
+            if (!TryRegisterReport(report))
+            {
+                continue;
+            }
+
             ReportReceived?.Invoke(this, report);
             snapshotChanged |= ApplyToSystemSnapshot(report);
         }
@@ -791,6 +798,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         var reportedShipTypeIds = ResolveShipTypeIds(parsed.ShipNames);
         return new IntelChatReport
         {
+            DedupeKey = BuildIntelReportDedupeKey(timestampUtc, reporter, message),
             TimestampUtc = timestampUtc,
             ChannelName = channelName,
             ReporterName = reporter,
@@ -806,6 +814,44 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             ReportedHostileCount = parsed.HostileCount,
             Killmail = null
         };
+    }
+
+    private bool TryRegisterReport(IntelChatReport report)
+    {
+        if (string.IsNullOrWhiteSpace(report.DedupeKey))
+        {
+            return true;
+        }
+
+        var nowUtc = DateTime.UtcNow;
+        lock (_gate)
+        {
+            PruneRecentReportKeys(nowUtc);
+            if (_recentReportKeys.ContainsKey(report.DedupeKey))
+            {
+                return false;
+            }
+
+            _recentReportKeys[report.DedupeKey] = nowUtc;
+            return true;
+        }
+    }
+
+    private void PruneRecentReportKeys(DateTime nowUtc)
+    {
+        if (_recentReportKeys.Count == 0)
+        {
+            return;
+        }
+
+        var staleKeys = _recentReportKeys
+            .Where(x => nowUtc - x.Value > ReportDedupeRetention)
+            .Select(x => x.Key)
+            .ToList();
+        foreach (var staleKey in staleKeys)
+        {
+            _recentReportKeys.Remove(staleKey);
+        }
     }
 
     private bool ApplyToSystemSnapshot(IntelChatReport report)
@@ -836,6 +882,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
                     };
                     recentReports.AddRange(previousReports.Where(x =>
                         x.TimestampUtc != report.TimestampUtc ||
+                        !string.Equals(x.ReporterName, report.ReporterName, StringComparison.OrdinalIgnoreCase) ||
                         !string.Equals(x.MessageText, report.MessageText, StringComparison.Ordinal)));
                     recentReports = recentReports
                         .OrderByDescending(x => x.TimestampUtc)
@@ -889,6 +936,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
                 };
                 reports.AddRange(previous.Where(x =>
                     x.TimestampUtc != report.TimestampUtc ||
+                    !string.Equals(x.ReporterName, report.ReporterName, StringComparison.OrdinalIgnoreCase) ||
                     !string.Equals(x.MessageText, report.MessageText, StringComparison.Ordinal)));
                 reports = reports
                     .OrderByDescending(x => x.TimestampUtc)
@@ -1377,6 +1425,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
 
         report = new IntelChatReport
         {
+            DedupeKey = BuildZkillReportDedupeKey(killmailId, timestampUtc, systemName, message),
             TimestampUtc = timestampUtc,
             ChannelName = ZkillChannelName,
             ReporterName = ZkillReporterName,
@@ -1406,6 +1455,26 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         };
 
         return true;
+    }
+
+    private static string BuildIntelReportDedupeKey(DateTime timestampUtc, string reporter, string message)
+    {
+        return $"intel:{timestampUtc:O}:{NormalizeReportIdentityPart(reporter)}:{NormalizeReportIdentityPart(message)}";
+    }
+
+    private static string BuildZkillReportDedupeKey(long killmailId, DateTime timestampUtc, string systemName, string message)
+    {
+        if (killmailId > 0)
+        {
+            return $"killmail:{killmailId}";
+        }
+
+        return $"killmail:{timestampUtc:O}:{NormalizeReportIdentityPart(systemName)}:{NormalizeReportIdentityPart(message)}";
+    }
+
+    private static string NormalizeReportIdentityPart(string? value)
+    {
+        return (value ?? string.Empty).Trim().ToUpperInvariant();
     }
 
     private static long? ReadInt64(JsonElement obj, string name)

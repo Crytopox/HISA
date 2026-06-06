@@ -2288,6 +2288,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         lock (_intelReportHistory)
         {
             _intelReportHistory.RemoveAll(x => x.TimestampUtc < listMaxAgeUtc);
+            if (_intelReportHistory.Any(x => string.Equals(x.DedupeKey, report.DedupeKey, StringComparison.Ordinal)))
+            {
+                return;
+            }
+
             _intelReportHistory.Add(report);
             if (_intelReportHistory.Count > MaxIntelReportHistory)
             {
@@ -2369,9 +2374,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             SolarSystemId = solarSystemId,
             KillmailId = report.Killmail?.KillmailId,
             IsClearIntelReport = !isKillmail && report.IsClear,
-            DedupeKey = isKillmail
-                ? (report.Killmail?.KillmailId > 0 ? $"killmail:{report.Killmail!.KillmailId}" : $"killmail:{report.TimestampUtc:O}:{solarSystemId}")
-                : $"intel:{solarSystemId}:{report.TimestampUtc:O}:{report.ChannelName}:{report.ReporterName}:{report.MessageText}",
+            DedupeKey = report.DedupeKey,
             Summary = report.MessageText
         };
 

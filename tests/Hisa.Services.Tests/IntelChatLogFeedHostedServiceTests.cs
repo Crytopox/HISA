@@ -98,6 +98,30 @@ public class IntelChatLogFeedHostedServiceTests
         Assert.Equal(["Pilot One"], service.Snapshot[2].HostilePilotNames);
     }
 
+    [Fact]
+    public void TryRegisterReport_WhenTimestampReporterAndMessageMatch_RejectsDuplicate()
+    {
+        var service = CreateServiceWithSystems();
+        var timestampUtc = DateTime.UtcNow;
+        var first = CreateReport("Old System", timestampUtc, "Reporter", "N3-JBX* 10+");
+        var duplicate = CreateReport("New System", timestampUtc, "Reporter", "N3-JBX* 10+");
+
+        Assert.True(TryRegisterReport(service, first));
+        Assert.False(TryRegisterReport(service, duplicate));
+    }
+
+    [Fact]
+    public void TryRegisterReport_WhenReporterDiffers_AllowsSecondReport()
+    {
+        var service = CreateServiceWithSystems();
+        var timestampUtc = DateTime.UtcNow;
+        var first = CreateReport("Old System", timestampUtc, "Reporter One", "N3-JBX* 10+");
+        var second = CreateReport("Old System", timestampUtc, "Reporter Two", "N3-JBX* 10+");
+
+        Assert.True(TryRegisterReport(service, first));
+        Assert.True(TryRegisterReport(service, second));
+    }
+
     private static IntelChatLogFeedHostedService CreateServiceWithSystems()
     {
         var service = new IntelChatLogFeedHostedService(
@@ -126,14 +150,29 @@ public class IntelChatLogFeedHostedServiceTests
         method!.Invoke(service, [report]);
     }
 
+    private static bool TryRegisterReport(IntelChatLogFeedHostedService service, IntelChatReport report)
+    {
+        var method = typeof(IntelChatLogFeedHostedService).GetMethod(
+            "TryRegisterReport",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(method);
+        return (bool)method!.Invoke(service, [report])!;
+    }
+
     private static IntelChatReport CreateReport(string systemName, params string[] hostileNames)
+    {
+        return CreateReport(systemName, DateTime.UtcNow, "Reporter", string.Join(", ", hostileNames), hostileNames);
+    }
+
+    private static IntelChatReport CreateReport(string systemName, DateTime timestampUtc, string reporterName, string messageText, params string[] hostileNames)
     {
         return new IntelChatReport
         {
-            TimestampUtc = DateTime.UtcNow,
+            DedupeKey = $"intel:{timestampUtc:O}:{reporterName.Trim().ToUpperInvariant()}:{messageText.Trim().ToUpperInvariant()}",
+            TimestampUtc = timestampUtc,
             ChannelName = "Intel",
-            ReporterName = "Reporter",
-            MessageText = string.Join(", ", hostileNames),
+            ReporterName = reporterName,
+            MessageText = messageText,
             SourceFilePath = "test://intel",
             Systems = [systemName],
             ShipClasses = [],
