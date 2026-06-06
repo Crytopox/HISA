@@ -150,6 +150,7 @@ public sealed partial class LocalChatLogTracker : IDisposable
         }
 
         var created = false;
+        var replaced = false;
         TrackedCharacterFile tracked;
         lock (_stateGate)
         {
@@ -160,13 +161,38 @@ public sealed partial class LocalChatLogTracker : IDisposable
                     return Task.CompletedTask;
                 }
 
-                if (existing.SessionStartedUtc == key.SessionStartedUtc &&
-                    !string.Equals(existing.FilePath, fullPath, StringComparison.OrdinalIgnoreCase))
+                if (existing.SessionStartedUtc < key.SessionStartedUtc)
                 {
-                    return Task.CompletedTask;
+                    _activeByPath.Remove(existing.FilePath);
+                    tracked = new TrackedCharacterFile
+                    {
+                        CharacterId = key.CharacterId,
+                        SessionStartedUtc = key.SessionStartedUtc,
+                        FilePath = fullPath
+                    };
+                    _activeByCharacterId[key.CharacterId] = tracked;
+                    _activeByPath[fullPath] = tracked;
+                    replaced = true;
                 }
-
-                tracked = existing;
+                else if (!string.Equals(existing.FilePath, fullPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    _activeByPath.Remove(existing.FilePath);
+                    tracked = new TrackedCharacterFile
+                    {
+                        CharacterId = key.CharacterId,
+                        SessionStartedUtc = existing.SessionStartedUtc,
+                        FilePath = fullPath,
+                        ReadOffset = existing.ReadOffset,
+                        CharacterName = existing.CharacterName
+                    };
+                    _activeByCharacterId[key.CharacterId] = tracked;
+                    _activeByPath[fullPath] = tracked;
+                    replaced = true;
+                }
+                else
+                {
+                    tracked = existing;
+                }
             }
             else
             {
@@ -182,7 +208,7 @@ public sealed partial class LocalChatLogTracker : IDisposable
             }
         }
 
-        if (created)
+        if (created || replaced)
         {
             InitializeTrackedFile(tracked);
         }
