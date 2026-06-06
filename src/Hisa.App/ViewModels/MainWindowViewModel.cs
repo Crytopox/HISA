@@ -370,10 +370,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private IReadOnlyDictionary<long, int> _intelHostileScoresByNodeId = new Dictionary<long, int>();
     private bool _limitIntelReportsToCurrentRegion;
     private bool _limitZkillmailsToCurrentRegion;
+    private bool _hideZkillmailsOutsideKnownSpace;
     private bool _intelEnabled = true;
     private string _intelIncludeChannelsText = string.Empty;
     private int _intelSystemExpiryMinutes = 15;
     private int _intelListExpiryMinutes = 30;
+    private readonly object _knownSpaceGate = new();
+    private readonly HashSet<long> _knownSpaceSystemIds = [];
+    private readonly Dictionary<string, long> _knownSpaceSystemIdByName = new(StringComparer.OrdinalIgnoreCase);
     private CancellationTokenSource? _searchSuggestionsCts;
     private MapCoordinateMode _savedUniverseCoordinateMode = MapCoordinateMode.SdePlanarXY;
     private MapCoordinateMode _savedRegionCoordinateMode = MapCoordinateMode.SdePlanarXY;
@@ -441,6 +445,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string IntelIncludeChannelsKey = "Intel.Channels.Include";
     private const string IntelLimitToCurrentRegionKey = "Intel.Overlay.LimitToCurrentRegion";
     private const string ZkillLimitToCurrentRegionKey = "Intel.Zkill.Overlay.LimitToCurrentRegion";
+    private const string ZkillHideOutsideKnownSpaceKey = "Intel.Zkill.HideOutsideKnownSpace";
     private const string IntelSystemExpiryMinutesKey = "Intel.SystemExpiryMinutes";
     private const string IntelListExpiryMinutesKey = "Intel.ListExpiryMinutes";
     private const string AlertRulesKey = "Alerts.Rules";
@@ -593,6 +598,22 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
             _ = _settingsService.SetAsync(ZkillLimitToCurrentRegionKey, value);
             ScheduleActivityCardsRebuild();
+        }
+    }
+
+    public bool HideZkillmailsOutsideKnownSpace
+    {
+        get => _hideZkillmailsOutsideKnownSpace;
+        set
+        {
+            if (!SetProperty(ref _hideZkillmailsOutsideKnownSpace, value))
+            {
+                return;
+            }
+
+            _ = _settingsService.SetAsync(ZkillHideOutsideKnownSpaceKey, value);
+            ScheduleActivityCardsRebuild();
+            RebuildIntelPresenceForView();
         }
     }
     public string LogsPathValidationStatus => _logsPathValidationStatus;
@@ -1890,6 +1911,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     {
         _allRegions = (await _mapDataService.GetRegionsAsync()).ToList();
         ApplyRegionFilter();
+        await LoadKnownSpaceSystemCacheAsync();
 
         var legacyCoordinateMode = await _settingsService.GetAsync<MapCoordinateMode?>(CoordinateModeKey) ?? MapCoordinateMode.SdePlanarXY;
         _savedUniverseCoordinateMode = await _settingsService.GetAsync<MapCoordinateMode?>(CoordinateModeUniverseKey) ?? legacyCoordinateMode;
@@ -1925,6 +1947,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             await _settingsService.GetAsync<AlertPopupSettings>(AlertPopupSettingsKey) ?? new AlertPopupSettings());
         LimitIntelReportsToCurrentRegion = await _settingsService.GetAsync<bool?>(IntelLimitToCurrentRegionKey) ?? false;
         LimitZkillmailsToCurrentRegion = await _settingsService.GetAsync<bool?>(ZkillLimitToCurrentRegionKey) ?? true;
+        HideZkillmailsOutsideKnownSpace = await _settingsService.GetAsync<bool?>(ZkillHideOutsideKnownSpaceKey) ?? false;
         var initialIncludeChannels = await _settingsService.GetAsync<List<string>>(IntelIncludeChannelsKey) ?? [];
         IntelIncludeChannelsText = string.Join(Environment.NewLine, initialIncludeChannels);
         if (IntelEnabled && initialIncludeChannels.Count == 0)
@@ -2284,6 +2307,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
         var isZkillReport = string.Equals(report.ChannelName, "zKillboard", StringComparison.OrdinalIgnoreCase)
                             || report.SourceFilePath.StartsWith("api://zkillboard", StringComparison.OrdinalIgnoreCase);
+        if (isZkillReport && !ShouldShowZkillmailReport(report))
+        {
+            return;
+        }
 
         lock (_intelReportHistory)
         {
@@ -2433,6 +2460,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     private bool ShouldIncludeZkillmailReportInCurrentView(IntelChatReport report)
     {
+        if (!ShouldShowZkillmailReport(report))
+        {
+            return false;
+        }
+
         if (!LimitZkillmailsToCurrentRegion)
         {
             return true;
@@ -2880,6 +2912,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         var zkillByNode = history
             .Where(r => string.Equals(r.ChannelName, "zKillboard", StringComparison.OrdinalIgnoreCase)
                         || r.SourceFilePath.StartsWith("api://zkillboard", StringComparison.OrdinalIgnoreCase))
+            .Where(ShouldShowZkillmailReport)
             .Select(r => new { Report = r, System = r.Systems.FirstOrDefault() })
             .Where(x => !string.IsNullOrWhiteSpace(x.System) && nodeByName.ContainsKey(x.System!))
             .GroupBy(x => nodeByName[x.System!].Id)
@@ -3563,6 +3596,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         await _settingsService.SetAsync(IntelListExpiryMinutesKey, Math.Clamp(IntelListExpiryMinutes, 1, 240));
         await _settingsService.SetAsync(IntelLimitToCurrentRegionKey, LimitIntelReportsToCurrentRegion);
         await _settingsService.SetAsync(ZkillLimitToCurrentRegionKey, LimitZkillmailsToCurrentRegion);
+        await _settingsService.SetAsync(ZkillHideOutsideKnownSpaceKey, HideZkillmailsOutsideKnownSpace);
         StatusText = "Intel settings saved. Restart HISA intel feed to apply channel filter changes.";
     }
 
@@ -4578,6 +4612,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             var nextZkillCards = intelHistory
                 .Where(r => string.Equals(r.ChannelName, "zKillboard", StringComparison.OrdinalIgnoreCase)
                             || r.SourceFilePath.StartsWith("api://zkillboard", StringComparison.OrdinalIgnoreCase))
+                .Where(ShouldShowZkillmailReport)
                 .Select(r => BuildZkillmailOverlayCard(
                     r,
                     graphNodeByName,
@@ -5016,6 +5051,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         bool limitToVisibleRegion,
         bool applyCachedIdentityData)
     {
+        if (!ShouldShowZkillmailReport(report))
+        {
+            return null;
+        }
+
         var systemName = report.Systems.FirstOrDefault() ?? "Unknown";
         long solarSystemId = 0;
         var regionName = "Unknown Region";
@@ -5081,6 +5121,108 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             HiddenAttackerCount = hiddenAttackers,
             ShipsSummary = shipsSummary
         };
+    }
+
+    private async Task LoadKnownSpaceSystemCacheAsync(CancellationToken cancellationToken = default)
+    {
+        lock (_knownSpaceGate)
+        {
+            if (_knownSpaceSystemIds.Count > 0 && _knownSpaceSystemIdByName.Count > 0)
+            {
+                return;
+            }
+        }
+
+        var universeGraph = await _mapDataService.GetUniverseGraphAsync(MapCoordinateMode.SdePlanarXY, cancellationToken);
+        var systemIds = universeGraph.Nodes
+            .Where(n => n.Id > 0)
+            .Select(n => n.Id)
+            .Distinct()
+            .ToList();
+        var metadataById = await _mapDataService.GetSystemMetadataByIdsAsync(systemIds, cancellationToken);
+        var nextIds = new HashSet<long>();
+        var nextByName = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var node in universeGraph.Nodes)
+        {
+            if (node.Id <= 0 || string.IsNullOrWhiteSpace(node.Name))
+            {
+                continue;
+            }
+
+            metadataById.TryGetValue(node.Id, out var metadata);
+            var regionName = !string.IsNullOrWhiteSpace(node.RegionName)
+                ? node.RegionName
+                : metadata?.RegionName;
+            if (IsExcludedKnownSpaceRegion(regionName) || IsExcludedKnownSpaceSystem(node.Name))
+            {
+                continue;
+            }
+
+            nextIds.Add(node.Id);
+            nextByName[node.Name] = node.Id;
+        }
+
+        lock (_knownSpaceGate)
+        {
+            _knownSpaceSystemIds.Clear();
+            foreach (var id in nextIds)
+            {
+                _knownSpaceSystemIds.Add(id);
+            }
+
+            _knownSpaceSystemIdByName.Clear();
+            foreach (var pair in nextByName)
+            {
+                _knownSpaceSystemIdByName[pair.Key] = pair.Value;
+            }
+        }
+    }
+
+    private bool ShouldShowZkillmailReport(IntelChatReport report)
+    {
+        if (!HideZkillmailsOutsideKnownSpace)
+        {
+            return true;
+        }
+
+        return IsKnownSpaceSystem(report.Systems.FirstOrDefault());
+    }
+
+    private bool IsKnownSpaceSystem(string? systemName)
+    {
+        if (string.IsNullOrWhiteSpace(systemName))
+        {
+            return false;
+        }
+
+        var trimmed = systemName.Trim();
+        if (IsExcludedKnownSpaceSystem(trimmed))
+        {
+            return false;
+        }
+
+        lock (_knownSpaceGate)
+        {
+            if (_knownSpaceSystemIdByName.Count == 0)
+            {
+                return true;
+            }
+
+            return _knownSpaceSystemIdByName.ContainsKey(trimmed);
+        }
+    }
+
+    private static bool IsExcludedKnownSpaceSystem(string systemName)
+    {
+        return string.Equals(systemName, "Thera", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(systemName, "Turnur", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsExcludedKnownSpaceRegion(string? regionName)
+    {
+        return string.Equals(regionName, "Pochven", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(regionName, "Yasna Zakh", StringComparison.OrdinalIgnoreCase);
     }
 
     private IntelOverlayCard? BuildIntelOverlayCard(

@@ -104,6 +104,16 @@
 
         <Border Padding="10" Background="#101826" BorderBrush="#243247" BorderThickness="1" CornerRadius="5">
           <StackPanel Spacing="6">
+            <TextBlock Text="zKillmails" FontWeight="SemiBold" Foreground="#C9D9EE" />
+            <CheckBox IsChecked="{Binding HideZkillmailsOutsideKnownSpace}" Content="Hide killmails outside k-space" />
+            <TextBlock Text="When enabled, zKill history, alerts, and hover data exclude systems outside known space such as wormhole space, Pochven, Thera, and Turnur."
+                       Foreground="#8A96A8"
+                       TextWrapping="Wrap" />
+          </StackPanel>
+        </Border>
+
+        <Border Padding="10" Background="#101826" BorderBrush="#243247" BorderThickness="1" CornerRadius="5">
+          <StackPanel Spacing="6">
             <TextBlock Text="Local Logs Path" FontWeight="SemiBold" Foreground="#C9D9EE" />
             <TextBlock Text="EVE logs root folder (contains ChatLogs, GameLogs, FleetLogs, MarketLogs)."
                        Foreground="#8A96A8"
