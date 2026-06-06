@@ -525,12 +525,25 @@ public partial class MainWindow : Window
         }
 
         _alertPopupWindow.Opacity = _alertPopupSettings.Opacity;
-        _alertPopupWindow.Width = _alertPopupSettings.Width;
-        _alertPopupWindow.Height = _alertPopupSettings.Height;
         _alertPopupWindow.IsHitTestVisible = true;
         _alertPopupWindow.IsDragModeEnabled = _isAlertPopupDragMode;
-        var width = (int)Math.Max(0, _alertPopupWindow.Width);
-        var height = (int)Math.Max(0, _alertPopupWindow.Height);
+        if (_isAlertPopupDragMode)
+        {
+            _alertPopupWindow.SizeToContent = SizeToContent.Manual;
+            _alertPopupWindow.Width = _alertPopupSettings.Width;
+            _alertPopupWindow.Height = _alertPopupSettings.Height;
+            _alertPopupWindow.MaxHeight = double.PositiveInfinity;
+        }
+        else
+        {
+            _alertPopupWindow.SizeToContent = SizeToContent.Height;
+            _alertPopupWindow.Width = _alertPopupSettings.Width;
+            _alertPopupWindow.Height = double.NaN;
+            _alertPopupWindow.MaxHeight = _alertPopupSettings.Height;
+        }
+
+        var width = (int)Math.Max(0, _alertPopupSettings.Width);
+        var height = (int)Math.Max(0, _alertPopupSettings.Height);
         var x = Position.X;
         var y = Position.Y;
 

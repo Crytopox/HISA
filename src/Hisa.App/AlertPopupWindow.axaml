@@ -15,7 +15,6 @@
           Margin="0"
           Padding="0"
           CornerRadius="0"
-          Background="Transparent"
           BorderThickness="0"
           PointerPressed="OnRootPointerPressed"
           PointerReleased="OnRootPointerReleased">

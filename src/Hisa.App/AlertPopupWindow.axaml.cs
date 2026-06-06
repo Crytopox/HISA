@@ -38,10 +38,10 @@ public partial class AlertPopupWindow : Window
     {
         RootBorder.Background = IsDragModeEnabled
             ? Brush.Parse("#B01A2232")
-            : Brushes.Transparent;
+            : null;
         RootBorder.BorderBrush = IsDragModeEnabled
             ? Brush.Parse("#5D83B5")
-            : Brushes.Transparent;
+            : null;
         RootBorder.BorderThickness = IsDragModeEnabled
             ? new Thickness(1)
             : new Thickness(0);
