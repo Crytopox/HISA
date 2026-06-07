@@ -14,9 +14,25 @@ I’m daily driving HISA myself, so anything I run into will be fixed as quickly
 
 Go to releases to download the latest version.
 
-
 Join the Official Discord for updates, feedback, and bug reports:  
 https://discord.gg/ByVCvC6UY9
+
+## Linux support
+
+HISA ships Linux builds for `linux-x64`, `linux-arm64`, and `linux-musl-x64`.
+In practice, the `linux-x64` build should run without issues on most modern
+glibc-based distros such as Ubuntu, Linux Mint, Debian, Fedora, Pop!_OS,
+openSUSE, Arch, EndeavourOS, and CachyOS. Use `linux-musl-x64` for musl-based
+distros such as Alpine.
+
+Releases are self-contained, so you do not need to install .NET separately.
+HISA uses .NET 10 and Avalonia UI, so Linux systems may still need common
+desktop libraries depending on the distro, typically X11/Wayland, fontconfig,
+DBus, and OpenGL/Mesa-related packages.
+
+For Avalonia UI dependencies for Linux:
+https://docs.avaloniaui.net/docs/supported-platforms
+
 
 ## Publishing a release
 
