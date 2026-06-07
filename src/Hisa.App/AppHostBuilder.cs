@@ -3,6 +3,7 @@ using Hisa.App.Diagnostics;
 using Hisa.App.Services;
 using Hisa.Data.Database;
 using Hisa.Services;
+using System.Diagnostics;
 using Hisa.Services.Background;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,7 +24,7 @@ internal static class AppHostBuilder
             .AddEnvironmentVariables(prefix: "HISA_");
 
         builder.Logging.ClearProviders();
-        builder.Logging.SetMinimumLevel(LogLevel.Trace);
+        builder.Logging.SetMinimumLevel(ResolveMinimumLogLevel(builder.Configuration));
         builder.Logging.AddConsole();
         var appLogStore = new AppLogStore();
         builder.Logging.AddProvider(new InMemoryLoggerProvider(appLogStore));
@@ -44,5 +45,20 @@ internal static class AppHostBuilder
         builder.Services.AddHisaMapServices();
 
         return builder.Build();
+    }
+
+    private static LogLevel ResolveMinimumLogLevel(IConfiguration configuration)
+    {
+        var configured = configuration["Hisa:Diagnostics:MinimumLogLevel"];
+        if (!string.IsNullOrWhiteSpace(configured) && Enum.TryParse<LogLevel>(configured, true, out var parsed))
+        {
+            return parsed;
+        }
+
+        #if DEBUG
+        return LogLevel.Trace;
+        #else
+        return Debugger.IsAttached ? LogLevel.Trace : LogLevel.Information;
+        #endif
     }
 }

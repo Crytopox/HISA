@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net.Sockets;
@@ -19,6 +20,12 @@ internal static class Program
         "HISA",
         "logs",
         "first-chance-io.log");
+    private static readonly bool FirstChanceIoLoggingEnabled =
+        #if DEBUG
+        true;
+        #else
+        Debugger.IsAttached || IsEnabledByEnvironment("HISA_ENABLE_FIRST_CHANCE_IO_LOGGING");
+        #endif
     public static IHost? Host { get; private set; }
 
     [STAThread]
@@ -43,7 +50,10 @@ internal static class Program
 
     private static void WireGlobalExceptionLogging(ILogger? logger)
     {
-        AppDomain.CurrentDomain.FirstChanceException += (_, e) => OnFirstChanceException(e, logger);
+        if (FirstChanceIoLoggingEnabled)
+        {
+            AppDomain.CurrentDomain.FirstChanceException += (_, e) => OnFirstChanceException(e, logger);
+        }
 
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
         {
@@ -126,5 +136,19 @@ internal static class Program
         }
 
         return false;
+    }
+
+    private static bool IsEnabledByEnvironment(string name)
+    {
+        var raw = Environment.GetEnvironmentVariable(name);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return false;
+        }
+
+        return raw.Equals("1", StringComparison.OrdinalIgnoreCase) ||
+               raw.Equals("true", StringComparison.OrdinalIgnoreCase) ||
+               raw.Equals("yes", StringComparison.OrdinalIgnoreCase) ||
+               raw.Equals("on", StringComparison.OrdinalIgnoreCase);
     }
 }

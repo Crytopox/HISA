@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Text;
 using Hisa.App.Diagnostics;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace Hisa.App;
 
@@ -16,11 +18,13 @@ public sealed class AppLogFileService : IAppLogFileService, IDisposable
     private readonly object _sync = new();
     private readonly AppLogStore _store;
     private readonly string _logsDirectory;
+    private readonly LogLevel _persistedFileLogLevel;
 
-    public AppLogFileService(AppLogStore store)
+    public AppLogFileService(AppLogStore store, IConfiguration configuration)
     {
         _store = store;
         _logsDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Hisa", "logs");
+        _persistedFileLogLevel = ResolvePersistedFileLogLevel(configuration);
         Directory.CreateDirectory(_logsDirectory);
         _store.EntryAdded += OnEntryAdded;
     }
@@ -55,6 +59,11 @@ public sealed class AppLogFileService : IAppLogFileService, IDisposable
 
     private void OnEntryAdded(object? sender, AppLogEntry entry)
     {
+        if (entry.Level < _persistedFileLogLevel)
+        {
+            return;
+        }
+
         try
         {
             Directory.CreateDirectory(_logsDirectory);
@@ -82,5 +91,20 @@ public sealed class AppLogFileService : IAppLogFileService, IDisposable
     public void Dispose()
     {
         _store.EntryAdded -= OnEntryAdded;
+    }
+
+    private static LogLevel ResolvePersistedFileLogLevel(IConfiguration configuration)
+    {
+        var configured = configuration["Hisa:Diagnostics:PersistedFileLogLevel"];
+        if (!string.IsNullOrWhiteSpace(configured) && Enum.TryParse<LogLevel>(configured, true, out var parsed))
+        {
+            return parsed;
+        }
+
+        #if DEBUG
+        return LogLevel.Information;
+        #else
+        return LogLevel.Warning;
+        #endif
     }
 }
