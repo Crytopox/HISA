@@ -358,6 +358,15 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private static readonly ConcurrentDictionary<int, string> IntelCharacterNamesById = new();
     private static readonly ConcurrentDictionary<int, string> IntelCorporationTickersById = new();
     private static readonly ConcurrentDictionary<int, string> IntelAllianceTickersById = new();
+    private static readonly HashSet<string> ReconPriorityShipNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Arazu", "Lachesis", "Falcon", "Rook", "Huginn", "Rapier", "Pilgrim", "Curse"
+    };
+    private static readonly HashSet<string> InterdictionPriorityShipNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Sabre", "Flycatcher", "Heretic", "Eris", "Broadsword", "Onyx", "Devoter", "Phobos"
+    };
+    private const int MaxIntelHoverShipRows = 8;
     private static readonly ConcurrentDictionary<int, byte> IntelImageLoadingByCharacterId = new();
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> IntelBitmapLoadLocks = new(StringComparer.OrdinalIgnoreCase);
     private static readonly string IntelImageCacheRoot = Path.Combine(
@@ -2877,12 +2886,17 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                             g.Key,
                             x.Report.ReportedHostileNames,
                             latestHistorySystemByCharacterId);
+                        var hoverShips = BuildIntelHoverShips(
+                            x.Report.ReportedShipNames,
+                            x.Report.ReportedShipTypeIds,
+                            x.Report.ShipClasses);
                         return new IntelMapHoverReport
                         {
                             TimestampUtc = x.Report.TimestampUtc,
                             ReporterName = x.Report.ReporterName,
                             MessageText = x.Report.MessageText,
-                            Ships = BuildIntelHoverShips(x.Report.ReportedShipNames, x.Report.ReportedShipTypeIds, x.Report.ShipClasses),
+                            Ships = hoverShips.Take(MaxIntelHoverShipRows).ToList(),
+                            HiddenShipCount = Math.Max(0, hoverShips.Count - MaxIntelHoverShipRows),
                             Hostiles = hostileCards
                             .Take(3)
                             .Select(h => new IntelMapHoverHostile
@@ -4814,55 +4828,26 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         IReadOnlyList<int> shipTypeIds,
         IReadOnlyList<IntelShipClass> shipClasses)
     {
-        var items = new List<(string Name, int? TypeId, string IconKey)>();
-        var classByName = new Dictionary<string, IntelShipClass>(StringComparer.OrdinalIgnoreCase);
-        if (shipNames.Count > 0)
-        {
-            for (var i = 0; i < shipNames.Count; i++)
+        return BuildGroupedShipSummaries(shipNames, shipTypeIds, shipClasses)
+            .Select(summary =>
             {
-                var name = shipNames[i];
-                if (string.IsNullOrWhiteSpace(name))
-                {
-                    continue;
-                }
-                var typeId = shipTypeIds.Count > 0 ? shipTypeIds[Math.Min(i, shipTypeIds.Count - 1)] : (int?)null;
-                var shipClass = shipClasses.Count > 0 ? shipClasses[Math.Min(i, shipClasses.Count - 1)] : IntelShipClass.Unknown;
-                var normalizedName = NormalizeShipDisplayName(name);
-                items.Add((normalizedName, typeId, ShipClassToOverlayIconKey(shipClass)));
-                if (!classByName.TryGetValue(normalizedName, out var existingClass) ||
-                    GetShipClassThreatTier(shipClass) > GetShipClassThreatTier(existingClass))
-                {
-                    classByName[normalizedName] = shipClass;
-                }
-            }
-        }
-
-        var grouped = items
-            .GroupBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
-            .Select(g =>
-            {
-                var first = g.First();
                 Bitmap? bitmap = null;
-                if (first.TypeId is { } id && IntelShipBitmapCache.TryGetValue(id, out var b))
+                if (summary.ShipTypeId is { } id && IntelShipBitmapCache.TryGetValue(id, out var cachedBitmap))
                 {
-                    bitmap = b;
+                    bitmap = cachedBitmap;
                 }
+
                 return new IntelOverlayShipSummaryCard
                 {
-                    ShipName = first.Name,
-                    Count = g.Count(),
-                    ThreatTier = classByName.TryGetValue(first.Name, out var groupClass) ? GetShipClassThreatTier(groupClass) : 0,
-                    ShipTypeId = first.TypeId,
-                    ShipIconKey = first.IconKey,
+                    ShipName = summary.ShipName,
+                    Count = summary.Count,
+                    ThreatTier = summary.ThreatTier,
+                    ShipTypeId = summary.ShipTypeId,
+                    ShipIconKey = summary.ShipIconKey,
                     ShipBitmap = bitmap
                 };
             })
-            .OrderByDescending(x => x.ThreatTier)
-            .ThenByDescending(x => x.Count)
-            .ThenBy(x => x.ShipName, StringComparer.OrdinalIgnoreCase)
             .ToList();
-
-        return grouped;
     }
 
     private async Task EnsureShipImagesForIntelCardsAsync()
@@ -5473,6 +5458,31 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         return SingularizeShipName(CapitalizeFirstLetter(value));
     }
 
+    private static int GetShipRolePriority(string shipName)
+    {
+        if (string.IsNullOrWhiteSpace(shipName))
+        {
+            return 0;
+        }
+
+        if (shipName.Contains("cyno", StringComparison.OrdinalIgnoreCase) ||
+            shipName.Contains("recon", StringComparison.OrdinalIgnoreCase) ||
+            ReconPriorityShipNames.Contains(shipName))
+        {
+            return 2;
+        }
+
+        if (shipName.Contains("hictor", StringComparison.OrdinalIgnoreCase) ||
+            shipName.Contains("dictor", StringComparison.OrdinalIgnoreCase) ||
+            shipName.Contains("interdictor", StringComparison.OrdinalIgnoreCase) ||
+            InterdictionPriorityShipNames.Contains(shipName))
+        {
+            return 1;
+        }
+
+        return 0;
+    }
+
     private static string SingularizeShipName(string value)
     {
         var trimmed = value.Trim();
@@ -5489,6 +5499,66 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         return trimmed.EndsWith("s", StringComparison.OrdinalIgnoreCase)
             ? trimmed[..^1]
             : trimmed;
+    }
+
+    private static IReadOnlyList<GroupedShipSummary> BuildGroupedShipSummaries(
+        IReadOnlyList<string> shipNames,
+        IReadOnlyList<int> shipTypeIds,
+        IReadOnlyList<IntelShipClass> shipClasses)
+    {
+        if (shipNames.Count == 0)
+        {
+            return [];
+        }
+
+        var entries = new List<ShipSummaryEntry>(shipNames.Count);
+        for (var i = 0; i < shipNames.Count; i++)
+        {
+            var raw = shipNames[i];
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                continue;
+            }
+
+            var normalizedName = NormalizeShipDisplayName(raw);
+            if (string.IsNullOrWhiteSpace(normalizedName))
+            {
+                continue;
+            }
+
+            var shipClass = shipClasses.Count > 0 ? shipClasses[Math.Min(i, shipClasses.Count - 1)] : IntelShipClass.Unknown;
+            var shipTypeId = shipTypeIds.Count > 0 ? shipTypeIds[Math.Min(i, shipTypeIds.Count - 1)] : (int?)null;
+            entries.Add(new ShipSummaryEntry(
+                normalizedName,
+                shipTypeId,
+                ShipClassToOverlayIconKey(shipClass),
+                GetShipClassThreatTier(shipClass),
+                GetShipRolePriority(normalizedName)));
+        }
+
+        return entries
+            .GroupBy(x => x.ShipName, StringComparer.OrdinalIgnoreCase)
+            .Select(g =>
+            {
+                var best = g
+                    .OrderByDescending(x => x.ThreatTier)
+                    .ThenByDescending(x => x.RolePriority)
+                    .ThenByDescending(x => x.ShipTypeId is > 0)
+                    .First();
+
+                return new GroupedShipSummary(
+                    best.ShipName,
+                    g.Count(),
+                    best.ThreatTier,
+                    best.RolePriority,
+                    best.ShipTypeId,
+                    best.ShipIconKey);
+            })
+            .OrderByDescending(x => x.ThreatTier)
+            .ThenByDescending(x => x.RolePriority)
+            .ThenByDescending(x => x.Count)
+            .ThenBy(x => x.ShipName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     private static string FormatCompactIsk(decimal value)
@@ -5520,41 +5590,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         IReadOnlyList<int> shipTypeIds,
         IReadOnlyList<IntelShipClass> shipClasses)
     {
-        var entries = new List<(string Name, string IconKey, int? TypeId)>();
-        for (var i = 0; i < shipNames.Count; i++)
-        {
-            var raw = shipNames[i];
-            if (string.IsNullOrWhiteSpace(raw))
+        return BuildGroupedShipSummaries(shipNames, shipTypeIds, shipClasses)
+            .Select(summary => new IntelMapHoverShip
             {
-                continue;
-            }
-
-            var normalized = NormalizeShipDisplayName(raw);
-            if (string.IsNullOrWhiteSpace(normalized))
-            {
-                continue;
-            }
-
-            var shipClass = shipClasses.Count > 0 ? shipClasses[Math.Min(i, shipClasses.Count - 1)] : IntelShipClass.Unknown;
-            var shipTypeId = shipTypeIds.Count > 0 ? shipTypeIds[Math.Min(i, shipTypeIds.Count - 1)] : (int?)null;
-            entries.Add((normalized, ShipClassToOverlayIconKey(shipClass), shipTypeId));
-        }
-
-        return entries
-            .GroupBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
-            .Select(g =>
-            {
-                var first = g.First();
-                return new IntelMapHoverShip
-                {
-                    ShipDisplayName = first.Name,
-                    ShipIconKey = first.IconKey,
-                    ShipTypeId = first.TypeId,
-                    Count = g.Count()
-                };
+                ShipDisplayName = summary.ShipName,
+                ShipIconKey = summary.ShipIconKey,
+                ShipTypeId = summary.ShipTypeId,
+                Count = summary.Count
             })
-            .OrderByDescending(x => x.Count)
-            .ThenBy(x => x.ShipDisplayName, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
 
@@ -5581,6 +5624,21 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             _ => "crosshair"
         };
     }
+
+    private sealed record ShipSummaryEntry(
+        string ShipName,
+        int? ShipTypeId,
+        string ShipIconKey,
+        int ThreatTier,
+        int RolePriority);
+
+    private sealed record GroupedShipSummary(
+        string ShipName,
+        int Count,
+        int ThreatTier,
+        int RolePriority,
+        int? ShipTypeId,
+        string ShipIconKey);
 
     private void RefreshIntelOverlayCardAges()
     {

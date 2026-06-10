@@ -241,6 +241,8 @@ public sealed class StormOverlayCard
 
 public sealed class IntelOverlayCard : System.ComponentModel.INotifyPropertyChanged
 {
+    private const int MaxVisibleShipSummaryCards = 8;
+    private const int MaxPopupVisibleShipSummaryCards = 8;
     private string _ageSummary = string.Empty;
     public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
     public required DateTime SortTimestampUtc { get; init; }
@@ -276,7 +278,14 @@ public sealed class IntelOverlayCard : System.ComponentModel.INotifyPropertyChan
     public bool PopupHasHiddenHostiles => PopupHiddenHostileCount > 0;
     public string PopupHiddenHostilesSummary => $"+{PopupHiddenHostileCount}";
     public required IReadOnlyList<IntelOverlayShipSummaryCard> ShipsSummary { get; init; }
-    public IReadOnlyList<IntelOverlayShipSummaryCard> PopupVisibleShips => ShipsSummary.Take(6).ToList();
+    public IReadOnlyList<IntelOverlayShipSummaryCard> VisibleShipsSummary => ShipsSummary.Take(MaxVisibleShipSummaryCards).ToList();
+    public int HiddenShipSummaryCount => Math.Max(0, ShipsSummary.Count - VisibleShipsSummary.Count);
+    public bool HasHiddenShipSummary => HiddenShipSummaryCount > 0;
+    public string HiddenShipSummaryLabel => $"+{HiddenShipSummaryCount} more";
+    public IReadOnlyList<IntelOverlayShipSummaryCard> PopupVisibleShips => ShipsSummary.Take(MaxPopupVisibleShipSummaryCards).ToList();
+    public int PopupHiddenShipSummaryCount => Math.Max(0, ShipsSummary.Count - PopupVisibleShips.Count);
+    public bool PopupHasHiddenShipSummary => PopupHiddenShipSummaryCount > 0;
+    public string PopupHiddenShipSummaryLabel => $"+{PopupHiddenShipSummaryCount} more";
     public required string ShipClassSummary { get; init; }
     public required int HostileCount { get; init; }
     public required string ShipBadgeBackgroundHex { get; init; }
@@ -288,6 +297,7 @@ public sealed class IntelOverlayCard : System.ComponentModel.INotifyPropertyChan
 
 public sealed class ZkillmailOverlayCard : System.ComponentModel.INotifyPropertyChanged
 {
+    private const int MaxVisibleShipSummaryCards = 8;
     private string _ageSummary = string.Empty;
     public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
     public required DateTime TimestampUtc { get; init; }
@@ -320,4 +330,8 @@ public sealed class ZkillmailOverlayCard : System.ComponentModel.INotifyProperty
     public bool HasHiddenAttackers => HiddenAttackerCount > 0;
     public string HiddenAttackersSummary => $"+{HiddenAttackerCount}";
     public required IReadOnlyList<IntelOverlayShipSummaryCard> ShipsSummary { get; init; }
+    public IReadOnlyList<IntelOverlayShipSummaryCard> VisibleShipsSummary => ShipsSummary.Take(MaxVisibleShipSummaryCards).ToList();
+    public int HiddenShipSummaryCount => Math.Max(0, ShipsSummary.Count - VisibleShipsSummary.Count);
+    public bool HasHiddenShipSummary => HiddenShipSummaryCount > 0;
+    public string HiddenShipSummaryLabel => $"+{HiddenShipSummaryCount} more";
 }

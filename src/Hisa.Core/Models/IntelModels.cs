@@ -106,6 +106,7 @@ public sealed class IntelMapHoverReport
     public required string ReporterName { get; init; }
     public required string MessageText { get; init; }
     public required IReadOnlyList<IntelMapHoverShip> Ships { get; init; }
+    public int HiddenShipCount { get; init; }
     public required IReadOnlyList<IntelMapHoverHostile> Hostiles { get; init; }
     public int HiddenHostileCount { get; init; }
     public int HostileCount { get; init; }

@@ -57,24 +57,37 @@
                   <ItemsControl ItemsSource="{Binding IntelCard.PopupVisibleShips}">
                     <ItemsControl.ItemsPanel>
                       <ItemsPanelTemplate>
-                        <WrapPanel Orientation="Horizontal" ItemWidth="74" />
+                        <WrapPanel Orientation="Horizontal" ItemWidth="92" />
                       </ItemsPanelTemplate>
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                       <DataTemplate>
-                        <Border HorizontalAlignment="Left" Margin="0,0,4,4" Background="#172234" BorderBrush="#2A3C58" BorderThickness="1" CornerRadius="4" Padding="3,1" Width="70">
+                        <Border HorizontalAlignment="Left" Margin="0,0,4,4" Background="#172234" BorderBrush="#2A3C58" BorderThickness="1" CornerRadius="4" Padding="3,1" Width="88">
                           <StackPanel Orientation="Horizontal" Spacing="3">
                             <Image Width="16" Height="16" Stretch="UniformToFill" Source="{Binding ShipBitmap}" IsVisible="{Binding HasShipBitmap}" />
                             <Border Width="16" Height="16" Background="#101927" BorderBrush="#2A3C58" BorderThickness="1" IsVisible="{Binding HasNoShipBitmap}">
                               <TextBlock Text="?" Foreground="#BFD8FF" HorizontalAlignment="Center" VerticalAlignment="Center" />
                             </Border>
-                            <TextBlock Text="{Binding ShipName}" Foreground="#EAF2FF" FontSize="8" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="34" />
-                            <TextBlock Text="{Binding Count, StringFormat='x{0}'}" Foreground="#9DB8D8" FontSize="8" VerticalAlignment="Center" />
+                            <TextBlock Foreground="#EAF2FF" FontSize="8" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="62">
+                              <Run Text="{Binding Count}" />
+                              <Run Text="x " />
+                              <Run Text="{Binding ShipName}" />
+                            </TextBlock>
                           </StackPanel>
                         </Border>
                       </DataTemplate>
                     </ItemsControl.ItemTemplate>
                   </ItemsControl>
+                  <Border HorizontalAlignment="Left"
+                          Margin="0,0,4,4"
+                          Background="#223248"
+                          BorderBrush="#3A5776"
+                          BorderThickness="1"
+                          CornerRadius="4"
+                          Padding="5,1"
+                          IsVisible="{Binding IntelCard.PopupHasHiddenShipSummary}">
+                    <TextBlock Text="{Binding IntelCard.PopupHiddenShipSummaryLabel}" Foreground="#CDE1F8" FontSize="8" FontWeight="SemiBold" />
+                  </Border>
                   <ItemsControl ItemsSource="{Binding IntelCard.PopupVisibleHostiles}">
                     <ItemsControl.ItemTemplate>
                       <DataTemplate>

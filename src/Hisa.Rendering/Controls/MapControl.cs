@@ -4723,7 +4723,7 @@ public sealed class MapControl : Control
                     .Where(s => !string.IsNullOrWhiteSpace(s.ShipDisplayName) &&
                                 !string.Equals(s.ShipDisplayName, "Unknown", StringComparison.OrdinalIgnoreCase))
                     .Select(s => (s, new FormattedText(
-                        $"{s.ShipDisplayName} x{s.Count}",
+                        $"{s.Count}x {s.ShipDisplayName}",
                         CultureInfo.InvariantCulture,
                         FlowDirection.LeftToRight,
                         new Typeface("Inter", FontStyle.Normal, FontWeight.SemiBold),
@@ -4763,9 +4763,19 @@ public sealed class MapControl : Control
                 var shipsWidth = ships.Count == 0 ? 0 : ships.Max(x => intelIdentityIconSize + 4 + x.Item2.Width);
                 var shipsHeight = ships.Sum(x => Math.Max(intelIdentityIconSize, x.Item2.Height) + 2);
                 var identitiesHeight = identities.Count * (intelIdentityIconSize + intelIdentityGap);
-                var overflow = report.HiddenHostileCount > 0
+                var overflowParts = new List<string>();
+                if (report.HiddenShipCount > 0)
+                {
+                    overflowParts.Add($"+{report.HiddenShipCount} ships");
+                }
+                if (report.HiddenHostileCount > 0)
+                {
+                    overflowParts.Add($"+{report.HiddenHostileCount} hostiles");
+                }
+
+                var overflow = overflowParts.Count > 0
                     ? new FormattedText(
-                        $"+{report.HiddenHostileCount}",
+                        string.Join("  ", overflowParts),
                         CultureInfo.InvariantCulture,
                         FlowDirection.LeftToRight,
                         new Typeface("Inter", FontStyle.Normal, FontWeight.Bold),

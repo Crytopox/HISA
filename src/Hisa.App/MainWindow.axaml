@@ -661,10 +661,10 @@
                             </Border>
                           </WrapPanel>
 
-                          <ItemsControl ItemsSource="{Binding ShipsSummary}">
+                          <ItemsControl ItemsSource="{Binding VisibleShipsSummary}">
                             <ItemsControl.ItemsPanel>
                               <ItemsPanelTemplate>
-                                <WrapPanel />
+                                <WrapPanel ItemWidth="128" />
                               </ItemsPanelTemplate>
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
@@ -675,19 +675,30 @@
                                         CornerRadius="4"
                                         Padding="3"
                                         Margin="0,0,4,4"
+                                        Width="122"
                                         ToolTip.Tip="{Binding ShipName}">
                                   <StackPanel Orientation="Horizontal" Spacing="4">
                                     <Image Width="24" Height="24" Source="{Binding ShipBitmap}" IsVisible="{Binding HasShipBitmap}" />
-                                    <TextBlock Foreground="#EAF2FF" FontSize="10" VerticalAlignment="Center">
-                                      <Run Text="{Binding ShipName}" />
-                                      <Run Text=" x" />
+                                    <TextBlock Foreground="#EAF2FF" FontSize="10" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="86">
                                       <Run Text="{Binding Count}" />
+                                      <Run Text="x " />
+                                      <Run Text="{Binding ShipName}" />
                                     </TextBlock>
                                   </StackPanel>
                                 </Border>
                               </DataTemplate>
                             </ItemsControl.ItemTemplate>
                           </ItemsControl>
+                          <Border Background="#223248"
+                                  BorderBrush="#3A5776"
+                                  BorderThickness="1"
+                                  CornerRadius="4"
+                                  Padding="6,2"
+                                  Margin="0,0,4,4"
+                                  HorizontalAlignment="Left"
+                                  IsVisible="{Binding HasHiddenShipSummary}">
+                            <TextBlock Text="{Binding HiddenShipSummaryLabel}" Foreground="#CDE1F8" FontSize="10" FontWeight="SemiBold" />
+                          </Border>
 
                           <ItemsControl ItemsSource="{Binding VisibleHostiles}">
                             <ItemsControl.ItemTemplate>
