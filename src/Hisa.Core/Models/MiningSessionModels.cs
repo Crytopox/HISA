@@ -55,6 +55,7 @@ public sealed class MiningSessionSnapshot
     public required int CharacterId { get; init; }
     public required string CharacterName { get; init; }
     public required DateTime SessionStartedUtc { get; init; }
+    public required DateTime FirstActivityUtc { get; init; }
     public required DateTime LastActivityUtc { get; init; }
     public required string SourceFilePath { get; init; }
     public int? CurrentEfficiencyPercent { get; init; }
@@ -66,6 +67,7 @@ public sealed class MiningCharacterStatsSnapshot
     public required int CharacterId { get; init; }
     public required string CharacterName { get; init; }
     public required DateTime SessionStartedUtc { get; init; }
+    public required DateTime FirstActivityUtc { get; init; }
     public required DateTime LastActivityUtc { get; init; }
     public required string SourceFilePath { get; init; }
     public string PrimaryOreName { get; init; } = string.Empty;

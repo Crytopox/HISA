@@ -75,25 +75,7 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
             return new Dictionary<int, MiningCharacterStatsSnapshot>();
         }
 
-        var windowEndUtc = DateTime.UtcNow;
-        var cutoffUtc = windowEndUtc - rangeMode switch
-        {
-            MiningStatsRangeMode.Last1Hour => TimeSpan.FromHours(1),
-            MiningStatsRangeMode.Last2Hours => TimeSpan.FromHours(2),
-            MiningStatsRangeMode.Last4Hours => TimeSpan.FromHours(4),
-            MiningStatsRangeMode.Last6Hours => TimeSpan.FromHours(6),
-            MiningStatsRangeMode.Last8Hours => TimeSpan.FromHours(8),
-            MiningStatsRangeMode.Last12Hours => TimeSpan.FromHours(12),
-            MiningStatsRangeMode.Last24Hours => TimeSpan.FromHours(24),
-            MiningStatsRangeMode.Last3Days => TimeSpan.FromDays(3),
-            MiningStatsRangeMode.Last7Days => TimeSpan.FromDays(7),
-            _ => TimeSpan.Zero
-        };
-
-        var raw = await GameLogMiningHistoryReader.ReadAsync(gameLogsDirectory, cutoffUtc, cancellationToken);
-        return raw.ToDictionary(
-            kvp => kvp.Key,
-            kvp => BuildCharacterSnapshot(kvp.Value, cutoffUtc, windowEndUtc));
+        return await GetAdaptiveWindowSnapshotAsync(gameLogsDirectory, GetRangeWindow(rangeMode), cancellationToken);
     }
 
     public async Task<IReadOnlyDictionary<int, MiningCharacterStatsSnapshot>> GetRollingSnapshotAsync(
@@ -108,11 +90,7 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
             return new Dictionary<int, MiningCharacterStatsSnapshot>();
         }
 
-        var cutoffUtc = DateTime.UtcNow - window;
-        var raw = await GameLogMiningHistoryReader.ReadAsync(gameLogsDirectory, cutoffUtc, cancellationToken);
-        return raw.ToDictionary(
-            kvp => kvp.Key,
-            kvp => BuildCharacterSnapshot(kvp.Value, cutoffUtc));
+        return await GetAdaptiveWindowSnapshotAsync(gameLogsDirectory, window, cancellationToken);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -188,7 +166,10 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
         DateTime baselineUtc,
         DateTime? rateWindowEndUtc = null)
     {
-        var startUtc = session.SessionStartedUtc > baselineUtc ? session.SessionStartedUtc : baselineUtc;
+        var activityStartUtc = session.FirstActivityUtc > session.SessionStartedUtc
+            ? session.FirstActivityUtc
+            : session.SessionStartedUtc;
+        var startUtc = activityStartUtc > baselineUtc ? activityStartUtc : baselineUtc;
         var rateWindowEnd = rateWindowEndUtc ?? session.LastActivityUtc;
         var elapsed = rateWindowEnd > startUtc
             ? rateWindowEnd - startUtc
@@ -244,6 +225,7 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
             CharacterId = session.CharacterId,
             CharacterName = session.CharacterName,
             SessionStartedUtc = startUtc,
+            FirstActivityUtc = session.FirstActivityUtc,
             LastActivityUtc = session.LastActivityUtc,
             SourceFilePath = session.SourceFilePath,
             PrimaryOreName = oreStats.FirstOrDefault()?.OreName ?? string.Empty,
@@ -266,6 +248,63 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
             WasteEstimatedIskPerHour = totalWasteEstimatedIsk / (decimal)elapsedHours,
             EfficiencyRatio = efficiencyRatio,
             Ores = oreStats
+        };
+    }
+
+    private async Task<IReadOnlyDictionary<int, MiningCharacterStatsSnapshot>> GetAdaptiveWindowSnapshotAsync(
+        string gameLogsDirectory,
+        TimeSpan window,
+        CancellationToken cancellationToken)
+    {
+        var now = DateTime.UtcNow;
+        var initialCutoffUtc = now - window;
+        var raw = await GameLogMiningHistoryReader.ReadAsync(gameLogsDirectory, initialCutoffUtc, cancellationToken);
+
+        if (raw.Count == 0)
+        {
+            var fullHistory = await GameLogMiningHistoryReader.ReadAsync(gameLogsDirectory, DateTime.MinValue, cancellationToken);
+            if (fullHistory.Count == 0)
+            {
+                return new Dictionary<int, MiningCharacterStatsSnapshot>();
+            }
+
+            var latestActivityUtc = fullHistory.Values.Max(x => x.LastActivityUtc);
+            var adaptiveStartUtc = latestActivityUtc - window;
+            raw = adaptiveStartUtc <= DateTime.MinValue
+                ? fullHistory
+                : await GameLogMiningHistoryReader.ReadAsync(gameLogsDirectory, adaptiveStartUtc, cancellationToken);
+
+            return raw.ToDictionary(
+                kvp => kvp.Key,
+                kvp => BuildCharacterSnapshot(kvp.Value, adaptiveStartUtc, latestActivityUtc));
+        }
+
+        var latestWindowActivityUtc = raw.Values.Max(x => x.LastActivityUtc);
+        var latestAnchoredStartUtc = latestWindowActivityUtc - window;
+        if (latestAnchoredStartUtc < initialCutoffUtc)
+        {
+            raw = await GameLogMiningHistoryReader.ReadAsync(gameLogsDirectory, latestAnchoredStartUtc, cancellationToken);
+        }
+
+        return raw.ToDictionary(
+            kvp => kvp.Key,
+            kvp => BuildCharacterSnapshot(kvp.Value, latestAnchoredStartUtc, latestWindowActivityUtc));
+    }
+
+    private static TimeSpan GetRangeWindow(MiningStatsRangeMode rangeMode)
+    {
+        return rangeMode switch
+        {
+            MiningStatsRangeMode.Last1Hour => TimeSpan.FromHours(1),
+            MiningStatsRangeMode.Last2Hours => TimeSpan.FromHours(2),
+            MiningStatsRangeMode.Last4Hours => TimeSpan.FromHours(4),
+            MiningStatsRangeMode.Last6Hours => TimeSpan.FromHours(6),
+            MiningStatsRangeMode.Last8Hours => TimeSpan.FromHours(8),
+            MiningStatsRangeMode.Last12Hours => TimeSpan.FromHours(12),
+            MiningStatsRangeMode.Last24Hours => TimeSpan.FromHours(24),
+            MiningStatsRangeMode.Last3Days => TimeSpan.FromDays(3),
+            MiningStatsRangeMode.Last7Days => TimeSpan.FromDays(7),
+            _ => TimeSpan.Zero
         };
     }
 

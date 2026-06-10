@@ -281,6 +281,11 @@ public sealed class GameLogMiningTracker : IDisposable
     private static void ApplyEvent(TrackedGameLogFile tracked, MiningLogEvent miningEvent)
     {
         tracked.LastActivityUtc = miningEvent.TimestampUtc;
+        if (tracked.FirstActivityUtc == default || miningEvent.TimestampUtc < tracked.FirstActivityUtc)
+        {
+            tracked.FirstActivityUtc = miningEvent.TimestampUtc;
+        }
+
         switch (miningEvent.Kind)
         {
             case MiningLogEventKind.Yield:
@@ -352,6 +357,7 @@ public sealed class GameLogMiningTracker : IDisposable
                 CharacterId = tracked.CharacterId,
                 CharacterName = tracked.CharacterName ?? $"Character {tracked.CharacterId}",
                 SessionStartedUtc = tracked.SessionStartedUtc,
+                FirstActivityUtc = tracked.FirstActivityUtc == default ? tracked.SessionStartedUtc : tracked.FirstActivityUtc,
                 LastActivityUtc = tracked.LastActivityUtc == default ? tracked.SessionStartedUtc : tracked.LastActivityUtc,
                 SourceFilePath = tracked.FilePath,
                 CurrentEfficiencyPercent = tracked.CurrentEfficiencyPercent,
@@ -515,6 +521,7 @@ public sealed class GameLogMiningTracker : IDisposable
         public long ReadOffset { get; set; }
         public string? CharacterName { get; set; }
         public string? LastOreName { get; set; }
+        public DateTime FirstActivityUtc { get; set; }
         public DateTime LastActivityUtc { get; set; }
         public int? CurrentEfficiencyPercent { get; set; }
         public Dictionary<string, MutableOreTotals> OresByName { get; } = new(StringComparer.OrdinalIgnoreCase);

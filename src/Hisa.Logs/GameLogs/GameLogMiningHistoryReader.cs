@@ -58,6 +58,7 @@ public static class GameLogMiningHistoryReader
             {
                 CharacterId = key.CharacterId,
                 SessionStartedUtc = key.SessionStartedUtc,
+                FirstActivityUtc = default,
                 LastActivityUtc = key.SessionStartedUtc,
                 SourceFilePath = filePath
             };
@@ -112,6 +113,10 @@ public static class GameLogMiningHistoryReader
             aggregate.LastActivityUtc = miningEvent.TimestampUtc > aggregate.LastActivityUtc
                 ? miningEvent.TimestampUtc
                 : aggregate.LastActivityUtc;
+            if (aggregate.FirstActivityUtc == default || miningEvent.TimestampUtc < aggregate.FirstActivityUtc)
+            {
+                aggregate.FirstActivityUtc = miningEvent.TimestampUtc;
+            }
 
             switch (miningEvent.Kind)
             {
@@ -179,6 +184,7 @@ public static class GameLogMiningHistoryReader
             CharacterId = aggregate.CharacterId,
             CharacterName = string.IsNullOrWhiteSpace(aggregate.CharacterName) ? $"Character {aggregate.CharacterId}" : aggregate.CharacterName,
             SessionStartedUtc = aggregate.SessionStartedUtc,
+            FirstActivityUtc = aggregate.FirstActivityUtc == default ? aggregate.SessionStartedUtc : aggregate.FirstActivityUtc,
             LastActivityUtc = aggregate.LastActivityUtc,
             SourceFilePath = aggregate.SourceFilePath,
             CurrentEfficiencyPercent = aggregate.CurrentEfficiencyPercent,
@@ -191,6 +197,7 @@ public static class GameLogMiningHistoryReader
         public required int CharacterId { get; init; }
         public string CharacterName { get; set; } = string.Empty;
         public required DateTime SessionStartedUtc { get; set; }
+        public required DateTime FirstActivityUtc { get; set; }
         public required DateTime LastActivityUtc { get; set; }
         public required string SourceFilePath { get; set; }
         public string? LastOreName { get; set; }
