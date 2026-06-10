@@ -259,38 +259,17 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
         CancellationToken cancellationToken)
     {
         var now = DateTime.UtcNow;
-        var initialCutoffUtc = now - window;
-        var raw = await GameLogMiningHistoryReader.ReadAsync(gameLogsDirectory, initialCutoffUtc, cancellationToken);
+        var cutoffUtc = now - window;
+        var raw = await GameLogMiningHistoryReader.ReadAsync(gameLogsDirectory, cutoffUtc, cancellationToken);
 
         if (raw.Count == 0)
         {
-            var fullHistory = await GameLogMiningHistoryReader.ReadAsync(gameLogsDirectory, DateTime.MinValue, cancellationToken);
-            if (fullHistory.Count == 0)
-            {
-                return new Dictionary<int, MiningCharacterStatsSnapshot>();
-            }
-
-            var latestActivityUtc = fullHistory.Values.Max(x => x.LastActivityUtc);
-            var adaptiveStartUtc = latestActivityUtc - window;
-            raw = adaptiveStartUtc <= DateTime.MinValue
-                ? fullHistory
-                : await GameLogMiningHistoryReader.ReadAsync(gameLogsDirectory, adaptiveStartUtc, cancellationToken);
-
-            return raw.ToDictionary(
-                kvp => kvp.Key,
-                kvp => BuildCharacterSnapshot(kvp.Value, adaptiveStartUtc, latestActivityUtc));
-        }
-
-        var latestWindowActivityUtc = raw.Values.Max(x => x.LastActivityUtc);
-        var latestAnchoredStartUtc = latestWindowActivityUtc - window;
-        if (latestAnchoredStartUtc < initialCutoffUtc)
-        {
-            raw = await GameLogMiningHistoryReader.ReadAsync(gameLogsDirectory, latestAnchoredStartUtc, cancellationToken);
+            return new Dictionary<int, MiningCharacterStatsSnapshot>();
         }
 
         return raw.ToDictionary(
             kvp => kvp.Key,
-            kvp => BuildCharacterSnapshot(kvp.Value, latestAnchoredStartUtc, latestWindowActivityUtc));
+            kvp => BuildCharacterSnapshot(kvp.Value, cutoffUtc, now));
     }
 
     private static TimeSpan GetRangeWindow(MiningStatsRangeMode rangeMode)
