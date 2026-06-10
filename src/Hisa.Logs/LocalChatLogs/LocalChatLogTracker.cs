@@ -15,6 +15,7 @@ public sealed partial class LocalChatLogTracker : IDisposable
     private readonly Dictionary<int, LocalCharacterSystemChange> _latestByCharacterId = [];
     private readonly TimeSpan _scanInterval = TimeSpan.FromSeconds(15);
     private TimeSpan _initialScanLookback = TimeSpan.FromHours(12);
+    private HashSet<string> _startupSeedPaths = new(StringComparer.OrdinalIgnoreCase);
 
     private FileSystemWatcher? _watcher;
     private CancellationTokenSource? _cts;
@@ -52,6 +53,7 @@ public sealed partial class LocalChatLogTracker : IDisposable
             _latestByCharacterId.Clear();
         }
         _dirtyFiles.Clear();
+        _startupSeedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         _chatLogsDirectory = fullPath;
         _initialScanLookback = initialScanLookback is { } lb && lb > TimeSpan.Zero
@@ -59,7 +61,7 @@ public sealed partial class LocalChatLogTracker : IDisposable
             : TimeSpan.FromHours(12);
         _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         SetupWatcher(fullPath);
-        EnqueueAllKnownFiles(fullPath, fromWatcherEvent: false);
+        EnqueueAllKnownFiles(fullPath, treatNewestPerCharacterAsStartupSeed: true);
         _workerTask = Task.Run(() => RunAsync(_cts.Token), _cts.Token);
 
         return Task.CompletedTask;
@@ -92,7 +94,7 @@ public sealed partial class LocalChatLogTracker : IDisposable
                 var now = DateTime.UtcNow;
                 if (now >= nextScanAtUtc && _chatLogsDirectory is not null)
                 {
-                    EnqueueAllKnownFiles(_chatLogsDirectory, fromWatcherEvent: false);
+                    EnqueueAllKnownFiles(_chatLogsDirectory, treatNewestPerCharacterAsStartupSeed: false);
                     nextScanAtUtc = now + _scanInterval;
                 }
 
@@ -388,11 +390,11 @@ public sealed partial class LocalChatLogTracker : IDisposable
     {
         if (_chatLogsDirectory is not null)
         {
-            EnqueueAllKnownFiles(_chatLogsDirectory, fromWatcherEvent: false);
+            EnqueueAllKnownFiles(_chatLogsDirectory, treatNewestPerCharacterAsStartupSeed: false);
         }
     }
 
-    private void EnqueueAllKnownFiles(string directory, bool fromWatcherEvent)
+    private void EnqueueAllKnownFiles(string directory, bool treatNewestPerCharacterAsStartupSeed)
     {
         var newestFileByCharacterId = new Dictionary<int, (string Path, DateTime SessionStartedUtc)>();
         foreach (var filePath in Directory.EnumerateFiles(directory, "Local_*.txt", SearchOption.TopDirectoryOnly))
@@ -412,8 +414,22 @@ public sealed partial class LocalChatLogTracker : IDisposable
             }
         }
 
+        HashSet<string>? startupSeedPaths = null;
+        if (treatNewestPerCharacterAsStartupSeed)
+        {
+            startupSeedPaths = newestFileByCharacterId.Values
+                .Select(x => x.Path)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            lock (_stateGate)
+            {
+                _startupSeedPaths = startupSeedPaths;
+            }
+        }
+
         foreach (var newest in newestFileByCharacterId.Values)
         {
+            var fromWatcherEvent = startupSeedPaths is null || !startupSeedPaths.Contains(newest.Path);
             _dirtyFiles.AddOrUpdate(newest.Path, fromWatcherEvent ? (byte)1 : (byte)0, (_, old) =>
             {
                 if (old == 1 || fromWatcherEvent)
@@ -428,6 +444,14 @@ public sealed partial class LocalChatLogTracker : IDisposable
 
     private bool ShouldTrackSessionFromInitialScan(LocalChatLogFileKey sessionKey, string fullPath)
     {
+        lock (_stateGate)
+        {
+            if (_startupSeedPaths.Contains(fullPath))
+            {
+                return true;
+            }
+        }
+
         lock (_stateGate)
         {
             if (_activeByPath.ContainsKey(fullPath) || _activeByCharacterId.ContainsKey(sessionKey.CharacterId))
