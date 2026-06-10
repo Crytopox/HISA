@@ -23,6 +23,7 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<MiningSessionLogFeedHostedService> _logger;
     private readonly GameLogMiningTracker _tracker = new();
+    private readonly HistoricalSnapshotCache _historicalSnapshotCache = new();
     private readonly object _gate = new();
     private readonly Dictionary<int, MiningCharacterStatsSnapshot> _snapshotByCharacterId = [];
     private Dictionary<string, RawOreReferenceValue> _rawOreValuesByName = new(StringComparer.OrdinalIgnoreCase);
@@ -260,7 +261,7 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
     {
         var now = DateTime.UtcNow;
         var cutoffUtc = now - window;
-        var raw = await GameLogMiningHistoryReader.ReadAsync(gameLogsDirectory, cutoffUtc, cancellationToken);
+        var raw = await _historicalSnapshotCache.ReadAsync(gameLogsDirectory, cutoffUtc, cancellationToken);
 
         if (raw.Count == 0)
         {
@@ -588,5 +589,363 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
         public string OreName { get; init; } = string.Empty;
         public double OreVolume { get; init; }
         public double ExpectedRandomValuePerOre { get; init; }
+    }
+
+    private sealed class HistoricalSnapshotCache
+    {
+        private readonly SemaphoreSlim _gate = new(1, 1);
+        private readonly Dictionary<string, CachedFileState> _fileStateByPath = new(StringComparer.OrdinalIgnoreCase);
+
+        public async Task<IReadOnlyDictionary<int, MiningSessionSnapshot>> ReadAsync(
+            string gameLogsDirectory,
+            DateTime cutoffUtc,
+            CancellationToken cancellationToken)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(gameLogsDirectory);
+
+            var fullPath = Path.GetFullPath(gameLogsDirectory);
+            if (!Directory.Exists(fullPath))
+            {
+                throw new DirectoryNotFoundException($"GameLogs directory was not found: {fullPath}");
+            }
+
+            await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                var relevantFiles = Directory.EnumerateFiles(fullPath, "*.txt", SearchOption.TopDirectoryOnly)
+                    .Select(BuildDescriptor)
+                    .Where(x => x is not null)
+                    .Select(x => x!)
+                    .Where(x => x.SessionStartedUtc >= cutoffUtc || x.LastWriteUtc >= cutoffUtc)
+                    .OrderBy(x => x.SessionStartedUtc)
+                    .ThenBy(x => x.Path, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                foreach (var cachedPath in _fileStateByPath.Keys.ToList())
+                {
+                    if (!File.Exists(cachedPath))
+                    {
+                        _fileStateByPath.Remove(cachedPath);
+                    }
+                }
+
+                var aggregateByCharacterId = new Dictionary<int, AggregateCharacterState>();
+                foreach (var file in relevantFiles)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var state = GetOrParseFile(file, cancellationToken);
+                    ApplyFile(state, cutoffUtc, aggregateByCharacterId);
+                }
+
+                return aggregateByCharacterId
+                    .Select(kvp => new { kvp.Key, Snapshot = BuildSnapshot(kvp.Value) })
+                    .Where(x => x.Snapshot is not null)
+                    .ToDictionary(x => x.Key, x => x.Snapshot!);
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
+        private CachedFileState GetOrParseFile(FileDescriptor descriptor, CancellationToken cancellationToken)
+        {
+            if (_fileStateByPath.TryGetValue(descriptor.Path, out var cached))
+            {
+                if (cached.LastWriteUtc == descriptor.LastWriteUtc && cached.Length == descriptor.Length)
+                {
+                    return cached;
+                }
+
+                if (descriptor.Length >= cached.ReadOffset)
+                {
+                    AppendFile(cached, descriptor, cancellationToken);
+                    return cached;
+                }
+            }
+
+            var parsed = ParseFile(descriptor, cancellationToken);
+            _fileStateByPath[descriptor.Path] = parsed;
+            return parsed;
+        }
+
+        private static FileDescriptor? BuildDescriptor(string path)
+        {
+            var fileName = Path.GetFileName(path);
+            var stem = Path.GetFileNameWithoutExtension(fileName);
+            var parts = stem.Split('_');
+            if (parts.Length != 3 ||
+                !DateTime.TryParseExact(
+                    $"{parts[0]} {parts[1]}",
+                    "yyyyMMdd HHmmss",
+                    null,
+                    System.Globalization.DateTimeStyles.None,
+                    out var sessionStartedUtc) ||
+                !int.TryParse(parts[2], out var characterId))
+            {
+                return null;
+            }
+
+            var info = new FileInfo(path);
+            return new FileDescriptor(
+                path,
+                characterId,
+                DateTime.SpecifyKind(sessionStartedUtc, DateTimeKind.Utc),
+                info.LastWriteTimeUtc,
+                info.Exists ? info.Length : 0L);
+        }
+
+        private static CachedFileState ParseFile(FileDescriptor descriptor, CancellationToken cancellationToken)
+        {
+            using var stream = new FileStream(descriptor.Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using var reader = new StreamReader(stream, detectEncodingFromByteOrderMarks: true);
+
+            string? listener = null;
+            string? line;
+            var inHeader = false;
+            while ((line = reader.ReadLine()) is not null)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var normalized = line.TrimStart('\uFEFF').Trim();
+                if (normalized.Length == 0)
+                {
+                    continue;
+                }
+
+                if (normalized.StartsWith("------------------------------------------------------------", StringComparison.Ordinal))
+                {
+                    inHeader = !inHeader;
+                    if (!inHeader)
+                    {
+                        break;
+                    }
+
+                    continue;
+                }
+
+                if (!inHeader)
+                {
+                    continue;
+                }
+
+                var parsedListener = GameLogMiningParser.TryParseListener(normalized);
+                if (!string.IsNullOrWhiteSpace(parsedListener))
+                {
+                    listener = parsedListener;
+                }
+            }
+
+            var events = new List<MiningLogEvent>();
+            while ((line = reader.ReadLine()) is not null)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (GameLogMiningParser.TryParseMiningEvent(line, out var miningEvent))
+                {
+                    events.Add(miningEvent);
+                }
+            }
+
+            return new CachedFileState
+            {
+                Path = descriptor.Path,
+                CharacterId = descriptor.CharacterId,
+                SessionStartedUtc = descriptor.SessionStartedUtc,
+                LastWriteUtc = descriptor.LastWriteUtc,
+                Length = descriptor.Length,
+                ReadOffset = stream.Position,
+                ListenerName = listener,
+                Events = events
+            };
+        }
+
+        private static void AppendFile(CachedFileState cached, FileDescriptor descriptor, CancellationToken cancellationToken)
+        {
+            using var stream = new FileStream(descriptor.Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            if (cached.ReadOffset > stream.Length)
+            {
+                throw new IOException("Cached read offset exceeded file length.");
+            }
+
+            stream.Position = cached.ReadOffset;
+            using var reader = new StreamReader(stream, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
+
+            string? line;
+            while ((line = reader.ReadLine()) is not null)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (GameLogMiningParser.TryParseMiningEvent(line, out var miningEvent))
+                {
+                    cached.Events.Add(miningEvent);
+                }
+            }
+
+            cached.LastWriteUtc = descriptor.LastWriteUtc;
+            cached.Length = descriptor.Length;
+            cached.ReadOffset = stream.Position;
+        }
+
+        private static void ApplyFile(
+            CachedFileState state,
+            DateTime cutoffUtc,
+            Dictionary<int, AggregateCharacterState> aggregateByCharacterId)
+        {
+            if (!aggregateByCharacterId.TryGetValue(state.CharacterId, out var aggregate))
+            {
+                aggregate = new AggregateCharacterState
+                {
+                    CharacterId = state.CharacterId,
+                    CharacterName = string.IsNullOrWhiteSpace(state.ListenerName) ? $"Character {state.CharacterId}" : state.ListenerName,
+                    SessionStartedUtc = state.SessionStartedUtc,
+                    FirstActivityUtc = default,
+                    LastActivityUtc = state.SessionStartedUtc,
+                    SourceFilePath = state.Path
+                };
+                aggregateByCharacterId[state.CharacterId] = aggregate;
+            }
+            else if (state.SessionStartedUtc < aggregate.SessionStartedUtc)
+            {
+                aggregate.SessionStartedUtc = state.SessionStartedUtc;
+            }
+
+            if (!string.IsNullOrWhiteSpace(state.ListenerName))
+            {
+                aggregate.CharacterName = state.ListenerName;
+            }
+
+            var currentEfficiencyPercent = aggregate.CurrentEfficiencyPercent;
+            string? lastOreName = null;
+            foreach (var miningEvent in state.Events)
+            {
+                if (miningEvent.Kind == MiningLogEventKind.SiteEfficiencyChanged)
+                {
+                    currentEfficiencyPercent = miningEvent.EfficiencyPercent;
+                }
+
+                if (!string.IsNullOrWhiteSpace(miningEvent.OreName))
+                {
+                    lastOreName = miningEvent.OreName;
+                }
+
+                if (miningEvent.TimestampUtc < cutoffUtc)
+                {
+                    continue;
+                }
+
+                aggregate.LastActivityUtc = miningEvent.TimestampUtc > aggregate.LastActivityUtc
+                    ? miningEvent.TimestampUtc
+                    : aggregate.LastActivityUtc;
+                if (aggregate.FirstActivityUtc == default || miningEvent.TimestampUtc < aggregate.FirstActivityUtc)
+                {
+                    aggregate.FirstActivityUtc = miningEvent.TimestampUtc;
+                }
+
+                switch (miningEvent.Kind)
+                {
+                    case MiningLogEventKind.Yield:
+                        var yieldOre = GetOrCreateOre(aggregate, miningEvent.OreName);
+                        yieldOre.MinedUnits += miningEvent.Units;
+                        if (miningEvent.IsCriticalBonus)
+                        {
+                            yieldOre.BonusUnits += miningEvent.Units;
+                        }
+
+                        yieldOre.LastMinedUtc = miningEvent.TimestampUtc;
+                        if (currentEfficiencyPercent is { } yieldEfficiency)
+                        {
+                            yieldOre.LastKnownEfficiencyPercent = yieldEfficiency;
+                        }
+                        break;
+                    case MiningLogEventKind.Residue:
+                        var residueOre = GetOrCreateOre(aggregate, lastOreName);
+                        residueOre.WasteUnits += miningEvent.Units;
+                        break;
+                    case MiningLogEventKind.SiteEfficiencyChanged:
+                        aggregate.CurrentEfficiencyPercent = currentEfficiencyPercent;
+                        break;
+                }
+            }
+        }
+
+        private static AggregateOreState GetOrCreateOre(AggregateCharacterState aggregate, string? oreName)
+        {
+            var key = string.IsNullOrWhiteSpace(oreName) ? "Unknown" : oreName.Trim();
+            if (!aggregate.OresByName.TryGetValue(key, out var ore))
+            {
+                ore = new AggregateOreState { OreName = key };
+                aggregate.OresByName[key] = ore;
+            }
+
+            return ore;
+        }
+
+        private static MiningSessionSnapshot? BuildSnapshot(AggregateCharacterState aggregate)
+        {
+            var ores = aggregate.OresByName.Values
+                .Where(x => x.MinedUnits > 0 || x.BonusUnits > 0)
+                .OrderByDescending(x => x.MinedUnits + x.BonusUnits)
+                .Select(x => new MiningOreTotals
+                {
+                    OreName = x.OreName,
+                    MinedUnits = x.MinedUnits,
+                    BonusUnits = x.BonusUnits,
+                    WasteUnits = x.WasteUnits,
+                    LastMinedUtc = x.LastMinedUtc == default ? aggregate.LastActivityUtc : x.LastMinedUtc,
+                    LastKnownEfficiencyPercent = x.LastKnownEfficiencyPercent
+                })
+                .ToList();
+
+            if (ores.Count == 0)
+            {
+                return null;
+            }
+
+            return new MiningSessionSnapshot
+            {
+                CharacterId = aggregate.CharacterId,
+                CharacterName = aggregate.CharacterName,
+                SessionStartedUtc = aggregate.SessionStartedUtc,
+                FirstActivityUtc = aggregate.FirstActivityUtc == default ? aggregate.SessionStartedUtc : aggregate.FirstActivityUtc,
+                LastActivityUtc = aggregate.LastActivityUtc,
+                SourceFilePath = aggregate.SourceFilePath,
+                CurrentEfficiencyPercent = aggregate.CurrentEfficiencyPercent,
+                Ores = ores
+            };
+        }
+
+        private sealed record FileDescriptor(string Path, int CharacterId, DateTime SessionStartedUtc, DateTime LastWriteUtc, long Length);
+
+        private sealed class CachedFileState
+        {
+            public required string Path { get; init; }
+            public required int CharacterId { get; init; }
+            public required DateTime SessionStartedUtc { get; init; }
+            public required DateTime LastWriteUtc { get; set; }
+            public required long Length { get; set; }
+            public required long ReadOffset { get; set; }
+            public string? ListenerName { get; init; }
+            public required List<MiningLogEvent> Events { get; init; }
+        }
+
+        private sealed class AggregateCharacterState
+        {
+            public required int CharacterId { get; init; }
+            public string CharacterName { get; set; } = string.Empty;
+            public required DateTime SessionStartedUtc { get; set; }
+            public required DateTime FirstActivityUtc { get; set; }
+            public required DateTime LastActivityUtc { get; set; }
+            public required string SourceFilePath { get; set; }
+            public int? CurrentEfficiencyPercent { get; set; }
+            public Dictionary<string, AggregateOreState> OresByName { get; } = new(StringComparer.OrdinalIgnoreCase);
+        }
+
+        private sealed class AggregateOreState
+        {
+            public string OreName { get; init; } = string.Empty;
+            public long MinedUnits { get; set; }
+            public long BonusUnits { get; set; }
+            public long WasteUnits { get; set; }
+            public DateTime LastMinedUtc { get; set; }
+            public int? LastKnownEfficiencyPercent { get; set; }
+        }
     }
 }
