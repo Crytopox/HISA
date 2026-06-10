@@ -15,7 +15,8 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
     private const string MiningEnabledSettingsKey = "Mining.Enabled";
     private const string RecentSessionLookbackHoursSettingsKey = "Mining.RecentSessionLookbackHours";
     private const string MiningRefineYieldPercentSettingsKey = "Mining.RefineYieldPercent";
-    private static readonly TimeSpan PriceCacheTtl = TimeSpan.FromMinutes(20);
+    private const string MiningOreReferenceCacheSettingsKey = "Mining.OreReferenceCache";
+    private static readonly TimeOnly OreReferenceRefreshTimeUtc = new(11, 25);
 
     private readonly ISettingsService _settingsService;
     private readonly ISdeDatabase _sdeDatabase;
@@ -24,8 +25,9 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
     private readonly GameLogMiningTracker _tracker = new();
     private readonly object _gate = new();
     private readonly Dictionary<int, MiningCharacterStatsSnapshot> _snapshotByCharacterId = [];
+    private Dictionary<string, RawOreReferenceValue> _rawOreValuesByName = new(StringComparer.OrdinalIgnoreCase);
     private Dictionary<string, OreReferenceValue> _oreValuesByName = new(StringComparer.OrdinalIgnoreCase);
-    private DateTime _oreValuesFetchedAtUtc = DateTime.MinValue;
+    private DateTime _oreValuesRefreshDueUtc = DateTime.MinValue;
     private bool _enabled;
     private string? _gameLogsDirectory;
     private decimal _refineYieldFactor = 0.9063m;
@@ -314,10 +316,15 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
         if (nextRefineYieldFactor != _refineYieldFactor)
         {
             _refineYieldFactor = nextRefineYieldFactor;
-            _oreValuesFetchedAtUtc = DateTime.MinValue;
+            RebuildDerivedOreValues();
         }
 
-        if (DateTime.UtcNow - _oreValuesFetchedAtUtc <= PriceCacheTtl && _oreValuesByName.Count > 0)
+        if (_oreValuesByName.Count == 0 && !await TryLoadCachedOreValuesAsync(cancellationToken))
+        {
+            await RefreshOreValuesAsync(cancellationToken);
+        }
+
+        if (_oreValuesByName.Count > 0 && DateTime.UtcNow < _oreValuesRefreshDueUtc)
         {
             return;
         }
@@ -339,36 +346,67 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
             var prismaticiteTask = client.GetFromJsonAsync<OreEnvelope<PrismaticiteDto>>("api/public/v1/ores/prismaticite", cancellationToken);
             await Task.WhenAll(standardTask, moonTask, iceTask, prismaticiteTask);
 
-            var next = new Dictionary<string, OreReferenceValue>(StringComparer.OrdinalIgnoreCase);
+            var nextRaw = new Dictionary<string, RawOreReferenceValue>(StringComparer.OrdinalIgnoreCase);
             var fallbackVolumesByName = await LoadOreVolumesByNameAsync(cancellationToken);
+            var sourceGeneratedAtUtc = new[]
+            {
+                standardTask.Result?.GeneratedAt,
+                moonTask.Result?.GeneratedAt,
+                iceTask.Result?.GeneratedAt,
+                prismaticiteTask.Result?.GeneratedAt
+            }
+            .Where(x => x.HasValue)
+            .Select(x => DateTime.SpecifyKind(x!.Value, DateTimeKind.Utc))
+            .DefaultIfEmpty(DateTime.UtcNow)
+            .Max();
 
             foreach (var ore in standardTask.Result?.Data ?? [])
             {
-                next[ore.Name] = BuildOreReferenceValue(ore.Volume, ore.UnitsToReprocess, (decimal)ore.RefinedValueToday);
+                nextRaw[ore.Name] = new RawOreReferenceValue(ore.Volume, ore.UnitsToReprocess, (decimal)ore.RefinedValueToday, IsDirectPerOreValue: false);
             }
 
             foreach (var ore in moonTask.Result?.Data ?? [])
             {
                 var volume = ore.Volume ?? (fallbackVolumesByName.TryGetValue(ore.Name, out var fallbackVolume) ? fallbackVolume : 0d);
-                next[ore.Name] = BuildOreReferenceValue(volume, ore.UnitsToReprocess, (decimal)ore.RefinedValueToday);
+                nextRaw[ore.Name] = new RawOreReferenceValue(volume, ore.UnitsToReprocess, (decimal)ore.RefinedValueToday, IsDirectPerOreValue: false);
             }
 
             foreach (var ore in iceTask.Result?.Data ?? [])
             {
-                next[ore.Name] = BuildOreReferenceValue(ore.Volume, ore.UnitsToReprocess, (decimal)ore.RefinedValueToday);
+                nextRaw[ore.Name] = new RawOreReferenceValue(ore.Volume, ore.UnitsToReprocess, (decimal)ore.RefinedValueToday, IsDirectPerOreValue: false);
             }
 
             var prismaticite = prismaticiteTask.Result?.Data;
             if (prismaticite?.OreName is { Length: > 0 } prismaticiteName)
             {
-                next[prismaticiteName] = new OreReferenceValue(prismaticite.OreVolume, (decimal)prismaticite.ExpectedRandomValuePerOre * _refineYieldFactor);
+                nextRaw[prismaticiteName] = new RawOreReferenceValue(prismaticite.OreVolume, 1, (decimal)prismaticite.ExpectedRandomValuePerOre, IsDirectPerOreValue: true);
             }
+
+            var refreshDueUtc = ComputeNextOreReferenceRefreshDueUtc(sourceGeneratedAtUtc);
+            var cachePayload = new OreReferenceCachePayload
+            {
+                SourceGeneratedAtUtc = sourceGeneratedAtUtc,
+                RefreshDueUtc = refreshDueUtc,
+                Items = nextRaw
+                    .Select(kvp => new OreReferenceCacheItem
+                    {
+                        OreName = kvp.Key,
+                        VolumeM3 = kvp.Value.VolumeM3,
+                        UnitsToReprocess = kvp.Value.UnitsToReprocess,
+                        ReferenceValue = kvp.Value.ReferenceValue,
+                        IsDirectPerOreValue = kvp.Value.IsDirectPerOreValue
+                    })
+                    .ToList()
+            };
 
             lock (_gate)
             {
-                _oreValuesByName = next;
-                _oreValuesFetchedAtUtc = DateTime.UtcNow;
+                _rawOreValuesByName = nextRaw;
+                _oreValuesRefreshDueUtc = refreshDueUtc;
+                RebuildDerivedOreValues();
             }
+
+            await _settingsService.SetAsync(MiningOreReferenceCacheSettingsKey, cachePayload, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -439,14 +477,102 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
         return clampedPercent / 100m;
     }
 
-    private OreReferenceValue BuildOreReferenceValue(double volumePerUnitM3, int unitsToReprocess, decimal refinedValuePerBatch)
+    private bool TryBuildOreReferenceValue(RawOreReferenceValue rawValue, out OreReferenceValue value)
     {
-        var units = Math.Max(1, unitsToReprocess);
-        var iskPerUnit = (refinedValuePerBatch * _refineYieldFactor) / units;
-        return new OreReferenceValue(volumePerUnitM3, iskPerUnit);
+        if (rawValue.VolumeM3 <= 0d)
+        {
+            value = new OreReferenceValue(0d, 0m);
+            return false;
+        }
+
+        var units = Math.Max(1, rawValue.UnitsToReprocess);
+        var iskPerUnit = rawValue.IsDirectPerOreValue
+            ? rawValue.ReferenceValue * _refineYieldFactor
+            : (rawValue.ReferenceValue * _refineYieldFactor) / units;
+        value = new OreReferenceValue(rawValue.VolumeM3, iskPerUnit);
+        return true;
     }
 
+    private void RebuildDerivedOreValues()
+    {
+        var next = new Dictionary<string, OreReferenceValue>(StringComparer.OrdinalIgnoreCase);
+        foreach (var kvp in _rawOreValuesByName)
+        {
+            if (TryBuildOreReferenceValue(kvp.Value, out var value))
+            {
+                next[kvp.Key] = value;
+            }
+        }
+
+        _oreValuesByName = next;
+    }
+
+    private async Task<bool> TryLoadCachedOreValuesAsync(CancellationToken cancellationToken)
+    {
+        OreReferenceCachePayload? payload;
+        try
+        {
+            payload = await _settingsService.GetAsync<OreReferenceCachePayload>(MiningOreReferenceCacheSettingsKey, cancellationToken);
+        }
+        catch
+        {
+            return false;
+        }
+
+        if (payload?.Items is not { Count: > 0 })
+        {
+            return false;
+        }
+
+        var nextRaw = payload.Items
+            .Where(x => !string.IsNullOrWhiteSpace(x.OreName))
+            .ToDictionary(
+                x => x.OreName,
+                x => new RawOreReferenceValue(x.VolumeM3, x.UnitsToReprocess, x.ReferenceValue, x.IsDirectPerOreValue),
+                StringComparer.OrdinalIgnoreCase);
+
+        if (nextRaw.Count == 0)
+        {
+            return false;
+        }
+
+        lock (_gate)
+        {
+            _rawOreValuesByName = nextRaw;
+            _oreValuesRefreshDueUtc = payload.RefreshDueUtc;
+            RebuildDerivedOreValues();
+        }
+
+        return true;
+    }
+
+    private static DateTime ComputeNextOreReferenceRefreshDueUtc(DateTime sourceGeneratedAtUtc)
+    {
+        var generatedUtc = DateTime.SpecifyKind(sourceGeneratedAtUtc, DateTimeKind.Utc);
+        var refreshAnchorUtc = generatedUtc.Date + OreReferenceRefreshTimeUtc.ToTimeSpan();
+        return generatedUtc < refreshAnchorUtc
+            ? refreshAnchorUtc
+            : refreshAnchorUtc.AddDays(1);
+    }
+
+    private sealed record RawOreReferenceValue(double VolumeM3, int UnitsToReprocess, decimal ReferenceValue, bool IsDirectPerOreValue);
     private sealed record OreReferenceValue(double VolumeM3, decimal EstimatedIskPerUnit);
+
+    private sealed class OreReferenceCachePayload
+    {
+        public DateTime SourceGeneratedAtUtc { get; init; }
+        public DateTime RefreshDueUtc { get; init; }
+        public List<OreReferenceCacheItem> Items { get; init; } = [];
+    }
+
+    private sealed class OreReferenceCacheItem
+    {
+        public string OreName { get; init; } = string.Empty;
+        public double VolumeM3 { get; init; }
+        public int UnitsToReprocess { get; init; }
+        public decimal ReferenceValue { get; init; }
+        public bool IsDirectPerOreValue { get; init; }
+    }
 
     private sealed class OreEnvelope<T>
     {
