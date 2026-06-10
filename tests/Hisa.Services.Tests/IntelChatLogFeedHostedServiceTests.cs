@@ -10,6 +10,44 @@ namespace Hisa.Services.Tests;
 
 public class IntelChatLogFeedHostedServiceTests
 {
+    [Fact]
+    public async Task ResolveChatLogsDirectoryAsync_WhenConfiguredRootContainsChatlogsDirectory_ReturnsActualDirectoryPath()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "hisa-tests", Guid.NewGuid().ToString("N"));
+        var logsRoot = Path.Combine(tempRoot, "logs");
+        var chatlogsPath = Path.Combine(logsRoot, "Chatlogs");
+        Directory.CreateDirectory(chatlogsPath);
+
+        try
+        {
+            var service = new IntelChatLogFeedHostedService(
+                new NoopSettingsService(new Dictionary<string, object?>
+                {
+                    ["Tracking.LogsRootPath"] = logsRoot
+                }),
+                new NoopSdeDatabase(),
+                new NoopHttpClientFactory(),
+                NullLogger<IntelChatLogFeedHostedService>.Instance);
+
+            var method = typeof(IntelChatLogFeedHostedService).GetMethod(
+                "ResolveChatLogsDirectoryAsync",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.NotNull(method);
+
+            var task = (Task<string?>)method!.Invoke(service, [CancellationToken.None])!;
+            var resolved = await task;
+
+            Assert.Equal(chatlogsPath, resolved);
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
     [Theory]
     [InlineData("Kill: Rave Maulerant (Thorax)", true)]
     [InlineData("kill: Some Pilot (Drake Navy Issue)", true)]
@@ -294,8 +332,25 @@ public class IntelChatLogFeedHostedServiceTests
 
     private sealed class NoopSettingsService : ISettingsService
     {
+        private readonly IReadOnlyDictionary<string, object?> _values;
+
+        public NoopSettingsService()
+            : this(new Dictionary<string, object?>())
+        {
+        }
+
+        public NoopSettingsService(IReadOnlyDictionary<string, object?> values)
+        {
+            _values = values;
+        }
+
         public Task<T?> GetAsync<T>(string key, CancellationToken cancellationToken = default)
         {
+            if (_values.TryGetValue(key, out var value) && value is T typed)
+            {
+                return Task.FromResult<T?>(typed);
+            }
+
             return Task.FromResult<T?>(default);
         }
 

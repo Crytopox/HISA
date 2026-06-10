@@ -4,6 +4,7 @@ namespace Hisa.Logs.LocalChatLogs;
 
 public static class LocalChatLogsPathValidator
 {
+    private const string ChatLogsDirectoryName = "ChatLogs";
     private static readonly Regex LocalFilePattern = new(@"^Local_\d{8}_\d{6}_\d+\.txt$", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     public static LocalChatLogsPathValidationResult Validate(string? logsRootOrChatLogsPath)
@@ -20,16 +21,10 @@ public static class LocalChatLogsPathValidator
             };
         }
 
-        var normalizedInput = Path.GetFullPath(logsRootOrChatLogsPath.Trim());
-        var chatLogsPath = normalizedInput.EndsWith("ChatLogs", StringComparison.OrdinalIgnoreCase)
-            ? normalizedInput
-            : Path.Combine(normalizedInput, "ChatLogs");
+        var chatLogsPath = ResolveChatLogsPath(logsRootOrChatLogsPath);
+        var logsRootPath = ResolveLogsRootPath(logsRootOrChatLogsPath);
 
-        var logsRootPath = normalizedInput.EndsWith("ChatLogs", StringComparison.OrdinalIgnoreCase)
-            ? (Directory.GetParent(normalizedInput)?.FullName ?? normalizedInput)
-            : normalizedInput;
-
-        if (!Directory.Exists(chatLogsPath))
+        if (chatLogsPath is null || logsRootPath is null || !Directory.Exists(chatLogsPath))
         {
             return new LocalChatLogsPathValidationResult
             {
@@ -65,6 +60,79 @@ public static class LocalChatLogsPathValidator
             ChatLogsPath = chatLogsPath,
             MatchingLocalLogFileCount = count
         };
+    }
+
+    public static string? ResolveChatLogsPath(string? logsRootOrChatLogsPath)
+    {
+        if (string.IsNullOrWhiteSpace(logsRootOrChatLogsPath))
+        {
+            return null;
+        }
+
+        var normalizedInput = Path.GetFullPath(logsRootOrChatLogsPath.Trim());
+        return TryResolveChatLogsDirectory(normalizedInput, out var chatLogsPath)
+            ? chatLogsPath
+            : BuildFallbackChatLogsPath(normalizedInput);
+    }
+
+    public static string? ResolveLogsRootPath(string? logsRootOrChatLogsPath)
+    {
+        if (string.IsNullOrWhiteSpace(logsRootOrChatLogsPath))
+        {
+            return null;
+        }
+
+        var normalizedInput = Path.GetFullPath(logsRootOrChatLogsPath.Trim());
+        if (TryResolveChatLogsDirectory(normalizedInput, out var chatLogsPath))
+        {
+            return Directory.GetParent(chatLogsPath)?.FullName ?? chatLogsPath;
+        }
+
+        return IsChatLogsDirectoryPath(normalizedInput)
+            ? (Directory.GetParent(normalizedInput)?.FullName ?? normalizedInput)
+            : normalizedInput;
+    }
+
+    private static bool TryResolveChatLogsDirectory(string normalizedInput, out string chatLogsPath)
+    {
+        if (Directory.Exists(normalizedInput) && IsChatLogsDirectoryPath(normalizedInput))
+        {
+            chatLogsPath = normalizedInput;
+            return true;
+        }
+
+        var logsRootPath = IsChatLogsDirectoryPath(normalizedInput)
+            ? (Directory.GetParent(normalizedInput)?.FullName ?? normalizedInput)
+            : normalizedInput;
+
+        if (Directory.Exists(logsRootPath))
+        {
+            var matchedDirectory = Directory
+                .EnumerateDirectories(logsRootPath, "*", SearchOption.TopDirectoryOnly)
+                .FirstOrDefault(path => IsChatLogsDirectoryPath(path));
+
+            if (matchedDirectory is not null)
+            {
+                chatLogsPath = Path.GetFullPath(matchedDirectory);
+                return true;
+            }
+        }
+
+        chatLogsPath = BuildFallbackChatLogsPath(normalizedInput);
+        return false;
+    }
+
+    private static bool IsChatLogsDirectoryPath(string path)
+    {
+        var directoryName = Path.GetFileName(Path.TrimEndingDirectorySeparator(path));
+        return string.Equals(directoryName, ChatLogsDirectoryName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string BuildFallbackChatLogsPath(string normalizedInput)
+    {
+        return IsChatLogsDirectoryPath(normalizedInput)
+            ? normalizedInput
+            : Path.Combine(normalizedInput, ChatLogsDirectoryName);
     }
 }
 

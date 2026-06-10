@@ -9,6 +9,7 @@ using Hisa.Core.Abstractions;
 using Hisa.Core.Models;
 using Hisa.Data.Database;
 using Hisa.Logs.IntelChatLogs;
+using Hisa.Logs.LocalChatLogs;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -396,8 +397,8 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         roots.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "EVE", "logs"));
         foreach (var root in roots)
         {
-            var chatLogs = Path.Combine(root, "ChatLogs");
-            if (Directory.Exists(chatLogs))
+            var chatLogs = LocalChatLogsPathValidator.ResolveChatLogsPath(root);
+            if (chatLogs is not null && Directory.Exists(chatLogs))
             {
                 return Path.GetFullPath(chatLogs);
             }
