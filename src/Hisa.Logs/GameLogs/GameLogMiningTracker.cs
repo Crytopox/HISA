@@ -12,6 +12,7 @@ public sealed class GameLogMiningTracker : IDisposable
     private readonly Dictionary<int, MiningSessionSnapshot> _snapshotByCharacterId = [];
     private readonly TimeSpan _scanInterval = TimeSpan.FromSeconds(15);
     private TimeSpan _initialScanLookback = TimeSpan.FromHours(24);
+    private HashSet<string> _startupSeedPaths = new(StringComparer.OrdinalIgnoreCase);
 
     private FileSystemWatcher? _watcher;
     private CancellationTokenSource? _cts;
@@ -49,12 +50,13 @@ public sealed class GameLogMiningTracker : IDisposable
             _snapshotByCharacterId.Clear();
         }
         _dirtyFiles.Clear();
+        _startupSeedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         _gameLogsDirectory = fullPath;
         _initialScanLookback = initialScanLookback is { } lb && lb > TimeSpan.Zero ? lb : TimeSpan.FromHours(24);
         _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         SetupWatcher(fullPath);
-        EnqueueAllKnownFiles(fullPath, fromWatcherEvent: false);
+        EnqueueAllKnownFiles(fullPath, treatNewestPerCharacterAsStartupSeed: true);
         _workerTask = Task.Run(() => RunAsync(_cts.Token), _cts.Token);
         return Task.CompletedTask;
     }
@@ -85,7 +87,7 @@ public sealed class GameLogMiningTracker : IDisposable
                 var now = DateTime.UtcNow;
                 if (now >= nextScanAtUtc && _gameLogsDirectory is not null)
                 {
-                    EnqueueAllKnownFiles(_gameLogsDirectory, fromWatcherEvent: false);
+                    EnqueueAllKnownFiles(_gameLogsDirectory, treatNewestPerCharacterAsStartupSeed: false);
                     nextScanAtUtc = now + _scanInterval;
                 }
 
@@ -405,11 +407,11 @@ public sealed class GameLogMiningTracker : IDisposable
     {
         if (_gameLogsDirectory is not null)
         {
-            EnqueueAllKnownFiles(_gameLogsDirectory, fromWatcherEvent: false);
+            EnqueueAllKnownFiles(_gameLogsDirectory, treatNewestPerCharacterAsStartupSeed: false);
         }
     }
 
-    private void EnqueueAllKnownFiles(string directory, bool fromWatcherEvent)
+    private void EnqueueAllKnownFiles(string directory, bool treatNewestPerCharacterAsStartupSeed)
     {
         var newestFileByCharacterId = new Dictionary<int, (string Path, DateTime SessionStartedUtc)>();
         foreach (var filePath in Directory.EnumerateFiles(directory, "*.txt", SearchOption.TopDirectoryOnly))
@@ -429,14 +431,36 @@ public sealed class GameLogMiningTracker : IDisposable
             }
         }
 
+        HashSet<string>? startupSeedPaths = null;
+        if (treatNewestPerCharacterAsStartupSeed)
+        {
+            startupSeedPaths = newestFileByCharacterId.Values
+                .Select(x => x.Path)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            lock (_stateGate)
+            {
+                _startupSeedPaths = startupSeedPaths;
+            }
+        }
+
         foreach (var newest in newestFileByCharacterId.Values)
         {
+            var fromWatcherEvent = startupSeedPaths is null || !startupSeedPaths.Contains(newest.Path);
             _dirtyFiles.AddOrUpdate(newest.Path, fromWatcherEvent ? (byte)1 : (byte)0, (_, old) => old == 1 || fromWatcherEvent ? (byte)1 : (byte)0);
         }
     }
 
     private bool ShouldTrackSessionFromInitialScan(GameLogFileKey sessionKey, string fullPath)
     {
+        lock (_stateGate)
+        {
+            if (_startupSeedPaths.Contains(fullPath))
+            {
+                return true;
+            }
+        }
+
         lock (_stateGate)
         {
             if (_activeByPath.ContainsKey(fullPath) || _activeByCharacterId.ContainsKey(sessionKey.CharacterId))

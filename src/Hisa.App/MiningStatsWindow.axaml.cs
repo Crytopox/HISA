@@ -1,17 +1,22 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 
 namespace Hisa.App;
 
 public partial class MiningStatsWindow : Window
 {
+    private static readonly TimeSpan AutoRefreshInterval = TimeSpan.FromSeconds(5);
     private MiningOverlayWindow? _overlayWindow;
     private MiningCharacterBreakdownWindow? _characterBreakdownWindow;
+    private readonly DispatcherTimer _autoRefreshTimer;
     private bool _isApplyingWindowPlacement;
 
     public MiningStatsWindow()
     {
         InitializeComponent();
+        _autoRefreshTimer = new DispatcherTimer { Interval = AutoRefreshInterval };
+        _autoRefreshTimer.Tick += OnAutoRefreshTick;
         Opened += OnOpened;
         Closing += OnClosing;
         Closed += OnClosed;
@@ -44,6 +49,7 @@ public partial class MiningStatsWindow : Window
             }
 
             await vm.RefreshMiningStatsForSelectedRangeAsync();
+            _autoRefreshTimer.Start();
             if (vm.ShouldRestoreMiningOverlayVisible)
             {
                 EnsureOverlayWindow(vm);
@@ -53,11 +59,13 @@ public partial class MiningStatsWindow : Window
 
     private void OnClosing(object? sender, WindowClosingEventArgs e)
     {
+        _autoRefreshTimer.Stop();
         SaveWindowPlacement(waitForCompletion: true);
     }
 
     private void OnClosed(object? sender, EventArgs e)
     {
+        _autoRefreshTimer.Stop();
         if (_characterBreakdownWindow is not null)
         {
             _characterBreakdownWindow.Close();
@@ -73,6 +81,16 @@ public partial class MiningStatsWindow : Window
         {
             await vm.RefreshMiningStatsForSelectedRangeAsync();
         }
+    }
+
+    private async void OnAutoRefreshTick(object? sender, EventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel vm || vm.IsMiningStatsLoading)
+        {
+            return;
+        }
+
+        await vm.RefreshMiningStatsForSelectedRangeAsync();
     }
 
     private async void OnApplyRefineYieldClicked(object? sender, RoutedEventArgs e)
