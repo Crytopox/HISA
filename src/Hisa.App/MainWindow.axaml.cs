@@ -7,6 +7,7 @@ using Avalonia.Media.Imaging;
 using Avalonia;
 using Avalonia.Platform;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Hisa.App.ViewModels;
 using Microsoft.Extensions.DependencyInjection;
 using Hisa.Core.Models;
@@ -66,6 +67,7 @@ public partial class MainWindow : Window
     {
         _killmailAppService = new KillmailAppService();
         InitializeComponent();
+        AddHandler(InputElement.PointerPressedEvent, OnWindowPointerPressed, RoutingStrategies.Tunnel, true);
 
         int subMenufontSize = 13;
 
@@ -790,6 +792,32 @@ public partial class MainWindow : Window
         _clearSearchOnNextFocus = false;
     }
 
+    private void OnWindowPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel vm)
+        {
+            return;
+        }
+
+        if (!MapSearchBox.IsFocused && !vm.HasSearchSuggestions)
+        {
+            return;
+        }
+
+        if (e.Source is not Visual sourceVisual)
+        {
+            return;
+        }
+
+        if (IsVisualWithin(sourceVisual, MapSearchBox) ||
+            IsVisualWithin(sourceVisual, MapSearchSuggestionsList))
+        {
+            return;
+        }
+
+        DismissMapSearch(vm);
+    }
+
     private async void OnUniverseRegionNodeClicked(object? sender, int regionId)
     {
         if (DataContext is not MainWindowViewModel vm)
@@ -803,6 +831,12 @@ public partial class MainWindow : Window
 
     private void OnMainMapPointerPressed(object? sender, PointerPressedEventArgs e)
     {
+        if (DataContext is MainWindowViewModel vm &&
+            (MapSearchBox.IsFocused || vm.HasSearchSuggestions))
+        {
+            DismissMapSearch(vm);
+        }
+
         var props = e.GetCurrentPoint(MainMapControl).Properties;
         if (!props.IsRightButtonPressed)
         {
@@ -1588,6 +1622,20 @@ public partial class MainWindow : Window
         }
 
         _boundVm.SaveSelectedViewModeAsync().GetAwaiter().GetResult();
+    }
+
+    private void DismissMapSearch(MainWindowViewModel vm)
+    {
+        vm.MapSearchText = string.Empty;
+        vm.SelectedSearchSuggestion = null;
+        vm.ClearSearchSuggestions();
+        _clearSearchOnNextFocus = false;
+        MainMapControl.Focus();
+    }
+
+    private static bool IsVisualWithin(Visual source, Visual target)
+    {
+        return source == target || source.GetSelfAndVisualAncestors().Contains(target);
     }
 
     private void CloseAuxiliaryWindows()

@@ -85,7 +85,8 @@
                    GotFocus="OnSearchBoxGotFocus"
                    KeyDown="OnSearchKeyDown" />
         </StackPanel>
-        <Popup PlacementTarget="{Binding #MapSearchBox}"
+        <Popup x:Name="MapSearchSuggestionsPopup"
+               PlacementTarget="{Binding #MapSearchBox}"
                Placement="Bottom"
                VerticalOffset="2"
                IsOpen="{Binding HasSearchSuggestions}">
@@ -94,7 +95,8 @@
                   BorderBrush="#2B3C55"
                   BorderThickness="1"
                   CornerRadius="4">
-            <ListBox ItemsSource="{Binding SearchSuggestions}"
+            <ListBox x:Name="MapSearchSuggestionsList"
+                     ItemsSource="{Binding SearchSuggestions}"
                      SelectedItem="{Binding SelectedSearchSuggestion, Mode=TwoWay}"
                      SelectionChanged="OnSearchSuggestionSelected"
                      MaxHeight="240"
@@ -136,6 +138,7 @@
     <Grid Grid.Row="1" ColumnDefinitions="*,Auto">
       <Grid Grid.Column="0">
         <rendering:MapControl x:Name="MainMapControl"
+                              Focusable="True"
                               Graph="{Binding CurrentGraph}"
                               ViewMode="{Binding SelectedViewMode}"
                               PointerPressed="OnMainMapPointerPressed"
