@@ -1,4 +1,7 @@
+using System.ComponentModel;
+using System.Diagnostics;
 using System.Media;
+using Microsoft.Extensions.Logging;
 
 namespace Hisa.App.Services;
 
@@ -19,29 +22,36 @@ internal static class AlertSoundPlayer
 
     public static void Play(string? configuredSound, double volume)
     {
-        if (!OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
         try
         {
             var resolvedPath = ResolveAlertSoundPath(configuredSound);
             if (!string.IsNullOrWhiteSpace(resolvedPath) && File.Exists(resolvedPath))
             {
                 var clampedVolume = Math.Clamp(volume, 0.0, 1.0);
-                var waveBytes = File.ReadAllBytes(resolvedPath);
-                var adjusted = TryApplyVolumeToWavPcm(waveBytes, clampedVolume) ?? waveBytes;
-                using var memory = new MemoryStream(adjusted, writable: false);
-                using var player = new SoundPlayer(memory);
-                player.Play();
+                if (OperatingSystem.IsWindows())
+                {
+                    var waveBytes = File.ReadAllBytes(resolvedPath);
+                    var adjusted = TryApplyVolumeToWavPcm(waveBytes, clampedVolume) ?? waveBytes;
+                    using var memory = new MemoryStream(adjusted, writable: false);
+                    using var player = new SoundPlayer(memory);
+                    player.Play();
+                    return;
+                }
+
+                _ = Task.Run(() => PlayViaExternalPlayerAsync(resolvedPath, clampedVolume));
                 return;
             }
 
-            Console.Beep(1100, 120);
+            if (OperatingSystem.IsWindows())
+            {
+                Console.Beep(1100, 120);
+            }
+
+            LogWarning("Alert sound file was not found for playback: {ConfiguredSound}", configuredSound ?? "<null>");
         }
-        catch
+        catch (Exception ex)
         {
+            LogWarning(ex, "Alert sound playback failed for {ConfiguredSound}", configuredSound ?? "<null>");
         }
     }
 
@@ -97,6 +107,122 @@ internal static class AlertSoundPlayer
         {
             names.Add(Path.GetFileName(file));
         }
+    }
+
+    private static async Task PlayViaExternalPlayerAsync(string resolvedPath, double volume)
+    {
+        string? playbackPath = null;
+        try
+        {
+            playbackPath = await PreparePlaybackFileAsync(resolvedPath, volume);
+            foreach (var candidate in GetExternalPlayerCandidates(playbackPath))
+            {
+                try
+                {
+                    using var process = new Process
+                    {
+                        StartInfo = candidate
+                    };
+
+                    if (!process.Start())
+                    {
+                        continue;
+                    }
+
+                    await process.WaitForExitAsync();
+                    if (process.ExitCode == 0)
+                    {
+                        return;
+                    }
+
+                    LogWarning(
+                        "Alert sound player {Player} exited with code {ExitCode} for {SoundPath}",
+                        candidate.FileName,
+                        process.ExitCode,
+                        resolvedPath);
+                }
+                catch (Exception ex) when (ex is Win32Exception or InvalidOperationException)
+                {
+                    LogDebug(ex, "Alert sound player {Player} is unavailable.", candidate.FileName);
+                }
+            }
+
+            LogWarning("No usable external audio player was found for {SoundPath}", resolvedPath);
+        }
+        catch (Exception ex)
+        {
+            LogWarning(ex, "External alert sound playback failed for {SoundPath}", resolvedPath);
+        }
+        finally
+        {
+            if (playbackPath is not null &&
+                !string.Equals(playbackPath, resolvedPath, StringComparison.Ordinal) &&
+                File.Exists(playbackPath))
+            {
+                try
+                {
+                    File.Delete(playbackPath);
+                }
+                catch (Exception ex)
+                {
+                    LogDebug(ex, "Failed to delete temporary alert sound file {TempPath}", playbackPath);
+                }
+            }
+        }
+    }
+
+    private static async Task<string> PreparePlaybackFileAsync(string resolvedPath, double volume)
+    {
+        if (Math.Abs(volume - 1.0) < 0.0001)
+        {
+            return resolvedPath;
+        }
+
+        var waveBytes = await File.ReadAllBytesAsync(resolvedPath);
+        var adjusted = TryApplyVolumeToWavPcm(waveBytes, volume);
+        if (adjusted is null)
+        {
+            return resolvedPath;
+        }
+
+        var tempPath = Path.Combine(Path.GetTempPath(), $"hisa-alert-{Guid.NewGuid():N}.wav");
+        await File.WriteAllBytesAsync(tempPath, adjusted);
+        return tempPath;
+    }
+
+    private static IEnumerable<ProcessStartInfo> GetExternalPlayerCandidates(string soundPath)
+    {
+        if (OperatingSystem.IsLinux())
+        {
+            yield return CreateProcessStartInfo("pw-play", soundPath);
+            yield return CreateProcessStartInfo("paplay", soundPath);
+            yield return CreateProcessStartInfo("aplay", soundPath);
+            yield return CreateProcessStartInfo("ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", soundPath);
+            yield return CreateProcessStartInfo("canberra-gtk-play", "-f", soundPath);
+            yield break;
+        }
+
+        if (OperatingSystem.IsMacOS())
+        {
+            yield return CreateProcessStartInfo("afplay", soundPath);
+        }
+    }
+
+    private static ProcessStartInfo CreateProcessStartInfo(string fileName, params string[] arguments)
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = fileName,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        foreach (var argument in arguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        return startInfo;
     }
 
     private static byte[]? TryApplyVolumeToWavPcm(byte[] wavBytes, double volume)
@@ -306,5 +432,54 @@ internal static class AlertSoundPlayer
 
         var gain = targetPeak / peak;
         return Math.Clamp(gain, 1.0, 4.0);
+    }
+
+    private static ILogger? GetLogger()
+    {
+        var loggerFactory = Program.Host?.Services.GetService(typeof(ILoggerFactory)) as ILoggerFactory;
+        return loggerFactory?.CreateLogger("Hisa.App.AlertSoundPlayer");
+    }
+
+    private static void LogWarning(string message, params object?[] args)
+    {
+        var logger = GetLogger();
+        if (logger is not null)
+        {
+            logger.LogWarning(message, args);
+            return;
+        }
+
+        Trace.TraceWarning(FormatMessage(message, args));
+    }
+
+    private static void LogWarning(Exception ex, string message, params object?[] args)
+    {
+        var logger = GetLogger();
+        if (logger is not null)
+        {
+            logger.LogWarning(ex, message, args);
+            return;
+        }
+
+        Trace.TraceWarning($"{FormatMessage(message, args)} {ex}");
+    }
+
+    private static void LogDebug(Exception ex, string message, params object?[] args)
+    {
+        var logger = GetLogger();
+        if (logger is not null)
+        {
+            logger.LogDebug(ex, message, args);
+            return;
+        }
+
+        Trace.TraceInformation($"{FormatMessage(message, args)} {ex.Message}");
+    }
+
+    private static string FormatMessage(string message, params object?[] args)
+    {
+        return args.Length == 0
+            ? message
+            : $"{message} | {string.Join(", ", args.Select(a => a?.ToString() ?? "<null>"))}";
     }
 }
