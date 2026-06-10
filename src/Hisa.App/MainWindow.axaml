@@ -111,6 +111,7 @@
             <MenuFlyout>
               <MenuItem Header="LY Coverage Planner" Click="OnOpenLyCoveragePlannerClicked" />
               <MenuItem Header="Jump Route Optimizer" Click="OnOpenJumpRouteOptimizerClicked" />
+              <MenuItem Header="Mining Stats" Click="OnOpenMiningStatsWindowClicked" />
             </MenuFlyout>
           </Button.Flyout>
         </Button>

@@ -1,0 +1,65 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:Hisa.App"
+        mc:Ignorable="d" d:DesignWidth="320" d:DesignHeight="220"
+        x:Class="Hisa.App.MiningOverlayWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="Mining Overlay"
+        Width="360"
+        Height="150"
+        Topmost="True"
+        CanResize="False"
+        SystemDecorations="None"
+        ShowInTaskbar="False"
+        Background="Transparent"
+        TransparencyLevelHint="Transparent">
+  <Border x:Name="RootBorder"
+          Padding="8"
+          Background="Transparent"
+          BorderThickness="0"
+          PointerPressed="OnRootPointerPressed">
+    <Border Background="#92131C2B"
+            BorderBrush="#30435D"
+            BorderThickness="1"
+            CornerRadius="8"
+            Padding="10"
+            IsVisible="{Binding HasOverlayAggregateMiningStats}">
+      <StackPanel Spacing="6">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+          <TextBlock Text="{Binding OverlayAggregateMiningStatsCard.CharacterName}"
+                     Foreground="#F3F7FF"
+                     FontWeight="SemiBold"
+                     FontSize="13" />
+          <TextBlock Grid.Column="1"
+                     Text="{Binding OverlayAggregateMiningStatsCard.PrimaryOreName}"
+                     Foreground="#9DC9AA"
+                     FontSize="10"
+                     VerticalAlignment="Center"
+                     HorizontalAlignment="Right" />
+        </Grid>
+
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+          <TextBlock Text="{Binding OverlayAggregateMiningStatsCard.TotalMiningRateSummary}" Foreground="#DCE8F8" FontSize="11" />
+          <TextBlock Grid.Column="1" Text="{Binding OverlayAggregateMiningStatsCard.EfficiencyPercentSummary}" Foreground="#CFE3FF" FontSize="11" HorizontalAlignment="Right" />
+        </Grid>
+
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+          <TextBlock Text="{Binding OverlayAggregateMiningStatsCard.MiningRateSummary}" Foreground="#7CD1A0" FontSize="11" />
+          <TextBlock Grid.Column="1" Text="{Binding OverlayAggregateMiningStatsCard.IskRateSummary}" Foreground="#CFF5C6" FontSize="11" HorizontalAlignment="Right" />
+        </Grid>
+
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+          <TextBlock Text="{Binding OverlayAggregateMiningStatsCard.WasteRateSummary}" Foreground="#F3C0C0" FontSize="11" />
+          <TextBlock Grid.Column="1" Text="{Binding OverlayAggregateMiningStatsCard.WasteIskRateSummary}" Foreground="#F3C0C0" FontSize="11" HorizontalAlignment="Right" />
+        </Grid>
+
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+          <TextBlock Text="{Binding AggregateMiningStatsCard.TotalMinedSummary}" Foreground="#B6CADF" FontSize="11" />
+          <TextBlock Grid.Column="1" Text="{Binding AggregateMiningStatsCard.TotalEstimatedIskSummary}" Foreground="#B6CADF" FontSize="11" HorizontalAlignment="Right" />
+        </Grid>
+      </StackPanel>
+    </Border>
+  </Border>
+</Window>

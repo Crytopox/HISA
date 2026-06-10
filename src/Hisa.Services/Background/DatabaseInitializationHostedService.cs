@@ -76,6 +76,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IntelChatLogFeedHostedService>();
         services.AddSingleton<IIntelFeed>(sp => sp.GetRequiredService<IntelChatLogFeedHostedService>());
         services.AddHostedService(sp => sp.GetRequiredService<IntelChatLogFeedHostedService>());
+        services.AddSingleton<MiningSessionLogFeedHostedService>();
+        services.AddSingleton<IMiningSessionFeed>(sp => sp.GetRequiredService<MiningSessionLogFeedHostedService>());
+        services.AddHostedService(sp => sp.GetRequiredService<MiningSessionLogFeedHostedService>());
         services.AddSingleton<ISovUpgradeStateService, SovUpgradeStateService>();
         services.AddSingleton<IAnsiblexNetworkStateService, AnsiblexNetworkStateService>();
         services.AddSingleton<IRouteDistanceService, DijkstraRouteDistanceService>();

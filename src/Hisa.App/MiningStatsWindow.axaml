@@ -1,0 +1,181 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:Hisa.App"
+        xmlns:cards="clr-namespace:Hisa.App.ViewModels"
+        xmlns:converters="clr-namespace:Hisa.App.Converters"
+        mc:Ignorable="d" d:DesignWidth="620" d:DesignHeight="760"
+        x:Class="Hisa.App.MiningStatsWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="Mining Stats"
+        Width="920"
+        Height="560"
+        MinWidth="920"
+        MinHeight="560"
+        Background="#0D131D">
+  <Window.Resources>
+    <converters:MiningRangeModeDisplayConverter x:Key="MiningRangeModeDisplayConverter" />
+    <converters:MiningOverlayRangeModeDisplayConverter x:Key="MiningOverlayRangeModeDisplayConverter" />
+  </Window.Resources>
+  <Grid Margin="12" RowDefinitions="Auto,*" RowSpacing="12">
+      <Border Grid.Row="0" Padding="14" CornerRadius="10" Background="#131D2B" BorderBrush="#32425C" BorderThickness="1">
+        <Grid RowDefinitions="Auto,Auto" RowSpacing="12">
+          <StackPanel>
+            <TextBlock Text="Live Mining Sessions" FontSize="20" FontWeight="SemiBold" Foreground="#F3F7FF" />
+            <TextBlock Text="{Binding MiningWindowStatus}" Foreground="#93A8C0" TextWrapping="Wrap" Margin="0,4,0,0" />
+          </StackPanel>
+          <WrapPanel Grid.Row="1" Orientation="Horizontal">
+            <TextBlock Text="Refine Yield" Foreground="#EAF2FF" VerticalAlignment="Center" Margin="0,0,8,0" />
+            <TextBox Width="72" Text="{Binding MiningRefineYieldPercentText, Mode=TwoWay}" Margin="0,0,8,0" />
+            <Button Content="Apply" Click="OnApplyRefineYieldClicked" Margin="0,0,12,0" />
+            <ComboBox Width="170"
+                      ItemsSource="{Binding MiningRangeModes}"
+                      SelectedItem="{Binding SelectedMiningRangeMode}"
+                      Margin="0,0,8,0">
+              <ComboBox.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock Text="{Binding Converter={StaticResource MiningRangeModeDisplayConverter}}" />
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+            <ComboBox Width="118"
+                      ItemsSource="{Binding MiningOverlayRangeModes}"
+                      SelectedItem="{Binding SelectedMiningOverlayRangeMode}"
+                      Margin="0,0,8,0">
+              <ComboBox.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock Text="{Binding Converter={StaticResource MiningOverlayRangeModeDisplayConverter}}" />
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+            <Button Content="Refresh" Click="OnRefreshClicked" Margin="0,0,8,0" />
+            <Button Content="{Binding MiningOverlayToggleLabel}" Click="OnToggleOverlayClicked" />
+            <Button Content="Character Breakdown" Click="OnOpenCharacterBreakdownClicked" Margin="8,0,0,0" />
+          </WrapPanel>
+        </Grid>
+      </Border>
+
+      <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+        <StackPanel Spacing="14">
+          <Border IsVisible="{Binding HasAggregateMiningStats}"
+                  Padding="16"
+                  Background="#101826"
+                  BorderBrush="#2D4463"
+                  BorderThickness="1"
+                  CornerRadius="12">
+            <StackPanel Spacing="12">
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                <StackPanel Spacing="4">
+                  <TextBlock Text="{Binding AggregateMiningStatsCard.CharacterName}" Foreground="#F3F7FF" FontWeight="SemiBold" FontSize="18" />
+                </StackPanel>
+                <StackPanel Spacing="4" HorizontalAlignment="Right">
+                  <TextBlock Text="{Binding AggregateMiningStatsCard.PrimaryOreName}" Foreground="#8EC8A2" FontSize="12" HorizontalAlignment="Right" />
+                  <TextBlock Text="{Binding AggregateMiningStatsCard.LastUpdatedSummary}" Foreground="#7F93AE" FontSize="11" HorizontalAlignment="Right" />
+                </StackPanel>
+              </Grid>
+
+              <Grid ColumnDefinitions="*,*,*" ColumnSpacing="10">
+                <Border Background="#172234" BorderBrush="#2A3C58" BorderThickness="1" CornerRadius="10" Padding="12">
+                  <StackPanel Spacing="3">
+                    <TextBlock Text="Combined Mining Rate" Foreground="#7F93AE" FontSize="11" />
+                    <TextBlock Text="{Binding AggregateMiningStatsCard.TotalMiningRateSummary}" Foreground="#F4FAFF" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding AggregateMiningStatsCard.EfficiencySummary}" Foreground="#9AB5D3" FontSize="11" TextWrapping="Wrap" />
+                  </StackPanel>
+                </Border>
+                <Border Grid.Column="1" Background="#162635" BorderBrush="#2A4A63" BorderThickness="1" CornerRadius="10" Padding="12">
+                  <StackPanel Spacing="3">
+                    <TextBlock Text="Yield" Foreground="#89A5BE" FontSize="11" />
+                    <TextBlock Text="{Binding AggregateMiningStatsCard.MiningRateSummary}" Foreground="#F0F7FF" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding AggregateMiningStatsCard.SessionTotalSummary}" Foreground="#9AB5D3" FontSize="11" TextWrapping="Wrap" />
+                  </StackPanel>
+                </Border>
+                <Border Grid.Column="2" Background="#231A1A" BorderBrush="#5D3E3E" BorderThickness="1" CornerRadius="10" Padding="12">
+                  <StackPanel Spacing="3">
+                    <TextBlock Text="Waste" Foreground="#C79F9F" FontSize="11" />
+                    <TextBlock Text="{Binding AggregateMiningStatsCard.WasteRateSummary}" Foreground="#FFE4E4" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding AggregateMiningStatsCard.WasteIskRateSummary}" Foreground="#D8BBBB" FontSize="11" TextWrapping="Wrap" />
+                  </StackPanel>
+                </Border>
+              </Grid>
+
+              <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="10">
+                <Border Background="#101A28" BorderBrush="#223247" BorderThickness="1" CornerRadius="10" Padding="10">
+                  <StackPanel Spacing="3">
+                    <TextBlock Text="Total Mined" Foreground="#93A8C0" FontSize="11" />
+                    <TextBlock Text="{Binding AggregateMiningStatsCard.TotalMinedSummary}" Foreground="#F3F7FF" FontWeight="SemiBold" TextWrapping="Wrap" />
+                  </StackPanel>
+                </Border>
+                <Border Grid.Column="1" Background="#101A28" BorderBrush="#223247" BorderThickness="1" CornerRadius="10" Padding="10">
+                  <StackPanel Spacing="3">
+                    <TextBlock Text="Total Value" Foreground="#93A8C0" FontSize="11" />
+                    <TextBlock Text="{Binding AggregateMiningStatsCard.TotalEstimatedIskSummary}" Foreground="#CFF5C6" FontWeight="SemiBold" TextWrapping="Wrap" />
+                  </StackPanel>
+                </Border>
+                <Border Grid.Column="2" Background="#101A28" BorderBrush="#223247" BorderThickness="1" CornerRadius="10" Padding="10">
+                  <StackPanel Spacing="3">
+                    <TextBlock Text="Total Waste" Foreground="#93A8C0" FontSize="11" />
+                    <TextBlock Text="{Binding AggregateMiningStatsCard.WasteTotalSummary}" Foreground="#F8D3D3" FontWeight="SemiBold" TextWrapping="Wrap" />
+                  </StackPanel>
+                </Border>
+                <Border Grid.Column="3" Background="#101A28" BorderBrush="#223247" BorderThickness="1" CornerRadius="10" Padding="10">
+                  <StackPanel Spacing="3">
+                    <TextBlock Text="Waste Loss" Foreground="#93A8C0" FontSize="11" />
+                    <TextBlock Text="{Binding AggregateMiningStatsCard.TotalWasteIskSummary}" Foreground="#F3C0C0" FontWeight="SemiBold" TextWrapping="Wrap" />
+                  </StackPanel>
+                </Border>
+              </Grid>
+
+              <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto" ColumnSpacing="8">
+                <Border Background="#173423" BorderBrush="#2C6640" BorderThickness="1" CornerRadius="10" Padding="12,7">
+                  <TextBlock Text="{Binding AggregateMiningStatsCard.IskRateSummary}" Foreground="#CFF5C6" FontWeight="SemiBold" />
+                </Border>
+                <Border Grid.Column="1" Background="#162131" BorderBrush="#2A3C58" BorderThickness="1" CornerRadius="10" Padding="12,7">
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="Efficiency" Foreground="#7F93AE" FontSize="11" />
+                    <TextBlock Text="{Binding AggregateMiningStatsCard.EfficiencyPercentSummary}" Foreground="#F0F7FF" FontWeight="SemiBold" />
+                  </StackPanel>
+                </Border>
+                <Border Grid.Column="2" Background="#162131" BorderBrush="#2A3C58" BorderThickness="1" CornerRadius="10" Padding="12,7">
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="Yield %" Foreground="#7F93AE" FontSize="11" />
+                    <TextBlock Text="{Binding AggregateMiningStatsCard.YieldPercentSummary}" Foreground="#F0F7FF" FontWeight="SemiBold" />
+                  </StackPanel>
+                </Border>
+                <Border Grid.Column="3" Background="#162131" BorderBrush="#2A3C58" BorderThickness="1" CornerRadius="10" Padding="12,7">
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="Crit %" Foreground="#7F93AE" FontSize="11" />
+                    <TextBlock Text="{Binding AggregateMiningStatsCard.CritPercentSummary}" Foreground="#F0F7FF" FontWeight="SemiBold" />
+                  </StackPanel>
+                </Border>
+                <Border Grid.Column="4" Background="#231A1A" BorderBrush="#5D3E3E" BorderThickness="1" CornerRadius="10" Padding="12,7">
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="Waste %" Foreground="#C79F9F" FontSize="11" />
+                    <TextBlock Text="{Binding AggregateMiningStatsCard.WastePercentSummary}" Foreground="#FFE4E4" FontWeight="SemiBold" />
+                  </StackPanel>
+                </Border>
+              </Grid>
+
+              <Border Background="#0F1622" BorderBrush="#223247" BorderThickness="1" CornerRadius="10" Padding="12">
+                <StackPanel Spacing="6">
+                  <TextBlock Text="Top 5 Mined Ores" Foreground="#93A8C0" FontSize="11" />
+                  <TextBlock Text="{Binding AggregateMiningStatsCard.OreMixSummary}" Foreground="#DCE8F8" TextWrapping="Wrap" />
+                </StackPanel>
+              </Border>
+            </StackPanel>
+          </Border>
+
+          <Border IsVisible="{Binding HasNoMiningStats}"
+                  Padding="16"
+                  CornerRadius="10"
+                  Background="#101826"
+                  BorderBrush="#243247"
+                  BorderThickness="1">
+            <TextBlock Text="No mining stats are available for the selected range yet."
+                       Foreground="#93A8C0"
+                       TextWrapping="Wrap" />
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+  </Grid>
+</Window>

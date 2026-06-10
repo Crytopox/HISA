@@ -12,6 +12,7 @@ using Avalonia;
 using Avalonia.Threading;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
+using Hisa.App.ViewModels;
 using Hisa.Core.Abstractions;
 using Hisa.Core.Models;
 using Hisa.Logs.LocalChatLogs;
@@ -241,6 +242,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly ISystemActivityStateService _systemActivityStateService;
     private readonly ILocalCharacterLocationFeed _localCharacterLocationFeed;
     private readonly IIntelFeed _intelFeed;
+    private readonly IMiningSessionFeed _miningSessionFeed;
     private readonly IAlertRuleEngine _alertRuleEngine;
     private List<RegionOption> _allRegions = [];
     private bool _isBusy;
@@ -332,6 +334,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly Dictionary<long, List<long>> _jumpRangeMembershipByNodeId = [];
     private readonly Dictionary<long, List<JumpRangeDistanceDisplay>> _jumpRangeDistancesByNodeId = [];
     private readonly Dictionary<long, IntelSystemSnapshot> _intelSnapshotsBySystemId = [];
+    private readonly Dictionary<int, MiningCharacterStatsSnapshot> _miningStatsByCharacterId = [];
     private readonly Dictionary<long, (string RegionName, string ConstellationName)> _systemLocationById = [];
     private readonly object _systemLocationGate = new();
     private readonly List<IntelChatReport> _intelReportHistory = [];
@@ -381,7 +384,19 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _limitZkillmailsToCurrentRegion;
     private bool _hideZkillmailsOutsideKnownSpace;
     private bool _intelEnabled = true;
+    private bool _miningEnabled;
+    private bool _isMiningStatsLoading;
+    private bool _isMiningOverlayVisible;
+    private bool _preferredMiningOverlayVisible;
+    private MiningStatsRangeMode _selectedMiningRangeMode = MiningStatsRangeMode.CurrentSession;
+    private MiningOverlayRangeMode _selectedMiningOverlayRangeMode = MiningOverlayRangeMode.Rolling10Minutes;
+    private string _miningRefineYieldPercentText = "90.63";
     private string _intelIncludeChannelsText = string.Empty;
+    private readonly ObservableCollection<MiningStatsCard> _miningStatsCards = [];
+    private MiningStatsCard? _aggregateMiningStatsCard;
+    private MiningStatsCard? _overlayAggregateMiningStatsCard;
+    private CancellationTokenSource? _miningStatsRefreshCts;
+    private readonly DispatcherTimer _miningOverlayRefreshTimer;
     private int _intelSystemExpiryMinutes = 15;
     private int _intelListExpiryMinutes = 30;
     private readonly object _knownSpaceGate = new();
@@ -451,6 +466,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string TrackingLogsRootPathKey = "Tracking.LogsRootPath";
     private const string TrackingCharacterPreferencesKey = "Tracking.CharacterPreferences";
     private const string IntelEnabledKey = "Intel.Enabled";
+    private const string MiningEnabledKey = "Mining.Enabled";
+    private const string MiningRefineYieldPercentKey = "Mining.RefineYieldPercent";
+    private const string MiningRangeModeKey = "Mining.RangeMode";
+    private const string MiningOverlayRangeModeKey = "Mining.Overlay.RangeMode";
+    private const string MiningOverlayVisibleKey = "Mining.Overlay.Visible";
+    private const string MiningStatsWindowPlacementKey = "Window.MiningStats.Placement";
+    private const string MiningOverlayWindowPlacementKey = "Window.MiningOverlay.Placement";
     private const string IntelIncludeChannelsKey = "Intel.Channels.Include";
     private const string IntelLimitToCurrentRegionKey = "Intel.Overlay.LimitToCurrentRegion";
     private const string ZkillLimitToCurrentRegionKey = "Intel.Zkill.Overlay.LimitToCurrentRegion";
@@ -480,6 +502,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         ISystemActivityStateService systemActivityStateService,
         ILocalCharacterLocationFeed localCharacterLocationFeed,
         IIntelFeed intelFeed,
+        IMiningSessionFeed miningSessionFeed,
         IAlertRuleEngine alertRuleEngine)
     {
         _mapDataService = mapDataService;
@@ -492,9 +515,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _systemActivityStateService = systemActivityStateService;
         _localCharacterLocationFeed = localCharacterLocationFeed;
         _intelFeed = intelFeed;
+        _miningSessionFeed = miningSessionFeed;
         _alertRuleEngine = alertRuleEngine;
         ViewModes = new ObservableCollection<MapViewMode>(Enum.GetValues<MapViewMode>());
         CoordinateModes = new ObservableCollection<MapCoordinateMode>(Enum.GetValues<MapCoordinateMode>());
+        MiningRangeModes = new ObservableCollection<MiningStatsRangeMode>(Enum.GetValues<MiningStatsRangeMode>());
+        MiningOverlayRangeModes = new ObservableCollection<MiningOverlayRangeMode>(Enum.GetValues<MiningOverlayRangeMode>());
         var orderedColorModes = new List<MapNodeColorMode> { MapNodeColorMode.None, MapNodeColorMode.Hostiles };
         orderedColorModes.AddRange(
             Enum.GetValues<MapNodeColorMode>()
@@ -511,9 +537,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _localCharacterLocationFeed.SystemChanged += OnLocalCharacterSystemChanged;
         _intelFeed.ReportReceived += OnIntelReportReceived;
         _intelFeed.SnapshotUpdated += OnIntelSnapshotUpdated;
+        _miningSessionFeed.SnapshotUpdated += OnMiningSnapshotUpdated;
         _intelOverlayAgeTimer = new DispatcherTimer { Interval = OverlayAgeChipRefreshInterval };
         _intelOverlayAgeTimer.Tick += (_, _) => RefreshIntelOverlayCardAges();
         _intelOverlayAgeTimer.Start();
+        _miningOverlayRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+        _miningOverlayRefreshTimer.Tick += async (_, _) =>
+        {
+            if (IsMiningOverlayVisible)
+            {
+                await RefreshMiningOverlayAsync();
+            }
+        };
         _activityCardsRebuildDebounceTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
         _activityCardsRebuildDebounceTimer.Tick += (_, _) =>
         {
@@ -544,6 +579,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public ObservableCollection<MapViewMode> ViewModes { get; }
     public ObservableCollection<MapCoordinateMode> CoordinateModes { get; }
+    public ObservableCollection<MiningStatsRangeMode> MiningRangeModes { get; }
+    public ObservableCollection<MiningOverlayRangeMode> MiningOverlayRangeModes { get; }
     public ObservableCollection<MapNodeColorMode> NodeColorModes { get; }
     public ObservableCollection<HubWormholeMarkerMode> HubWormholeMarkerModes { get; }
     public ObservableCollection<RegionOption> Regions { get; }
@@ -998,6 +1035,155 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         get => _logsRootPath;
         set => SetProperty(ref _logsRootPath, value);
     }
+
+    public bool MiningEnabled
+    {
+        get => _miningEnabled;
+        set
+        {
+            if (!SetProperty(ref _miningEnabled, value) || _isInitializing)
+            {
+                return;
+            }
+
+            _ = _settingsService.SetAsync(MiningEnabledKey, value);
+            StatusText = value
+                ? "Mining tracking enabled. Restart HISA to begin reading Gamelogs."
+                : "Mining tracking disabled. Gamelogs will not be read after restart.";
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MiningWindowStatus)));
+        }
+    }
+
+    public ObservableCollection<MiningStatsCard> MiningStatsCards => _miningStatsCards;
+
+    public MiningStatsCard? AggregateMiningStatsCard => _aggregateMiningStatsCard;
+
+    public MiningStatsCard? OverlayAggregateMiningStatsCard => _overlayAggregateMiningStatsCard;
+
+    public bool HasAggregateMiningStats => _aggregateMiningStatsCard is not null;
+
+    public bool HasOverlayAggregateMiningStats => _overlayAggregateMiningStatsCard is not null;
+
+    public MiningStatsRangeMode SelectedMiningRangeMode
+    {
+        get => _selectedMiningRangeMode;
+        set
+        {
+            if (!SetProperty(ref _selectedMiningRangeMode, value))
+            {
+                return;
+            }
+
+            _ = _settingsService.SetAsync(MiningRangeModeKey, value);
+            _ = RefreshMiningStatsForSelectedRangeAsync();
+            if (IsMiningOverlayVisible && SelectedMiningOverlayRangeMode == MiningOverlayRangeMode.UseSelectedRange)
+            {
+                _ = RefreshMiningOverlayAsync();
+            }
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MiningWindowStatus)));
+        }
+    }
+
+    public MiningOverlayRangeMode SelectedMiningOverlayRangeMode
+    {
+        get => _selectedMiningOverlayRangeMode;
+        set
+        {
+            if (!SetProperty(ref _selectedMiningOverlayRangeMode, value))
+            {
+                return;
+            }
+
+            _ = _settingsService.SetAsync(MiningOverlayRangeModeKey, value);
+            if (IsMiningOverlayVisible)
+            {
+                _ = RefreshMiningOverlayAsync();
+            }
+        }
+    }
+
+    public bool IsMiningStatsLoading
+    {
+        get => _isMiningStatsLoading;
+        private set
+        {
+            if (SetProperty(ref _isMiningStatsLoading, value))
+            {
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MiningWindowStatus)));
+            }
+        }
+    }
+
+    public bool IsMiningOverlayVisible
+    {
+        get => _isMiningOverlayVisible;
+        set => SetMiningOverlayVisibility(value, persistPreference: true);
+    }
+
+    public bool ShouldRestoreMiningOverlayVisible => _preferredMiningOverlayVisible;
+
+    public bool IsApplicationShuttingDown { get; private set; }
+
+    public void BeginApplicationShutdown()
+    {
+        IsApplicationShuttingDown = true;
+    }
+
+    public void SetMiningOverlayVisibility(bool value, bool persistPreference)
+    {
+        if (!SetProperty(ref _isMiningOverlayVisible, value))
+        {
+            if (persistPreference && _preferredMiningOverlayVisible != value)
+            {
+                _preferredMiningOverlayVisible = value;
+                _ = _settingsService.SetAsync(MiningOverlayVisibleKey, value);
+            }
+            return;
+        }
+
+        if (persistPreference)
+        {
+            _preferredMiningOverlayVisible = value;
+            _ = _settingsService.SetAsync(MiningOverlayVisibleKey, value);
+        }
+
+        if (value)
+        {
+            _miningOverlayRefreshTimer.Start();
+            _ = RefreshMiningOverlayAsync();
+        }
+        else
+        {
+            _miningOverlayRefreshTimer.Stop();
+        }
+
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MiningOverlayToggleLabel)));
+    }
+
+    public string MiningRefineYieldPercentText
+    {
+        get => _miningRefineYieldPercentText;
+        set => SetProperty(ref _miningRefineYieldPercentText, value);
+    }
+
+    public bool HasMiningStats => _miningStatsCards.Count > 0;
+
+    public bool HasNoMiningStats => _miningStatsCards.Count == 0;
+
+    public string MiningWindowStatus => !MiningEnabled
+        ? "Mining tracking is disabled in Preferences. Enable it, then restart HISA."
+        : IsMiningStatsLoading
+            ? $"Loading {GetMiningRangeModeLabel(SelectedMiningRangeMode)} mining stats..."
+            : SelectedMiningRangeMode == MiningStatsRangeMode.CurrentSession
+                ? _miningStatsCards.Count == 0
+                    ? "Watching Gamelogs for the newest session per active character."
+                    : $"{_miningStatsCards.Count} active mining session(s)."
+                : _miningStatsCards.Count == 0
+                    ? $"No mining entries found for {GetMiningRangeModeLabel(SelectedMiningRangeMode).ToLowerInvariant()}."
+                    : $"{_miningStatsCards.Count} character total(s) for {GetMiningRangeModeLabel(SelectedMiningRangeMode).ToLowerInvariant()}."
+            ;
+
+    public string MiningOverlayToggleLabel => IsMiningOverlayVisible ? "Hide Overlay" : "Show Overlay";
 
     public bool EnableLinkAnimations
     {
@@ -1882,6 +2068,26 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         return _settingsService.SetAsync($"{MapViewportPrefixKey}.{viewMode}", viewport);
     }
 
+    public Task<WindowPlacementState?> GetMiningStatsWindowPlacementAsync()
+    {
+        return _settingsService.GetAsync<WindowPlacementState>(MiningStatsWindowPlacementKey);
+    }
+
+    public Task SaveMiningStatsWindowPlacementAsync(WindowPlacementState placement)
+    {
+        return _settingsService.SetAsync(MiningStatsWindowPlacementKey, placement);
+    }
+
+    public Task<WindowPlacementState?> GetMiningOverlayWindowPlacementAsync()
+    {
+        return _settingsService.GetAsync<WindowPlacementState>(MiningOverlayWindowPlacementKey);
+    }
+
+    public Task SaveMiningOverlayWindowPlacementAsync(WindowPlacementState placement)
+    {
+        return _settingsService.SetAsync(MiningOverlayWindowPlacementKey, placement);
+    }
+
     public Task SaveSelectedViewModeAsync()
     {
         return _settingsService.SetAsync(ViewModeKey, SelectedViewMode);
@@ -1949,6 +2155,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         ShowInfoBoxCharacterPresence = await _settingsService.GetAsync<bool?>(ShowInfoBoxCharacterPresenceKey) ?? true;
         CharacterPresenceHoverMaxNames = await _settingsService.GetAsync<int?>(CharacterPresenceHoverMaxNamesKey) ?? 6;
         IntelEnabled = await _settingsService.GetAsync<bool?>(IntelEnabledKey) ?? true;
+        MiningEnabled = await _settingsService.GetAsync<bool?>(MiningEnabledKey) ?? false;
+        MiningRefineYieldPercentText = $"{await _settingsService.GetAsync<decimal?>(MiningRefineYieldPercentKey) ?? 90.63m:0.##}";
+        _selectedMiningRangeMode = await _settingsService.GetAsync<MiningStatsRangeMode?>(MiningRangeModeKey) ?? MiningStatsRangeMode.CurrentSession;
+        _selectedMiningOverlayRangeMode = await _settingsService.GetAsync<MiningOverlayRangeMode?>(MiningOverlayRangeModeKey) ?? MiningOverlayRangeMode.Rolling10Minutes;
+        _preferredMiningOverlayVisible = await _settingsService.GetAsync<bool?>(MiningOverlayVisibleKey) ?? false;
+        _isMiningOverlayVisible = false;
         IntelSystemExpiryMinutes = await _settingsService.GetAsync<int?>(IntelSystemExpiryMinutesKey) ?? 15;
         IntelListExpiryMinutes = await _settingsService.GetAsync<int?>(IntelListExpiryMinutesKey) ?? 30;
         _alertRules = await _settingsService.GetAsync<List<AlertRule>>(AlertRulesKey) ?? [];
@@ -2036,6 +2248,15 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 }
             }
         }
+        lock (_miningStatsByCharacterId)
+        {
+            _miningStatsByCharacterId.Clear();
+            foreach (var kvp in _miningSessionFeed.Snapshot)
+            {
+                _miningStatsByCharacterId[kvp.Key] = kvp.Value;
+            }
+        }
+        RebuildMiningStatsCards();
         await ReloadGraphAsync();
         RebuildCharacterPresenceForView();
         RebuildIntelPresenceForView();
@@ -3588,6 +3809,327 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
 
         await _settingsService.SetAsync(TrackingLogsRootPathKey, LogsRootPath.Trim());
+    }
+
+    private void OnMiningSnapshotUpdated(object? sender, IReadOnlyDictionary<int, MiningCharacterStatsSnapshot> snapshot)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            lock (_miningStatsByCharacterId)
+            {
+                _miningStatsByCharacterId.Clear();
+                foreach (var kvp in snapshot)
+                {
+                    _miningStatsByCharacterId[kvp.Key] = kvp.Value;
+                }
+            }
+
+            if (SelectedMiningRangeMode == MiningStatsRangeMode.CurrentSession)
+            {
+                RebuildMiningStatsCards();
+            }
+        });
+    }
+
+    private void RebuildMiningStatsCards()
+    {
+        List<MiningCharacterStatsSnapshot> snapshots;
+        lock (_miningStatsByCharacterId)
+        {
+            snapshots = _miningStatsByCharacterId.Values.ToList();
+        }
+
+        RebuildMiningStatsCards(snapshots);
+    }
+
+    private void RebuildMiningStatsCards(IEnumerable<MiningCharacterStatsSnapshot> snapshots)
+    {
+        var next = snapshots
+            .OrderByDescending(x => x.LastActivityUtc)
+            .ThenBy(x => x.CharacterName, StringComparer.OrdinalIgnoreCase)
+            .Select(BuildMiningStatsCard)
+            .ToList();
+        var aggregate = BuildAggregateMiningStatsCard(snapshots.ToList());
+
+        _miningStatsCards.Clear();
+        foreach (var card in next)
+        {
+            _miningStatsCards.Add(card);
+            _ = card.EnsurePortraitLoadedAsync();
+        }
+        _aggregateMiningStatsCard = aggregate;
+
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MiningStatsCards)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AggregateMiningStatsCard)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasAggregateMiningStats)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasMiningStats)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasNoMiningStats)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MiningWindowStatus)));
+    }
+
+    public async Task RefreshMiningStatsForSelectedRangeAsync()
+    {
+        _miningStatsRefreshCts?.Cancel();
+        _miningStatsRefreshCts?.Dispose();
+        _miningStatsRefreshCts = new CancellationTokenSource();
+        var ct = _miningStatsRefreshCts.Token;
+
+        IsMiningStatsLoading = true;
+        try
+        {
+            var snapshot = await _miningSessionFeed.GetSnapshotAsync(SelectedMiningRangeMode, ct);
+
+            if (ct.IsCancellationRequested)
+            {
+                return;
+            }
+
+            await Dispatcher.UIThread.InvokeAsync(() => RebuildMiningStatsCards(snapshot.Values));
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            if (!ct.IsCancellationRequested)
+            {
+                IsMiningStatsLoading = false;
+            }
+        }
+    }
+
+    public async Task RefreshMiningOverlayAsync()
+    {
+        IReadOnlyDictionary<int, MiningCharacterStatsSnapshot> snapshot = SelectedMiningOverlayRangeMode switch
+        {
+            MiningOverlayRangeMode.UseSelectedRange => await _miningSessionFeed.GetSnapshotAsync(SelectedMiningRangeMode),
+            MiningOverlayRangeMode.Rolling5Minutes => await _miningSessionFeed.GetRollingSnapshotAsync(TimeSpan.FromMinutes(5)),
+            MiningOverlayRangeMode.Rolling10Minutes => await _miningSessionFeed.GetRollingSnapshotAsync(TimeSpan.FromMinutes(10)),
+            MiningOverlayRangeMode.Rolling15Minutes => await _miningSessionFeed.GetRollingSnapshotAsync(TimeSpan.FromMinutes(15)),
+            MiningOverlayRangeMode.Rolling30Minutes => await _miningSessionFeed.GetRollingSnapshotAsync(TimeSpan.FromMinutes(30)),
+            _ => await _miningSessionFeed.GetRollingSnapshotAsync(TimeSpan.FromMinutes(10))
+        };
+        var aggregate = BuildAggregateMiningStatsCard(
+            snapshot.Values.ToList(),
+            overlayMode: true,
+            overlayRangeMode: SelectedMiningOverlayRangeMode,
+            selectedRangeMode: SelectedMiningRangeMode);
+        _overlayAggregateMiningStatsCard = aggregate;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(OverlayAggregateMiningStatsCard)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasOverlayAggregateMiningStats)));
+    }
+
+    public async Task SaveMiningRefineYieldAsync()
+    {
+        var raw = MiningRefineYieldPercentText?.Trim();
+        if (!decimal.TryParse(raw, out var parsed))
+        {
+            StatusText = "Invalid mining refine yield. Use a percent like 90.63.";
+            return;
+        }
+
+        parsed = Math.Clamp(parsed, 1m, 100m);
+        MiningRefineYieldPercentText = $"{parsed:0.##}";
+        await _settingsService.SetAsync(MiningRefineYieldPercentKey, parsed);
+        StatusText = "Mining refine yield saved. Mining values were refreshed with the new percentage.";
+        await RefreshMiningStatsForSelectedRangeAsync();
+        if (IsMiningOverlayVisible)
+        {
+            await RefreshMiningOverlayAsync();
+        }
+    }
+
+    private static MiningStatsCard BuildMiningStatsCard(MiningCharacterStatsSnapshot snapshot)
+    {
+        var oreMixSummary = string.Join(
+            " | ",
+            snapshot.Ores
+                .OrderByDescending(x => x.TotalMinedVolumeM3)
+                .Take(3)
+                .Select(x => $"{x.OreName} {x.TotalMinedVolumeM3:N0} m3"));
+        var totalFlow = snapshot.TotalMiningVolumeM3;
+        var yieldRatio = totalFlow > 0 ? snapshot.TotalMinedVolumeM3 / totalFlow : 1d;
+        var wasteRatio = totalFlow > 0 ? snapshot.TotalWasteVolumeM3 / totalFlow : 0d;
+
+        return new MiningStatsCard
+        {
+            CharacterId = snapshot.CharacterId,
+            CharacterName = snapshot.CharacterName,
+            PrimaryOreName = string.IsNullOrWhiteSpace(snapshot.PrimaryOreName) ? "Mixed" : snapshot.PrimaryOreName,
+            EfficiencyPercentSummary = $"{snapshot.EfficiencyPercent:0.#}%",
+            YieldPercentSummary = $"{snapshot.YieldPercent:0.#}%",
+            CritPercentSummary = $"{snapshot.CritPercent:0.#}%",
+            WastePercentSummary = $"{snapshot.WastePercent:0.#}%",
+            TotalMiningRateSummary = $"{snapshot.TotalMiningRateM3PerHour / 3600d:0.##} m3/s | {snapshot.TotalMiningRateM3PerHour:N0} m3/hr",
+            MiningRateSummary = $"{snapshot.MiningRateM3PerHour / 3600d:0.##} m3/s | {snapshot.MiningRateM3PerHour:N0} m3/hr",
+            WasteRateSummary = $"{snapshot.WasteRateM3PerHour / 3600d:0.##} m3/s | {snapshot.WasteRateM3PerHour:N0} m3/hr",
+            IskRateSummary = snapshot.EstimatedIskPerHour > 0 ? $"{snapshot.EstimatedIskPerHour:N0} ISK/hr" : "Price unavailable",
+            WasteIskRateSummary = snapshot.WasteEstimatedIskPerHour > 0 ? $"-{snapshot.WasteEstimatedIskPerHour:N0} ISK/hr" : "No waste loss",
+            TotalMinedSummary = $"{snapshot.TotalMinedVolumeM3:N0} m3 mined",
+            TotalEstimatedIskSummary = snapshot.TotalEstimatedIsk > 0 ? $"{snapshot.TotalEstimatedIsk:N0} ISK total" : "Price unavailable",
+            TotalWasteIskSummary = snapshot.TotalWasteEstimatedIsk > 0
+                ? $"-{snapshot.TotalWasteEstimatedIsk:N0} ISK"
+                : "No waste loss",
+            SessionTotalSummary = $"{snapshot.TotalRegularYieldVolumeM3:N0} m3 yield | {snapshot.TotalCritVolumeM3:N0} m3 crit",
+            WasteTotalSummary = $"{snapshot.TotalWasteVolumeM3:N0} m3",
+            EfficiencySummary = BuildMiningEfficiencySummary(snapshot),
+            SessionAgeSummary = FormatMiningElapsed(snapshot.LastActivityUtc - snapshot.SessionStartedUtc),
+            LastUpdatedSummary = FormatOverlayAge(DateTime.UtcNow - snapshot.LastActivityUtc),
+            OreMixSummary = string.IsNullOrWhiteSpace(oreMixSummary) ? "No ore mix available yet." : oreMixSummary,
+            YieldRatio = yieldRatio,
+            WasteRatio = wasteRatio
+        };
+    }
+
+    private static MiningStatsCard? BuildAggregateMiningStatsCard(
+        IReadOnlyList<MiningCharacterStatsSnapshot> snapshots,
+        bool overlayMode = false,
+        MiningOverlayRangeMode overlayRangeMode = MiningOverlayRangeMode.Rolling10Minutes,
+        MiningStatsRangeMode selectedRangeMode = MiningStatsRangeMode.CurrentSession)
+    {
+        if (snapshots.Count == 0)
+        {
+            return null;
+        }
+
+        var totalRegularYieldVolume = snapshots.Sum(x => x.TotalRegularYieldVolumeM3);
+        var totalCritVolume = snapshots.Sum(x => x.TotalCritVolumeM3);
+        var totalMinedVolume = snapshots.Sum(x => x.TotalMinedVolumeM3);
+        var totalWasteVolume = snapshots.Sum(x => x.TotalWasteVolumeM3);
+        var totalEstimatedIsk = snapshots.Sum(x => x.TotalEstimatedIsk);
+        var totalWasteEstimatedIsk = snapshots.Sum(x => x.TotalWasteEstimatedIsk);
+        var earliestSessionStartUtc = snapshots.Min(x => x.SessionStartedUtc);
+        var lastActivityUtc = snapshots.Max(x => x.LastActivityUtc);
+        var activeCharacters = snapshots.Count;
+        var totalFlow = totalMinedVolume + totalWasteVolume;
+        var totalDepletionFlow = totalRegularYieldVolume + totalWasteVolume;
+        var totalMiningRateM3PerHour = snapshots.Sum(x => x.TotalMiningRateM3PerHour);
+        var miningRateM3PerHour = snapshots.Sum(x => x.MiningRateM3PerHour);
+        var wasteRateM3PerHour = snapshots.Sum(x => x.WasteRateM3PerHour);
+        var estimatedIskPerHour = snapshots.Sum(x => x.EstimatedIskPerHour);
+        var yieldRatio = totalFlow > 0 ? totalMinedVolume / totalFlow : 1d;
+        var wasteRatio = totalFlow > 0 ? totalWasteVolume / totalFlow : 0d;
+        var elapsed = lastActivityUtc > earliestSessionStartUtc
+            ? lastActivityUtc - earliestSessionStartUtc
+            : TimeSpan.FromSeconds(1);
+        var totalWasteEstimatedIskPerHour = snapshots.Sum(x => x.WasteEstimatedIskPerHour);
+        var oreMixSummary = string.Join(
+            " | ",
+            snapshots
+                .SelectMany(x => x.Ores)
+                .GroupBy(x => x.OreName, StringComparer.OrdinalIgnoreCase)
+                .Select(group => new
+                {
+                    OreName = group.Key,
+                    Volume = group.Sum(x => x.TotalMinedVolumeM3)
+                })
+                .OrderByDescending(x => x.Volume)
+                .Take(5)
+                .Select(x => $"{x.OreName} {x.Volume:N0} m3"));
+
+        var weightedEfficiency = totalDepletionFlow > 0 ? (totalMinedVolume / totalDepletionFlow) * 100d : 100d;
+        var yieldPercent = totalDepletionFlow > 0 ? (totalRegularYieldVolume / totalDepletionFlow) * 100d : 0d;
+        var critPercent = totalDepletionFlow > 0 ? (totalCritVolume / totalDepletionFlow) * 100d : 0d;
+        var wastePercent = totalDepletionFlow > 0 ? (totalWasteVolume / totalDepletionFlow) * 100d : 0d;
+        var overlayPrimaryLabel = overlayRangeMode == MiningOverlayRangeMode.UseSelectedRange
+            ? $"Using {GetMiningRangeModeLabel(selectedRangeMode)} | {activeCharacters} character{(activeCharacters == 1 ? string.Empty : "s")}"
+            : $"{GetMiningOverlayRangeModeLabel(overlayRangeMode)} live window | {activeCharacters} character{(activeCharacters == 1 ? string.Empty : "s")}";
+
+        return new MiningStatsCard
+        {
+            CharacterId = 0,
+            CharacterName = overlayMode ? "Live Mining Overlay" : "Combined Fleet",
+            PrimaryOreName = overlayMode
+                ? overlayPrimaryLabel
+                : $"{activeCharacters} character{(activeCharacters == 1 ? string.Empty : "s")} included",
+            EfficiencyPercentSummary = $"{weightedEfficiency:0.#}%",
+            YieldPercentSummary = $"{yieldPercent:0.#}%",
+            CritPercentSummary = $"{critPercent:0.#}%",
+            WastePercentSummary = $"{wastePercent:0.#}%",
+            TotalMiningRateSummary = overlayMode
+                ? $"{totalMiningRateM3PerHour / 3600d:0.##} m3/s total"
+                : $"{totalMiningRateM3PerHour / 3600d:0.##} m3/s | {totalMiningRateM3PerHour:N0} m3/hr",
+            MiningRateSummary = overlayMode
+                ? $"{miningRateM3PerHour / 3600d:0.##} m3/s yield"
+                : $"{miningRateM3PerHour / 3600d:0.##} m3/s | {miningRateM3PerHour:N0} m3/hr",
+            WasteRateSummary = overlayMode
+                ? $"{wasteRateM3PerHour / 3600d:0.##} m3/s"
+                : $"{wasteRateM3PerHour / 3600d:0.##} m3/s | {wasteRateM3PerHour:N0} m3/hr",
+            IskRateSummary = estimatedIskPerHour > 0 ? $"{estimatedIskPerHour:N0} ISK/hr" : "Price unavailable",
+            WasteIskRateSummary = totalWasteEstimatedIskPerHour > 0 ? $"-{totalWasteEstimatedIskPerHour:N0} ISK/hr" : "No waste loss",
+            TotalMinedSummary = $"{totalMinedVolume:N0} m3 mined",
+            TotalEstimatedIskSummary = totalEstimatedIsk > 0 ? $"{totalEstimatedIsk:N0} ISK total" : "Price unavailable",
+            TotalWasteIskSummary = totalWasteEstimatedIsk > 0
+                ? $"-{totalWasteEstimatedIsk:N0} ISK"
+                : "No waste loss",
+            SessionTotalSummary = $"{totalRegularYieldVolume:N0} m3 yield | {totalCritVolume:N0} m3 crit",
+            WasteTotalSummary = $"{totalWasteVolume:N0} m3 residue",
+            EfficiencySummary = $"{weightedEfficiency:0.#}% actual efficiency across fleet",
+            SessionAgeSummary = FormatMiningElapsed(elapsed),
+            LastUpdatedSummary = FormatOverlayAge(DateTime.UtcNow - lastActivityUtc),
+            OreMixSummary = string.IsNullOrWhiteSpace(oreMixSummary) ? "No ore mix available yet." : oreMixSummary,
+            YieldRatio = yieldRatio,
+            WasteRatio = wasteRatio
+        };
+    }
+
+    private static string BuildMiningEfficiencySummary(MiningCharacterStatsSnapshot snapshot)
+    {
+        var ratioPercent = $"{snapshot.EfficiencyPercent:0.#}% actual efficiency";
+        return snapshot.CurrentEfficiencyPercent is { } currentPercent
+            ? $"{ratioPercent} | site {currentPercent}%"
+            : ratioPercent;
+    }
+
+    private static string FormatMiningElapsed(TimeSpan elapsed)
+    {
+        if (elapsed < TimeSpan.Zero)
+        {
+            elapsed = TimeSpan.Zero;
+        }
+
+        if (elapsed.TotalHours >= 1)
+        {
+            return $"{(int)elapsed.TotalHours}h {elapsed.Minutes:00}m session";
+        }
+
+        if (elapsed.TotalMinutes >= 1)
+        {
+            return $"{(int)elapsed.TotalMinutes}m {elapsed.Seconds:00}s session";
+        }
+
+        return $"{Math.Max(0, (int)elapsed.TotalSeconds)}s session";
+    }
+
+    public static string GetMiningRangeModeLabel(MiningStatsRangeMode mode)
+    {
+        return mode switch
+        {
+            MiningStatsRangeMode.CurrentSession => "Current Session",
+            MiningStatsRangeMode.Last1Hour => "Last 1 Hour",
+            MiningStatsRangeMode.Last2Hours => "Last 2 Hours",
+            MiningStatsRangeMode.Last4Hours => "Last 4 Hours",
+            MiningStatsRangeMode.Last6Hours => "Last 6 Hours",
+            MiningStatsRangeMode.Last8Hours => "Last 8 Hours",
+            MiningStatsRangeMode.Last12Hours => "Last 12 Hours",
+            MiningStatsRangeMode.Last24Hours => "Last 24 Hours",
+            MiningStatsRangeMode.Last3Days => "Last 3 Days",
+            MiningStatsRangeMode.Last7Days => "Last 7 Days",
+            _ => mode.ToString()
+        };
+    }
+
+    public static string GetMiningOverlayRangeModeLabel(MiningOverlayRangeMode mode)
+    {
+        return mode switch
+        {
+            MiningOverlayRangeMode.UseSelectedRange => "Selected Range",
+            MiningOverlayRangeMode.Rolling5Minutes => "5m",
+            MiningOverlayRangeMode.Rolling10Minutes => "10m",
+            MiningOverlayRangeMode.Rolling15Minutes => "15m",
+            MiningOverlayRangeMode.Rolling30Minutes => "30m",
+            _ => mode.ToString()
+        };
     }
 
     public async Task SaveIntelSettingsAsync()

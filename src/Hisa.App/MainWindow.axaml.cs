@@ -25,6 +25,7 @@ public partial class MainWindow : Window
     private bool _isApplyingWindowPlacement;
     private bool _isApplyingViewport;
     private bool _pendingFitToViewForRegionGraphChange;
+    private bool _isClosingApp;
     private MainWindowViewModel? _boundVm;
     private Hisa.Core.Models.MapViewMode _lastKnownViewMode;
     private readonly DebugWindowViewModel? _debugWindowViewModel;
@@ -44,6 +45,7 @@ public partial class MainWindow : Window
     private AnsiblexNetworkWindow? _ansiblexNetworkWindow;
     private LyCoveragePlannerWindow? _lyCoveragePlannerWindow;
     private JumpRouteOptimizerWindow? _jumpRouteOptimizerWindow;
+    private MiningStatsWindow? _miningStatsWindow;
     private ZkillmailsWindow? _zkillmailsWindow;
     private AboutWindow? _aboutWindow;
     private readonly ContextMenu _mapNodeContextMenu;
@@ -131,6 +133,8 @@ public partial class MainWindow : Window
         Opened += OnOpened;
         Closing += (_, _) =>
         {
+            _isClosingApp = true;
+            _boundVm?.BeginApplicationShutdown();
             SaveWindowPlacementNow();
             SaveViewportNow();
             SaveSelectedViewModeNow();
@@ -418,6 +422,23 @@ public partial class MainWindow : Window
 
         _jumpRouteOptimizerWindow.Show();
         _jumpRouteOptimizerWindow.Activate();
+    }
+
+    private void OnOpenMiningStatsWindowClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_miningStatsWindow is null)
+        {
+            if (_boundVm is null)
+            {
+                return;
+            }
+
+            _miningStatsWindow = new MiningStatsWindow(_boundVm);
+            _miningStatsWindow.Closed += (_, _) => _miningStatsWindow = null;
+        }
+
+        _miningStatsWindow.Show();
+        _miningStatsWindow.Activate();
     }
 
     private void OnOpenZkillmailsWindowClicked(object? sender, RoutedEventArgs e)
@@ -1500,6 +1521,33 @@ public partial class MainWindow : Window
         }
 
         await RestoreViewportForCurrentModeAsync(fallbackToFit: true);
+
+        Dispatcher.UIThread.Post(RestoreMiningOverlayOnStartup, DispatcherPriority.Background);
+    }
+
+    private void RestoreMiningOverlayOnStartup()
+    {
+        if (_isClosingApp || _boundVm is null || !_boundVm.ShouldRestoreMiningOverlayVisible)
+        {
+            return;
+        }
+
+        if (MiningOverlayWindow.Current is not null)
+        {
+            _boundVm.IsMiningOverlayVisible = true;
+            return;
+        }
+
+        var overlayWindow = new MiningOverlayWindow(_boundVm);
+        overlayWindow.Closed += (_, _) =>
+        {
+            if (_boundVm is not null)
+            {
+                _boundVm.SetMiningOverlayVisibility(false, persistPreference: !_isClosingApp);
+            }
+        };
+        overlayWindow.Show();
+        _boundVm.IsMiningOverlayVisible = true;
     }
 
     private async void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -1668,6 +1716,8 @@ public partial class MainWindow : Window
         TryClose(_ansiblexNetworkWindow);
         TryClose(_lyCoveragePlannerWindow);
         TryClose(_jumpRouteOptimizerWindow);
+        TryClose(_miningStatsWindow);
+        TryClose(MiningOverlayWindow.Current);
         TryClose(_zkillmailsWindow);
         TryClose(_aboutWindow);
     }
