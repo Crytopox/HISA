@@ -6763,9 +6763,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         int key,
         string folderName,
         string fileName,
-        string sourceUrl)
+        string sourceUrl,
+        bool checkServerForNewer = true)
     {
-        if (memoryCache.TryGetValue(key, out var cached))
+        if (!checkServerForNewer && memoryCache.TryGetValue(key, out var cached))
         {
             return cached;
         }
@@ -6775,13 +6776,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         await gate.WaitAsync().ConfigureAwait(false);
         try
         {
-            if (memoryCache.TryGetValue(key, out cached))
+            if (!checkServerForNewer && memoryCache.TryGetValue(key, out cached))
             {
                 return cached;
             }
 
             var filePath = Path.Combine(IntelImageCacheRoot, folderName, fileName);
-            var bitmap = await LoadBitmapFromDiskOrDownloadAsync(filePath, sourceUrl);
+            var bitmap = await LoadBitmapFromDiskOrDownloadAsync(filePath, sourceUrl, checkServerForNewer);
             if (bitmap is not null)
             {
                 memoryCache[key] = bitmap;
@@ -6830,11 +6831,20 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
-    private static async Task<Bitmap?> LoadBitmapFromDiskOrDownloadAsync(string filePath, string url)
+    private static async Task<Bitmap?> LoadBitmapFromDiskOrDownloadAsync(string filePath, string url, bool checkServerForNewer = true)
     {
         var existing = TryLoadBitmapFromFile(filePath);
         if (existing is not null)
         {
+            if (checkServerForNewer)
+            {
+                var refreshed = await TryRefreshCachedBitmapIfNewerAsync(filePath, url);
+                if (refreshed is not null)
+                {
+                    return refreshed;
+                }
+            }
+
             return existing;
         }
 
@@ -6863,6 +6873,42 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         catch
         {
             return TryLoadBitmapFromFile(filePath);
+        }
+    }
+
+    private static async Task<Bitmap?> TryRefreshCachedBitmapIfNewerAsync(string filePath, string url)
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Head, url);
+            using var response = await IntelPortraitHttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            var remoteLastModifiedUtc = response.Content.Headers.LastModified?.UtcDateTime;
+            if (remoteLastModifiedUtc is null)
+            {
+                return null;
+            }
+
+            var localLastWriteUtc = File.GetLastWriteTimeUtc(filePath);
+            if (localLastWriteUtc >= remoteLastModifiedUtc.Value)
+            {
+                return null;
+            }
+
+            var bytes = await IntelPortraitHttpClient.GetByteArrayAsync(url);
+            await using var fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.ReadWrite);
+            await fileStream.WriteAsync(bytes);
+            await fileStream.FlushAsync();
+            File.SetLastWriteTimeUtc(filePath, remoteLastModifiedUtc.Value);
+            return TryLoadBitmapFromFile(filePath);
+        }
+        catch
+        {
+            return null;
         }
     }
 
