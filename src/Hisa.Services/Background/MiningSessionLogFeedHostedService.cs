@@ -182,7 +182,7 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
         var oreStats = session.Ores
             .Select(ore =>
             {
-                _oreValuesByName.TryGetValue(ore.OreName, out var oreValue);
+                TryGetOreReferenceValue(ore.OreName, out var oreValue);
                 var minedUnits = ore.MinedUnits + ore.BonusUnits;
                 var volumePerUnit = oreValue?.VolumeM3 ?? 0d;
                 var iskPerUnit = oreValue?.EstimatedIskPerUnit ?? 0m;
@@ -347,8 +347,10 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
 
             foreach (var ore in moonTask.Result?.Data ?? [])
             {
-                var volume = ore.Volume ?? (fallbackVolumesByName.TryGetValue(ore.Name, out var fallbackVolume) ? fallbackVolume : 0d);
-                nextRaw[ore.Name] = new RawOreReferenceValue(volume, ore.UnitsToReprocess, (decimal)ore.RefinedValueToday, IsDirectPerOreValue: false);
+                var volume = ore.Volume ?? (fallbackVolumesByName.TryGetValue(ore.Name, out var fallbackVolume) ? fallbackVolume : 10d);
+                var rawValue = new RawOreReferenceValue(volume, ore.UnitsToReprocess, (decimal)ore.RefinedValueToday, IsDirectPerOreValue: false);
+                nextRaw[ore.Name] = rawValue;
+                AddOreLookupAliases(nextRaw, ore.Name, rawValue);
             }
 
             foreach (var ore in iceTask.Result?.Data ?? [])
@@ -485,6 +487,50 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
         }
 
         _oreValuesByName = next;
+    }
+
+    private bool TryGetOreReferenceValue(string oreName, out OreReferenceValue? value)
+    {
+        if (_oreValuesByName.TryGetValue(oreName, out value))
+        {
+            return true;
+        }
+
+        var remaining = oreName.Trim();
+        while (true)
+        {
+            var separatorIndex = remaining.IndexOf(' ');
+            if (separatorIndex < 0 || separatorIndex >= remaining.Length - 1)
+            {
+                value = null;
+                return false;
+            }
+
+            remaining = remaining[(separatorIndex + 1)..].TrimStart();
+            if (_oreValuesByName.TryGetValue(remaining, out value))
+            {
+                return true;
+            }
+        }
+    }
+
+    private static void AddOreLookupAliases(
+        IDictionary<string, RawOreReferenceValue> target,
+        string oreName,
+        RawOreReferenceValue value)
+    {
+        var remaining = oreName.Trim();
+        while (true)
+        {
+            var separatorIndex = remaining.IndexOf(' ');
+            if (separatorIndex < 0 || separatorIndex >= remaining.Length - 1)
+            {
+                return;
+            }
+
+            remaining = remaining[(separatorIndex + 1)..].TrimStart();
+            target.TryAdd(remaining, value);
+        }
     }
 
     private async Task<bool> TryLoadCachedOreValuesAsync(CancellationToken cancellationToken)
