@@ -135,3 +135,5 @@ under `build/releases/`.
 ![Preview3](https://i.imgur.com/uksm640.png)
 ---
 ![Preview4](https://i.imgur.com/AjQowco.png)
+---
+![Preview5](https://i.imgur.com/lYkn0p2.png)
