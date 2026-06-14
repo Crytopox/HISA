@@ -16,7 +16,7 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
     private const string RecentSessionLookbackHoursSettingsKey = "Mining.RecentSessionLookbackHours";
     private const string MiningRefineYieldPercentSettingsKey = "Mining.RefineYieldPercent";
     private const string MiningOreReferenceCacheSettingsKey = "Mining.OreReferenceCache";
-    private static readonly TimeOnly OreReferenceRefreshTimeUtc = new(11, 25);
+    private static readonly TimeSpan OreReferenceRefreshInterval = TimeSpan.FromHours(24);
 
     private readonly ISettingsService _settingsService;
     private readonly ISdeDatabase _sdeDatabase;
@@ -24,6 +24,7 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
     private readonly ILogger<MiningSessionLogFeedHostedService> _logger;
     private readonly GameLogMiningTracker _tracker = new();
     private readonly HistoricalSnapshotCache _historicalSnapshotCache = new();
+    private readonly SemaphoreSlim _oreRefreshSync = new(1, 1);
     private readonly object _gate = new();
     private readonly Dictionary<int, MiningCharacterStatsSnapshot> _snapshotByCharacterId = [];
     private Dictionary<string, RawOreReferenceValue> _rawOreValuesByName = new(StringComparer.OrdinalIgnoreCase);
@@ -135,6 +136,7 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
 
     public override void Dispose()
     {
+        _oreRefreshSync.Dispose();
         _tracker.Dispose();
         base.Dispose();
     }
@@ -300,17 +302,35 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
             RebuildDerivedOreValues();
         }
 
-        if (_oreValuesByName.Count == 0 && !await TryLoadCachedOreValuesAsync(cancellationToken))
-        {
-            await RefreshOreValuesAsync(cancellationToken);
-        }
-
-        if (_oreValuesByName.Count > 0 && DateTime.UtcNow < _oreValuesRefreshDueUtc)
+        if (HasFreshOreValues())
         {
             return;
         }
 
-        await RefreshOreValuesAsync(cancellationToken);
+        await _oreRefreshSync.WaitAsync(cancellationToken);
+        try
+        {
+            if (HasFreshOreValues())
+            {
+                return;
+            }
+
+            if (_oreValuesByName.Count == 0)
+            {
+                await TryLoadCachedOreValuesAsync(cancellationToken);
+            }
+
+            if (HasFreshOreValues())
+            {
+                return;
+            }
+
+            await RefreshOreValuesAsync(cancellationToken);
+        }
+        finally
+        {
+            _oreRefreshSync.Release();
+        }
     }
 
     private async Task RefreshOreValuesAsync(CancellationToken cancellationToken)
@@ -365,10 +385,12 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
                 nextRaw[prismaticiteName] = new RawOreReferenceValue(prismaticite.OreVolume, 1, (decimal)prismaticite.ExpectedRandomValuePerOre, IsDirectPerOreValue: true);
             }
 
-            var refreshDueUtc = ComputeNextOreReferenceRefreshDueUtc(sourceGeneratedAtUtc);
+            var refreshedAtUtc = DateTime.UtcNow;
+            var refreshDueUtc = refreshedAtUtc + OreReferenceRefreshInterval;
             var cachePayload = new OreReferenceCachePayload
             {
                 SourceGeneratedAtUtc = sourceGeneratedAtUtc,
+                RefreshedAtUtc = refreshedAtUtc,
                 RefreshDueUtc = refreshDueUtc,
                 Items = nextRaw
                     .Select(kvp => new OreReferenceCacheItem
@@ -563,23 +585,31 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
             return false;
         }
 
+        var refreshedAtUtc = payload.RefreshedAtUtc;
+        var refreshDueUtc = payload.RefreshDueUtc;
+        if (refreshDueUtc == default)
+        {
+            refreshDueUtc = refreshedAtUtc != default
+                ? refreshedAtUtc + OreReferenceRefreshInterval
+                : DateTime.UtcNow + OreReferenceRefreshInterval;
+        }
+
         lock (_gate)
         {
             _rawOreValuesByName = nextRaw;
-            _oreValuesRefreshDueUtc = payload.RefreshDueUtc;
+            _oreValuesRefreshDueUtc = refreshDueUtc;
             RebuildDerivedOreValues();
         }
 
         return true;
     }
 
-    private static DateTime ComputeNextOreReferenceRefreshDueUtc(DateTime sourceGeneratedAtUtc)
+    private bool HasFreshOreValues()
     {
-        var generatedUtc = DateTime.SpecifyKind(sourceGeneratedAtUtc, DateTimeKind.Utc);
-        var refreshAnchorUtc = generatedUtc.Date + OreReferenceRefreshTimeUtc.ToTimeSpan();
-        return generatedUtc < refreshAnchorUtc
-            ? refreshAnchorUtc
-            : refreshAnchorUtc.AddDays(1);
+        lock (_gate)
+        {
+            return _oreValuesByName.Count > 0 && DateTime.UtcNow < _oreValuesRefreshDueUtc;
+        }
     }
 
     private sealed record RawOreReferenceValue(double VolumeM3, int UnitsToReprocess, decimal ReferenceValue, bool IsDirectPerOreValue);
@@ -588,6 +618,7 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
     private sealed class OreReferenceCachePayload
     {
         public DateTime SourceGeneratedAtUtc { get; init; }
+        public DateTime RefreshedAtUtc { get; init; }
         public DateTime RefreshDueUtc { get; init; }
         public List<OreReferenceCacheItem> Items { get; init; } = [];
     }
