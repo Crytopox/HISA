@@ -122,10 +122,13 @@ public static class GameLogMiningHistoryReader
             {
                 case MiningLogEventKind.Yield:
                     var yieldOre = GetOrCreateOre(aggregate, miningEvent.OreName);
-                    yieldOre.MinedUnits += miningEvent.Units;
                     if (miningEvent.IsCriticalBonus)
                     {
                         yieldOre.BonusUnits += miningEvent.Units;
+                    }
+                    else
+                    {
+                        yieldOre.MinedUnits += miningEvent.Units;
                     }
                     yieldOre.LastMinedUtc = miningEvent.TimestampUtc;
                     if (aggregate.CurrentEfficiencyPercent is { } yieldEfficiency)

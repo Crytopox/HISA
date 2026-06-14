@@ -290,10 +290,13 @@ public sealed class GameLogMiningTracker : IDisposable
         {
             case MiningLogEventKind.Yield:
                 var ore = GetOrCreateOre(tracked, miningEvent.OreName);
-                ore.MinedUnits += miningEvent.Units;
                 if (miningEvent.IsCriticalBonus)
                 {
                     ore.BonusUnits += miningEvent.Units;
+                }
+                else
+                {
+                    ore.MinedUnits += miningEvent.Units;
                 }
                 ore.LastMinedUtc = miningEvent.TimestampUtc;
                 if (tracked.CurrentEfficiencyPercent is { } efficiencyPercent)

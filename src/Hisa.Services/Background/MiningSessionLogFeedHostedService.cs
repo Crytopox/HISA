@@ -244,6 +244,7 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
             EfficiencyPercent = efficiencyPercent,
             MiningRateM3PerHour = totalMinedVolume / elapsedHours,
             WasteRateM3PerHour = totalWasteVolume / elapsedHours,
+            DepletionRateM3PerHour = totalDepletionVolume / elapsedHours,
             TotalMiningRateM3PerHour = totalMiningVolume / elapsedHours,
             TotalEstimatedIsk = totalEstimatedIsk,
             TotalWasteEstimatedIsk = totalWasteEstimatedIsk,
@@ -889,10 +890,13 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
                 {
                     case MiningLogEventKind.Yield:
                         var yieldOre = GetOrCreateOre(aggregate, miningEvent.OreName);
-                        yieldOre.MinedUnits += miningEvent.Units;
                         if (miningEvent.IsCriticalBonus)
                         {
                             yieldOre.BonusUnits += miningEvent.Units;
+                        }
+                        else
+                        {
+                            yieldOre.MinedUnits += miningEvent.Units;
                         }
 
                         yieldOre.LastMinedUtc = miningEvent.TimestampUtc;

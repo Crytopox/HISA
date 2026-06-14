@@ -4006,6 +4006,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         var totalMiningRateM3PerHour = snapshots.Sum(x => x.TotalMiningRateM3PerHour);
         var miningRateM3PerHour = snapshots.Sum(x => x.MiningRateM3PerHour);
         var wasteRateM3PerHour = snapshots.Sum(x => x.WasteRateM3PerHour);
+        var depletionRateM3PerHour = snapshots.Sum(x => x.DepletionRateM3PerHour);
         var estimatedIskPerHour = snapshots.Sum(x => x.EstimatedIskPerHour);
         var yieldRatio = totalFlow > 0 ? totalMinedVolume / totalFlow : 1d;
         var wasteRatio = totalFlow > 0 ? totalWasteVolume / totalFlow : 0d;
@@ -4047,7 +4048,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             CritPercentSummary = $"{critPercent:0.#}%",
             WastePercentSummary = $"{wastePercent:0.#}%",
             TotalMiningRateSummary = overlayMode
-                ? $"{totalMiningRateM3PerHour / 3600d:0.##} m3/s total"
+                ? $"{depletionRateM3PerHour / 3600d:0.##} m3/s depletion"
                 : $"{totalMiningRateM3PerHour / 3600d:0.##} m3/s | {totalMiningRateM3PerHour:N0} m3/hr",
             MiningRateSummary = overlayMode
                 ? $"{miningRateM3PerHour / 3600d:0.##} m3/s yield"

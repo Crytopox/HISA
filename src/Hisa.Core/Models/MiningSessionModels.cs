@@ -83,6 +83,7 @@ public sealed class MiningCharacterStatsSnapshot
     public double EfficiencyPercent { get; init; }
     public double MiningRateM3PerHour { get; init; }
     public double WasteRateM3PerHour { get; init; }
+    public double DepletionRateM3PerHour { get; init; }
     public double TotalMiningRateM3PerHour { get; init; }
     public decimal TotalEstimatedIsk { get; init; }
     public decimal TotalWasteEstimatedIsk { get; init; }
