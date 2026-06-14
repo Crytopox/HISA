@@ -98,13 +98,9 @@ public sealed class AppLogFileService : IAppLogFileService, IDisposable
         var configured = configuration["Hisa:Diagnostics:PersistedFileLogLevel"];
         if (!string.IsNullOrWhiteSpace(configured) && Enum.TryParse<LogLevel>(configured, true, out var parsed))
         {
-            return parsed;
+            return parsed < LogLevel.Warning ? LogLevel.Warning : parsed;
         }
 
-        #if DEBUG
-        return LogLevel.Information;
-        #else
         return LogLevel.Warning;
-        #endif
     }
 }
