@@ -109,6 +109,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
     private TimeSpan _systemExpiry = TimeSpan.FromMinutes(15);
     private readonly DateTime _startupHistoryCutoffUtc = DateTime.UtcNow - TimeSpan.FromMinutes(10);
     private readonly Dictionary<string, DateTime> _recentReportKeys = new(StringComparer.Ordinal);
+    private string? _chatLogsDirectory;
 
     public IntelChatLogFeedHostedService(
         ISettingsService settingsService,
@@ -136,38 +137,77 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         }
     }
 
+    public async Task ApplySettingsAsync(CancellationToken cancellationToken = default)
+    {
+        var wasEnabled = _enabled;
+        var wasZkillEnabled = _zkillEnabled;
+        await LoadSettingsAsync(cancellationToken);
+
+        if (!_enabled)
+        {
+            ClearPendingIntelFiles();
+            ClearSnapshots();
+        }
+        else
+        {
+            PruneSnapshotsForCurrentSettings();
+        }
+
+        if (_enabled && _chatLogsDirectory is null)
+        {
+            _chatLogsDirectory = await ResolveChatLogsDirectoryAsync(cancellationToken);
+            if (_chatLogsDirectory is not null && _watcher is null)
+            {
+                SetupWatcher(_chatLogsDirectory);
+            }
+        }
+
+        if (_enabled && _chatLogsDirectory is not null)
+        {
+            EnqueueAllKnownFiles(_chatLogsDirectory, startupOnlyNewestPerChannel: true);
+        }
+
+        if (_enabled && _zkillEnabled && (!wasEnabled || !wasZkillEnabled || _nextZkillSequence is null))
+        {
+            await InitializeZkillSequenceAsync(cancellationToken);
+        }
+
+        ExpireSnapshots(DateTime.UtcNow);
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         await LoadSettingsAsync(stoppingToken);
-        if (!_enabled)
-        {
-            _logger.LogInformation("Intel chat feed is disabled by settings.");
-            return;
-        }
-
         _systemIdByName = await LoadSystemNameMapAsync(stoppingToken);
         (_shipClassByName, _shipTypeIdByName, _shipClassByTypeId, _shipNameByTypeId) = await LoadShipMapsAsync(stoppingToken);
         _messageParser = new IntelChatMessageParser(_systemIdByName, _shipClassByName, ShipAliases);
-        if (_zkillEnabled)
+        if (_enabled && _zkillEnabled)
         {
             await InitializeZkillSequenceAsync(stoppingToken);
         }
-        var chatLogsDirectory = await ResolveChatLogsDirectoryAsync(stoppingToken);
-        if (chatLogsDirectory is null && _includeChannels.Count > 0)
+        _chatLogsDirectory = await ResolveChatLogsDirectoryAsync(stoppingToken);
+        if (_chatLogsDirectory is null && _includeChannels.Count > 0)
         {
             _logger.LogWarning("Intel chat feed disabled: ChatLogs directory was not found.");
         }
 
-        if (chatLogsDirectory is not null)
+        if (_chatLogsDirectory is not null)
         {
-            _logger.LogInformation("Starting intel chat feed from: {Path}", chatLogsDirectory);
-            SetupWatcher(chatLogsDirectory);
-            EnqueueAllKnownFiles(chatLogsDirectory, startupOnlyNewestPerChannel: true);
+            _logger.LogInformation("Starting intel chat feed from: {Path}", _chatLogsDirectory);
+            SetupWatcher(_chatLogsDirectory);
+            if (_enabled)
+            {
+                EnqueueAllKnownFiles(_chatLogsDirectory, startupOnlyNewestPerChannel: true);
+            }
+        }
+        else if (!_enabled)
+        {
+            _logger.LogInformation("Intel chat feed started in disabled state.");
         }
 
         try
         {
-            var intelLoop = RunIntelLogLoopAsync(chatLogsDirectory, stoppingToken);
+            var intelLoop = RunIntelLogLoopAsync(_chatLogsDirectory, stoppingToken);
             var zkillLoop = RunZkillLoopAsync(stoppingToken);
             await Task.WhenAll(intelLoop, zkillLoop);
         }
@@ -202,11 +242,18 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
                     {
                     }
 
-                    await FlushDirtyFilesAsync(stoppingToken);
+                    if (_enabled)
+                    {
+                        await FlushDirtyFilesAsync(stoppingToken);
+                    }
+                    else
+                    {
+                        ClearPendingIntelFiles();
+                    }
                     nowUtc = DateTime.UtcNow;
                 }
 
-                if (nowUtc >= nextKnownFileSweepUtc)
+                if (_enabled && nowUtc >= nextKnownFileSweepUtc)
                 {
                     EnqueueKnownActiveFiles();
                     nextKnownFileSweepUtc = nowUtc + KnownActiveFileSweepInterval;
@@ -218,7 +265,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
                     nextExpirySweepUtc = nowUtc + SnapshotExpirySweepInterval;
                 }
 
-                if (chatLogsDirectory is not null && nowUtc >= nextChannelSweepUtc)
+                if (_enabled && chatLogsDirectory is not null && nowUtc >= nextChannelSweepUtc)
                 {
                     EnqueueAllKnownFiles(chatLogsDirectory, startupOnlyNewestPerChannel: true);
                     nextChannelSweepUtc = nowUtc + ChannelFileSweepInterval;
@@ -589,6 +636,62 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
                 // Best effort wake signal; processing still occurs via periodic loop delay.
             }
         }
+    }
+
+    private void ClearPendingIntelFiles()
+    {
+        _dirtyFiles.Clear();
+        while (_dirtySignal.Wait(0))
+        {
+        }
+    }
+
+    private void ClearSnapshots()
+    {
+        lock (_gate)
+        {
+            _snapshotBySystemId.Clear();
+        }
+
+        SnapshotUpdated?.Invoke(this, Snapshot);
+    }
+
+    private void PruneSnapshotsForCurrentSettings()
+    {
+        var changed = false;
+        lock (_gate)
+        {
+            foreach (var pair in _snapshotBySystemId.ToList())
+            {
+                if (ShouldKeepSnapshotForCurrentSettings(pair.Value))
+                {
+                    continue;
+                }
+
+                _snapshotBySystemId.Remove(pair.Key);
+                changed = true;
+            }
+        }
+
+        if (changed)
+        {
+            SnapshotUpdated?.Invoke(this, Snapshot);
+        }
+    }
+
+    private bool ShouldKeepSnapshotForCurrentSettings(IntelSystemSnapshot snapshot)
+    {
+        if (!_enabled)
+        {
+            return false;
+        }
+
+        if (string.Equals(snapshot.LastChannelName, ZkillChannelName, StringComparison.OrdinalIgnoreCase))
+        {
+            return _zkillEnabled;
+        }
+
+        return ShouldReadChannel(snapshot.LastChannelName);
     }
 
     private async Task FlushDirtyFilesAsync(CancellationToken cancellationToken)
@@ -1563,7 +1666,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
 
     private async Task PollZkillAsync(CancellationToken cancellationToken)
     {
-        if (!_zkillEnabled || _nextZkillSequence is null || DateTime.UtcNow < _nextZkillPollAfterUtc)
+        if (!_enabled || !_zkillEnabled || _nextZkillSequence is null || DateTime.UtcNow < _nextZkillPollAfterUtc)
         {
             return;
         }

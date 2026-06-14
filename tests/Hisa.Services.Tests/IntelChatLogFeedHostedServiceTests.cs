@@ -112,6 +112,69 @@ public class IntelChatLogFeedHostedServiceTests
     }
 
     [Fact]
+    public async Task ApplySettingsAsync_ReloadsEnabledChannelsAndExpiry()
+    {
+        var settings = new NoopSettingsService(new Dictionary<string, object?>
+        {
+            ["Intel.Enabled"] = true,
+            ["Intel.Channels.Include"] = new List<string> { "alpha" },
+            ["Intel.SystemExpiryMinutes"] = 15
+        });
+        var service = new IntelChatLogFeedHostedService(
+            settings,
+            new NoopSdeDatabase(),
+            new NoopHttpClientFactory(),
+            NullLogger<IntelChatLogFeedHostedService>.Instance);
+
+        await service.ApplySettingsAsync();
+
+        settings.Values["Intel.Enabled"] = false;
+        settings.Values["Intel.Channels.Include"] = new List<string> { "beta" };
+        settings.Values["Intel.SystemExpiryMinutes"] = 3;
+
+        await service.ApplySettingsAsync();
+
+        var shouldReadChannel = typeof(IntelChatLogFeedHostedService).GetMethod(
+            "ShouldReadChannel",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(shouldReadChannel);
+        Assert.False((bool)shouldReadChannel!.Invoke(service, ["alpha"])!);
+        Assert.True((bool)shouldReadChannel.Invoke(service, ["beta"])!);
+
+        var enabledField = typeof(IntelChatLogFeedHostedService).GetField(
+            "_enabled",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(enabledField);
+        Assert.False((bool)enabledField!.GetValue(service)!);
+
+        var expiryField = typeof(IntelChatLogFeedHostedService).GetField(
+            "_systemExpiry",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(expiryField);
+        Assert.Equal(TimeSpan.FromMinutes(3), (TimeSpan)expiryField!.GetValue(service)!);
+    }
+
+    [Fact]
+    public async Task ApplySettingsAsync_PrunesSnapshotsFromExcludedChannels()
+    {
+        var settings = new NoopSettingsService(new Dictionary<string, object?>
+        {
+            ["Intel.Enabled"] = true,
+            ["Intel.Channels.Include"] = new List<string> { "alpha" },
+            ["Intel.SystemExpiryMinutes"] = 15
+        });
+        var service = CreateServiceWithSystems(settings);
+
+        ApplyReport(service, CreateReport("Old System", DateTime.UtcNow, "Reporter", "hostile", "alpha", "Pilot One"));
+        Assert.True(service.Snapshot.ContainsKey(1));
+
+        settings.Values["Intel.Channels.Include"] = new List<string> { "beta" };
+        await service.ApplySettingsAsync();
+
+        Assert.False(service.Snapshot.ContainsKey(1));
+    }
+
+    [Fact]
     public void ApplyToSystemSnapshot_WhenNamedHostileMoves_RemovesOldSystemSnapshot()
     {
         var service = CreateServiceWithSystems();
@@ -209,10 +272,10 @@ public class IntelChatLogFeedHostedServiceTests
         Assert.Contains(IntelShipClass.Cruiser, shipClasses);
     }
 
-    private static IntelChatLogFeedHostedService CreateServiceWithSystems()
+    private static IntelChatLogFeedHostedService CreateServiceWithSystems(NoopSettingsService? settings = null)
     {
         var service = new IntelChatLogFeedHostedService(
-            new NoopSettingsService(),
+            settings ?? new NoopSettingsService(),
             new NoopSdeDatabase(),
             new NoopHttpClientFactory(),
             NullLogger<IntelChatLogFeedHostedService>.Instance);
@@ -312,11 +375,16 @@ public class IntelChatLogFeedHostedServiceTests
 
     private static IntelChatReport CreateReport(string systemName, DateTime timestampUtc, string reporterName, string messageText, params string[] hostileNames)
     {
+        return CreateReport(systemName, timestampUtc, reporterName, messageText, "Intel", hostileNames);
+    }
+
+    private static IntelChatReport CreateReport(string systemName, DateTime timestampUtc, string reporterName, string messageText, string channelName, params string[] hostileNames)
+    {
         return new IntelChatReport
         {
             DedupeKey = $"intel:{timestampUtc:O}:{reporterName.Trim().ToUpperInvariant()}:{messageText.Trim().ToUpperInvariant()}",
             TimestampUtc = timestampUtc,
-            ChannelName = "Intel",
+            ChannelName = channelName,
             ReporterName = reporterName,
             MessageText = messageText,
             SourceFilePath = "test://intel",
@@ -332,7 +400,7 @@ public class IntelChatLogFeedHostedServiceTests
 
     private sealed class NoopSettingsService : ISettingsService
     {
-        private readonly IReadOnlyDictionary<string, object?> _values;
+        public Dictionary<string, object?> Values { get; }
 
         public NoopSettingsService()
             : this(new Dictionary<string, object?>())
@@ -341,12 +409,12 @@ public class IntelChatLogFeedHostedServiceTests
 
         public NoopSettingsService(IReadOnlyDictionary<string, object?> values)
         {
-            _values = values;
+            Values = new Dictionary<string, object?>(values);
         }
 
         public Task<T?> GetAsync<T>(string key, CancellationToken cancellationToken = default)
         {
-            if (_values.TryGetValue(key, out var value) && value is T typed)
+            if (Values.TryGetValue(key, out var value) && value is T typed)
             {
                 return Task.FromResult<T?>(typed);
             }
@@ -356,6 +424,7 @@ public class IntelChatLogFeedHostedServiceTests
 
         public Task SetAsync<T>(string key, T value, CancellationToken cancellationToken = default)
         {
+            Values[key] = value;
             return Task.CompletedTask;
         }
     }

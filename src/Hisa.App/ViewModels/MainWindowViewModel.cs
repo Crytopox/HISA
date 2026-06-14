@@ -3001,12 +3001,15 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         List<IntelChatReport> history;
         lock (_intelSnapshotsBySystemId)
         {
-            snapshot = _intelSnapshotsBySystemId.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+            snapshot = _intelSnapshotsBySystemId
+                .Where(kvp => ShouldKeepIntelSnapshotForCurrentSettings(kvp.Value))
+                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
         }
         lock (_intelReportHistory)
         {
             var listCutoffUtc = DateTime.UtcNow - TimeSpan.FromMinutes(IntelListExpiryMinutes);
             history = _intelReportHistory
+                .Where(ShouldKeepIntelReportForCurrentSettings)
                 .Where(report => report.TimestampUtc >= listCutoffUtc)
                 .ToList();
         }
@@ -3211,6 +3214,68 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelRecentReportsByNodeIdForView)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ZkillRecentReportsByNodeIdForView)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelHostileScoresByNodeIdForView)));
+    }
+
+    private void PruneIntelStateForCurrentSettings()
+    {
+        lock (_intelSnapshotsBySystemId)
+        {
+            foreach (var key in _intelSnapshotsBySystemId
+                         .Where(kvp => !ShouldKeepIntelSnapshotForCurrentSettings(kvp.Value))
+                         .Select(kvp => kvp.Key)
+                         .ToList())
+            {
+                _intelSnapshotsBySystemId.Remove(key);
+            }
+        }
+
+        lock (_intelReportHistory)
+        {
+            _intelReportHistory.RemoveAll(report => !ShouldKeepIntelReportForCurrentSettings(report));
+        }
+    }
+
+    private bool ShouldKeepIntelSnapshotForCurrentSettings(IntelSystemSnapshot snapshot)
+    {
+        if (!IntelEnabled)
+        {
+            return false;
+        }
+
+        if (string.Equals(snapshot.LastChannelName, "zKillboard", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var include = GetConfiguredIntelIncludeChannels();
+        return include.Count == 0 || include.Contains(snapshot.LastChannelName);
+    }
+
+    private bool ShouldKeepIntelReportForCurrentSettings(IntelChatReport report)
+    {
+        var isZkillReport = string.Equals(report.ChannelName, "zKillboard", StringComparison.OrdinalIgnoreCase)
+                            || report.SourceFilePath.StartsWith("api://zkillboard", StringComparison.OrdinalIgnoreCase);
+        if (isZkillReport)
+        {
+            return IntelEnabled;
+        }
+
+        if (!IntelEnabled)
+        {
+            return false;
+        }
+
+        var include = GetConfiguredIntelIncludeChannels();
+        return include.Count == 0 || include.Contains(report.ChannelName);
+    }
+
+    private HashSet<string> GetConfiguredIntelIncludeChannels()
+    {
+        return IntelIncludeChannelsText
+            .Split(['\r', '\n', ',', ';', '\t'], StringSplitOptions.RemoveEmptyEntries)
+            .Select(x => x.Trim())
+            .Where(x => x.Length > 0)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
     private bool IsIntelSnapshotFresh(IntelSystemSnapshot snapshot, DateTime nowUtc)
@@ -4147,14 +4212,22 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             return;
         }
 
+        IntelSystemExpiryMinutes = Math.Clamp(IntelSystemExpiryMinutes, 1, 180);
+        IntelListExpiryMinutes = Math.Clamp(IntelListExpiryMinutes, 1, 240);
+        IntelIncludeChannelsText = string.Join(Environment.NewLine, include);
+
         await _settingsService.SetAsync(IntelEnabledKey, IntelEnabled);
         await _settingsService.SetAsync(IntelIncludeChannelsKey, include);
-        await _settingsService.SetAsync(IntelSystemExpiryMinutesKey, Math.Clamp(IntelSystemExpiryMinutes, 1, 180));
-        await _settingsService.SetAsync(IntelListExpiryMinutesKey, Math.Clamp(IntelListExpiryMinutes, 1, 240));
+        await _settingsService.SetAsync(IntelSystemExpiryMinutesKey, IntelSystemExpiryMinutes);
+        await _settingsService.SetAsync(IntelListExpiryMinutesKey, IntelListExpiryMinutes);
         await _settingsService.SetAsync(IntelLimitToCurrentRegionKey, LimitIntelReportsToCurrentRegion);
         await _settingsService.SetAsync(ZkillLimitToCurrentRegionKey, LimitZkillmailsToCurrentRegion);
         await _settingsService.SetAsync(ZkillHideOutsideKnownSpaceKey, HideZkillmailsOutsideKnownSpace);
-        StatusText = "Intel settings saved. Restart HISA intel feed to apply channel filter changes.";
+        await _intelFeed.ApplySettingsAsync();
+        PruneIntelStateForCurrentSettings();
+        RebuildIntelPresenceForView();
+        ScheduleActivityCardsRebuild();
+        StatusText = "Intel settings saved and applied.";
     }
 
     public IReadOnlyList<AlertRule> GetAlertRulesSnapshot()

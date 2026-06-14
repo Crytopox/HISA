@@ -39,7 +39,8 @@
         <StackPanel Orientation="Horizontal" Spacing="8">
           <Button Content="Clear Intel + zKillmails" MinWidth="160" Click="OnClearIntelHistoryClicked" />
           <Button Content="Save" MinWidth="90" Click="OnSaveIntelSettingsClicked" />
-          <TextBlock Text="Restart app after channel filter changes."
+          <TextBlock x:Name="SaveFeedbackText"
+                     Text="Changes apply immediately."
                      Foreground="#8A96A8"
                      VerticalAlignment="Center" />
         </StackPanel>
