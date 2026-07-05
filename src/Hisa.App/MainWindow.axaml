@@ -477,7 +477,14 @@
                 CornerRadius="8"
                 IsVisible="{Binding IsHubWormholesOverlayOpen}">
           <StackPanel Spacing="8">
-            <TextBlock Text="{Binding HubWormholeOverlayTitle}" Foreground="#EAF2FF" FontWeight="SemiBold" />
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+              <TextBlock Grid.Column="0" Text="{Binding HubWormholeOverlayTitle}" Foreground="#EAF2FF" FontWeight="SemiBold" VerticalAlignment="Center" />
+              <CheckBox Grid.Column="1"
+                        Content="Current Region"
+                        IsChecked="{Binding LimitHubWormholesToCurrentRegion, Mode=TwoWay}"
+                        Foreground="#BFD2EC"
+                        VerticalAlignment="Center" />
+            </Grid>
             <TextBlock Text="Data source: EvE-Scout (Thera/Turnur)" Foreground="#8FA5C4" FontSize="11" />
             <ScrollViewer MaxHeight="340" VerticalScrollBarVisibility="Auto">
               <ItemsControl ItemsSource="{Binding HubWormholeCardsForView}">
@@ -557,7 +564,14 @@
                 CornerRadius="8"
                 IsVisible="{Binding IsIncursionsOverlayOpen}">
           <StackPanel Spacing="8">
-            <TextBlock Text="{Binding IncursionOverlayTitle}" Foreground="#EAF2FF" FontWeight="SemiBold" />
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+              <TextBlock Grid.Column="0" Text="{Binding IncursionOverlayTitle}" Foreground="#EAF2FF" FontWeight="SemiBold" VerticalAlignment="Center" />
+              <CheckBox Grid.Column="1"
+                        Content="Current Region"
+                        IsChecked="{Binding LimitIncursionsToCurrentRegion, Mode=TwoWay}"
+                        Foreground="#BFD2EC"
+                        VerticalAlignment="Center" />
+            </Grid>
             <TextBlock Text="Data source: ESI Incursions" Foreground="#8FA5C4" FontSize="11" />
             <ScrollViewer MaxHeight="340" VerticalScrollBarVisibility="Auto">
               <ItemsControl ItemsSource="{Binding IncursionCardsForView}">
@@ -635,7 +649,14 @@
                 CornerRadius="8"
                 IsVisible="{Binding IsStormsOverlayOpen}">
           <StackPanel Spacing="8">
-            <TextBlock Text="{Binding StormOverlayTitle}" Foreground="#EAF2FF" FontWeight="SemiBold" />
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+              <TextBlock Grid.Column="0" Text="{Binding StormOverlayTitle}" Foreground="#EAF2FF" FontWeight="SemiBold" VerticalAlignment="Center" />
+              <CheckBox Grid.Column="1"
+                        Content="Current Region"
+                        IsChecked="{Binding LimitStormsToCurrentRegion, Mode=TwoWay}"
+                        Foreground="#BFD2EC"
+                        VerticalAlignment="Center" />
+            </Grid>
             <TextBlock Text="Data source: EvE-Scout Storm Observations" Foreground="#8FA5C4" FontSize="11" />
             <ScrollViewer MaxHeight="340" VerticalScrollBarVisibility="Auto">
               <ItemsControl ItemsSource="{Binding StormCardsForView}">

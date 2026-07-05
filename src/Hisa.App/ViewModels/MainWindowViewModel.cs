@@ -380,6 +380,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private IReadOnlyDictionary<long, IReadOnlyList<IntelMapHoverReport>> _intelRecentReportsByNodeId = new Dictionary<long, IReadOnlyList<IntelMapHoverReport>>();
     private IReadOnlyDictionary<long, IReadOnlyList<IntelMapHoverKillmail>> _zkillRecentReportsByNodeId = new Dictionary<long, IReadOnlyList<IntelMapHoverKillmail>>();
     private IReadOnlyDictionary<long, int> _intelHostileScoresByNodeId = new Dictionary<long, int>();
+    private bool _limitHubWormholesToCurrentRegion;
+    private bool _limitIncursionsToCurrentRegion;
+    private bool _limitStormsToCurrentRegion;
     private bool _limitIntelReportsToCurrentRegion;
     private bool _limitZkillmailsToCurrentRegion;
     private bool _hideZkillmailsOutsideKnownSpace;
@@ -474,6 +477,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string MiningStatsWindowPlacementKey = "Window.MiningStats.Placement";
     private const string MiningOverlayWindowPlacementKey = "Window.MiningOverlay.Placement";
     private const string IntelIncludeChannelsKey = "Intel.Channels.Include";
+    private const string HubWormholeLimitToCurrentRegionKey = "Intel.HubWormholes.Overlay.LimitToCurrentRegion";
+    private const string IncursionLimitToCurrentRegionKey = "Intel.Incursions.Overlay.LimitToCurrentRegion";
+    private const string StormLimitToCurrentRegionKey = "Intel.Storms.Overlay.LimitToCurrentRegion";
     private const string IntelLimitToCurrentRegionKey = "Intel.Overlay.LimitToCurrentRegion";
     private const string ZkillLimitToCurrentRegionKey = "Intel.Zkill.Overlay.LimitToCurrentRegion";
     private const string ZkillHideOutsideKnownSpaceKey = "Intel.Zkill.HideOutsideKnownSpace";
@@ -617,6 +623,51 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public string StormOverlayTitle => $"Metaliminal Storms ({_stormCardsForView.Count})";
     public string IntelOverlayTitle => $"Intel Reports ({_intelCardsForView.Count})";
     public string ZkillmailOverlayTitle => $"zKillmails ({_zkillmailCardsForView.Count})";
+    public bool LimitHubWormholesToCurrentRegion
+    {
+        get => _limitHubWormholesToCurrentRegion;
+        set
+        {
+            if (!SetProperty(ref _limitHubWormholesToCurrentRegion, value))
+            {
+                return;
+            }
+
+            _ = _settingsService.SetAsync(HubWormholeLimitToCurrentRegionKey, value);
+            ScheduleActivityCardsRebuild();
+        }
+    }
+
+    public bool LimitIncursionsToCurrentRegion
+    {
+        get => _limitIncursionsToCurrentRegion;
+        set
+        {
+            if (!SetProperty(ref _limitIncursionsToCurrentRegion, value))
+            {
+                return;
+            }
+
+            _ = _settingsService.SetAsync(IncursionLimitToCurrentRegionKey, value);
+            ScheduleActivityCardsRebuild();
+        }
+    }
+
+    public bool LimitStormsToCurrentRegion
+    {
+        get => _limitStormsToCurrentRegion;
+        set
+        {
+            if (!SetProperty(ref _limitStormsToCurrentRegion, value))
+            {
+                return;
+            }
+
+            _ = _settingsService.SetAsync(StormLimitToCurrentRegionKey, value);
+            ScheduleActivityCardsRebuild();
+        }
+    }
+
     public bool LimitIntelReportsToCurrentRegion
     {
         get => _limitIntelReportsToCurrentRegion;
@@ -2166,6 +2217,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _alertRules = await _settingsService.GetAsync<List<AlertRule>>(AlertRulesKey) ?? [];
         _alertPopupSettings = SanitizeAlertPopupSettings(
             await _settingsService.GetAsync<AlertPopupSettings>(AlertPopupSettingsKey) ?? new AlertPopupSettings());
+        LimitHubWormholesToCurrentRegion = await _settingsService.GetAsync<bool?>(HubWormholeLimitToCurrentRegionKey) ?? false;
+        LimitIncursionsToCurrentRegion = await _settingsService.GetAsync<bool?>(IncursionLimitToCurrentRegionKey) ?? false;
+        LimitStormsToCurrentRegion = await _settingsService.GetAsync<bool?>(StormLimitToCurrentRegionKey) ?? false;
         LimitIntelReportsToCurrentRegion = await _settingsService.GetAsync<bool?>(IntelLimitToCurrentRegionKey) ?? false;
         LimitZkillmailsToCurrentRegion = await _settingsService.GetAsync<bool?>(ZkillLimitToCurrentRegionKey) ?? true;
         HideZkillmailsOutsideKnownSpace = await _settingsService.GetAsync<bool?>(ZkillHideOutsideKnownSpaceKey) ?? false;
@@ -4220,6 +4274,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         await _settingsService.SetAsync(IntelIncludeChannelsKey, include);
         await _settingsService.SetAsync(IntelSystemExpiryMinutesKey, IntelSystemExpiryMinutes);
         await _settingsService.SetAsync(IntelListExpiryMinutesKey, IntelListExpiryMinutes);
+        await _settingsService.SetAsync(HubWormholeLimitToCurrentRegionKey, LimitHubWormholesToCurrentRegion);
+        await _settingsService.SetAsync(IncursionLimitToCurrentRegionKey, LimitIncursionsToCurrentRegion);
+        await _settingsService.SetAsync(StormLimitToCurrentRegionKey, LimitStormsToCurrentRegion);
         await _settingsService.SetAsync(IntelLimitToCurrentRegionKey, LimitIntelReportsToCurrentRegion);
         await _settingsService.SetAsync(ZkillLimitToCurrentRegionKey, LimitZkillmailsToCurrentRegion);
         await _settingsService.SetAsync(ZkillHideOutsideKnownSpaceKey, HideZkillmailsOutsideKnownSpace);
@@ -5052,6 +5109,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
         _hubWormholeCardsForView = wormholeBySystem
             .Where(kvp => kvp.Value.Count > 0)
+            .Where(kvp => !LimitHubWormholesToCurrentRegion || visibleNodeIds.Contains(kvp.Key))
             .SelectMany(kvp =>
             {
                 var systemId = kvp.Key;
@@ -5096,6 +5154,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             .ToList();
 
         _incursionCardsForView = incursions
+            .Where(i => !LimitIncursionsToCurrentRegion || visibleNodeIds.Contains(i.StagingSolarSystemId))
             .Select(i =>
             {
                 metadataById.TryGetValue(i.StagingSolarSystemId, out var stagingMeta);
@@ -5133,6 +5192,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             .ToList();
 
         _stormCardsForView = storms.Centers
+            .Where(center => !LimitStormsToCurrentRegion || visibleNodeIds.Contains(center.SolarSystemId))
             .Select(center =>
             {
                 metadataById.TryGetValue(center.SolarSystemId, out var centerMeta);
