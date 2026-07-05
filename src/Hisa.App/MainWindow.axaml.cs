@@ -21,6 +21,8 @@ namespace Hisa.App;
 
 public partial class MainWindow : Window
 {
+    private const double CompactTopToolbarThreshold = 1180;
+    private const double TwoLineTopToolbarThreshold = 660;
     private bool _clearSearchOnNextFocus;
     private bool _isApplyingWindowPlacement;
     private bool _isApplyingViewport;
@@ -70,6 +72,7 @@ public partial class MainWindow : Window
         _killmailAppService = new KillmailAppService();
         InitializeComponent();
         AddHandler(InputElement.PointerPressedEvent, OnWindowPointerPressed, RoutingStrategies.Tunnel, true);
+        SizeChanged += (_, _) => UpdateTopToolbarLayout();
 
         int subMenufontSize = 13;
 
@@ -131,6 +134,7 @@ public partial class MainWindow : Window
         _mapNodeContextMenu.Classes.Add("map-node-menu");
         MainMapControl.UniverseRegionNodeDoubleClicked += OnUniverseRegionNodeClicked;
         Opened += OnOpened;
+        Opened += (_, _) => UpdateTopToolbarLayout();
         Closing += (_, _) =>
         {
             _isClosingApp = true;
@@ -160,6 +164,39 @@ public partial class MainWindow : Window
         _alertPopupCleanupTimer.Tick += (_, _) => CleanupExpiredAlertPopupCards();
         _alertPopupCleanupTimer.Start();
         Opened += OnCheckForUpdatesOnStartup;
+    }
+
+    private void UpdateTopToolbarLayout()
+    {
+        var width = ClientSize.Width;
+        var useTwoLineLayout = width < TwoLineTopToolbarThreshold;
+        var useOverflowMenu = width < CompactTopToolbarThreshold && !useTwoLineLayout;
+
+        TopToolbarActionsPanel.IsVisible = !useOverflowMenu;
+        TopToolbarOverflowButton.IsVisible = useOverflowMenu;
+
+        Grid.SetRow(TopToolbarModesPanel, 0);
+        Grid.SetColumn(TopToolbarModesPanel, 0);
+        Grid.SetColumnSpan(TopToolbarModesPanel, 1);
+
+        Grid.SetRow(TopToolbarActionsHost, 0);
+        Grid.SetColumn(TopToolbarActionsHost, 2);
+        Grid.SetColumnSpan(TopToolbarActionsHost, 1);
+
+        if (useTwoLineLayout)
+        {
+            Grid.SetRow(TopToolbarInputsPanel, 1);
+            Grid.SetColumn(TopToolbarInputsPanel, 0);
+            Grid.SetColumnSpan(TopToolbarInputsPanel, 3);
+            TopToolbarInputsPanel.Margin = new Thickness(0, 8, 0, 0);
+        }
+        else
+        {
+            Grid.SetRow(TopToolbarInputsPanel, 0);
+            Grid.SetColumn(TopToolbarInputsPanel, 1);
+            Grid.SetColumnSpan(TopToolbarInputsPanel, 1);
+            TopToolbarInputsPanel.Margin = new Thickness(4, 0, 0, 0);
+        }
     }
 
     private void OnOpenDebugConsoleClicked(object? sender, RoutedEventArgs e)

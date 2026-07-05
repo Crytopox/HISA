@@ -17,13 +17,14 @@
   </Window.Resources>
   <Window.Styles>
     <Style Selector="ToggleButton.view-mode">
-      <Setter Property="Padding" Value="10,4" />
-      <Setter Property="MinWidth" Value="72" />
+      <Setter Property="Padding" Value="8,3" />
+      <Setter Property="MinWidth" Value="64" />
       <Setter Property="CornerRadius" Value="4" />
       <Setter Property="Background" Value="#182333" />
       <Setter Property="BorderBrush" Value="#2B3C55" />
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="Foreground" Value="#C4D4EA" />
+      <Setter Property="FontSize" Value="12" />
     </Style>
     <Style Selector="ToggleButton.view-mode:checked">
       <Setter Property="Background" Value="#2E4664" />
@@ -53,38 +54,80 @@
     <Style Selector="ContextMenu.map-node-menu MenuItem.map-node-menu-item:pressed">
       <Setter Property="Background" Value="#6695CCFF" />
     </Style>
+    <Style Selector="Button.top-toolbar-action">
+      <Setter Property="MinWidth" Value="72" />
+      <Setter Property="Padding" Value="10,3" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="ToggleButton.top-toolbar-action">
+      <Setter Property="MinWidth" Value="82" />
+      <Setter Property="Padding" Value="10,3" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="ComboBox.top-toolbar-select">
+      <Setter Property="MinHeight" Value="30" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="TextBox.top-toolbar-search">
+      <Setter Property="MinHeight" Value="30" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+    </Style>
   </Window.Styles>
   <Grid RowDefinitions="Auto,*,Auto">
     <Border Padding="10,10" Background="#121A26" BorderBrush="#263244" BorderThickness="0,0,0,1">
-      <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto,Auto,Auto"
-            ColumnSpacing="12"
+      <Grid x:Name="TopToolbarRootGrid"
+            ColumnDefinitions="Auto,*,Auto"
+            RowDefinitions="Auto,Auto"
+            ColumnSpacing="8"
             VerticalAlignment="Center">
-        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" Margin="0,0,8,0">
+        <StackPanel x:Name="TopToolbarModesPanel"
+                    Grid.Column="0"
+                    Orientation="Horizontal"
+                    Spacing="4">
             <ToggleButton Classes="view-mode" Content="Universe" IsChecked="{Binding IsUniverseMode, Mode=TwoWay}" />
             <ToggleButton Classes="view-mode" Content="Regions" IsChecked="{Binding IsUniverseRegionsMode, Mode=TwoWay}" />
             <ToggleButton Classes="view-mode" Content="Region" IsChecked="{Binding IsRegionMode, Mode=TwoWay}" />
         </StackPanel>
-        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" IsVisible="{Binding IsCoordinateSelectorVisible}">
-          <ComboBox Width="190" ItemsSource="{Binding CoordinateModes}" SelectedItem="{Binding SelectedCoordinateMode}">
+        <Grid x:Name="TopToolbarInputsPanel"
+              Grid.Column="1"
+              ColumnDefinitions="1.35*,1.9*,2.15*"
+              ColumnSpacing="6"
+              Margin="4,0">
+          <ComboBox Grid.Column="0"
+                    Classes="top-toolbar-select"
+                    MinWidth="104"
+                    MaxWidth="170"
+                    ItemsSource="{Binding CoordinateModes}"
+                    SelectedItem="{Binding SelectedCoordinateMode}"
+                    IsVisible="{Binding IsCoordinateSelectorVisible}">
             <ComboBox.ItemTemplate>
               <DataTemplate>
                 <TextBlock Text="{Binding Converter={StaticResource MapCoordinateModeDisplayConverter}}" />
               </DataTemplate>
             </ComboBox.ItemTemplate>
           </ComboBox>
-        </StackPanel>
-        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" IsVisible="{Binding IsRegionSelectorVisible}">
-          <TextBlock VerticalAlignment="Center" Text="Region" Foreground="#8A96A8" />
-          <ComboBox Width="260" ItemsSource="{Binding Regions}" SelectedItem="{Binding SelectedRegion}" />
-        </StackPanel>
-        <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-          <TextBox Width="280"
+          <Grid Grid.Column="1"
+                ColumnDefinitions="*"
+                IsVisible="{Binding IsRegionSelectorVisible}">
+            <ComboBox Grid.Column="0"
+                      Classes="top-toolbar-select"
+                      MinWidth="118"
+                      MaxWidth="220"
+                      ItemsSource="{Binding Regions}"
+                      SelectedItem="{Binding SelectedRegion}" />
+          </Grid>
+          <TextBox Grid.Column="2"
+                   Classes="top-toolbar-search"
+                   MinWidth="110"
+                   MaxWidth="240"
                    x:Name="MapSearchBox"
                    Text="{Binding MapSearchText}"
                    Watermark="{Binding SearchWatermark}"
                    GotFocus="OnSearchBoxGotFocus"
                    KeyDown="OnSearchKeyDown" />
-        </StackPanel>
+        </Grid>
         <Popup x:Name="MapSearchSuggestionsPopup"
                PlacementTarget="{Binding #MapSearchBox}"
                Placement="Bottom"
@@ -105,34 +148,70 @@
                      Foreground="#D8E5F8" />
           </Border>
         </Popup>
-        <Button Grid.Column="5" Content="Fit Screen" Click="OnFitCenterClicked" MinWidth="96" />
-        <Button Grid.Column="6" Content="Tools" MinWidth="80">
-          <Button.Flyout>
-            <MenuFlyout>
-              <MenuItem Header="LY Coverage Planner" Click="OnOpenLyCoveragePlannerClicked" />
-              <MenuItem Header="Jump Route Optimizer" Click="OnOpenJumpRouteOptimizerClicked" />
-              <MenuItem Header="Mining Stats" Click="OnOpenMiningStatsWindowClicked" />
-            </MenuFlyout>
-          </Button.Flyout>
-        </Button>
-        <ToggleButton Grid.Column="7" Content="Map Filters" IsChecked="{Binding IsDisplaySettingsOpen, Mode=TwoWay}" />
-        <Button Grid.Column="8" Content="Settings" MinWidth="90">
-          <Button.Flyout>
-            <MenuFlyout>
-              <MenuItem Header="Map Editor" Click="OnOpenMapEditorClicked" />
-              <MenuItem Header="Preferences" Click="OnOpenPreferencesClicked" />
-              <MenuItem Header="Intel Settings" Click="OnOpenIntelSettingsClicked" />
-              <MenuItem Header="Alerts Settings" Click="OnOpenAlertsSettingsClicked" />
-              <MenuItem Header="Alert Popup Settings" Click="OnOpenAlertPopupSettingsClicked" />
-              <MenuItem Header="Characters" Click="OnOpenCharactersClicked" />
-              <MenuItem Header="SOV Upgrades" Click="OnOpenSovUpgradesClicked" />
-              <MenuItem Header="Ansiblex Network" Click="OnOpenAnsiblexNetworkClicked" />
-              <MenuItem Header="Debug Window" Click="OnOpenDebugConsoleClicked" />
-              <Separator />
-              <MenuItem Header="About HISA" Click="OnOpenAboutClicked" />
-            </MenuFlyout>
-          </Button.Flyout>
-        </Button>
+        <Grid x:Name="TopToolbarActionsHost"
+              Grid.Column="2">
+          <StackPanel x:Name="TopToolbarActionsPanel" Orientation="Horizontal" Spacing="6">
+            <Button Classes="top-toolbar-action" Content="Tools">
+              <Button.Flyout>
+                <MenuFlyout>
+                  <MenuItem Header="LY Coverage Planner" Click="OnOpenLyCoveragePlannerClicked" />
+                  <MenuItem Header="Jump Route Optimizer" Click="OnOpenJumpRouteOptimizerClicked" />
+                  <MenuItem Header="Mining Stats" Click="OnOpenMiningStatsWindowClicked" />
+                </MenuFlyout>
+              </Button.Flyout>
+            </Button>
+            <ToggleButton Classes="top-toolbar-action" Content="Filters" IsChecked="{Binding IsDisplaySettingsOpen, Mode=TwoWay}" />
+            <Button Classes="top-toolbar-action" Content="Settings">
+              <Button.Flyout>
+                <MenuFlyout>
+                  <MenuItem Header="Map Editor" Click="OnOpenMapEditorClicked" />
+                  <MenuItem Header="Preferences" Click="OnOpenPreferencesClicked" />
+                  <MenuItem Header="Intel Settings" Click="OnOpenIntelSettingsClicked" />
+                  <MenuItem Header="Alerts Settings" Click="OnOpenAlertsSettingsClicked" />
+                  <MenuItem Header="Alert Popup Settings" Click="OnOpenAlertPopupSettingsClicked" />
+                  <MenuItem Header="Characters" Click="OnOpenCharactersClicked" />
+                  <MenuItem Header="SOV Upgrades" Click="OnOpenSovUpgradesClicked" />
+                  <MenuItem Header="Ansiblex Network" Click="OnOpenAnsiblexNetworkClicked" />
+                  <MenuItem Header="Debug Window" Click="OnOpenDebugConsoleClicked" />
+                  <Separator />
+                  <MenuItem Header="About HISA" Click="OnOpenAboutClicked" />
+                </MenuFlyout>
+              </Button.Flyout>
+            </Button>
+          </StackPanel>
+          <Button x:Name="TopToolbarOverflowButton"
+                  Classes="top-toolbar-action"
+                  HorizontalAlignment="Right"
+                  Content="Menu"
+                  IsVisible="False">
+            <Button.Flyout>
+              <MenuFlyout>
+                <MenuItem Header="Map Filters"
+                          ToggleType="CheckBox"
+                          IsChecked="{Binding IsDisplaySettingsOpen, Mode=TwoWay}" />
+                <Separator />
+                <MenuItem Header="Tools">
+                  <MenuItem Header="LY Coverage Planner" Click="OnOpenLyCoveragePlannerClicked" />
+                  <MenuItem Header="Jump Route Optimizer" Click="OnOpenJumpRouteOptimizerClicked" />
+                  <MenuItem Header="Mining Stats" Click="OnOpenMiningStatsWindowClicked" />
+                </MenuItem>
+                <MenuItem Header="Settings">
+                  <MenuItem Header="Map Editor" Click="OnOpenMapEditorClicked" />
+                  <MenuItem Header="Preferences" Click="OnOpenPreferencesClicked" />
+                  <MenuItem Header="Intel Settings" Click="OnOpenIntelSettingsClicked" />
+                  <MenuItem Header="Alerts Settings" Click="OnOpenAlertsSettingsClicked" />
+                  <MenuItem Header="Alert Popup Settings" Click="OnOpenAlertPopupSettingsClicked" />
+                  <MenuItem Header="Characters" Click="OnOpenCharactersClicked" />
+                  <MenuItem Header="SOV Upgrades" Click="OnOpenSovUpgradesClicked" />
+                  <MenuItem Header="Ansiblex Network" Click="OnOpenAnsiblexNetworkClicked" />
+                  <MenuItem Header="Debug Window" Click="OnOpenDebugConsoleClicked" />
+                  <Separator />
+                  <MenuItem Header="About HISA" Click="OnOpenAboutClicked" />
+                </MenuItem>
+              </MenuFlyout>
+            </Button.Flyout>
+          </Button>
+        </Grid>
       </Grid>
     </Border>
 
@@ -257,116 +336,134 @@
           </StackPanel>
         </Border>
 
-        <Button HorizontalAlignment="Right"
-                VerticalAlignment="Top"
-                Margin="10"
-                Width="22"
-                Height="22"
-                Padding="0"
-                ZIndex="20"
-                CornerRadius="11"
-                Background="#2A3A52"
-                BorderBrush="#5D83B5"
-                BorderThickness="1"
-                Foreground="#EAF2FF"
-                FontWeight="Bold"
-                FontSize="12"
-                HorizontalContentAlignment="Center"
-                VerticalContentAlignment="Center"
-                Content="?"
-                ToolTip.ShowDelay="80"
-                ToolTip.Placement="Bottom">
-          <ToolTip.Tip>
-            <Border Background="#111926"
-                    BorderBrush="#2B3C55"
-                    BorderThickness="1"
-                    CornerRadius="5"
-                    Padding="8"
-                    MaxWidth="320">
-              <StackPanel Spacing="4">
-                <TextBlock Text="Map Legend"
-                           Foreground="#D8E5F8"
-                           FontWeight="SemiBold" />
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                  <Border Width="18" Height="2" Background="#4D6FA2" VerticalAlignment="Center" />
-                  <TextBlock Text="Link: same constellation"
-                             Foreground="#C7D6EA"
-                             TextWrapping="Wrap"
-                             VerticalAlignment="Center" />
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                  <Border Width="18" Height="2" Background="#3E8A7E" VerticalAlignment="Center" />
-                  <TextBlock Text="Link: same region, different constellation"
-                             Foreground="#C7D6EA"
-                             TextWrapping="Wrap"
-                             VerticalAlignment="Center" />
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                  <Border Width="18" Height="2" Background="#8E5C8A" VerticalAlignment="Center" />
-                  <TextBlock Text="Link: across regions"
-                             Foreground="#C7D6EA"
-                             TextWrapping="Wrap"
-                             VerticalAlignment="Center" />
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsAnsiblexLegendVisible}">
-                  <Canvas Width="18" Height="8" VerticalAlignment="Center">
-                    <Line StartPoint="0,4" EndPoint="18,4" Stroke="#E7C85A" StrokeThickness="2" StrokeDashArray="4.2,2.8" />
-                  </Canvas>
-                  <TextBlock Text="Ansiblex link"
-                             Foreground="#C7D6EA"
-                             TextWrapping="Wrap"
-                             VerticalAlignment="Center" />
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsRegionMode}">
-                  <Canvas Width="16" Height="16">
-                    <Ellipse Width="12" Height="12"
-                             Stroke="#C567D6"
-                             StrokeThickness="1.5"
-                             StrokeDashArray="1.2,2.4"
-                             Canvas.Left="2"
-                             Canvas.Top="2" />
-                  </Canvas>
-                  <TextBlock Text="Region: hidden links outside current map"
-                             Foreground="#C7D6EA"
-                             TextWrapping="Wrap"
-                             VerticalAlignment="Center" />
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding AlwaysShowHubWormholes}">
-                  <Grid Width="16" Height="16">
-                    <Grid IsVisible="{Binding IsWormholePreviewBadge}">
-                      <Ellipse Width="10" Height="10" Fill="#93A8C0" Stroke="#1A2536" StrokeThickness="1.0" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="3,0,0,0" />
-                      <Border Background="#6BC1B5" BorderBrush="#0D131D" BorderThickness="1" CornerRadius="2"
-                              Padding="2,0" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="8,-5,0,0">
-                        <TextBlock Text="T" FontSize="7" FontWeight="SemiBold" Foreground="#0D131D" />
-                      </Border>
+        <StackPanel HorizontalAlignment="Right"
+                    VerticalAlignment="Top"
+                    Margin="10"
+                    Spacing="6"
+                    ZIndex="20">
+          <Button Width="33"
+                  Height="33"
+                  Padding="0"
+                  CornerRadius="16.5"
+                  Background="#2A3A52"
+                  BorderBrush="#5D83B5"
+                  BorderThickness="1"
+                  Foreground="#EAF2FF"
+                  FontWeight="Bold"
+                  FontSize="18"
+                  HorizontalContentAlignment="Center"
+                  VerticalContentAlignment="Center"
+                  Content="?"
+                  ToolTip.ShowDelay="80"
+                  ToolTip.Placement="Bottom">
+            <ToolTip.Tip>
+              <Border Background="#111926"
+                      BorderBrush="#2B3C55"
+                      BorderThickness="1"
+                      CornerRadius="5"
+                      Padding="8"
+                      MaxWidth="320">
+                <StackPanel Spacing="4">
+                  <TextBlock Text="Map Legend"
+                             Foreground="#D8E5F8"
+                             FontWeight="SemiBold" />
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Border Width="18" Height="2" Background="#4D6FA2" VerticalAlignment="Center" />
+                    <TextBlock Text="Link: same constellation"
+                               Foreground="#C7D6EA"
+                               TextWrapping="Wrap"
+                               VerticalAlignment="Center" />
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Border Width="18" Height="2" Background="#3E8A7E" VerticalAlignment="Center" />
+                    <TextBlock Text="Link: same region, different constellation"
+                               Foreground="#C7D6EA"
+                               TextWrapping="Wrap"
+                               VerticalAlignment="Center" />
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Border Width="18" Height="2" Background="#8E5C8A" VerticalAlignment="Center" />
+                    <TextBlock Text="Link: across regions"
+                               Foreground="#C7D6EA"
+                               TextWrapping="Wrap"
+                               VerticalAlignment="Center" />
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsAnsiblexLegendVisible}">
+                    <Canvas Width="18" Height="8" VerticalAlignment="Center">
+                      <Line StartPoint="0,4" EndPoint="18,4" Stroke="#E7C85A" StrokeThickness="2" StrokeDashArray="4.2,2.8" />
+                    </Canvas>
+                    <TextBlock Text="Ansiblex link"
+                               Foreground="#C7D6EA"
+                               TextWrapping="Wrap"
+                               VerticalAlignment="Center" />
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsRegionMode}">
+                    <Canvas Width="16" Height="16">
+                      <Ellipse Width="12" Height="12"
+                               Stroke="#C567D6"
+                               StrokeThickness="1.5"
+                               StrokeDashArray="1.2,2.4"
+                               Canvas.Left="2"
+                               Canvas.Top="2" />
+                    </Canvas>
+                    <TextBlock Text="Region: hidden links outside current map"
+                               Foreground="#C7D6EA"
+                               TextWrapping="Wrap"
+                               VerticalAlignment="Center" />
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding AlwaysShowHubWormholes}">
+                    <Grid Width="16" Height="16">
+                      <Grid IsVisible="{Binding IsWormholePreviewBadge}">
+                        <Ellipse Width="10" Height="10" Fill="#93A8C0" Stroke="#1A2536" StrokeThickness="1.0" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="3,0,0,0" />
+                        <Border Background="#6BC1B5" BorderBrush="#0D131D" BorderThickness="1" CornerRadius="2"
+                                Padding="2,0" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="8,-5,0,0">
+                          <TextBlock Text="T" FontSize="7" FontWeight="SemiBold" Foreground="#0D131D" />
+                        </Border>
+                      </Grid>
+                      <Grid IsVisible="{Binding IsWormholePreviewRing}">
+                        <Ellipse Width="10" Height="10" Fill="#93A8C0" Stroke="#1A2536" StrokeThickness="1.0" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="3,0,0,0" />
+                        <Ellipse Width="15" Height="15" Stroke="#6BC1B5" StrokeThickness="1.6" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="0,0,0,0" />
+                      </Grid>
+                      <Grid IsVisible="{Binding IsWormholePreviewHalo}">
+                        <Ellipse Width="15" Height="15" Fill="#4C6BC1B5" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="0,0,0,0" />
+                        <Ellipse Width="10" Height="10" Fill="#93A8C0" Stroke="#1A2536" StrokeThickness="1.0" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="3,0,0,0" />
+                      </Grid>
                     </Grid>
-                    <Grid IsVisible="{Binding IsWormholePreviewRing}">
-                      <Ellipse Width="10" Height="10" Fill="#93A8C0" Stroke="#1A2536" StrokeThickness="1.0" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="3,0,0,0" />
-                      <Ellipse Width="15" Height="15" Stroke="#6BC1B5" StrokeThickness="1.6" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="0,0,0,0" />
-                    </Grid>
-                    <Grid IsVisible="{Binding IsWormholePreviewHalo}">
-                      <Ellipse Width="15" Height="15" Fill="#4C6BC1B5" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="0,0,0,0" />
-                      <Ellipse Width="10" Height="10" Fill="#93A8C0" Stroke="#1A2536" StrokeThickness="1.0" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="3,0,0,0" />
-                    </Grid>
-                  </Grid>
-                  <TextBlock Text="Thera/Turnur marker shown on connected systems"
-                             Foreground="#C7D6EA"
-                             TextWrapping="Wrap"
-                             VerticalAlignment="Center" />
+                    <TextBlock Text="Thera/Turnur marker shown on connected systems"
+                               Foreground="#C7D6EA"
+                               TextWrapping="Wrap"
+                               VerticalAlignment="Center" />
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding AlwaysShowIncursions}">
+                    <Border Width="16" Height="16" Background="#B24A2E78" BorderBrush="#3A6EA8" BorderThickness="1" CornerRadius="3">
+                      <Image Source="avares://HISA/Assets/Icons/incursion.png" Width="12" Height="12" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <TextBlock Text="Incursion badge shown on active systems"
+                               Foreground="#C7D6EA"
+                               TextWrapping="Wrap"
+                               VerticalAlignment="Center" />
+                  </StackPanel>
                 </StackPanel>
-                <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding AlwaysShowIncursions}">
-                  <Border Width="16" Height="16" Background="#B24A2E78" BorderBrush="#3A6EA8" BorderThickness="1" CornerRadius="3">
-                    <Image Source="avares://HISA/Assets/Icons/incursion.png" Width="12" Height="12" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                  </Border>
-                  <TextBlock Text="Incursion badge shown on active systems"
-                             Foreground="#C7D6EA"
-                             TextWrapping="Wrap"
-                             VerticalAlignment="Center" />
-                </StackPanel>
-              </StackPanel>
-            </Border>
-          </ToolTip.Tip>
-        </Button>
+              </Border>
+            </ToolTip.Tip>
+          </Button>
+          <Button Width="33"
+                  Height="33"
+                  Padding="0"
+                  CornerRadius="9"
+                  Background="#1E3147"
+                  BorderBrush="#5D83B5"
+                  BorderThickness="1"
+                  Click="OnFitCenterClicked"
+                  ToolTip.Tip="Fit map to screen"
+                  ToolTip.ShowDelay="80"
+                  ToolTip.Placement="Left">
+            <Image Source="avares://HISA/Assets/Icons/expand.png"
+                   Width="18"
+                   Height="18"
+                   Stretch="Uniform" />
+          </Button>
+        </StackPanel>
 
         <Border HorizontalAlignment="Right"
                 VerticalAlignment="Bottom"
