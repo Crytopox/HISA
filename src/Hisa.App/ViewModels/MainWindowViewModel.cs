@@ -245,6 +245,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly IMiningSessionFeed _miningSessionFeed;
     private readonly IAlertRuleEngine _alertRuleEngine;
     private List<RegionOption> _allRegions = [];
+    private readonly HashSet<string> _favoriteRegionKeys = new(StringComparer.OrdinalIgnoreCase);
+    private bool _suppressSelectedRegionReload;
     private bool _isBusy;
     private MapViewMode _selectedViewMode;
     private MapCoordinateMode _selectedCoordinateMode;
@@ -412,6 +414,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string ViewModeKey = "Map.SelectedViewMode";
     private const string RegionIdKey = "Map.SelectedRegionId";
     private const string RegionTokenKey = "Map.SelectedRegionToken";
+    private const string FavoriteRegionTokensKey = "Map.FavoriteRegionTokens";
     private const string CoordinateModeKey = "Map.SelectedCoordinateMode";
     private const string CoordinateModeUniverseKey = "Map.SelectedCoordinateMode.Universe";
     private const string CoordinateModeRegionKey = "Map.SelectedCoordinateMode.Region";
@@ -1494,7 +1497,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             if (SetProperty(ref _selectedRegion, value) && SelectedViewMode == MapViewMode.Region)
             {
                 EnforceCoordinateModeForSelectedRegion();
-                if (!_isInitializing)
+                if (!_isInitializing && !_suppressSelectedRegionReload)
                 {
                     _ = _settingsService.SetAsync(RegionIdKey, value?.RegionId);
                     _ = SaveSelectedRegionTokenAsync(value);
@@ -2156,15 +2159,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public async Task RefreshRegionOptionsAsync()
     {
         var selectedId = SelectedRegion?.RegionId;
-        var selectedToken = SelectedRegion is null
-            ? null
-            : new SavedRegionToken
-            {
-                RegionName = SelectedRegion.RegionName,
-                Kind = SelectedRegion.Kind
-            };
+        var selectedToken = CreateRegionToken(SelectedRegion);
 
         _allRegions = (await _mapDataService.GetRegionsAsync()).ToList();
+        ApplyFavoriteFlags();
         ApplyRegionFilter();
 
         SelectedRegion = (selectedId is not null ? Regions.FirstOrDefault(r => !r.IsHeader && r.RegionId == selectedId.Value) : null)
@@ -2176,6 +2174,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private async Task LoadAsync()
     {
         _allRegions = (await _mapDataService.GetRegionsAsync()).ToList();
+        await LoadFavoriteRegionTokensAsync();
         ApplyRegionFilter();
         await LoadKnownSpaceSystemCacheAsync();
 
@@ -4772,34 +4771,69 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     private void ApplyRegionFilter()
     {
-        var term = RegionSearchText.Trim();
-        var filtered = string.IsNullOrWhiteSpace(term)
-            ? _allRegions
-            : _allRegions.Where(r => r.RegionName.Contains(term, StringComparison.OrdinalIgnoreCase)).ToList();
-
-        var selectedId = SelectedRegion?.RegionId;
-        Regions.Clear();
-        // Keep user-created custom regions as the first group in the selector.
-        AddRegionGroup(RegionOptionKind.Custom, "Custom Regions", filtered);
-        AddRegionGroup(RegionOptionKind.Combined, "Combined Regions", filtered);
-        AddRegionGroup(RegionOptionKind.Regular, "Regular Regions", filtered);
-
-        if (selectedId is not null)
+        _suppressSelectedRegionReload = true;
+        try
         {
-            SelectedRegion = Regions.FirstOrDefault(r => r.RegionId == selectedId.Value)
-                ?? GetFirstRegularRegionOption()
-                ?? Regions.FirstOrDefault(r => !r.IsHeader);
+            var term = RegionSearchText.Trim();
+            var filtered = string.IsNullOrWhiteSpace(term)
+                ? _allRegions
+                : _allRegions.Where(r => r.RegionName.Contains(term, StringComparison.OrdinalIgnoreCase)).ToList();
+
+            var selectedId = SelectedRegion?.RegionId;
+            var selectedToken = CreateRegionToken(SelectedRegion);
+            Regions.Clear();
+            AddFavoriteGroup(filtered);
+            AddRegionGroup(RegionOptionKind.Custom, "Custom Regions", filtered);
+            AddRegionGroup(RegionOptionKind.Combined, "Combined Regions", filtered);
+            AddRegionGroup(RegionOptionKind.Regular, "Regular Regions", filtered);
+
+            if (selectedId is not null)
+            {
+                SelectedRegion = Regions.FirstOrDefault(r => !r.IsHeader && r.RegionId == selectedId.Value)
+                    ?? FindRegionByToken(selectedToken)
+                    ?? GetFirstRegularRegionOption()
+                    ?? Regions.FirstOrDefault(r => !r.IsHeader);
+            }
+            else if (SelectedRegion is null)
+            {
+                SelectedRegion = GetFirstRegularRegionOption() ?? Regions.FirstOrDefault(r => !r.IsHeader);
+            }
         }
-        else if (SelectedRegion is null)
+        finally
         {
-            SelectedRegion = GetFirstRegularRegionOption() ?? Regions.FirstOrDefault(r => !r.IsHeader);
+            _suppressSelectedRegionReload = false;
+        }
+    }
+
+    private void AddFavoriteGroup(IReadOnlyCollection<RegionOption> source)
+    {
+        var items = source
+            .Where(r => !r.IsHeader && r.IsFavorite)
+            .OrderBy(r => r.RegionName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (items.Count == 0)
+        {
+            return;
+        }
+
+        Regions.Add(new RegionOption
+        {
+            RegionId = int.MinValue,
+            RegionName = "--- Favorites ---",
+            Kind = RegionOptionKind.Regular,
+            IsHeader = true
+        });
+
+        foreach (var item in items)
+        {
+            Regions.Add(item);
         }
     }
 
     private void AddRegionGroup(RegionOptionKind kind, string header, IReadOnlyCollection<RegionOption> source)
     {
         var items = source
-            .Where(r => !r.IsHeader && r.Kind == kind)
+            .Where(r => !r.IsHeader && !r.IsFavorite && r.Kind == kind)
             .OrderBy(r => r.RegionName, StringComparer.OrdinalIgnoreCase)
             .ToList();
         if (items.Count == 0)
@@ -4839,6 +4873,28 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             string.Equals(r.RegionName, token.RegionName, StringComparison.OrdinalIgnoreCase));
     }
 
+    public async Task ToggleRegionFavoriteAsync(RegionOption? region)
+    {
+        if (region is null || region.IsHeader)
+        {
+            return;
+        }
+
+        var key = BuildRegionFavoriteKey(region.Kind, region.RegionName);
+        var isFavorite = !_favoriteRegionKeys.Remove(key);
+        if (isFavorite)
+        {
+            _favoriteRegionKeys.Add(key);
+        }
+
+        ApplyFavoriteFlags();
+        ApplyRegionFilter();
+        await SaveFavoriteRegionTokensAsync();
+        StatusText = isFavorite
+            ? $"Favorited region: {region.RegionName}"
+            : $"Removed favorite: {region.RegionName}";
+    }
+
     private Task SaveSelectedRegionTokenAsync(RegionOption? region)
     {
         if (region is null || region.IsHeader)
@@ -4846,12 +4902,57 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             return _settingsService.SetAsync<SavedRegionToken?>(RegionTokenKey, null);
         }
 
-        var token = new SavedRegionToken
+        var token = CreateRegionToken(region)!;
+        return _settingsService.SetAsync(RegionTokenKey, token);
+    }
+
+    private async Task LoadFavoriteRegionTokensAsync()
+    {
+        _favoriteRegionKeys.Clear();
+        var tokens = await _settingsService.GetAsync<List<SavedRegionToken>>(FavoriteRegionTokensKey) ?? [];
+        foreach (var token in tokens.Where(t => !string.IsNullOrWhiteSpace(t.RegionName)))
+        {
+            _favoriteRegionKeys.Add(BuildRegionFavoriteKey(token.Kind, token.RegionName));
+        }
+
+        ApplyFavoriteFlags();
+    }
+
+    private Task SaveFavoriteRegionTokensAsync()
+    {
+        var tokens = _allRegions
+            .Where(r => !r.IsHeader && r.IsFavorite)
+            .OrderBy(r => r.RegionName, StringComparer.OrdinalIgnoreCase)
+            .Select(r => CreateRegionToken(r)!)
+            .ToList();
+        return _settingsService.SetAsync(FavoriteRegionTokensKey, tokens);
+    }
+
+    private void ApplyFavoriteFlags()
+    {
+        foreach (var region in _allRegions)
+        {
+            region.IsFavorite = !region.IsHeader && _favoriteRegionKeys.Contains(BuildRegionFavoriteKey(region.Kind, region.RegionName));
+        }
+    }
+
+    private static SavedRegionToken? CreateRegionToken(RegionOption? region)
+    {
+        if (region is null || region.IsHeader)
+        {
+            return null;
+        }
+
+        return new SavedRegionToken
         {
             RegionName = region.RegionName,
             Kind = region.Kind
         };
-        return _settingsService.SetAsync(RegionTokenKey, token);
+    }
+
+    private static string BuildRegionFavoriteKey(RegionOptionKind kind, string regionName)
+    {
+        return $"{kind}|{regionName.Trim()}";
     }
 
     private bool SetProperty<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)

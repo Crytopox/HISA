@@ -246,6 +246,17 @@ public partial class MainWindow : Window
         _aboutWindow.Activate();
     }
 
+    private async void OnRegionFavoriteClicked(object? sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        if (_boundVm is null || sender is not Control { DataContext: RegionOption region })
+        {
+            return;
+        }
+
+        await _boundVm.ToggleRegionFavoriteAsync(region);
+    }
+
     private async void OnCheckForUpdatesOnStartup(object? sender, EventArgs e)
     {
         if (_startupUpdateReminderShown || _updateService is null)

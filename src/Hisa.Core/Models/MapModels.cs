@@ -1,3 +1,6 @@
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
+
 namespace Hisa.Core.Models;
 
 public enum MapViewMode
@@ -214,12 +217,40 @@ public sealed class JumpRangeDistanceDisplay
     public required bool IsInRange { get; init; }
 }
 
-public sealed class RegionOption
+public sealed class RegionOption : INotifyPropertyChanged
 {
+    private bool _isFavorite;
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
     public required int RegionId { get; init; }
     public required string RegionName { get; init; }
     public RegionOptionKind Kind { get; init; } = RegionOptionKind.Regular;
     public bool IsHeader { get; init; }
+    public bool CanToggleFavorite => !IsHeader;
+    public string FavoriteGlyph => IsFavorite ? "★" : "☆";
+    public string FavoriteButtonToolTip => IsFavorite ? "Remove from favorites" : "Add to favorites";
+    public string FavoriteGlyphColor => IsFavorite ? "#E7C85A" : "#8FA5C4";
+    public int FavoriteGlyphFontSize => IsFavorite ? 14 : 12;
+
+    public bool IsFavorite
+    {
+        get => _isFavorite;
+        set
+        {
+            if (_isFavorite == value)
+            {
+                return;
+            }
+
+            _isFavorite = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsFavorite)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(FavoriteGlyph)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(FavoriteButtonToolTip)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(FavoriteGlyphColor)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(FavoriteGlyphFontSize)));
+        }
+    }
 
     public override string ToString() => RegionName;
 }
