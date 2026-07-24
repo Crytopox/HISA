@@ -344,6 +344,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly object _systemLocationGate = new();
     private readonly List<IntelChatReport> _intelReportHistory = [];
     private IReadOnlyList<AlertRule> _alertRules = [];
+    private readonly Dictionary<AlertEventType, HashSet<string>> _observedSpawnAlertKeysByEventType = [];
+    private readonly object _observedSpawnAlertGate = new();
     private AlertPopupSettings _alertPopupSettings = new();
     private readonly Dictionary<string, int> _characterIdByName = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _invalidHostilePilotNames = new(StringComparer.OrdinalIgnoreCase);
@@ -2579,9 +2581,27 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     private void OnStormSnapshotUpdated(object? sender, StormSnapshot snapshot)
     {
+        var newStormKeys = ObserveSpawnKeys(AlertEventType.StormSpawn,
+            snapshot.Centers.Select(center => $"storm:{center.Type}:{center.SolarSystemId}"));
+        var newCenters = snapshot.Centers
+            .Where(center => newStormKeys.Contains($"storm:{center.Type}:{center.SolarSystemId}"))
+            .ToList();
         if (_isInitializing)
         {
             return;
+        }
+
+        foreach (var center in newCenters)
+        {
+            EvaluateAlertRules(new AlertSourceEvent
+            {
+                EventType = AlertEventType.StormSpawn,
+                TimestampUtc = (center.ReportedAtUtc ?? snapshot.FetchedAtUtc).UtcDateTime,
+                SolarSystemId = center.SolarSystemId,
+                RegionId = ResolveRegionId(center.SolarSystemId),
+                DedupeKey = $"storm:{center.Type}:{center.SolarSystemId}",
+                Summary = $"{center.DisplayName ?? center.Type.ToString()} storm in system {center.SolarSystemId}"
+            });
         }
 
         Dispatcher.UIThread.Post(async () =>
@@ -2592,9 +2612,28 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     private void OnHubWormholeSnapshotUpdated(object? sender, HubWormholeSnapshot snapshot)
     {
+        var connections = snapshot.ConnectionsBySystemId.Values.SelectMany(x => x).ToList();
+        var newWormholeKeys = ObserveSpawnKeys(AlertEventType.HubWormholeSpawn,
+            connections.Select(connection => $"hub-wormhole:{connection.HubType}:{connection.SolarSystemId}"));
+        var newConnections = connections
+            .Where(connection => newWormholeKeys.Contains($"hub-wormhole:{connection.HubType}:{connection.SolarSystemId}"))
+            .ToList();
         if (_isInitializing)
         {
             return;
+        }
+
+        foreach (var connection in newConnections)
+        {
+            EvaluateAlertRules(new AlertSourceEvent
+            {
+                EventType = AlertEventType.HubWormholeSpawn,
+                TimestampUtc = (connection.ReportedAtUtc ?? connection.LastUpdatedAtUtc ?? snapshot.FetchedAtUtc).UtcDateTime,
+                SolarSystemId = connection.SolarSystemId,
+                RegionId = ResolveRegionId(connection.SolarSystemId),
+                DedupeKey = $"hub-wormhole:{connection.HubType}:{connection.SolarSystemId}",
+                Summary = $"{connection.HubType} wormhole in system {connection.SolarSystemId}"
+            });
         }
 
         Dispatcher.UIThread.Post(async () =>
@@ -2618,9 +2657,27 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     private void OnIncursionSnapshotUpdated(object? sender, IncursionSnapshot snapshot)
     {
+        var newIncursionKeys = ObserveSpawnKeys(AlertEventType.IncursionSpawn,
+            snapshot.Incursions.Select(incursion => $"incursion:{incursion.ConstellationId}:{incursion.StagingSolarSystemId}:{incursion.Type}"));
+        var newIncursions = snapshot.Incursions
+            .Where(incursion => newIncursionKeys.Contains($"incursion:{incursion.ConstellationId}:{incursion.StagingSolarSystemId}:{incursion.Type}"))
+            .ToList();
         if (_isInitializing)
         {
             return;
+        }
+
+        foreach (var incursion in newIncursions)
+        {
+            EvaluateAlertRules(new AlertSourceEvent
+            {
+                EventType = AlertEventType.IncursionSpawn,
+                TimestampUtc = snapshot.FetchedAtUtc.UtcDateTime,
+                SolarSystemId = incursion.StagingSolarSystemId,
+                RegionId = ResolveRegionId(incursion.StagingSolarSystemId),
+                DedupeKey = $"incursion:{incursion.ConstellationId}:{incursion.StagingSolarSystemId}:{incursion.Type}",
+                Summary = $"{incursion.Type} incursion ({incursion.State}) staging in system {incursion.StagingSolarSystemId}"
+            });
         }
 
         Dispatcher.UIThread.Post(async () =>
@@ -2640,6 +2697,24 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         {
             await ReloadGraphAsync();
         });
+    }
+
+    private IReadOnlySet<string> ObserveSpawnKeys(AlertEventType eventType, IEnumerable<string> keys)
+    {
+        lock (_observedSpawnAlertGate)
+        {
+            var currentKeys = keys.ToHashSet(StringComparer.Ordinal);
+            if (!_observedSpawnAlertKeysByEventType.TryGetValue(eventType, out var previousKeys))
+            {
+                previousKeys = new HashSet<string>(StringComparer.Ordinal);
+                _observedSpawnAlertKeysByEventType[eventType] = previousKeys;
+            }
+
+            var newKeys = currentKeys.Where(key => !previousKeys.Contains(key)).ToHashSet(StringComparer.Ordinal);
+            previousKeys.Clear();
+            previousKeys.UnionWith(currentKeys);
+            return newKeys;
+        }
     }
 
     private void OnAnsiblexNetworkSnapshotUpdated(object? sender, EventArgs e)
@@ -2755,6 +2830,28 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             return;
         }
 
+        var sourceEvent = new AlertSourceEvent
+        {
+            EventType = isKillmail ? AlertEventType.Killmail : AlertEventType.IntelReport,
+            TimestampUtc = report.TimestampUtc,
+            SolarSystemId = solarSystemId,
+            RegionId = ResolveRegionId(solarSystemId),
+            KillmailId = report.Killmail?.KillmailId,
+            IsClearIntelReport = !isKillmail && report.IsClear,
+            DedupeKey = report.DedupeKey,
+            Summary = report.MessageText
+        };
+
+        EvaluateAlertRules(sourceEvent);
+    }
+
+    private void EvaluateAlertRules(AlertSourceEvent sourceEvent)
+    {
+        if (_alertRules.Count == 0 || sourceEvent.SolarSystemId <= 0)
+        {
+            return;
+        }
+
         var characterLocations = new Dictionary<int, long>();
         lock (_localCharacterLocationsByCharacterId)
         {
@@ -2767,17 +2864,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 }
             }
         }
-
-        var sourceEvent = new AlertSourceEvent
-        {
-            EventType = isKillmail ? AlertEventType.Killmail : AlertEventType.IntelReport,
-            TimestampUtc = report.TimestampUtc,
-            SolarSystemId = solarSystemId,
-            KillmailId = report.Killmail?.KillmailId,
-            IsClearIntelReport = !isKillmail && report.IsClear,
-            DedupeKey = report.DedupeKey,
-            Summary = report.MessageText
-        };
 
         var triggered = _alertRuleEngine.Evaluate(new AlertEvaluationRequest
         {
@@ -2831,6 +2917,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
         return 0;
     }
+
+    private int? ResolveRegionId(long solarSystemId) => CurrentGraph?.Nodes
+        .FirstOrDefault(node => node.Id == solarSystemId)?.RegionId;
 
     private bool ShouldIncludeZkillmailReportInCurrentView(IntelChatReport report)
     {
@@ -2893,10 +2982,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 .Where(x => x.Length > 0)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList(),
+            RegionIds = (rule.RegionIds ?? []).Where(id => id > 0).Distinct().ToList(),
             DistanceMode = rule.DistanceMode,
             MaxJumps = Math.Max(0, rule.MaxJumps),
             IncludeAnsiblexLinks = rule.IncludeAnsiblexLinks,
             ShowClearIntelReports = rule.ShowClearIntelReports,
+            TextPattern = rule.TextPattern?.Trim() ?? string.Empty,
+            UseRegex = rule.UseRegex,
             CooldownSeconds = Math.Max(0, rule.CooldownSeconds),
             SoundFile = string.IsNullOrWhiteSpace(rule.SoundFile) ? "default-alert.wav" : rule.SoundFile.Trim(),
             SoundVolume = Math.Clamp(rule.SoundVolume, 0.0, 1.0),
@@ -4406,6 +4498,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             .Select(CloneAlertRule)
             .ToList();
     }
+
+    public IReadOnlyList<RegionOption> GetAlertRegionOptionsSnapshot() => _allRegions
+        .Where(region => !region.IsHeader && region.Kind == RegionOptionKind.Regular && region.RegionId > 0)
+        .OrderBy(region => region.RegionName, StringComparer.OrdinalIgnoreCase)
+        .ToList();
 
     public async Task SaveAlertRulesAsync(IReadOnlyList<AlertRule> rules)
     {

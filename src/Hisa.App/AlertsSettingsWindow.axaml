@@ -2,112 +2,158 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        mc:Ignorable="d" d:DesignWidth="980" d:DesignHeight="640"
+        mc:Ignorable="d" d:DesignWidth="1080" d:DesignHeight="690"
         x:Class="Hisa.App.AlertsSettingsWindow"
-        Title="Alerts Settings"
-        MinWidth="920"
-        MinHeight="620"
-        Width="980"
-        Height="640"
+        Title="Alert Rules"
+        MinWidth="960" MinHeight="620" Width="1080" Height="690"
         Background="#0D131D">
-  <Grid Margin="10" ColumnDefinitions="260,*" ColumnSpacing="10">
-    <Border Grid.Column="0" Background="#121A26" BorderBrush="#2A3C58" BorderThickness="1" CornerRadius="8" Padding="10">
-      <Grid RowDefinitions="Auto,*,Auto">
-        <StackPanel Grid.Row="0" Spacing="2">
-          <TextBlock Text="Alert Rules" Foreground="#EAF2FF" FontWeight="SemiBold"/>
-          <TextBlock Text="Higher rules win ties; tighter distance rules win first." Foreground="#9DB8D8" FontSize="11" TextWrapping="Wrap"/>
+  <Grid Margin="12" ColumnDefinitions="258,*" ColumnSpacing="12">
+    <Border Grid.Column="0" Background="#121A26" BorderBrush="#2A3C58" BorderThickness="1" CornerRadius="10" Padding="10">
+      <Grid RowDefinitions="Auto,*,Auto" RowSpacing="10">
+        <StackPanel Spacing="2">
+          <TextBlock Text="Alert Rules" Foreground="#EAF2FF" FontSize="17" FontWeight="SemiBold"/>
+          <TextBlock Text="Rules run from top to bottom when equally specific. Move rules to set tie priority." Foreground="#9DB8D8" FontSize="11" TextWrapping="Wrap"/>
         </StackPanel>
-        <ListBox Grid.Row="1" x:Name="RulesListBox" Margin="0,8,0,8" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" SelectionChanged="OnRuleSelectionChanged"/>
+        <ListBox Grid.Row="1" x:Name="RulesListBox" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" SelectionChanged="OnRuleSelectionChanged"/>
         <Grid Grid.Row="2" ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="8" RowSpacing="8">
-          <Button Grid.Column="0" Content="Add" Click="OnAddRuleClicked"/>
+          <Button Grid.Column="0" Content="Add rule" Click="OnAddRuleClicked"/>
           <Button Grid.Column="1" Content="Delete" Click="OnDeleteRuleClicked"/>
-          <Button Grid.Row="1" Grid.Column="0" Content="Move Up" Click="OnMoveRuleUpClicked"/>
-          <Button Grid.Row="1" Grid.Column="1" Content="Move Down" Click="OnMoveRuleDownClicked"/>
+          <Button Grid.Row="1" Grid.Column="0" Content="Move up" Click="OnMoveRuleUpClicked"/>
+          <Button Grid.Row="1" Grid.Column="1" Content="Move down" Click="OnMoveRuleDownClicked"/>
         </Grid>
       </Grid>
     </Border>
 
-    <Border Grid.Column="1" Background="#121A26" BorderBrush="#2A3C58" BorderThickness="1" CornerRadius="8" Padding="10">
-      <Grid RowDefinitions="Auto,*,Auto">
-        <TextBlock Grid.Row="0" Text="Rule Editor" Foreground="#EAF2FF" FontWeight="SemiBold"/>
-        <ScrollViewer Grid.Row="1" Margin="0,8,0,8" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-          <StackPanel Spacing="10">
-            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
-              <TextBox Grid.Column="0" x:Name="RuleNameTextBox" Watermark="Rule name" MinWidth="220"/>
-              <CheckBox Grid.Column="1" x:Name="RuleEnabledCheckBox" Content="Enabled" Foreground="#DDE7F8" VerticalAlignment="Center"/>
-            </Grid>
+    <Border Grid.Column="1" Background="#121A26" BorderBrush="#2A3C58" BorderThickness="1" CornerRadius="10" Padding="12">
+      <Grid RowDefinitions="Auto,*,Auto" RowSpacing="10">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="14">
+          <StackPanel Spacing="4">
+            <TextBlock Text="Rule details" Foreground="#EAF2FF" FontSize="17" FontWeight="SemiBold"/>
+            <TextBlock Text="Choose what should alert, where it matters, and how HISA should notify you." Foreground="#9DB8D8" FontSize="11"/>
+          </StackPanel>
+          <CheckBox Grid.Column="1" x:Name="RuleEnabledCheckBox" Content="Rule enabled" Foreground="#DDE7F8" VerticalAlignment="Center"/>
+        </Grid>
 
-            <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="10" RowSpacing="8">
-              <StackPanel Grid.Column="0" Spacing="3">
-                <TextBlock Text="Event" Foreground="#9DB8D8"/>
-                <ComboBox x:Name="EventTypeComboBox" MinWidth="170" SelectionChanged="OnEditorValueChanged"/>
-              </StackPanel>
-              <StackPanel Grid.Column="1" Spacing="3">
-                <TextBlock Text="Scope" Foreground="#9DB8D8"/>
-                <ComboBox x:Name="ScopeModeComboBox" MinWidth="170" SelectionChanged="OnEditorValueChanged"/>
-              </StackPanel>
-              <Grid Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto" ColumnSpacing="10">
-                <StackPanel Grid.Column="0" Spacing="3">
-                  <TextBlock Text="Distance Mode" Foreground="#9DB8D8"/>
-                  <ComboBox x:Name="DistanceModeComboBox" MinWidth="170" SelectionChanged="OnEditorValueChanged"/>
-                </StackPanel>
-                <StackPanel Grid.Column="1" x:Name="CooldownPanel" Spacing="3">
-                  <TextBlock Text="Sound Cooldown (s)" Foreground="#9DB8D8"/>
-                  <TextBox x:Name="CooldownSecondsTextBox" Width="110" Watermark="0"/>
-                </StackPanel>
-              </Grid>
-            </Grid>
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+          <StackPanel Spacing="10" Margin="0,0,4,0">
+            <TextBox x:Name="RuleNameTextBox" Watermark="Rule name" FontSize="15"/>
 
-            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
-              <StackPanel Grid.Column="0" x:Name="CharacterSelectorPanel" Spacing="3">
-                <TextBlock Text="Characters" Foreground="#9DB8D8"/>
-                <Border Padding="6" CornerRadius="6" BorderBrush="#2A3C58" BorderThickness="1" Background="#0F1624">
-                  <StackPanel Spacing="6">
-                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
-                      <TextBox Grid.Column="0" x:Name="CharacterSearchTextBox" Watermark="Search character..." TextChanged="OnCharacterSearchTextChanged" KeyDown="OnCharacterSearchKeyDown"/>
-                      <Button Grid.Column="1" Content="Add" MinWidth="60" Click="OnAddCharacterClicked"/>
-                    </Grid>
-                    <ListBox x:Name="CharacterCandidatesListBox" Height="106" DoubleTapped="OnCharacterCandidateDoubleTapped"/>
-                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
-                      <ListBox Grid.Column="0" x:Name="SelectedCharactersListBox" Height="82" DoubleTapped="OnSelectedCharacterDoubleTapped"/>
-                      <Button Grid.Column="1" Content="Remove" MinWidth="72" Click="OnRemoveCharacterClicked" VerticalAlignment="Top"/>
-                    </Grid>
+            <Border Padding="10" CornerRadius="8" BorderBrush="#2A3C58" BorderThickness="1" Background="#101927">
+              <StackPanel Spacing="7">
+                <TextBlock Text="Trigger" Foreground="#EAF2FF" FontWeight="SemiBold"/>
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                  <StackPanel Grid.Column="0" Spacing="4">
+                    <TextBlock Text="Event" Foreground="#9DB8D8" FontSize="11"/>
+                    <ComboBox x:Name="EventTypeComboBox" SelectionChanged="OnEditorValueChanged"/>
                   </StackPanel>
+                  <StackPanel Grid.Column="1" Spacing="4">
+                    <TextBlock Text="Where this alert applies" Foreground="#9DB8D8" FontSize="11"/>
+                    <ComboBox x:Name="ScopeModeComboBox" SelectionChanged="OnEditorValueChanged"/>
+                  </StackPanel>
+                </Grid>
+                <Border Background="#0D1624" CornerRadius="5" Padding="6">
+                  <TextBlock x:Name="ScopeHelpTextBlock" Foreground="#B6CAE5" FontSize="11" TextWrapping="Wrap"/>
                 </Border>
               </StackPanel>
-              <StackPanel Grid.Column="1" x:Name="MaxJumpsPanel" Spacing="3">
-                <TextBlock Text="Max Jumps" Foreground="#9DB8D8"/>
-                <TextBox x:Name="MaxJumpsTextBox" Width="92" Watermark="3"/>
+            </Border>
+
+            <Border Padding="10" CornerRadius="8" BorderBrush="#2A3C58" BorderThickness="1" Background="#101927">
+              <StackPanel Spacing="7">
+                <TextBlock Text="Location filter" Foreground="#EAF2FF" FontWeight="SemiBold"/>
+                <Grid x:Name="DistanceSettingsPanel" ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                  <StackPanel Grid.Column="0" Spacing="4">
+                    <TextBlock Text="Distance from the selected character reference" Foreground="#9DB8D8" FontSize="11"/>
+                    <ComboBox x:Name="DistanceModeComboBox" SelectionChanged="OnEditorValueChanged"/>
+                  </StackPanel>
+                  <StackPanel Grid.Column="1" x:Name="MaxJumpsPanel" Spacing="4">
+                    <TextBlock Text="Max jumps" Foreground="#9DB8D8" FontSize="11"/>
+                    <TextBox x:Name="MaxJumpsTextBox" Width="100" Watermark="3"/>
+                  </StackPanel>
+                </Grid>
+
+                <StackPanel x:Name="CharacterSelectorPanel" Spacing="5">
+                  <TextBlock Text="Specific character references" Foreground="#9DB8D8" FontSize="11"/>
+                  <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                    <TextBox Grid.Column="0" x:Name="CharacterSearchTextBox" Watermark="Filter tracked characters…" TextChanged="OnCharacterSearchTextChanged" KeyDown="OnCharacterSearchKeyDown"/>
+                    <Button Grid.Column="1" Content="Add" MinWidth="70" Click="OnAddCharacterClicked"/>
+                    <Button Grid.Column="2" Content="Remove" MinWidth="76" Click="OnRemoveCharacterClicked"/>
+                  </Grid>
+                  <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                    <StackPanel Grid.Column="0" Spacing="4">
+                      <TextBlock Text="Matches" Foreground="#718BAF" FontSize="10"/>
+                      <ListBox x:Name="CharacterCandidatesListBox" Height="128" DoubleTapped="OnCharacterCandidateDoubleTapped"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Spacing="4">
+                      <TextBlock Text="Selected (double-click to remove)" Foreground="#718BAF" FontSize="10"/>
+                      <ListBox x:Name="SelectedCharactersListBox" Height="128" DoubleTapped="OnSelectedCharacterDoubleTapped"/>
+                    </StackPanel>
+                  </Grid>
+                </StackPanel>
+
+                <StackPanel x:Name="RegionSelectorPanel" Spacing="5">
+                  <TextBlock Text="Regions" Foreground="#9DB8D8" FontSize="11"/>
+                  <TextBlock Text="Add one or more regions. An alert triggers if the event occurs in any selected region." Foreground="#718BAF" FontSize="10" TextWrapping="Wrap"/>
+                  <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                    <TextBox Grid.Column="0" x:Name="RegionSearchTextBox" Watermark="Filter regions…" TextChanged="OnRegionSearchTextChanged" KeyDown="OnRegionSearchKeyDown"/>
+                    <Button Grid.Column="1" Content="Add" MinWidth="70" Click="OnAddRegionClicked"/>
+                    <Button Grid.Column="2" Content="Remove" MinWidth="76" Click="OnRemoveRegionClicked"/>
+                  </Grid>
+                  <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                    <StackPanel Grid.Column="0" Spacing="4">
+                      <TextBlock Text="Matches" Foreground="#718BAF" FontSize="10"/>
+                      <ListBox x:Name="RegionCandidatesListBox" Height="150" DoubleTapped="OnRegionCandidateDoubleTapped"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Spacing="4">
+                      <TextBlock Text="Selected (double-click to remove)" Foreground="#718BAF" FontSize="10"/>
+                      <ListBox x:Name="SelectedRegionsListBox" Height="150" DoubleTapped="OnSelectedRegionDoubleTapped"/>
+                    </StackPanel>
+                  </Grid>
+                </StackPanel>
               </StackPanel>
-            </Grid>
+            </Border>
 
-            <Grid ColumnDefinitions="Auto,Auto,Auto" ColumnSpacing="14">
-              <CheckBox Grid.Column="0" x:Name="IncludeAnsiblexCheckBox" Content="Use Ansiblex" Foreground="#DDE7F8"/>
-              <CheckBox Grid.Column="1" x:Name="ActionSoundCheckBox" Content="Play Sound" Foreground="#DDE7F8" Checked="OnActionSoundToggleChanged" Unchecked="OnActionSoundToggleChanged"/>
-              <CheckBox Grid.Column="2" x:Name="ShowClearIntelReportsCheckBox" Content="Show clear / CLR reports" Foreground="#DDE7F8"/>
-            </Grid>
-
-            <Border Padding="8" CornerRadius="6" BorderBrush="#2A3C58" BorderThickness="1" Background="#111A2A">
-              <Grid ColumnDefinitions="*,Auto,Auto" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="10" RowSpacing="6">
-                <TextBlock Grid.Row="0" Grid.Column="0" Text="Sound file" Foreground="#9DB8D8"/>
-                <TextBlock Grid.Row="0" Grid.Column="1" Text="Volume %" Foreground="#9DB8D8"/>
-                <Border Grid.RowSpan="2" Grid.Column="2" Background="Transparent">
-                  <Button VerticalAlignment="Bottom" Content="Test" MinWidth="72" Click="OnTestSoundClicked"/>
-                </Border>
-
-                <ComboBox Grid.Row="1" Grid.Column="0" x:Name="SoundFileComboBox" IsEditable="True" MinWidth="260"/>
-                <TextBox Grid.Row="1" Grid.Column="1" x:Name="SoundVolumeTextBox" Width="72" Text="100"/>
-                <Slider Grid.Row="2" Grid.ColumnSpan="3" x:Name="SoundVolumeSlider" Minimum="0" Maximum="100" Value="100"/>
+            <Border x:Name="IntelTextMatchPanel" Padding="10" CornerRadius="8" BorderBrush="#2A3C58" BorderThickness="1" Background="#101927">
+              <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="10" RowSpacing="5">
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="Intel text match" Foreground="#EAF2FF" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                <TextBox Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="2" x:Name="TextPatternTextBox" Watermark="Word, phrase, or regular expression"/>
+                <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Text="Text matches take priority over general Intel rules." Foreground="#718BAF" FontSize="10" VerticalAlignment="Center"/>
+                <CheckBox Grid.Row="1" Grid.Column="2" x:Name="UseRegexCheckBox" Content="Use regex" Foreground="#DDE7F8"/>
               </Grid>
             </Border>
 
+            <Border Padding="10" CornerRadius="8" BorderBrush="#2A3C58" BorderThickness="1" Background="#101927">
+              <StackPanel Spacing="7">
+                <TextBlock Text="Notification" Foreground="#EAF2FF" FontWeight="SemiBold"/>
+                <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="18">
+                  <CheckBox Grid.Column="0" x:Name="ActionSoundCheckBox" Content="Play sound" Foreground="#DDE7F8" Checked="OnActionSoundToggleChanged" Unchecked="OnActionSoundToggleChanged"/>
+                  <CheckBox Grid.Column="1" x:Name="IncludeAnsiblexCheckBox" Content="Use Ansiblex for jump range" Foreground="#DDE7F8"/>
+                  <CheckBox Grid.Column="2" x:Name="ShowClearIntelReportsCheckBox" Content="Include clear / CLR reports" Foreground="#DDE7F8"/>
+                </Grid>
+                <Grid ColumnDefinitions="*,90,Auto" ColumnSpacing="10">
+                  <StackPanel Grid.Column="0" Spacing="4">
+                    <TextBlock Text="Sound file" Foreground="#9DB8D8" FontSize="11"/>
+                    <ComboBox x:Name="SoundFileComboBox" IsEditable="True"/>
+                  </StackPanel>
+                  <StackPanel Grid.Column="1" Spacing="4">
+                    <TextBlock Text="Volume %" Foreground="#9DB8D8" FontSize="11"/>
+                    <TextBox x:Name="SoundVolumeTextBox" Text="100"/>
+                  </StackPanel>
+                  <Button Grid.Column="2" VerticalAlignment="Bottom" Content="Test sound" MinWidth="84" Click="OnTestSoundClicked"/>
+                </Grid>
+                <Slider x:Name="SoundVolumeSlider" Minimum="0" Maximum="100" Value="100"/>
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" VerticalAlignment="Center">
+                  <TextBlock Grid.Column="0" Text="Sound cooldown (seconds)" Foreground="#9DB8D8" FontSize="11" VerticalAlignment="Center"/>
+                  <TextBox Grid.Column="1" x:Name="CooldownSecondsTextBox" Width="100" HorizontalAlignment="Left" Watermark="0"/>
+                </Grid>
+              </StackPanel>
+            </Border>
           </StackPanel>
         </ScrollViewer>
 
-        <Grid Grid.Row="2" ColumnDefinitions="Auto,Auto,Auto,*" ColumnSpacing="8">
-          <Button Grid.Column="0" Content="Apply" MinWidth="88" Click="OnApplyRuleClicked"/>
-          <Button Grid.Column="1" Content="Save All" MinWidth="88" Click="OnSaveAllClicked"/>
-          <Button Grid.Column="2" Content="Close" MinWidth="88" Click="OnCloseClicked"/>
+        <Grid Grid.Row="2" ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="8">
+          <Button Grid.Column="0" Content="Apply rule" MinWidth="100" Click="OnApplyRuleClicked"/>
+          <Button Grid.Column="1" Content="Save all rules" MinWidth="112" Click="OnSaveAllClicked"/>
+          <Button Grid.Column="3" Content="Close" MinWidth="88" Click="OnCloseClicked"/>
         </Grid>
       </Grid>
     </Border>

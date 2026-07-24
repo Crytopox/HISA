@@ -1,5 +1,6 @@
 using Hisa.Core.Abstractions;
 using Hisa.Core.Models;
+using System.Text.RegularExpressions;
 
 namespace Hisa.Services.Alerts;
 
@@ -30,12 +31,12 @@ public sealed class AlertRuleEngine : IAlertRuleEngine
         for (var index = 0; index < request.Rules.Count; index++)
         {
             var rule = request.Rules[index];
-            if (!rule.Enabled || rule.EventType != source.EventType)
+            if (!rule.Enabled || !MatchesEventType(rule, source))
             {
                 continue;
             }
 
-            if (source.EventType == AlertEventType.IntelReport &&
+            if ((rule.EventType == AlertEventType.IntelReport || rule.EventType == AlertEventType.IntelTextMatch) &&
                 source.IsClearIntelReport &&
                 !rule.ShowClearIntelReports)
             {
@@ -97,7 +98,8 @@ public sealed class AlertRuleEngine : IAlertRuleEngine
         }
 
         return matchingRules
-            .OrderBy(x => GetDistanceSpecificity(x.Rule.DistanceMode))
+            .OrderBy(x => x.Rule.EventType == AlertEventType.IntelTextMatch ? 0 : 1)
+            .ThenBy(x => GetDistanceSpecificity(x.Rule.DistanceMode))
             .ThenBy(x => x.Rule.DistanceMode == AlertDistanceMode.MaxJumps ? Math.Max(0, x.Rule.MaxJumps) : int.MaxValue)
             .ThenBy(x => x.Index)
             .First();
@@ -110,11 +112,60 @@ public sealed class AlertRuleEngine : IAlertRuleEngine
         _ => 2
     };
 
+    private static bool MatchesEventType(AlertRule rule, AlertSourceEvent source)
+    {
+        if (rule.EventType == source.EventType)
+        {
+            return rule.EventType != AlertEventType.IntelTextMatch || MatchesTextPattern(rule, source.Summary);
+        }
+
+        // Text-match rules participate in the same decision as normal Intel rules,
+        // so a matching phrase can provide one distinct, more-specific alert.
+        return source.EventType == AlertEventType.IntelReport &&
+               rule.EventType == AlertEventType.IntelTextMatch &&
+               MatchesTextPattern(rule, source.Summary);
+    }
+
+    private static bool MatchesTextPattern(AlertRule rule, string text)
+    {
+        var pattern = rule.TextPattern?.Trim();
+        if (string.IsNullOrWhiteSpace(pattern) || string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        if (!rule.UseRegex)
+        {
+            return text.Contains(pattern, StringComparison.OrdinalIgnoreCase);
+        }
+
+        try
+        {
+            return Regex.IsMatch(text, pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+                TimeSpan.FromMilliseconds(100));
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return false;
+        }
+    }
+
     private bool MatchesScope(AlertRule rule, AlertSourceEvent source, MapGraph? graph, AlertEvaluationRequest request)
     {
         if (rule.ScopeMode == AlertLocationScopeMode.Global)
         {
             return true;
+        }
+
+        if (rule.ScopeMode == AlertLocationScopeMode.SelectedRegions)
+        {
+            var sourceRegionId = source.RegionId
+                ?? graph?.Nodes.FirstOrDefault(node => node.Id == source.SolarSystemId)?.RegionId;
+            return sourceRegionId is not null && rule.RegionIds.Contains(sourceRegionId.Value);
         }
 
         if (graph is null || graph.Nodes.Count == 0 || source.SolarSystemId <= 0)

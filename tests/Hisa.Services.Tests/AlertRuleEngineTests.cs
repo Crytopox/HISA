@@ -78,6 +78,76 @@ public sealed class AlertRuleEngineTests
         Assert.Equal("first", triggered.RuleId);
     }
 
+    [Fact]
+    public void Evaluate_IntelTextMatch_OverridesGeneralIntelRule()
+    {
+        var result = new AlertRuleEngine(new DijkstraRouteDistanceService()).Evaluate(new AlertEvaluationRequest
+        {
+            Rules =
+            [
+                new AlertRule { Id = "general", Name = "General", EventType = AlertEventType.IntelReport },
+                new AlertRule { Id = "phrase", Name = "Phrase", EventType = AlertEventType.IntelTextMatch, TextPattern = "capsuleer spotted" }
+            ],
+            SourceEvent = new AlertSourceEvent
+            {
+                EventType = AlertEventType.IntelReport,
+                TimestampUtc = DateTime.UtcNow,
+                SolarSystemId = 42,
+                Summary = "CAPSULEER spotted near the gate"
+            },
+            Graph = null,
+            CharacterLocationsByCharacterId = new Dictionary<int, long>()
+        });
+
+        Assert.Equal("phrase", Assert.Single(result).RuleId);
+    }
+
+    [Fact]
+    public void Evaluate_IntelTextMatch_InvalidRegexDoesNotTrigger()
+    {
+        var result = new AlertRuleEngine(new DijkstraRouteDistanceService()).Evaluate(new AlertEvaluationRequest
+        {
+            Rules = [new AlertRule { Id = "regex", Name = "Regex", EventType = AlertEventType.IntelTextMatch, TextPattern = "[", UseRegex = true }],
+            SourceEvent = new AlertSourceEvent { EventType = AlertEventType.IntelReport, TimestampUtc = DateTime.UtcNow, SolarSystemId = 42, Summary = "anything" },
+            Graph = null,
+            CharacterLocationsByCharacterId = new Dictionary<int, long>()
+        });
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void Evaluate_SelectedRegions_OnlyMatchesConfiguredRegions()
+    {
+        var rule = new AlertRule
+        {
+            Id = "regions",
+            Name = "Regions",
+            EventType = AlertEventType.StormSpawn,
+            ScopeMode = AlertLocationScopeMode.SelectedRegions,
+            RegionIds = [10000002, 10000043]
+        };
+        var engine = new AlertRuleEngine(new DijkstraRouteDistanceService());
+
+        var matching = engine.Evaluate(new AlertEvaluationRequest
+        {
+            Rules = [rule],
+            SourceEvent = new AlertSourceEvent { EventType = AlertEventType.StormSpawn, TimestampUtc = DateTime.UtcNow, SolarSystemId = 1, RegionId = 10000043 },
+            Graph = null,
+            CharacterLocationsByCharacterId = new Dictionary<int, long>()
+        });
+        var nonMatching = engine.Evaluate(new AlertEvaluationRequest
+        {
+            Rules = [rule],
+            SourceEvent = new AlertSourceEvent { EventType = AlertEventType.StormSpawn, TimestampUtc = DateTime.UtcNow, SolarSystemId = 2, RegionId = 10000069 },
+            Graph = null,
+            CharacterLocationsByCharacterId = new Dictionary<int, long>()
+        });
+
+        Assert.Single(matching);
+        Assert.Empty(nonMatching);
+    }
+
     private static IReadOnlyList<AlertTriggered> EvaluateClearIntelReport(bool showClearIntelReports)
     {
         var engine = new AlertRuleEngine(new DijkstraRouteDistanceService());

@@ -8,18 +8,44 @@ namespace Hisa.App;
 
 public partial class AlertsSettingsWindow : Window
 {
+    private sealed record AlertChoice<T>(T Value, string Label)
+    {
+        public override string ToString() => Label;
+    }
+
     private readonly MainWindowViewModel? _vm;
     private readonly List<AlertRule> _rules = [];
     private readonly List<string> _allTrackedCharacterNames = [];
     private readonly HashSet<string> _selectedCharacterNames = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<RegionOption> _availableRegions = [];
+    private readonly HashSet<int> _selectedRegionIds = [];
     private int _selectedIndex = -1;
 
     public AlertsSettingsWindow()
     {
         InitializeComponent();
-        EventTypeComboBox.ItemsSource = Enum.GetValues<AlertEventType>();
-        ScopeModeComboBox.ItemsSource = Enum.GetValues<AlertLocationScopeMode>();
-        DistanceModeComboBox.ItemsSource = Enum.GetValues<AlertDistanceMode>();
+        EventTypeComboBox.ItemsSource = new[]
+        {
+            new AlertChoice<AlertEventType>(AlertEventType.IntelReport, "Intel Report"),
+            new AlertChoice<AlertEventType>(AlertEventType.IntelTextMatch, "Intel text match"),
+            new AlertChoice<AlertEventType>(AlertEventType.Killmail, "Killmail"),
+            new AlertChoice<AlertEventType>(AlertEventType.HubWormholeSpawn, "Thera/Turnur Spawn"),
+            new AlertChoice<AlertEventType>(AlertEventType.IncursionSpawn, "Incursion Spawn"),
+            new AlertChoice<AlertEventType>(AlertEventType.StormSpawn, "Storm Moved")
+        };
+        ScopeModeComboBox.ItemsSource = new[]
+        {
+            new AlertChoice<AlertLocationScopeMode>(AlertLocationScopeMode.Global, "Everywhere"),
+            new AlertChoice<AlertLocationScopeMode>(AlertLocationScopeMode.AnyTrackedCharacter, "Near any tracked character"),
+            new AlertChoice<AlertLocationScopeMode>(AlertLocationScopeMode.SpecificCharacters, "Near specific characters"),
+            new AlertChoice<AlertLocationScopeMode>(AlertLocationScopeMode.SelectedRegions, "In selected regions")
+        };
+        DistanceModeComboBox.ItemsSource = new[]
+        {
+            new AlertChoice<AlertDistanceMode>(AlertDistanceMode.Any, "Any distance"),
+            new AlertChoice<AlertDistanceMode>(AlertDistanceMode.MaxJumps, "Within max jumps"),
+            new AlertChoice<AlertDistanceMode>(AlertDistanceMode.CurrentRegion, "In the same region")
+        };
         SoundVolumeSlider.PropertyChanged += (_, e) =>
         {
             if (e.Property.Name == "Value")
@@ -52,9 +78,13 @@ public partial class AlertsSettingsWindow : Window
         {
             _allTrackedCharacterNames.Clear();
             _allTrackedCharacterNames.AddRange(_vm.GetTrackedCharacterNamesSnapshot());
+            _availableRegions.Clear();
+            _availableRegions.AddRange(_vm.GetAlertRegionOptionsSnapshot());
         }
         RefreshCharacterCandidatesList();
         RefreshSelectedCharactersList();
+        RefreshRegionCandidatesList();
+        RefreshSelectedRegionsList();
         SoundFileComboBox.ItemsSource = AlertSoundPlayer.GetAvailableSoundFiles();
 
         RefreshRulesList();
@@ -98,8 +128,8 @@ public partial class AlertsSettingsWindow : Window
         var rule = _rules[_selectedIndex];
         RuleNameTextBox.Text = rule.Name;
         RuleEnabledCheckBox.IsChecked = rule.Enabled;
-        EventTypeComboBox.SelectedItem = rule.EventType;
-        ScopeModeComboBox.SelectedItem = rule.ScopeMode;
+        SelectChoice(EventTypeComboBox, rule.EventType);
+        SelectChoice(ScopeModeComboBox, rule.ScopeMode);
         var characterNames = rule.CharacterNames?.Where(x => !string.IsNullOrWhiteSpace(x)).ToList() ?? [];
         if (characterNames.Count == 0 && _vm is not null)
         {
@@ -116,10 +146,20 @@ public partial class AlertsSettingsWindow : Window
         CharacterSearchTextBox.Text = string.Empty;
         RefreshCharacterCandidatesList();
         RefreshSelectedCharactersList();
-        DistanceModeComboBox.SelectedItem = rule.DistanceMode;
+        SelectChoice(DistanceModeComboBox, rule.DistanceMode);
+        _selectedRegionIds.Clear();
+        foreach (var regionId in rule.RegionIds ?? [])
+        {
+            _selectedRegionIds.Add(regionId);
+        }
+        RegionSearchTextBox.Text = string.Empty;
+        RefreshRegionCandidatesList();
+        RefreshSelectedRegionsList();
         MaxJumpsTextBox.Text = rule.MaxJumps.ToString();
         IncludeAnsiblexCheckBox.IsChecked = rule.IncludeAnsiblexLinks;
         ShowClearIntelReportsCheckBox.IsChecked = rule.ShowClearIntelReports;
+        TextPatternTextBox.Text = rule.TextPattern;
+        UseRegexCheckBox.IsChecked = rule.UseRegex;
         CooldownSecondsTextBox.Text = rule.CooldownSeconds.ToString();
         SoundFileComboBox.Text = string.IsNullOrWhiteSpace(rule.SoundFile) ? "default-alert.wav" : rule.SoundFile;
         var volumePercent = Math.Clamp((int)Math.Round(rule.SoundVolume * 100.0), 0, 100);
@@ -205,9 +245,9 @@ public partial class AlertsSettingsWindow : Window
             return;
         }
 
-        var eventType = EventTypeComboBox.SelectedItem is AlertEventType et ? et : AlertEventType.IntelReport;
-        var scopeMode = ScopeModeComboBox.SelectedItem is AlertLocationScopeMode sm ? sm : AlertLocationScopeMode.Global;
-        var distanceMode = DistanceModeComboBox.SelectedItem is AlertDistanceMode dm ? dm : AlertDistanceMode.Any;
+        var eventType = SelectedValue(EventTypeComboBox, AlertEventType.IntelReport);
+        var scopeMode = SelectedValue(ScopeModeComboBox, AlertLocationScopeMode.Global);
+        var distanceMode = SelectedValue(DistanceModeComboBox, AlertDistanceMode.Any);
 
         var characterNames = _selectedCharacterNames
             .Where(x => !string.IsNullOrWhiteSpace(x))
@@ -216,6 +256,7 @@ public partial class AlertsSettingsWindow : Window
         var characterIds = _vm is null
             ? []
             : (await _vm.ResolveCharacterIdsByNamesAsync(characterNames)).Distinct().ToList();
+        var regionIds = _selectedRegionIds.Where(id => id > 0).OrderBy(id => id).ToList();
 
         var maxJumps = int.TryParse(MaxJumpsTextBox.Text, out var j) ? Math.Max(0, j) : 0;
         var cooldown = int.TryParse(CooldownSecondsTextBox.Text, out var c) ? Math.Max(0, c) : 0;
@@ -240,10 +281,13 @@ public partial class AlertsSettingsWindow : Window
             ScopeMode = scopeMode,
             CharacterIds = characterIds,
             CharacterNames = characterNames,
+            RegionIds = regionIds,
             DistanceMode = distanceMode,
             MaxJumps = maxJumps,
             IncludeAnsiblexLinks = IncludeAnsiblexCheckBox.IsChecked == true,
             ShowClearIntelReports = ShowClearIntelReportsCheckBox.IsChecked == true,
+            TextPattern = TextPatternTextBox.Text?.Trim() ?? string.Empty,
+            UseRegex = UseRegexCheckBox.IsChecked == true,
             CooldownSeconds = cooldown,
             SoundFile = string.IsNullOrWhiteSpace(SoundFileComboBox.Text) ? "default-alert.wav" : SoundFileComboBox.Text.Trim(),
             SoundVolume = volumePercent / 100.0,
@@ -374,22 +418,120 @@ public partial class AlertsSettingsWindow : Window
             .ToList();
     }
 
+    private void OnRegionSearchTextChanged(object? sender, TextChangedEventArgs e)
+    {
+        RefreshRegionCandidatesList();
+    }
+
+    private void OnRegionSearchKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            AddRegionFromPicker();
+            e.Handled = true;
+        }
+    }
+
+    private void OnRegionCandidateDoubleTapped(object? sender, TappedEventArgs e) => AddRegionFromPicker();
+
+    private void OnSelectedRegionDoubleTapped(object? sender, TappedEventArgs e) => RemoveSelectedRegionFromPicker();
+
+    private void OnAddRegionClicked(object? sender, RoutedEventArgs e) => AddRegionFromPicker();
+
+    private void OnRemoveRegionClicked(object? sender, RoutedEventArgs e) => RemoveSelectedRegionFromPicker();
+
+    private void AddRegionFromPicker()
+    {
+        if (RegionCandidatesListBox.SelectedItem is not RegionOption region)
+        {
+            return;
+        }
+
+        _selectedRegionIds.Add(region.RegionId);
+        RegionSearchTextBox.Text = string.Empty;
+        RefreshRegionCandidatesList();
+        RefreshSelectedRegionsList();
+    }
+
+    private void RemoveSelectedRegionFromPicker()
+    {
+        if (SelectedRegionsListBox.SelectedItem is not RegionOption region)
+        {
+            return;
+        }
+
+        _selectedRegionIds.Remove(region.RegionId);
+        RefreshRegionCandidatesList();
+        RefreshSelectedRegionsList();
+    }
+
+    private void RefreshRegionCandidatesList()
+    {
+        var query = RegionSearchTextBox.Text?.Trim() ?? string.Empty;
+        var candidates = _availableRegions
+            .Where(region => !_selectedRegionIds.Contains(region.RegionId))
+            .Where(region => query.Length == 0 || region.RegionName.Contains(query, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(region => region.RegionName, StringComparer.OrdinalIgnoreCase)
+            .Take(100)
+            .ToList();
+        RegionCandidatesListBox.ItemsSource = candidates;
+        if (candidates.Count > 0)
+        {
+            RegionCandidatesListBox.SelectedIndex = 0;
+        }
+    }
+
+    private void RefreshSelectedRegionsList()
+    {
+        var selected = _availableRegions
+            .Where(region => _selectedRegionIds.Contains(region.RegionId))
+            .OrderBy(region => region.RegionName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        SelectedRegionsListBox.ItemsSource = selected;
+        if (selected.Count > 0)
+        {
+            SelectedRegionsListBox.SelectedIndex = 0;
+        }
+    }
+
     private void UpdateEditorVisibility()
     {
-        var scopeMode = ScopeModeComboBox.SelectedItem is AlertLocationScopeMode sm ? sm : AlertLocationScopeMode.Global;
-        var distanceMode = DistanceModeComboBox.SelectedItem is AlertDistanceMode dm ? dm : AlertDistanceMode.Any;
+        var scopeMode = SelectedValue(ScopeModeComboBox, AlertLocationScopeMode.Global);
+        var distanceMode = SelectedValue(DistanceModeComboBox, AlertDistanceMode.Any);
         var soundEnabled = ActionSoundCheckBox.IsChecked == true;
-        var eventType = EventTypeComboBox.SelectedItem is AlertEventType et ? et : AlertEventType.IntelReport;
+        var eventType = SelectedValue(EventTypeComboBox, AlertEventType.IntelReport);
 
         CharacterSearchTextBox.IsEnabled = scopeMode == AlertLocationScopeMode.SpecificCharacters;
         CharacterCandidatesListBox.IsEnabled = scopeMode == AlertLocationScopeMode.SpecificCharacters;
         SelectedCharactersListBox.IsEnabled = scopeMode == AlertLocationScopeMode.SpecificCharacters;
         CharacterSelectorPanel.IsVisible = scopeMode == AlertLocationScopeMode.SpecificCharacters;
+        RegionSelectorPanel.IsVisible = scopeMode == AlertLocationScopeMode.SelectedRegions;
         EventTypeComboBox.IsVisible = true;
-        MaxJumpsPanel.IsVisible = distanceMode == AlertDistanceMode.MaxJumps;
-        ShowClearIntelReportsCheckBox.IsVisible = eventType == AlertEventType.IntelReport;
+        var usesCharacterDistance = scopeMode is AlertLocationScopeMode.AnyTrackedCharacter or AlertLocationScopeMode.SpecificCharacters;
+        DistanceSettingsPanel.IsVisible = usesCharacterDistance;
+        MaxJumpsPanel.IsVisible = usesCharacterDistance && distanceMode == AlertDistanceMode.MaxJumps;
+        DistanceModeComboBox.IsEnabled = usesCharacterDistance;
+        ShowClearIntelReportsCheckBox.IsVisible = eventType is AlertEventType.IntelReport or AlertEventType.IntelTextMatch;
+        IntelTextMatchPanel.IsVisible = eventType == AlertEventType.IntelTextMatch;
         SoundFileComboBox.IsEnabled = soundEnabled;
         SoundVolumeTextBox.IsEnabled = soundEnabled;
         SoundVolumeSlider.IsEnabled = soundEnabled;
+        ScopeHelpTextBlock.Text = scopeMode switch
+        {
+            AlertLocationScopeMode.Global => "Everywhere ignores distance and character location: any matching event can alert.",
+            AlertLocationScopeMode.AnyTrackedCharacter => "Uses every tracked character as a reference. Choose the distance below.",
+            AlertLocationScopeMode.SpecificCharacters => "Uses only the selected characters as references. Choose the distance below.",
+            AlertLocationScopeMode.SelectedRegions => "Only events inside one of the selected regions can alert. Distance and characters are not used.",
+            _ => string.Empty
+        };
+    }
+
+    private static T SelectedValue<T>(ComboBox comboBox, T fallback) =>
+        comboBox.SelectedItem is AlertChoice<T> choice ? choice.Value : fallback;
+
+    private static void SelectChoice<T>(ComboBox comboBox, T value)
+    {
+        comboBox.SelectedItem = (comboBox.ItemsSource as IEnumerable<AlertChoice<T>>)
+            ?.FirstOrDefault(choice => EqualityComparer<T>.Default.Equals(choice.Value, value));
     }
 }

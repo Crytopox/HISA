@@ -3,14 +3,19 @@ namespace Hisa.Core.Models;
 public enum AlertEventType
 {
     IntelReport = 0,
-    Killmail = 1
+    Killmail = 1,
+    HubWormholeSpawn = 2,
+    IncursionSpawn = 3,
+    StormSpawn = 4,
+    IntelTextMatch = 5
 }
 
 public enum AlertLocationScopeMode
 {
     Global = 0,
     AnyTrackedCharacter = 1,
-    SpecificCharacters = 2
+    SpecificCharacters = 2,
+    SelectedRegions = 3
 }
 
 public enum AlertDistanceMode
@@ -35,10 +40,15 @@ public sealed class AlertRule
     public AlertLocationScopeMode ScopeMode { get; init; } = AlertLocationScopeMode.Global;
     public IReadOnlyList<int> CharacterIds { get; init; } = [];
     public IReadOnlyList<string> CharacterNames { get; init; } = [];
+    public IReadOnlyList<int> RegionIds { get; init; } = [];
     public AlertDistanceMode DistanceMode { get; init; } = AlertDistanceMode.Any;
     public int MaxJumps { get; init; } = 0;
     public bool IncludeAnsiblexLinks { get; init; } = false;
     public bool ShowClearIntelReports { get; init; } = false;
+    // Used only by IntelTextMatch rules. Literal matching is case-insensitive;
+    // regex matching is opt-in so ordinary phrases stay simple and safe.
+    public string TextPattern { get; init; } = string.Empty;
+    public bool UseRegex { get; init; } = false;
     public int CooldownSeconds { get; init; } = 0;
     public string SoundFile { get; init; } = "default-alert.wav";
     public double SoundVolume { get; init; } = 1.0;
