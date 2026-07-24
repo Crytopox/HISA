@@ -208,6 +208,16 @@ public sealed class JumpRangeOriginDisplay
     public required string ColorHex { get; init; }
 }
 
+public sealed class JumpRangeOriginSettings
+{
+    public required long SolarSystemId { get; init; }
+    public required string SolarSystemName { get; init; }
+    public required double PositionX { get; init; }
+    public required double PositionY { get; init; }
+    public required double PositionZ { get; init; }
+    public required double RangeLy { get; init; }
+}
+
 public sealed class JumpRangeDistanceDisplay
 {
     public required long OriginNodeId { get; init; }
