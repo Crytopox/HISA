@@ -243,6 +243,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly IStormStateService _stormStateService;
     private readonly IHubWormholeStateService _hubWormholeStateService;
     private readonly ISovUpgradeStateService _sovUpgradeStateService;
+    private readonly IMiningSiteTrackerService _miningSiteTrackerService;
     private readonly IAnsiblexNetworkStateService _ansiblexNetworkStateService;
     private readonly IIncursionStateService _incursionStateService;
     private readonly ISystemActivityStateService _systemActivityStateService;
@@ -518,6 +519,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const int MaxParallelImageRequests = 10;
     private static readonly TimeSpan OverlayAgeChipRefreshInterval = TimeSpan.FromSeconds(1);
     private readonly Task _initialLoadTask;
+    private readonly DispatcherTimer _miningSiteReminderTimer;
 
     public MainWindowViewModel(
         IMapDataService mapDataService,
@@ -525,6 +527,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         IStormStateService stormStateService,
         IHubWormholeStateService hubWormholeStateService,
         ISovUpgradeStateService sovUpgradeStateService,
+        IMiningSiteTrackerService miningSiteTrackerService,
         IAnsiblexNetworkStateService ansiblexNetworkStateService,
         IIncursionStateService incursionStateService,
         ISystemActivityStateService systemActivityStateService,
@@ -538,6 +541,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _stormStateService = stormStateService;
         _hubWormholeStateService = hubWormholeStateService;
         _sovUpgradeStateService = sovUpgradeStateService;
+        _miningSiteTrackerService = miningSiteTrackerService;
         _ansiblexNetworkStateService = ansiblexNetworkStateService;
         _incursionStateService = incursionStateService;
         _systemActivityStateService = systemActivityStateService;
@@ -559,6 +563,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _stormStateService.StormSnapshotUpdated += OnStormSnapshotUpdated;
         _hubWormholeStateService.HubWormholeSnapshotUpdated += OnHubWormholeSnapshotUpdated;
         _sovUpgradeStateService.SnapshotUpdated += OnSovUpgradesSnapshotUpdated;
+        _miningSiteTrackerService.ReportsUpdated += OnMiningSiteReportsUpdated;
         _ansiblexNetworkStateService.SnapshotUpdated += OnAnsiblexNetworkSnapshotUpdated;
         _incursionStateService.IncursionSnapshotUpdated += OnIncursionSnapshotUpdated;
         _systemActivityStateService.SystemActivitySnapshotUpdated += OnSystemActivitySnapshotUpdated;
@@ -569,6 +574,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _intelOverlayAgeTimer = new DispatcherTimer { Interval = OverlayAgeChipRefreshInterval };
         _intelOverlayAgeTimer.Tick += (_, _) => RefreshIntelOverlayCardAges();
         _intelOverlayAgeTimer.Start();
+        _miningSiteReminderTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(20) };
+        _miningSiteReminderTimer.Tick += async (_, _) => await CheckMiningSiteRemindersAsync();
+        _miningSiteReminderTimer.Start();
         _miningOverlayRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
         _miningOverlayRefreshTimer.Tick += async (_, _) =>
         {
@@ -2384,6 +2392,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         InfoBoxShowNpcKills = await _settingsService.GetAsync<bool?>(InfoBoxShowNpcKillsKey) ?? true;
         InfoBoxShowJumpRangeLy = await _settingsService.GetAsync<bool?>(InfoBoxShowJumpRangeLyKey) ?? true;
         await _sovUpgradeStateService.InitializeAsync();
+        await _miningSiteTrackerService.InitializeAsync();
         await _ansiblexNetworkStateService.InitializeAsync();
         InitializeSovFilterOptions();
         var indicatorKeys = await _settingsService.GetAsync<List<string>>(IndicatorSovFilterKeysKey) ?? [];
@@ -2696,6 +2705,35 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         {
             await ReloadGraphAsync();
         });
+    }
+
+    private void OnMiningSiteReportsUpdated(object? sender, EventArgs e)
+    {
+        if (!_isInitializing)
+        {
+            Dispatcher.UIThread.Post(async () => await ReloadGraphAsync());
+        }
+    }
+
+    private async Task CheckMiningSiteRemindersAsync()
+    {
+        var due = await _miningSiteTrackerService.GetDueReportsAsync(DateTime.UtcNow);
+        foreach (var report in due)
+        {
+            var node = CurrentGraph?.Nodes.FirstOrDefault(x => x.Id == report.SolarSystemId);
+            EvaluateAlertRules(new AlertSourceEvent
+            {
+                EventType = AlertEventType.MiningSiteReady,
+                TimestampUtc = DateTime.UtcNow,
+                SolarSystemId = report.SolarSystemId,
+                RegionId = node?.RegionId,
+                DedupeKey = $"mining-site:{report.SolarSystemId}:{report.UpgradeName}:{report.Tier}:{report.AvailableAtUtc:O}",
+                Summary = $"{node?.Name ?? report.SolarSystemId.ToString()}: {report.UpgradeName} T{report.Tier} is ready to check.",
+                MiningSiteSystemName = node?.Name ?? report.SolarSystemId.ToString(),
+                MiningSiteUpgradeName = report.UpgradeName,
+                MiningSiteTier = report.Tier
+            });
+        }
     }
 
     private void OnIncursionSnapshotUpdated(object? sender, IncursionSnapshot snapshot)
@@ -4826,6 +4864,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     {
         return _sovUpgradeStateService.GetSnapshotAsync(cancellationToken);
     }
+
+    public Task<IReadOnlyList<MiningSiteReportRecord>> GetMiningSiteReportsAsync(CancellationToken cancellationToken = default) =>
+        _miningSiteTrackerService.GetSnapshotAsync(cancellationToken);
+
+    public Task MarkMiningSiteClearedAsync(int solarSystemId, string upgradeName, int tier, CancellationToken cancellationToken = default) =>
+        _miningSiteTrackerService.SetClearedAsync(solarSystemId, upgradeName, tier, cancellationToken);
+
+    public Task MarkMiningSiteMissingAsync(int solarSystemId, string upgradeName, int tier, TimeSpan reminderDelay, CancellationToken cancellationToken = default) =>
+        _miningSiteTrackerService.SetMissingAsync(solarSystemId, upgradeName, tier, reminderDelay, cancellationToken);
+
+    public Task MarkMiningSiteAvailableAsync(int solarSystemId, string upgradeName, int tier, CancellationToken cancellationToken = default) =>
+        _miningSiteTrackerService.MarkAvailableAsync(solarSystemId, upgradeName, tier, cancellationToken);
 
     public Task<AnsiblexImportResult> ImportAnsiblexNetworkAsync(string rawText, SovImportMode mode, CancellationToken cancellationToken = default)
     {

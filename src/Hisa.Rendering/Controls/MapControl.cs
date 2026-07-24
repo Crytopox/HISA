@@ -390,6 +390,7 @@ public sealed class MapControl : Control
     private static readonly ConcurrentDictionary<string, DateTime> OrganizationLogoRetryAfterUtc = new(StringComparer.OrdinalIgnoreCase);
     private static readonly TimeSpan CharacterPortraitRetryDelay = TimeSpan.FromMinutes(2);
     private readonly List<(Rect Bounds, string Url)> _intelOverlayLinks = [];
+    private readonly List<(Rect Bounds, MapSovUpgradeHit Hit)> _sovUpgradeIconHitTargets = [];
     private Point[] _screenPositions = [];
     private double _graphMinX;
     private double _graphMaxX;
@@ -1260,6 +1261,19 @@ public sealed class MapControl : Control
         return FindClosestNodeAt(point, threshold);
     }
 
+    public MapSovUpgradeHit? HitTestSovUpgrade(Point point)
+    {
+        for (var i = _sovUpgradeIconHitTargets.Count - 1; i >= 0; i--)
+        {
+            if (_sovUpgradeIconHitTargets[i].Bounds.Contains(point))
+            {
+                return _sovUpgradeIconHitTargets[i].Hit;
+            }
+        }
+
+        return null;
+    }
+
     public IReadOnlyList<long> GetNodeIdsInScreenRect(Rect screenRect)
     {
         if (Graph is null || Graph.Nodes.Count == 0)
@@ -1393,6 +1407,7 @@ public sealed class MapControl : Control
         var bounds = Bounds;
         context.FillRectangle(BackgroundBrush, bounds);
         _intelOverlayLinks.Clear();
+        _sovUpgradeIconHitTargets.Clear();
 
         if (Graph is null || Graph.Nodes.Count == 0)
         {
@@ -4339,7 +4354,16 @@ public sealed class MapControl : Control
             {
                 var iconX = rect.X + IndicatorIconLeftPadding + (sovIconSlot * (IconSize + IndicatorIconSlotGap));
                 var iconY = sovIndicatorRowY;
-                DrawSovUpgradeIcon(context, sov, new Point(iconX, iconY), SovIconSize);
+                DrawSovUpgradeIcon(context, sov, new Point(iconX, iconY), SovIconSize, sov.MiningSiteStatus == MiningSiteStatus.Available ? 1.0 : 0.32);
+                if (sov.UpgradeName.EndsWith(" Prospecting Array", StringComparison.OrdinalIgnoreCase))
+                {
+                    _sovUpgradeIconHitTargets.Add((new Rect(iconX, iconY, SovIconSize, SovIconSize), new MapSovUpgradeHit
+                    {
+                        SolarSystemId = node.Id,
+                        UpgradeName = sov.UpgradeName,
+                        Tier = sov.Tier
+                    }));
+                }
                 sovIconSlot++;
             }
         }
@@ -4626,7 +4650,7 @@ public sealed class MapControl : Control
             .Select(sov => new
             {
                 Upgrade = sov,
-                Opacity = 1.0,
+                Opacity = sov.MiningSiteStatus == MiningSiteStatus.Available ? 1.0 : 0.38,
                 Text = new FormattedText(
                     IsSingleLevelSovUpgrade(sov.UpgradeName) ? sov.UpgradeName : $"{sov.UpgradeName} {sov.Tier}",
                     CultureInfo.InvariantCulture,

@@ -86,6 +86,45 @@ public sealed class SovUpgradeEntry
 {
     public required string UpgradeName { get; init; }
     public int Tier { get; init; }
+    // Mineral prospecting arrays use this to dim their map icon while the site is unavailable.
+    public MiningSiteStatus MiningSiteStatus { get; init; } = MiningSiteStatus.Available;
+    public DateTime? MiningSiteAvailableAtUtc { get; init; }
+}
+
+public sealed class MapSovUpgradeHit
+{
+    public required long SolarSystemId { get; init; }
+    public required string UpgradeName { get; init; }
+    public required int Tier { get; init; }
+}
+
+public enum MiningSiteStatus
+{
+    Available = 0,
+    Cleared = 1,
+    Missing = 2
+}
+
+public sealed class MiningSiteReport
+{
+    public required int SolarSystemId { get; init; }
+    public required string UpgradeName { get; init; }
+    public required int Tier { get; init; }
+    public MiningSiteStatus Status { get; init; }
+    public required DateTime ReportedAtUtc { get; init; }
+    public DateTime? AvailableAtUtc { get; init; }
+    public DateTime? AlertEmittedAtUtc { get; init; }
+}
+
+public sealed class MiningSiteReportRecord
+{
+    public required int SolarSystemId { get; init; }
+    public required string SolarSystemName { get; init; }
+    public required string UpgradeName { get; init; }
+    public required int Tier { get; init; }
+    public MiningSiteStatus Status { get; init; }
+    public required DateTime ReportedAtUtc { get; init; }
+    public DateTime? AvailableAtUtc { get; init; }
 }
 
 public enum SovImportMode

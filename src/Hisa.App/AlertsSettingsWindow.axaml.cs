@@ -31,7 +31,8 @@ public partial class AlertsSettingsWindow : Window
             new AlertChoice<AlertEventType>(AlertEventType.Killmail, "Killmail"),
             new AlertChoice<AlertEventType>(AlertEventType.HubWormholeSpawn, "Thera/Turnur Spawn"),
             new AlertChoice<AlertEventType>(AlertEventType.IncursionSpawn, "Incursion Spawn"),
-            new AlertChoice<AlertEventType>(AlertEventType.StormSpawn, "Storm Moved")
+            new AlertChoice<AlertEventType>(AlertEventType.StormSpawn, "Storm Moved"),
+            new AlertChoice<AlertEventType>(AlertEventType.MiningSiteReady, "Mining site ready / check")
         };
         ScopeModeComboBox.ItemsSource = new[]
         {

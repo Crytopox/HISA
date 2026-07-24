@@ -204,6 +204,7 @@
                   <MenuItem Header="LY Coverage Planner" Click="OnOpenLyCoveragePlannerClicked" />
                   <MenuItem Header="Jump Route Optimizer" Click="OnOpenJumpRouteOptimizerClicked" />
                   <MenuItem Header="Mining Stats" Click="OnOpenMiningStatsWindowClicked" />
+                  <MenuItem Header="Mining Sites Tracker" Click="OnOpenMiningSitesClicked" />
                 </MenuFlyout>
               </Button.Flyout>
             </Button>
@@ -242,6 +243,7 @@
                   <MenuItem Header="LY Coverage Planner" Click="OnOpenLyCoveragePlannerClicked" />
                   <MenuItem Header="Jump Route Optimizer" Click="OnOpenJumpRouteOptimizerClicked" />
                   <MenuItem Header="Mining Stats" Click="OnOpenMiningStatsWindowClicked" />
+                  <MenuItem Header="Mining Sites Tracker" Click="OnOpenMiningSitesClicked" />
                 </MenuItem>
                 <MenuItem Header="Settings">
                   <MenuItem Header="Map Editor" Click="OnOpenMapEditorClicked" />

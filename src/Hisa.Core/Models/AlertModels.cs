@@ -7,7 +7,8 @@ public enum AlertEventType
     HubWormholeSpawn = 2,
     IncursionSpawn = 3,
     StormSpawn = 4,
-    IntelTextMatch = 5
+    IntelTextMatch = 5,
+    MiningSiteReady = 6
 }
 
 public enum AlertLocationScopeMode
@@ -65,6 +66,9 @@ public sealed class AlertSourceEvent
     public bool IsClearIntelReport { get; init; }
     public string DedupeKey { get; init; } = string.Empty;
     public string Summary { get; init; } = string.Empty;
+    public string? MiningSiteSystemName { get; init; }
+    public string? MiningSiteUpgradeName { get; init; }
+    public int? MiningSiteTier { get; init; }
 }
 
 public sealed class AlertTriggered

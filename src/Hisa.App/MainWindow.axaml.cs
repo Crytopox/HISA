@@ -49,15 +49,18 @@ public partial class MainWindow : Window
     private LyCoveragePlannerWindow? _lyCoveragePlannerWindow;
     private JumpRouteOptimizerWindow? _jumpRouteOptimizerWindow;
     private MiningStatsWindow? _miningStatsWindow;
+    private MiningSitesWindow? _miningSitesWindow;
     private ZkillmailsWindow? _zkillmailsWindow;
     private AboutWindow? _aboutWindow;
     private readonly ContextMenu _mapNodeContextMenu;
+    private readonly ContextMenu _miningSiteContextMenu;
     private readonly MenuItem _copySystemNameMenuItem;
     private readonly MenuItem _openInViewMenuItem;
     private readonly MenuItem _openInDotlanMenuItem;
     private readonly MenuItem _openInZkillboardMenuItem;
     private readonly MenuItem _openInKillmailAppMenuItem;
     private readonly MenuItem _jumpRangeMenuItem;
+    private readonly MenuItem _manageMiningSitesMenuItem;
     private readonly KillmailAppService _killmailAppService;
     private Point? _mapRightPressPoint;
     private bool _mapRightMoved;
@@ -65,6 +68,7 @@ public partial class MainWindow : Window
     private long? _contextSystemId;
     private int? _contextRegionId;
     private int? _contextConstellationId;
+    private MapSovUpgradeHit? _contextMiningSite;
     private readonly ObservableCollection<AlertPopupCard> _alertPopupCards = [];
     private readonly DispatcherTimer _alertPopupCleanupTimer = new() { Interval = TimeSpan.FromSeconds(1) };
 
@@ -126,13 +130,39 @@ public partial class MainWindow : Window
         _openInKillmailAppMenuItem.Classes.Add("map-node-menu-item");
         _openInKillmailAppMenuItem.Click += OnOpenInKillmailAppClicked;
         _jumpRangeMenuItem = BuildJumpRangeMenu(subMenufontSize);
+        _manageMiningSitesMenuItem = new MenuItem { Header = "Manage Mining Sites", FontSize = subMenufontSize, FontWeight = Avalonia.Media.FontWeight.SemiBold, Padding = new Thickness(8, 3) };
+        _manageMiningSitesMenuItem.Classes.Add("map-node-menu-item");
+        _manageMiningSitesMenuItem.Click += OnManageMiningSitesClicked;
         _mapNodeContextMenu = new ContextMenu
         {
             MinWidth = 0,
             FontSize = subMenufontSize,
-            ItemsSource = new object[] { _copySystemNameMenuItem, _openInViewMenuItem, _jumpRangeMenuItem, new Separator(), _openInDotlanMenuItem, _openInKillmailAppMenuItem, _openInZkillboardMenuItem }
+            ItemsSource = new object[] { _copySystemNameMenuItem, _openInViewMenuItem, _jumpRangeMenuItem, _manageMiningSitesMenuItem, new Separator(), _openInDotlanMenuItem, _openInKillmailAppMenuItem, _openInZkillboardMenuItem }
         };
         _mapNodeContextMenu.Classes.Add("map-node-menu");
+        _miningSiteContextMenu = new ContextMenu
+        {
+            MinWidth = 140,
+            FontSize = subMenufontSize,
+            ItemsSource = new object[]
+            {
+                CreateMiningSiteMenuItem("Cleared", MarkMiningSiteClearedFromMapAsync),
+                CreateMiningSiteMenuItem("Ready", MarkMiningSiteAvailableFromMapAsync),
+                new MenuItem
+                {
+                    Header = "Missing",
+                    ItemsSource = new object[]
+                    {
+                        CreateMiningSiteMenuItem("3 hours", () => MarkMiningSiteMissingFromMapAsync(TimeSpan.FromHours(3))),
+                        CreateMiningSiteMenuItem("5 hours", () => MarkMiningSiteMissingFromMapAsync(TimeSpan.FromHours(5))),
+                        CreateMiningSiteMenuItem("8 hours", () => MarkMiningSiteMissingFromMapAsync(TimeSpan.FromHours(8))),
+                        CreateMiningSiteMenuItem("11 hours", () => MarkMiningSiteMissingFromMapAsync(TimeSpan.FromHours(11)))
+                    }
+                },
+                CreateMiningSiteMenuItem("Custom…", OpenMiningSiteTrackerFromMapAsync)
+            }
+        };
+        _miningSiteContextMenu.Classes.Add("map-node-menu");
         MainMapControl.UniverseRegionNodeDoubleClicked += OnUniverseRegionNodeClicked;
         Opened += OnOpened;
         Opened += (_, _) => UpdateTopToolbarLayout();
@@ -440,6 +470,23 @@ public partial class MainWindow : Window
         _sovUpgradesWindow.Activate();
     }
 
+    private void OnOpenMiningSitesClicked(object? sender, RoutedEventArgs e) => OpenMiningSitesWindow();
+
+    private void OnManageMiningSitesClicked(object? sender, RoutedEventArgs e) => OpenMiningSitesWindow(_contextSystemId);
+
+    private void OpenMiningSitesWindow(long? systemId = null)
+    {
+        if (_boundVm is null) return;
+        if (_miningSitesWindow is null || systemId.HasValue)
+        {
+            _miningSitesWindow?.Close();
+            _miningSitesWindow = new MiningSitesWindow(_boundVm, systemId);
+            _miningSitesWindow.Closed += (_, _) => _miningSitesWindow = null;
+        }
+        _miningSitesWindow.Show();
+        _miningSitesWindow.Activate();
+    }
+
     private void OnOpenAnsiblexNetworkClicked(object? sender, RoutedEventArgs e)
     {
         if (_ansiblexNetworkWindow is null)
@@ -539,6 +586,7 @@ public partial class MainWindow : Window
                 EnsureAlertPopupWindow();
                 var zkillCard = TryFindPopupZkillmailCard(alert);
                 var intelCard = zkillCard is null ? TryFindPopupIntelCard(alert) : null;
+                var isMiningSiteAlert = alert.SourceEvent.EventType == AlertEventType.MiningSiteReady;
                 var card = new AlertPopupCard
                 {
                     Title = $"{alert.SourceEvent.EventType}: {alert.RuleName}",
@@ -546,6 +594,12 @@ public partial class MainWindow : Window
                     TimestampLabel = $"{alert.TriggeredAtUtc:HH:mm:ss} UTC",
                     IntelCard = intelCard,
                     ZkillmailCard = zkillCard,
+                    IsMiningSiteAlert = isMiningSiteAlert,
+                    MiningSiteSystemName = alert.SourceEvent.MiningSiteSystemName ?? string.Empty,
+                    MiningSiteUpgradeLabel = alert.SourceEvent.MiningSiteUpgradeName is { Length: > 0 } name
+                        ? $"{name} T{alert.SourceEvent.MiningSiteTier ?? 1}"
+                        : string.Empty,
+                    MiningSiteIcon = isMiningSiteAlert ? LoadMiningSiteAlertIcon(alert.SourceEvent.MiningSiteUpgradeName, alert.SourceEvent.MiningSiteTier) : null,
                     ExpiresAtUtc = DateTime.UtcNow.AddSeconds(_alertPopupSettings.AutoDismissSeconds)
                 };
                 _alertPopupCards.Insert(0, card);
@@ -937,6 +991,19 @@ public partial class MainWindow : Window
         }
 
         var props = e.GetCurrentPoint(MainMapControl).Properties;
+        if (props.IsLeftButtonPressed)
+        {
+            var point = e.GetPosition(MainMapControl);
+            var miningSite = MainMapControl.HitTestSovUpgrade(point);
+            if (miningSite is not null)
+            {
+                _contextMiningSite = miningSite;
+                ConfigureMiningSiteMenuPlacement(point);
+                _miningSiteContextMenu.Open(MainMapControl);
+                e.Handled = true;
+                return;
+            }
+        }
         if (!props.IsRightButtonPressed)
         {
             return;
@@ -1003,6 +1070,7 @@ public partial class MainWindow : Window
                 ? "Open in Region"
                 : "Open in Universe";
             _copySystemNameMenuItem.Header = $"Copy '{_contextSystemName}'";
+            _manageMiningSitesMenuItem.IsVisible = node.SovUpgrades.Any(x => x.UpgradeName.EndsWith(" Prospecting Array", StringComparison.OrdinalIgnoreCase));
             ConfigureMapNodeMenuPlacement(point);
             _mapNodeContextMenu.Open(MainMapControl);
             e.Handled = true;
@@ -1336,6 +1404,58 @@ public partial class MainWindow : Window
         _mapNodeContextMenu.PlacementRect = new Rect(clickPoint, new Size(1, 1));
         _mapNodeContextMenu.HorizontalOffset = offset;
         _mapNodeContextMenu.VerticalOffset = offset;
+    }
+
+    private static Bitmap? LoadMiningSiteAlertIcon(string? upgradeName, int? tier)
+    {
+        if (string.IsNullOrWhiteSpace(upgradeName)) return null;
+        try
+        {
+            var fileName = $"{upgradeName.Trim()} {Math.Clamp(tier ?? 1, 1, 3)}.png";
+            using var stream = AssetLoader.Open(new Uri($"avares://HISA/Assets/Icons/SOV Upgrades/{fileName}"));
+            return new Bitmap(stream);
+        }
+        catch { return null; }
+    }
+
+    private void ConfigureMiningSiteMenuPlacement(Point clickPoint)
+    {
+        _miningSiteContextMenu.Placement = PlacementMode.BottomEdgeAlignedLeft;
+        _miningSiteContextMenu.PlacementRect = new Rect(clickPoint, new Size(1, 1));
+        _miningSiteContextMenu.HorizontalOffset = 3;
+        _miningSiteContextMenu.VerticalOffset = 3;
+    }
+
+    private MenuItem CreateMiningSiteMenuItem(string header, Func<Task> action)
+    {
+        var item = new MenuItem { Header = header, Padding = new Thickness(8, 4) };
+        item.Classes.Add("map-node-menu-item");
+        item.Click += async (_, _) => await action();
+        return item;
+    }
+
+    private async Task MarkMiningSiteClearedFromMapAsync()
+    {
+        if (_boundVm is null || _contextMiningSite is null) return;
+        await _boundVm.MarkMiningSiteClearedAsync((int)_contextMiningSite.SolarSystemId, _contextMiningSite.UpgradeName, _contextMiningSite.Tier);
+    }
+
+    private async Task MarkMiningSiteAvailableFromMapAsync()
+    {
+        if (_boundVm is null || _contextMiningSite is null) return;
+        await _boundVm.MarkMiningSiteAvailableAsync((int)_contextMiningSite.SolarSystemId, _contextMiningSite.UpgradeName, _contextMiningSite.Tier);
+    }
+
+    private async Task MarkMiningSiteMissingFromMapAsync(TimeSpan delay)
+    {
+        if (_boundVm is null || _contextMiningSite is null) return;
+        await _boundVm.MarkMiningSiteMissingAsync((int)_contextMiningSite.SolarSystemId, _contextMiningSite.UpgradeName, _contextMiningSite.Tier, delay);
+    }
+
+    private Task OpenMiningSiteTrackerFromMapAsync()
+    {
+        OpenMiningSitesWindow(_contextMiningSite?.SolarSystemId);
+        return Task.CompletedTask;
     }
 
     private static async Task WaitForNodeInGraphAsync(MainWindowViewModel vm, long nodeId, int timeoutMs)
@@ -1868,6 +1988,7 @@ public partial class MainWindow : Window
         TryClose(_lyCoveragePlannerWindow);
         TryClose(_jumpRouteOptimizerWindow);
         TryClose(_miningStatsWindow);
+        TryClose(_miningSitesWindow);
         TryClose(MiningOverlayWindow.Current);
         TryClose(_zkillmailsWindow);
         TryClose(_aboutWindow);

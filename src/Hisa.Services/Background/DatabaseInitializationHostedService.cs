@@ -80,6 +80,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IMiningSessionFeed>(sp => sp.GetRequiredService<MiningSessionLogFeedHostedService>());
         services.AddHostedService(sp => sp.GetRequiredService<MiningSessionLogFeedHostedService>());
         services.AddSingleton<ISovUpgradeStateService, SovUpgradeStateService>();
+        services.AddSingleton<IMiningSiteTrackerService, MiningSiteTrackerService>();
         services.AddSingleton<IAnsiblexNetworkStateService, AnsiblexNetworkStateService>();
         services.AddSingleton<IRouteDistanceService, DijkstraRouteDistanceService>();
         services.AddSingleton<IAlertRuleEngine, AlertRuleEngine>();

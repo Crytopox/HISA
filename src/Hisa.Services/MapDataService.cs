@@ -15,10 +15,22 @@ public sealed class MapDataService : IMapDataService
     private readonly IStormStateService _stormStateService;
     private readonly IHubWormholeStateService _hubWormholeStateService;
     private readonly ISovUpgradeStateService _sovUpgradeStateService;
+    private readonly IMiningSiteTrackerService _miningSiteTrackerService;
     private readonly IIncursionStateService _incursionStateService;
     private readonly ISystemActivityStateService _systemActivityStateService;
 
     private sealed record StaticSolarSystemData(bool HasJoveObservatory, int IceFieldCount);
+
+    private IReadOnlyList<SovUpgradeEntry> DecorateMiningSites(int solarSystemId, IReadOnlyList<SovUpgradeEntry> upgrades)
+    {
+        return upgrades.Select(upgrade =>
+        {
+            if (!upgrade.UpgradeName.EndsWith(" Prospecting Array", StringComparison.OrdinalIgnoreCase)) return upgrade;
+            var report = _miningSiteTrackerService.CurrentReports.GetValueOrDefault(MiningSiteTrackerService.Key(solarSystemId, upgrade.UpgradeName, upgrade.Tier));
+            var waiting = report is not null && report.AvailableAtUtc > DateTime.UtcNow;
+            return new SovUpgradeEntry { UpgradeName = upgrade.UpgradeName, Tier = upgrade.Tier, MiningSiteStatus = waiting ? report!.Status : MiningSiteStatus.Available, MiningSiteAvailableAtUtc = waiting ? report!.AvailableAtUtc : null };
+        }).ToList();
+    }
 
     public MapDataService(
         ISdeDatabase sdeDatabase,
@@ -26,6 +38,7 @@ public sealed class MapDataService : IMapDataService
         IStormStateService stormStateService,
         IHubWormholeStateService hubWormholeStateService,
         ISovUpgradeStateService sovUpgradeStateService,
+        IMiningSiteTrackerService miningSiteTrackerService,
         IIncursionStateService incursionStateService,
         ISystemActivityStateService systemActivityStateService)
     {
@@ -34,6 +47,7 @@ public sealed class MapDataService : IMapDataService
         _stormStateService = stormStateService;
         _hubWormholeStateService = hubWormholeStateService;
         _sovUpgradeStateService = sovUpgradeStateService;
+        _miningSiteTrackerService = miningSiteTrackerService;
         _incursionStateService = incursionStateService;
         _systemActivityStateService = systemActivityStateService;
     }
@@ -242,7 +256,7 @@ public sealed class MapDataService : IMapDataService
                     ? wormholes
                     : [],
                 SovUpgrades = _sovUpgradeStateService.CurrentBySystemId.TryGetValue((int)n.Id, out var upgrades)
-                    ? upgrades
+                    ? DecorateMiningSites((int)n.Id, upgrades)
                     : [],
                 HasActiveIncursion = _incursionStateService.Current.ActiveSystemIds.Contains((int)n.Id),
                 SystemJumps = _systemActivityStateService.Current.JumpsBySystemId.TryGetValue((int)n.Id, out var layoutJumps) ? layoutJumps.ShipJumps : 0,
@@ -668,7 +682,7 @@ public sealed class MapDataService : IMapDataService
                     ? wormholes
                     : [],
                 SovUpgrades = _sovUpgradeStateService.CurrentBySystemId.TryGetValue(solarSystemId, out var upgrades)
-                    ? upgrades
+                    ? DecorateMiningSites(solarSystemId, upgrades)
                     : [],
                 HasActiveIncursion = _incursionStateService.Current.ActiveSystemIds.Contains(solarSystemId),
                 SystemJumps = _systemActivityStateService.Current.JumpsBySystemId.TryGetValue(solarSystemId, out var jumps) ? jumps.ShipJumps : 0,
