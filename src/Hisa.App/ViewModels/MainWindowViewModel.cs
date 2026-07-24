@@ -520,6 +520,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private static readonly TimeSpan OverlayAgeChipRefreshInterval = TimeSpan.FromSeconds(1);
     private readonly Task _initialLoadTask;
     private readonly DispatcherTimer _miningSiteReminderTimer;
+    private readonly DispatcherTimer _miningSiteAlertDispatchTimer;
+    private readonly Queue<MiningSiteReport> _pendingMiningSiteAlerts = [];
+    private readonly HashSet<string> _pendingMiningSiteAlertKeys = new(StringComparer.OrdinalIgnoreCase);
 
     public MainWindowViewModel(
         IMapDataService mapDataService,
@@ -577,6 +580,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _miningSiteReminderTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(20) };
         _miningSiteReminderTimer.Tick += async (_, _) => await CheckMiningSiteRemindersAsync();
         _miningSiteReminderTimer.Start();
+        _miningSiteAlertDispatchTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+        _miningSiteAlertDispatchTimer.Tick += async (_, _) => await DispatchNextMiningSiteAlertAsync();
         _miningOverlayRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
         _miningOverlayRefreshTimer.Tick += async (_, _) =>
         {
@@ -2720,21 +2725,51 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         var due = await _miningSiteTrackerService.GetDueReportsAsync(DateTime.UtcNow);
         foreach (var report in due)
         {
-            var node = CurrentGraph?.Nodes.FirstOrDefault(x => x.Id == report.SolarSystemId);
-            EvaluateAlertRules(new AlertSourceEvent
-            {
-                EventType = AlertEventType.MiningSiteReady,
-                TimestampUtc = DateTime.UtcNow,
-                SolarSystemId = report.SolarSystemId,
-                RegionId = node?.RegionId,
-                DedupeKey = $"mining-site:{report.SolarSystemId}:{report.UpgradeName}:{report.Tier}:{report.AvailableAtUtc:O}",
-                Summary = $"{node?.Name ?? report.SolarSystemId.ToString()}: {report.UpgradeName} T{report.Tier} is ready to check.",
-                MiningSiteSystemName = node?.Name ?? report.SolarSystemId.ToString(),
-                MiningSiteUpgradeName = report.UpgradeName,
-                MiningSiteTier = report.Tier
-            });
+            var key = MiningSiteAlertKey(report);
+            if (_pendingMiningSiteAlertKeys.Add(key)) _pendingMiningSiteAlerts.Enqueue(report);
+        }
+
+        if (_pendingMiningSiteAlerts.Count > 0 && !_miningSiteAlertDispatchTimer.IsEnabled)
+        {
+            await DispatchNextMiningSiteAlertAsync();
+            if (_pendingMiningSiteAlerts.Count > 0) _miningSiteAlertDispatchTimer.Start();
         }
     }
+
+    private async Task DispatchNextMiningSiteAlertAsync()
+    {
+        if (_pendingMiningSiteAlerts.Count == 0)
+        {
+            _miningSiteAlertDispatchTimer.Stop();
+            return;
+        }
+
+        var report = _pendingMiningSiteAlerts.Dequeue();
+        _pendingMiningSiteAlertKeys.Remove(MiningSiteAlertKey(report));
+        var now = DateTime.UtcNow;
+        if (!await _miningSiteTrackerService.MarkAlertEmittedAsync(report, now)) return;
+
+        var node = CurrentGraph?.Nodes.FirstOrDefault(x => x.Id == report.SolarSystemId);
+        var readyAt = report.AvailableAtUtc;
+        var overdue = readyAt is not null && now - readyAt.Value > TimeSpan.FromMinutes(1);
+        EvaluateAlertRules(new AlertSourceEvent
+        {
+            EventType = AlertEventType.MiningSiteReady,
+            TimestampUtc = now,
+            SolarSystemId = report.SolarSystemId,
+            RegionId = node?.RegionId,
+            DedupeKey = MiningSiteAlertKey(report),
+            Summary = $"{node?.Name ?? report.SolarSystemId.ToString()}: {report.UpgradeName} T{report.Tier} is ready to check.",
+            MiningSiteSystemName = node?.Name ?? report.SolarSystemId.ToString(),
+            MiningSiteUpgradeName = report.UpgradeName,
+            MiningSiteTier = report.Tier,
+            MiningSiteReadyAtUtc = readyAt,
+            MiningSiteWasOverdue = overdue
+        });
+    }
+
+    private static string MiningSiteAlertKey(MiningSiteReport report) =>
+        $"mining-site:{report.SolarSystemId}:{report.UpgradeName}:{report.Tier}:{report.AvailableAtUtc:O}";
 
     private void OnIncursionSnapshotUpdated(object? sender, IncursionSnapshot snapshot)
     {

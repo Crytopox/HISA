@@ -12,4 +12,5 @@ public interface IMiningSiteTrackerService
     Task MarkAvailableAsync(int solarSystemId, string upgradeName, int tier, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<MiningSiteReportRecord>> GetSnapshotAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<MiningSiteReport>> GetDueReportsAsync(DateTime nowUtc, CancellationToken cancellationToken = default);
+    Task<bool> MarkAlertEmittedAsync(MiningSiteReport report, DateTime emittedAtUtc, CancellationToken cancellationToken = default);
 }

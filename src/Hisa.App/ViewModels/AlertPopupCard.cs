@@ -13,6 +13,10 @@ public sealed class AlertPopupCard
     public string MiningSiteSystemName { get; init; } = string.Empty;
     public string MiningSiteUpgradeLabel { get; init; } = string.Empty;
     public Bitmap? MiningSiteIcon { get; init; }
+    public bool MiningSiteWasOverdue { get; init; }
+    public string MiningSiteAccentHex => MiningSiteWasOverdue ? "#F2C94C" : "#51D88A";
+    public string MiningSiteAccentBackgroundHex => MiningSiteWasOverdue ? "#3A3218" : "#183A2B";
+    public string MiningSiteLabel => MiningSiteWasOverdue ? "MINING SITE OVERDUE" : "MINING SITE READY";
     public bool HasIntelCard => IntelCard is not null;
     public bool HasZkillmailCard => ZkillmailCard is not null;
     public bool HasOverlayCard => HasIntelCard || HasZkillmailCard;

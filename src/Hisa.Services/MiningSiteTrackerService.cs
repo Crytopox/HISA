@@ -52,13 +52,28 @@ public sealed class MiningSiteTrackerService : IMiningSiteTrackerService
         try
         {
             due = _reports.Values.Where(x => x.AvailableAtUtc <= nowUtc && x.AlertEmittedAtUtc is null).ToList();
-            foreach (var item in due)
-                _reports[Key(item.SolarSystemId, item.UpgradeName, item.Tier)] = new MiningSiteReport { SolarSystemId = item.SolarSystemId, UpgradeName = item.UpgradeName, Tier = item.Tier, Status = item.Status, ReportedAtUtc = item.ReportedAtUtc, AvailableAtUtc = item.AvailableAtUtc, AlertEmittedAtUtc = nowUtc };
-            if (due.Count > 0) await SaveAsync(ct);
         }
         finally { _sync.Release(); }
-        if (due.Count > 0) ReportsUpdated?.Invoke(this, EventArgs.Empty);
         return due;
+    }
+
+    public async Task<bool> MarkAlertEmittedAsync(MiningSiteReport report, DateTime emittedAtUtc, CancellationToken ct = default)
+    {
+        await _sync.WaitAsync(ct);
+        try
+        {
+            var key = Key(report.SolarSystemId, report.UpgradeName, report.Tier);
+            if (!_reports.TryGetValue(key, out var current) || current.AlertEmittedAtUtc is not null || current.AvailableAtUtc != report.AvailableAtUtc)
+            {
+                return false;
+            }
+
+            _reports[key] = new MiningSiteReport { SolarSystemId = current.SolarSystemId, UpgradeName = current.UpgradeName, Tier = current.Tier, Status = current.Status, ReportedAtUtc = current.ReportedAtUtc, AvailableAtUtc = current.AvailableAtUtc, AlertEmittedAtUtc = emittedAtUtc };
+            await SaveAsync(ct);
+        }
+        finally { _sync.Release(); }
+        ReportsUpdated?.Invoke(this, EventArgs.Empty);
+        return true;
     }
 
     private async Task SetAsync(int id, string name, int tier, MiningSiteStatus status, TimeSpan delay, CancellationToken ct)

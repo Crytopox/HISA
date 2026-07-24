@@ -591,7 +591,9 @@ public partial class MainWindow : Window
                 {
                     Title = $"{alert.SourceEvent.EventType}: {alert.RuleName}",
                     Details = alert.SourceEvent.Summary,
-                    TimestampLabel = $"{alert.TriggeredAtUtc:HH:mm:ss} UTC",
+                    TimestampLabel = isMiningSiteAlert
+                        ? FormatMiningSiteTimestampLabel(alert.SourceEvent.MiningSiteReadyAtUtc, alert.SourceEvent.MiningSiteWasOverdue)
+                        : $"{alert.TriggeredAtUtc:HH:mm:ss} UTC",
                     IntelCard = intelCard,
                     ZkillmailCard = zkillCard,
                     IsMiningSiteAlert = isMiningSiteAlert,
@@ -600,6 +602,7 @@ public partial class MainWindow : Window
                         ? $"{name} T{alert.SourceEvent.MiningSiteTier ?? 1}"
                         : string.Empty,
                     MiningSiteIcon = isMiningSiteAlert ? LoadMiningSiteAlertIcon(alert.SourceEvent.MiningSiteUpgradeName, alert.SourceEvent.MiningSiteTier) : null,
+                    MiningSiteWasOverdue = alert.SourceEvent.MiningSiteWasOverdue,
                     ExpiresAtUtc = DateTime.UtcNow.AddSeconds(_alertPopupSettings.AutoDismissSeconds)
                 };
                 _alertPopupCards.Insert(0, card);
@@ -1416,6 +1419,15 @@ public partial class MainWindow : Window
             return new Bitmap(stream);
         }
         catch { return null; }
+    }
+
+    private static string FormatMiningSiteTimestampLabel(DateTime? readyAtUtc, bool overdue)
+    {
+        if (!overdue || readyAtUtc is null) return "Just now";
+        var age = DateTime.UtcNow - readyAtUtc.Value;
+        return age.TotalHours >= 1
+            ? $"{Math.Floor(age.TotalHours):0}h ago"
+            : $"{Math.Max(1, Math.Floor(age.TotalMinutes)):0}m ago";
     }
 
     private void ConfigureMiningSiteMenuPlacement(Point clickPoint)

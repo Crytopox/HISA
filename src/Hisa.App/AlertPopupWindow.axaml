@@ -213,22 +213,21 @@
               </Border>
             </Grid>
             <Grid ColumnDefinitions="4,*" IsVisible="{Binding IsMiningSiteAlert}">
-              <Border Grid.Column="0" Background="#51D88A" CornerRadius="5,0,0,5" />
-              <Border Grid.Column="1" Padding="8,7" Background="#E012211B" BorderBrush="#3C8D68" BorderThickness="1" CornerRadius="0,7,7,0">
+              <Border Grid.Column="0" Background="{Binding MiningSiteAccentHex}" CornerRadius="5,0,0,5" />
+              <Border Grid.Column="1" Padding="8,7" Background="#E012211B" BorderBrush="{Binding MiningSiteAccentHex}" BorderThickness="1" CornerRadius="0,7,7,0">
                 <Grid ColumnDefinitions="42,*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="8" RowSpacing="2">
-                  <Border Grid.RowSpan="2" Width="38" Height="38" Background="#192E27" BorderBrush="#51D88A" BorderThickness="1" CornerRadius="6" Padding="4">
+                  <Border Grid.RowSpan="2" Width="38" Height="38" Background="{Binding MiningSiteAccentBackgroundHex}" BorderBrush="{Binding MiningSiteAccentHex}" BorderThickness="1" CornerRadius="6" Padding="4">
                     <Image Source="{Binding MiningSiteIcon}" Stretch="Uniform" />
                   </Border>
                   <StackPanel Grid.Column="1" Spacing="1">
-                    <TextBlock Text="MINING SITE READY" Foreground="#66E89B" FontSize="9" FontWeight="Bold" />
+                    <TextBlock Text="{Binding MiningSiteLabel}" Foreground="{Binding MiningSiteAccentHex}" FontSize="9" FontWeight="Bold" />
                     <TextBlock Text="{Binding MiningSiteSystemName}" Foreground="#F0FFF5" FontSize="14" FontWeight="Bold" TextTrimming="CharacterEllipsis" />
                   </StackPanel>
-                  <Border Grid.Column="2" Background="#183A2B" BorderBrush="#3C8D68" BorderThickness="1" CornerRadius="4" Padding="5,2" VerticalAlignment="Top">
-                    <TextBlock Text="{Binding TimestampLabel}" Foreground="#C8F8D9" FontSize="9" FontWeight="Bold" />
+                  <Border Grid.Column="2" Background="{Binding MiningSiteAccentBackgroundHex}" BorderBrush="{Binding MiningSiteAccentHex}" BorderThickness="1" CornerRadius="4" Padding="5,2" VerticalAlignment="Top">
+                    <TextBlock Text="{Binding TimestampLabel}" Foreground="#FFF4C8" FontSize="9" FontWeight="Bold" />
                   </Border>
                   <StackPanel Grid.Column="1" Grid.Row="1" Orientation="Horizontal" Spacing="6">
                     <TextBlock Text="{Binding MiningSiteUpgradeLabel}" Foreground="#D4E8DB" FontSize="10" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                    
                   </StackPanel>
                 </Grid>
               </Border>

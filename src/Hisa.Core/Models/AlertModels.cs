@@ -69,6 +69,8 @@ public sealed class AlertSourceEvent
     public string? MiningSiteSystemName { get; init; }
     public string? MiningSiteUpgradeName { get; init; }
     public int? MiningSiteTier { get; init; }
+    public DateTime? MiningSiteReadyAtUtc { get; init; }
+    public bool MiningSiteWasOverdue { get; init; }
 }
 
 public sealed class AlertTriggered
