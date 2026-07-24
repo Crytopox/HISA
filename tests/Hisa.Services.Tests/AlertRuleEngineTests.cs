@@ -47,6 +47,37 @@ public sealed class AlertRuleEngineTests
         Assert.Single(second);
     }
 
+    [Fact]
+    public void Evaluate_OverlappingJumpRules_UsesTheTightestMatchingRule()
+    {
+        var result = new AlertRuleEngine(new DijkstraRouteDistanceService()).Evaluate(CreateOverlappingJumpRulesRequest());
+
+        var triggered = Assert.Single(result);
+        Assert.Equal("one-jump", triggered.RuleId);
+    }
+
+    [Fact]
+    public void Evaluate_EquallySpecificRules_UsesListOrder()
+    {
+        var request = CreateOverlappingJumpRulesRequest();
+        request = new AlertEvaluationRequest
+        {
+            Rules =
+            [
+                new AlertRule { Id = "first", Name = "First", ScopeMode = AlertLocationScopeMode.AnyTrackedCharacter, DistanceMode = AlertDistanceMode.MaxJumps, MaxJumps = 5 },
+                new AlertRule { Id = "second", Name = "Second", ScopeMode = AlertLocationScopeMode.AnyTrackedCharacter, DistanceMode = AlertDistanceMode.MaxJumps, MaxJumps = 5 }
+            ],
+            SourceEvent = request.SourceEvent,
+            Graph = request.Graph,
+            CharacterLocationsByCharacterId = request.CharacterLocationsByCharacterId
+        };
+
+        var result = new AlertRuleEngine(new DijkstraRouteDistanceService()).Evaluate(request);
+
+        var triggered = Assert.Single(result);
+        Assert.Equal("first", triggered.RuleId);
+    }
+
     private static IReadOnlyList<AlertTriggered> EvaluateClearIntelReport(bool showClearIntelReports)
     {
         var engine = new AlertRuleEngine(new DijkstraRouteDistanceService());
@@ -96,6 +127,31 @@ public sealed class AlertRuleEngineTests
             },
             Graph = null,
             CharacterLocationsByCharacterId = new Dictionary<int, long>()
+        };
+    }
+
+    private static AlertEvaluationRequest CreateOverlappingJumpRulesRequest()
+    {
+        var graph = new MapGraph
+        {
+            Nodes =
+            [
+                new MapNode { Id = 1, Name = "Home", X = 0, Y = 0 },
+                new MapNode { Id = 2, Name = "One jump", X = 1, Y = 0 }
+            ],
+            Links = [new MapLink { FromId = 1, ToId = 2 }]
+        };
+
+        return new AlertEvaluationRequest
+        {
+            Rules =
+            [
+                new AlertRule { Id = "five-jump", Name = "Five", ScopeMode = AlertLocationScopeMode.AnyTrackedCharacter, DistanceMode = AlertDistanceMode.MaxJumps, MaxJumps = 5 },
+                new AlertRule { Id = "one-jump", Name = "One", ScopeMode = AlertLocationScopeMode.AnyTrackedCharacter, DistanceMode = AlertDistanceMode.MaxJumps, MaxJumps = 1 }
+            ],
+            SourceEvent = new AlertSourceEvent { EventType = AlertEventType.IntelReport, TimestampUtc = DateTime.UtcNow, SolarSystemId = 2 },
+            Graph = graph,
+            CharacterLocationsByCharacterId = new Dictionary<int, long> { [7] = 1 }
         };
     }
 }

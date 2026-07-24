@@ -22,10 +22,14 @@ public sealed class AlertRuleEngine : IAlertRuleEngine
         var source = request.SourceEvent;
         var graph = request.Graph;
         var now = DateTime.UtcNow;
-        var result = new List<AlertTriggered>();
+        // A source event should produce one coherent alert. Rules are intentionally
+        // ordered: when two matching rules have the same specificity, the first rule
+        // in the user's list wins.
+        var matchingRules = new List<(AlertRule Rule, int Index)>();
 
-        foreach (var rule in request.Rules)
+        for (var index = 0; index < request.Rules.Count; index++)
         {
+            var rule = request.Rules[index];
             if (!rule.Enabled || rule.EventType != source.EventType)
             {
                 continue;
@@ -43,36 +47,68 @@ public sealed class AlertRuleEngine : IAlertRuleEngine
                 continue;
             }
 
-            var dedupe = BuildAlertKey(rule, source);
-            if (!TryMarkAlertEmitted(dedupe, now))
-            {
-                continue;
-            }
+            matchingRules.Add((rule, index));
+        }
 
-            var actions = new List<AlertActionType> { AlertActionType.ShowPopup };
-            var wantsSound = rule.Actions.Contains(AlertActionType.PlaySound);
-            if (wantsSound)
+        var winner = SelectWinningRule(matchingRules);
+        if (winner is null)
+        {
+            return [];
+        }
+
+        var winningRule = winner.Value.Rule;
+        var dedupe = BuildAlertKey(winningRule, source);
+        if (!TryMarkAlertEmitted(dedupe, now))
+        {
+            return [];
+        }
+
+        var actions = new List<AlertActionType> { AlertActionType.ShowPopup };
+        var wantsSound = winningRule.Actions.Contains(AlertActionType.PlaySound);
+        if (wantsSound)
+        {
+            if (!IsCoolingDown(dedupe, now))
             {
-                if (!IsCoolingDown(dedupe, now))
-                {
-                    actions.Add(AlertActionType.PlaySound);
-                    SetCooldown(dedupe, now, Math.Max(0, rule.CooldownSeconds));
-                }
+                actions.Add(AlertActionType.PlaySound);
+                SetCooldown(dedupe, now, Math.Max(0, winningRule.CooldownSeconds));
             }
-            result.Add(new AlertTriggered
+        }
+
+        return
+        [
+            new AlertTriggered
             {
-                RuleId = rule.Id,
-                RuleName = rule.Name,
+                RuleId = winningRule.Id,
+                RuleName = winningRule.Name,
                 SourceEvent = source,
                 TriggeredAtUtc = now,
                 Actions = actions,
-                SoundFile = string.IsNullOrWhiteSpace(rule.SoundFile) ? "default-alert.wav" : rule.SoundFile,
-                SoundVolume = Math.Clamp(rule.SoundVolume, 0.0, 1.0)
-            });
+                SoundFile = string.IsNullOrWhiteSpace(winningRule.SoundFile) ? "default-alert.wav" : winningRule.SoundFile,
+                SoundVolume = Math.Clamp(winningRule.SoundVolume, 0.0, 1.0)
+            }
+        ];
+    }
+
+    private static (AlertRule Rule, int Index)? SelectWinningRule(IReadOnlyList<(AlertRule Rule, int Index)> matchingRules)
+    {
+        if (matchingRules.Count == 0)
+        {
+            return null;
         }
 
-        return result;
+        return matchingRules
+            .OrderBy(x => GetDistanceSpecificity(x.Rule.DistanceMode))
+            .ThenBy(x => x.Rule.DistanceMode == AlertDistanceMode.MaxJumps ? Math.Max(0, x.Rule.MaxJumps) : int.MaxValue)
+            .ThenBy(x => x.Index)
+            .First();
     }
+
+    private static int GetDistanceSpecificity(AlertDistanceMode distanceMode) => distanceMode switch
+    {
+        AlertDistanceMode.MaxJumps => 0,
+        AlertDistanceMode.CurrentRegion => 1,
+        _ => 2
+    };
 
     private bool MatchesScope(AlertRule rule, AlertSourceEvent source, MapGraph? graph, AlertEvaluationRequest request)
     {

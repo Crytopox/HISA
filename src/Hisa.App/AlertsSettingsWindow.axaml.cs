@@ -163,6 +163,36 @@ public partial class AlertsSettingsWindow : Window
         RulesListBox.SelectedIndex = Math.Clamp(_selectedIndex, 0, _rules.Count - 1);
     }
 
+    private async void OnMoveRuleUpClicked(object? sender, RoutedEventArgs e)
+    {
+        await MoveSelectedRuleAsync(-1);
+    }
+
+    private async void OnMoveRuleDownClicked(object? sender, RoutedEventArgs e)
+    {
+        await MoveSelectedRuleAsync(1);
+    }
+
+    private async Task MoveSelectedRuleAsync(int offset)
+    {
+        if (_selectedIndex < 0 || _selectedIndex >= _rules.Count)
+        {
+            return;
+        }
+
+        var destination = _selectedIndex + offset;
+        if (destination < 0 || destination >= _rules.Count)
+        {
+            return;
+        }
+
+        // Keep edits in the currently visible editor before moving its rule.
+        await ApplyRuleToSelectionAsync();
+        (_rules[_selectedIndex], _rules[destination]) = (_rules[destination], _rules[_selectedIndex]);
+        RefreshRulesList();
+        RulesListBox.SelectedIndex = destination;
+    }
+
     private async void OnApplyRuleClicked(object? sender, RoutedEventArgs e)
     {
         await ApplyRuleToSelectionAsync();

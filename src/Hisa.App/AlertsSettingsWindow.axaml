@@ -13,11 +13,16 @@
   <Grid Margin="10" ColumnDefinitions="260,*" ColumnSpacing="10">
     <Border Grid.Column="0" Background="#121A26" BorderBrush="#2A3C58" BorderThickness="1" CornerRadius="8" Padding="10">
       <Grid RowDefinitions="Auto,*,Auto">
-        <TextBlock Grid.Row="0" Text="Alert Rules" Foreground="#EAF2FF" FontWeight="SemiBold"/>
+        <StackPanel Grid.Row="0" Spacing="2">
+          <TextBlock Text="Alert Rules" Foreground="#EAF2FF" FontWeight="SemiBold"/>
+          <TextBlock Text="Higher rules win ties; tighter distance rules win first." Foreground="#9DB8D8" FontSize="11" TextWrapping="Wrap"/>
+        </StackPanel>
         <ListBox Grid.Row="1" x:Name="RulesListBox" Margin="0,8,0,8" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" SelectionChanged="OnRuleSelectionChanged"/>
-        <Grid Grid.Row="2" ColumnDefinitions="*,*" ColumnSpacing="8">
+        <Grid Grid.Row="2" ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="8" RowSpacing="8">
           <Button Grid.Column="0" Content="Add" Click="OnAddRuleClicked"/>
           <Button Grid.Column="1" Content="Delete" Click="OnDeleteRuleClicked"/>
+          <Button Grid.Row="1" Grid.Column="0" Content="Move Up" Click="OnMoveRuleUpClicked"/>
+          <Button Grid.Row="1" Grid.Column="1" Content="Move Down" Click="OnMoveRuleDownClicked"/>
         </Grid>
       </Grid>
     </Border>
