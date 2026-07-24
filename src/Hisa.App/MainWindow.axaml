@@ -391,6 +391,28 @@
                     Margin="10"
                     Spacing="6"
                     ZIndex="20">
+          <Border Background="#D0101724"
+                  BorderBrush="#5A7AA5D6"
+                  BorderThickness="1"
+                  CornerRadius="6"
+                  Padding="2"
+                  HorizontalAlignment="Right"
+                  IsVisible="{Binding HasFollowableCharacters}">
+            <ComboBox Width="118"
+                      MinHeight="22"
+                      Padding="4,1"
+                      FontSize="10"
+                      ItemsSource="{Binding FollowCharacterOptions}"
+                      SelectedItem="{Binding FollowedCharacter, Mode=TwoWay}"
+                      DropDownOpened="OnFollowCharacterDropDownOpened"
+                      ToolTip.Tip="Center the map when this character changes systems">
+              <ComboBox.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock Text="{Binding DisplayName}" FontSize="10" TextTrimming="CharacterEllipsis" />
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+          </Border>
           <Button Width="33"
                   Height="33"
                   Padding="0"
@@ -401,6 +423,7 @@
                   Foreground="#EAF2FF"
                   FontWeight="Bold"
                   FontSize="18"
+                  HorizontalAlignment="Right"
                   HorizontalContentAlignment="Center"
                   VerticalContentAlignment="Center"
                   Content="?"
@@ -504,6 +527,7 @@
                   Background="#1E3147"
                   BorderBrush="#5D83B5"
                   BorderThickness="1"
+                  HorizontalAlignment="Right"
                   Click="OnFitCenterClicked"
                   ToolTip.Tip="Fit map to screen"
                   ToolTip.ShowDelay="80"

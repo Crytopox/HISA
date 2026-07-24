@@ -232,6 +232,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         public required RegionOptionKind Kind { get; init; }
     }
 
+    public sealed class FollowCharacterOption
+    {
+        public required int? CharacterId { get; init; }
+        public required string DisplayName { get; init; }
+    }
+
     private readonly IMapDataService _mapDataService;
     private readonly ISettingsService _settingsService;
     private readonly IStormStateService _stormStateService;
@@ -326,6 +332,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly ObservableCollection<CharacterTrackingCardViewModel> _characterTrackingCards = [];
     private readonly ObservableCollection<CharacterTrackingCardViewModel> _enabledCharacterTrackingCards = [];
     private readonly ObservableCollection<CharacterTrackingCardViewModel> _disabledCharacterTrackingCards = [];
+    private readonly ObservableCollection<FollowCharacterOption> _followCharacterOptions = [];
+    private FollowCharacterOption? _followedCharacter;
+    private int? _followedCharacterId;
+    private bool _isRebuildingFollowCharacterOptions;
     private IReadOnlyDictionary<long, int> _characterPresenceCountsByNodeId = new Dictionary<long, int>();
     private IReadOnlyDictionary<long, IReadOnlyList<string>> _characterPresenceNamesByNodeId = new Dictionary<long, IReadOnlyList<string>>();
     private IReadOnlyDictionary<long, IReadOnlyList<int>> _characterPresenceCharacterIdsByNodeId = new Dictionary<long, IReadOnlyList<int>>();
@@ -479,6 +489,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string MapViewportPrefixKey = "Map.Viewport";
     private const string TrackingLogsRootPathKey = "Tracking.LogsRootPath";
     private const string TrackingCharacterPreferencesKey = "Tracking.CharacterPreferences";
+    private const string FollowCharacterIdKey = "Tracking.FollowCharacterId";
     private const string IntelEnabledKey = "Intel.Enabled";
     private const string MiningEnabledKey = "Mining.Enabled";
     private const string MiningRefineYieldPercentKey = "Mining.RefineYieldPercent";
@@ -629,6 +640,37 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public ObservableCollection<CharacterTrackingCardViewModel> CharacterTrackingCards => _characterTrackingCards;
     public ObservableCollection<CharacterTrackingCardViewModel> EnabledCharacterTrackingCards => _enabledCharacterTrackingCards;
     public ObservableCollection<CharacterTrackingCardViewModel> DisabledCharacterTrackingCards => _disabledCharacterTrackingCards;
+    public ObservableCollection<FollowCharacterOption> FollowCharacterOptions => _followCharacterOptions;
+    public bool HasFollowableCharacters => _followCharacterOptions.Count > 1;
+    public FollowCharacterOption? FollowedCharacter
+    {
+        get => _followedCharacter;
+        set
+        {
+            var characterId = value?.CharacterId;
+            if (_isRebuildingFollowCharacterOptions && value is null)
+            {
+                return;
+            }
+
+            if (ReferenceEquals(_followedCharacter, value))
+            {
+                return;
+            }
+
+            var changed = _followedCharacterId != characterId;
+            _followedCharacter = value;
+            _followedCharacterId = characterId;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(FollowedCharacter)));
+
+            if (changed && !_isInitializing)
+            {
+                _ = _settingsService.SetAsync(FollowCharacterIdKey, characterId);
+            }
+        }
+    }
+
+    public event EventHandler<LocalCharacterSystemChange>? CharacterSystemChanged;
     public string HubWormholeOverlayTitle => $"Thera/Turnur Wormholes ({_hubWormholeCardsForView.Count})";
     public string IncursionOverlayTitle => $"Incursions ({_incursionCardsForView.Count})";
     public string StormOverlayTitle => $"Metaliminal Storms ({_stormCardsForView.Count})";
@@ -2367,6 +2409,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
         _isInitializing = false;
         var savedTrackingPreferences = await _settingsService.GetAsync<List<CharacterTrackingPreference>>(TrackingCharacterPreferencesKey) ?? [];
+        _followedCharacterId = await _settingsService.GetAsync<int?>(FollowCharacterIdKey);
         _characterTrackingPreferencesById.Clear();
         foreach (var pref in savedTrackingPreferences)
         {
@@ -2743,6 +2786,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         {
             RebuildCharacterTrackingCards();
             RebuildCharacterPresenceForView();
+            CharacterSystemChanged?.Invoke(this, change);
         });
     }
 
@@ -2889,7 +2933,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         });
     }
 
-    private long ResolveSystemIdByName(string? solarSystemName)
+    public long ResolveSystemIdByName(string? solarSystemName)
     {
         if (string.IsNullOrWhiteSpace(solarSystemName))
         {
@@ -2916,6 +2960,23 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
 
         return 0;
+    }
+
+    public async Task<long> ResolveSystemIdByNameAsync(string? solarSystemName, CancellationToken cancellationToken = default)
+    {
+        var systemId = ResolveSystemIdByName(solarSystemName);
+        if (systemId > 0 || string.IsNullOrWhiteSpace(solarSystemName))
+        {
+            return systemId;
+        }
+
+        var candidates = await _mapDataService.SearchAsync(solarSystemName.Trim(), cancellationToken);
+        return candidates.FirstOrDefault(candidate =>
+                   candidate.Kind == MapSearchKind.SolarSystem &&
+                   candidate.SolarSystemId is > 0 &&
+                   string.Equals(candidate.Name, solarSystemName.Trim(), StringComparison.OrdinalIgnoreCase))
+               ?.SolarSystemId
+               ?? 0;
     }
 
     private int? ResolveRegionId(long solarSystemId) => CurrentGraph?.Nodes
@@ -4037,6 +4098,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _characterTrackingCards.Clear();
         _enabledCharacterTrackingCards.Clear();
         _disabledCharacterTrackingCards.Clear();
+        _isRebuildingFollowCharacterOptions = true;
         foreach (var pref in ordered)
         {
             var hasLast = lastByCharacterId.TryGetValue(pref.CharacterId, out var last);
@@ -4059,6 +4121,43 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 _disabledCharacterTrackingCards.Add(card);
             }
             _ = card.EnsurePortraitLoadedAsync();
+        }
+
+        try
+        {
+            _followCharacterOptions.Clear();
+            _followCharacterOptions.Add(new FollowCharacterOption
+            {
+                CharacterId = null,
+                DisplayName = "Follow: Off"
+            });
+
+            foreach (var pref in ordered
+                         .Where(pref => pref.IsEnabled)
+                         .OrderBy(pref => pref.CharacterName, StringComparer.OrdinalIgnoreCase))
+            {
+                _followCharacterOptions.Add(new FollowCharacterOption
+                {
+                    CharacterId = pref.CharacterId,
+                    DisplayName = string.IsNullOrWhiteSpace(pref.CharacterName) ? pref.CharacterId.ToString() : pref.CharacterName
+                });
+            }
+
+            FollowedCharacter = _followCharacterOptions.FirstOrDefault(option => option.CharacterId == _followedCharacterId)
+                ?? _followCharacterOptions[0];
+        }
+        finally
+        {
+            _isRebuildingFollowCharacterOptions = false;
+        }
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasFollowableCharacters)));
+    }
+
+    public bool TryGetCharacterLocation(int characterId, out LocalCharacterSystemChange? location)
+    {
+        lock (_localCharacterLocationsByCharacterId)
+        {
+            return _localCharacterLocationsByCharacterId.TryGetValue(characterId, out location);
         }
     }
 

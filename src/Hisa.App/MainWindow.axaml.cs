@@ -161,6 +161,7 @@ public partial class MainWindow : Window
         _lastKnownViewMode = vm.SelectedViewMode;
         vm.PropertyChanged += OnViewModelPropertyChanged;
         vm.AlertTriggered += OnAlertTriggered;
+        vm.CharacterSystemChanged += OnCharacterSystemChanged;
         _alertPopupSettings = vm.GetAlertPopupSettingsSnapshot();
         _alertPopupCleanupTimer.Tick += (_, _) => CleanupExpiredAlertPopupCards();
         _alertPopupCleanupTimer.Start();
@@ -1616,6 +1617,13 @@ public partial class MainWindow : Window
 
         await RestoreViewportForCurrentModeAsync(fallbackToFit: true);
 
+        if (_boundVm.FollowedCharacter?.CharacterId is int characterId &&
+            _boundVm.TryGetCharacterLocation(characterId, out var location) &&
+            location is not null)
+        {
+            await CenterMapOnCharacterLocationAsync(location);
+        }
+
         Dispatcher.UIThread.Post(RestoreMiningOverlayOnStartup, DispatcherPriority.Background);
     }
 
@@ -1684,6 +1692,55 @@ public partial class MainWindow : Window
 
             await RestoreViewportForCurrentModeAsync(fallbackToFit: true);
         }
+    }
+
+    private async void OnCharacterSystemChanged(object? sender, Hisa.Core.Models.LocalCharacterSystemChange change)
+    {
+        if (_boundVm?.FollowedCharacter?.CharacterId != change.CharacterId)
+        {
+            return;
+        }
+
+        await CenterMapOnCharacterLocationAsync(change);
+    }
+
+    private void OnFollowCharacterDropDownOpened(object? sender, EventArgs e)
+    {
+        if (sender is not ComboBox comboBox)
+        {
+            return;
+        }
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            var scrollViewer = comboBox.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault();
+            if (scrollViewer is not null)
+            {
+                scrollViewer.Offset = new Vector(scrollViewer.Offset.X, 0);
+            }
+        }, DispatcherPriority.Background);
+    }
+
+    private async Task CenterMapOnCharacterLocationAsync(Hisa.Core.Models.LocalCharacterSystemChange location)
+    {
+        if (_boundVm?.FollowedCharacter?.CharacterId != location.CharacterId ||
+            string.IsNullOrWhiteSpace(location.SolarSystemName))
+        {
+            return;
+        }
+
+        var systemId = await _boundVm.ResolveSystemIdByNameAsync(location.SolarSystemName);
+        if (systemId <= 0)
+        {
+            return;
+        }
+
+        if (_boundVm.FollowedCharacter?.CharacterId != location.CharacterId)
+        {
+            return;
+        }
+
+        await NavigateAndCenterSystemFromReportAsync(_boundVm, systemId);
     }
 
     private async Task RestoreViewportForCurrentModeAsync(bool fallbackToFit)
