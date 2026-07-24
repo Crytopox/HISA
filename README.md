@@ -138,6 +138,27 @@ produces `osx-x64` and `osx-arm64` tar archives. Output is written under
 - Jump range calculator
 - A few more in the plans....
 
+### Mining Stats / Dashboard
+Optional feature. Enable it in Settings > Preferences > Mining Logs.
+
+It reads your local game logs and turns mining events into a live session overview, including:
+- Regular yield
+- Critical bonus yield
+- Waste
+- Mining rate
+- Estimated value / ISK rate
+
+You can also review current-session or recent-range stats, see aggregate totals, and open a compact overlay for live monitoring.
+
+### Mining Sites Tracker
+New tool that allows you to keep track of all the SOV prospecting arrays, mark them as cleared or missing.
+
+**Cleared** will remind you when the site respawns using the upgrades respawn timer.
+
+**Missing** will let you choose a time to be reminded to check if it potentially respawned.
+
+You can pair this with the newly improved **Alert Settings** and choosing the new Event type "Mining site ready"
+
 ## Image previews
 ![Preview1](https://i.imgur.com/XDrbQEh.png)
 ---
