@@ -1,0 +1,51 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:colorPicker="clr-namespace:Avalonia.Controls;assembly=Avalonia.Controls.ColorPicker"
+        xmlns:local="clr-namespace:Hisa.App"
+        x:Class="Hisa.App.HostileColorsSettingsWindow"
+        x:DataType="local:HostileColorsSettingsWindow"
+        Title="Hostile Colors"
+        Width="510"
+        SizeToContent="Height"
+        Background="#0D131D">
+  <Border Margin="12" Padding="12" Background="#121A26" BorderBrush="#263244" BorderThickness="1" CornerRadius="6">
+    <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="12">
+      <StackPanel Spacing="4">
+        <TextBlock Text="Hostile Count Colors" FontSize="16" FontWeight="SemiBold" Foreground="#D8E5F8" />
+        <TextBlock Text="Used by hostile node colors, backgrounds, intel rings, and hostile-count chips." Foreground="#8A96A8" TextWrapping="Wrap" />
+      </StackPanel>
+
+      <StackPanel Grid.Row="1" Margin="0,6,0,0" Spacing="10">
+        <TextBlock Text="Colors blend smoothly between thresholds. Above High continues blending toward its final color as the hostile count rises." Foreground="#A9BDD7" TextWrapping="Wrap" />
+        <Grid ColumnDefinitions="*,110,150" RowDefinitions="Auto,Auto,Auto,Auto,Auto" ColumnSpacing="8" RowSpacing="8">
+          <TextBlock Text="Band" Foreground="#8A96A8" />
+          <TextBlock Grid.Column="1" Text="Maximum count" Foreground="#8A96A8" />
+          <TextBlock Grid.Column="2" Text="Color" Foreground="#8A96A8" />
+
+          <TextBlock Grid.Row="1" Text="Low" VerticalAlignment="Center" Foreground="#D8E5F8" />
+          <TextBox Grid.Row="1" Grid.Column="1" x:Name="LowMaximumTextBox" Watermark="5" />
+          <colorPicker:ColorPicker Grid.Row="1" Grid.Column="2" Color="{Binding LowPickerColor, Mode=TwoWay}" IsAlphaEnabled="False" IsAlphaVisible="False" />
+
+          <TextBlock Grid.Row="2" Text="Medium" VerticalAlignment="Center" Foreground="#D8E5F8" />
+          <TextBox Grid.Row="2" Grid.Column="1" x:Name="MediumMaximumTextBox" Watermark="15" />
+          <colorPicker:ColorPicker Grid.Row="2" Grid.Column="2" Color="{Binding MediumPickerColor, Mode=TwoWay}" IsAlphaEnabled="False" IsAlphaVisible="False" />
+
+          <TextBlock Grid.Row="3" Text="High" VerticalAlignment="Center" Foreground="#D8E5F8" />
+          <TextBox Grid.Row="3" Grid.Column="1" x:Name="HighMaximumTextBox" Watermark="25" />
+          <colorPicker:ColorPicker Grid.Row="3" Grid.Column="2" Color="{Binding HighPickerColor, Mode=TwoWay}" IsAlphaEnabled="False" IsAlphaVisible="False" />
+
+          <TextBlock Grid.Row="4" Text="Above High" VerticalAlignment="Center" Foreground="#D8E5F8" />
+          <TextBlock Grid.Row="4" Grid.Column="1" Text="No maximum" VerticalAlignment="Center" Foreground="#8A96A8" />
+          <colorPicker:ColorPicker Grid.Row="4" Grid.Column="2" Color="{Binding AboveHighPickerColor, Mode=TwoWay}" IsAlphaEnabled="False" IsAlphaVisible="False" />
+        </Grid>
+        <TextBlock x:Name="ValidationTextBlock" Foreground="#FF8F8F" TextWrapping="Wrap" />
+      </StackPanel>
+
+      <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+        <Button Content="Restore Defaults" Click="OnRestoreDefaultsClicked" />
+        <Button Content="Save" MinWidth="80" Click="OnSaveClicked" />
+        <Button Content="Close" MinWidth="80" Click="OnCloseClicked" />
+      </StackPanel>
+    </Grid>
+  </Border>
+</Window>

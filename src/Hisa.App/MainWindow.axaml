@@ -213,6 +213,7 @@
                 <MenuFlyout>
                   <MenuItem Header="Map Editor" Click="OnOpenMapEditorClicked" />
                   <MenuItem Header="Preferences" Click="OnOpenPreferencesClicked" />
+                  <MenuItem Header="Hostile Colors" Click="OnOpenHostileColorsSettingsClicked" />
                   <MenuItem Header="Intel Settings" Click="OnOpenIntelSettingsClicked" />
                   <MenuItem Header="Alerts Settings" Click="OnOpenAlertsSettingsClicked" />
                   <MenuItem Header="Alert Popup Settings" Click="OnOpenAlertPopupSettingsClicked" />
@@ -245,6 +246,7 @@
                 <MenuItem Header="Settings">
                   <MenuItem Header="Map Editor" Click="OnOpenMapEditorClicked" />
                   <MenuItem Header="Preferences" Click="OnOpenPreferencesClicked" />
+                  <MenuItem Header="Hostile Colors" Click="OnOpenHostileColorsSettingsClicked" />
                   <MenuItem Header="Intel Settings" Click="OnOpenIntelSettingsClicked" />
                   <MenuItem Header="Alerts Settings" Click="OnOpenAlertsSettingsClicked" />
                   <MenuItem Header="Alert Popup Settings" Click="OnOpenAlertPopupSettingsClicked" />
@@ -316,6 +318,7 @@
                               IntelRecentReportsByNodeId="{Binding IntelRecentReportsByNodeIdForView}"
                               ZkillRecentReportsByNodeId="{Binding ZkillRecentReportsByNodeIdForView}"
                               IntelHostileScoresByNodeId="{Binding IntelHostileScoresByNodeIdForView}"
+                              HostileColorSettings="{Binding HostileColorSettings}"
                               OverlaySovUpgradeFilterKeys="{Binding SelectedOverlaySovUpgradeKeys}"
                               AlwaysShowHubWormholes="{Binding AlwaysShowHubWormholes}"
                               AlwaysShowIncursions="{Binding AlwaysShowIncursions}"

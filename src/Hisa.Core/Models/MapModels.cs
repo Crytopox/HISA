@@ -36,6 +36,17 @@ public enum MapNodeColorMode
     NpcKills = 15
 }
 
+public sealed class HostileColorSettings
+{
+    public int LowMaxHostiles { get; init; } = 5;
+    public int MediumMaxHostiles { get; init; } = 15;
+    public int HighMaxHostiles { get; init; } = 25;
+    public string LowColorHex { get; init; } = "#E6D86C";
+    public string MediumColorHex { get; init; } = "#EE8639";
+    public string HighColorHex { get; init; } = "#D90F13";
+    public string AboveHighColorHex { get; init; } = "#DD008C";
+}
+
 public sealed class MapGraph
 {
     public required IReadOnlyList<MapNode> Nodes { get; init; }

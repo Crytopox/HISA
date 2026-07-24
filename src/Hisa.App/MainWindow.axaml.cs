@@ -35,6 +35,7 @@ public partial class MainWindow : Window
     private bool _startupUpdateReminderShown;
     private DebugWindow? _debugWindow;
     private PreferencesWindow? _preferencesWindow;
+    private HostileColorsSettingsWindow? _hostileColorsSettingsWindow;
     private IntelSettingsWindow? _intelSettingsWindow;
     private AlertsSettingsWindow? _alertsSettingsWindow;
     private AlertPopupSettingsWindow? _alertPopupSettingsWindow;
@@ -230,6 +231,23 @@ public partial class MainWindow : Window
 
         _preferencesWindow.Show();
         _preferencesWindow.Activate();
+    }
+
+    private void OnOpenHostileColorsSettingsClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_hostileColorsSettingsWindow is null)
+        {
+            if (_boundVm is null)
+            {
+                return;
+            }
+
+            _hostileColorsSettingsWindow = new HostileColorsSettingsWindow(_boundVm);
+            _hostileColorsSettingsWindow.Closed += (_, _) => _hostileColorsSettingsWindow = null;
+        }
+
+        _hostileColorsSettingsWindow.Show();
+        _hostileColorsSettingsWindow.Activate();
     }
 
     private void OnOpenAboutClicked(object? sender, RoutedEventArgs e)

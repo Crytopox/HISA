@@ -261,6 +261,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _isDisplaySettingsOpen;
     private MapNodeColorMode _nodeColorMode = MapNodeColorMode.None;
     private MapNodeColorMode _nodeBackgroundColorMode = MapNodeColorMode.None;
+    private HostileColorSettings _hostileColorSettings = new();
     private bool _showIndicatorRegion;
     private bool _showIndicatorConstellation;
     private bool _showIndicatorSecurityStatus;
@@ -423,6 +424,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string StretchMapToWindowKey = "Map.StretchToWindow";
     private const string NodeColorModeKey = "Map.NodeColorMode";
     private const string NodeBackgroundColorModeKey = "Map.NodeBackgroundColorMode";
+    private const string HostileColorSettingsKey = "Map.HostileColorSettings";
     private const string ShowIndicatorRegionKey = "Map.ShowIndicatorRegion";
     private const string ShowIndicatorConstellationKey = "Map.ShowIndicatorConstellation";
     private const string ShowIndicatorSecurityStatusKey = "Map.ShowIndicatorSecurityStatus";
@@ -1001,6 +1003,31 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 _ = _settingsService.SetAsync(ShowIndicatorJumpRangeLyKey, value);
             }
         }
+    }
+
+    public HostileColorSettings HostileColorSettings
+    {
+        get => _hostileColorSettings;
+        private set => SetProperty(ref _hostileColorSettings, value);
+    }
+
+    public HostileColorSettings GetHostileColorSettingsSnapshot() => new()
+    {
+        LowMaxHostiles = HostileColorSettings.LowMaxHostiles,
+        MediumMaxHostiles = HostileColorSettings.MediumMaxHostiles,
+        HighMaxHostiles = HostileColorSettings.HighMaxHostiles,
+        LowColorHex = HostileColorSettings.LowColorHex,
+        MediumColorHex = HostileColorSettings.MediumColorHex,
+        HighColorHex = HostileColorSettings.HighColorHex,
+        AboveHighColorHex = HostileColorSettings.AboveHighColorHex
+    };
+
+    public async Task SaveHostileColorSettingsAsync(HostileColorSettings settings)
+    {
+        var sanitized = SanitizeHostileColorSettings(settings);
+        HostileColorSettings = sanitized;
+        await _settingsService.SetAsync(HostileColorSettingsKey, sanitized);
+        await RebuildActivityCardsAsync(CurrentGraph);
     }
 
     public bool RememberJumpRangeOrigins
@@ -2231,6 +2258,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         StretchMapToWindow = await _settingsService.GetAsync<bool?>(StretchMapToWindowKey) ?? false;
         NodeColorMode = await _settingsService.GetAsync<MapNodeColorMode?>(NodeColorModeKey) ?? MapNodeColorMode.None;
         NodeBackgroundColorMode = await _settingsService.GetAsync<MapNodeColorMode?>(NodeBackgroundColorModeKey) ?? MapNodeColorMode.None;
+        HostileColorSettings = SanitizeHostileColorSettings(
+            await _settingsService.GetAsync<HostileColorSettings>(HostileColorSettingsKey) ?? new HostileColorSettings());
         ShowIndicatorRegion = await _settingsService.GetAsync<bool?>(ShowIndicatorRegionKey) ?? false;
         ShowIndicatorConstellation = await _settingsService.GetAsync<bool?>(ShowIndicatorConstellationKey) ?? false;
         ShowIndicatorSecurityStatus = await _settingsService.GetAsync<bool?>(ShowIndicatorSecurityStatusKey) ?? false;
@@ -2824,6 +2853,29 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         var systemName = report.Systems.FirstOrDefault();
         var solarSystemId = ResolveSystemIdByName(systemName);
         return solarSystemId > 0 && visibleNodeIds.Contains(solarSystemId);
+    }
+
+    private static HostileColorSettings SanitizeHostileColorSettings(HostileColorSettings settings)
+    {
+        var low = Math.Clamp(settings.LowMaxHostiles, 1, 99);
+        var medium = Math.Clamp(settings.MediumMaxHostiles, low + 1, 100);
+        var high = Math.Clamp(settings.HighMaxHostiles, medium + 1, 250);
+        return new HostileColorSettings
+        {
+            LowMaxHostiles = low,
+            MediumMaxHostiles = medium,
+            HighMaxHostiles = high,
+            LowColorHex = IsHexColor(settings.LowColorHex) ? settings.LowColorHex.Trim() : "#E6D86C",
+            MediumColorHex = IsHexColor(settings.MediumColorHex) ? settings.MediumColorHex.Trim() : "#EE8639",
+            HighColorHex = IsHexColor(settings.HighColorHex) ? settings.HighColorHex.Trim() : "#D90F13",
+            AboveHighColorHex = IsHexColor(settings.AboveHighColorHex) ? settings.AboveHighColorHex.Trim() : "#DD008C"
+        };
+    }
+
+    private static bool IsHexColor(string? value)
+    {
+        var color = value?.Trim();
+        return color is { Length: 7 or 9 } && color[0] == '#' && color.Skip(1).All(Uri.IsHexDigit);
     }
 
     private static AlertRule CloneAlertRule(AlertRule rule)
@@ -5402,7 +5454,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                     var maxShipTier = GetMaxShipThreatTier(r.ShipClasses);
                     var shipBadgeColors = GetThreatBadgeColors(maxShipTier / 8.0);
                     var hostileScore = Math.Max(0, r.ReportedHostileCount > 0 ? r.ReportedHostileCount : r.ReportedHostileNames.Count);
-                    var hostileBadgeColors = GetThreatBadgeColors(Math.Clamp(hostileScore / 12.0, 0.0, 1.0));
+                    var hostileBadgeColors = GetHostileBadgeColors(hostileScore);
                     var hostileCards = BuildIntelHostileCards(r.ReportedHostileNames, r.ReportedShipNames, r.ReportedShipTypeIds, r.ShipClasses, applyCachedIdentityData: false);
                     var shipsSummary = BuildIntelShipsSummary(r.ReportedShipNames, r.ReportedShipTypeIds, r.ShipClasses);
 
@@ -6089,7 +6141,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         var maxShipTier = GetMaxShipThreatTier(report.ShipClasses);
         var shipBadgeColors = GetThreatBadgeColors(maxShipTier / 8.0);
         var hostileScore = Math.Max(0, report.ReportedHostileCount > 0 ? report.ReportedHostileCount : report.ReportedHostileNames.Count);
-        var hostileBadgeColors = GetThreatBadgeColors(Math.Clamp(hostileScore / 12.0, 0.0, 1.0));
+        var hostileBadgeColors = GetHostileBadgeColors(hostileScore);
         var hostileCards = BuildIntelHostileCards(report.ReportedHostileNames, report.ReportedShipNames, report.ReportedShipTypeIds, report.ShipClasses, applyCachedIdentityData);
         var shipsSummary = BuildIntelShipsSummary(report.ReportedShipNames, report.ReportedShipTypeIds, report.ShipClasses);
 
@@ -7373,6 +7425,60 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             MaxLy = origin.RangeLy,
             IsInRange = distanceLy == 0 || (distanceLy > 0 && distanceLy < origin.RangeLy)
         });
+    }
+
+    private (string BackgroundHex, string BorderHex) GetHostileBadgeColors(int hostileCount)
+    {
+        var color = GetHostileColor(hostileCount);
+        var background = LerpColor(color, (13, 19, 29), 0.72);
+        return (ToHex(background), ToHex(color));
+    }
+
+    private (int R, int G, int B) GetHostileColor(int hostileCount)
+    {
+        var settings = HostileColorSettings;
+        var lowMax = Math.Max(1, settings.LowMaxHostiles);
+        var mediumMax = Math.Max(lowMax + 1, settings.MediumMaxHostiles);
+        var highMax = Math.Max(mediumMax + 1, settings.HighMaxHostiles);
+        var low = ParseRgb(settings.LowColorHex, (230, 216, 108));
+        var medium = ParseRgb(settings.MediumColorHex, (238, 134, 57));
+        var high = ParseRgb(settings.HighColorHex, (217, 15, 19));
+        var aboveHigh = ParseRgb(settings.AboveHighColorHex, (221, 0, 140));
+
+        if (hostileCount <= lowMax)
+        {
+            return low;
+        }
+
+        if (hostileCount <= mediumMax)
+        {
+            return LerpColor(low, medium, (hostileCount - lowMax) / (double)(mediumMax - lowMax));
+        }
+
+        if (hostileCount <= highMax)
+        {
+            return LerpColor(medium, high, (hostileCount - mediumMax) / (double)(highMax - mediumMax));
+        }
+
+        var highBandWidth = Math.Max(1, highMax - mediumMax);
+        var progress = 1.0 - Math.Exp(-(hostileCount - highMax) / (double)highBandWidth);
+        return LerpColor(high, aboveHigh, progress);
+    }
+
+    private static (int R, int G, int B) ParseRgb(string? color, (int R, int G, int B) fallback)
+    {
+        var hex = color?.Trim().TrimStart('#') ?? string.Empty;
+        if (hex.Length == 8)
+        {
+            hex = hex[2..];
+        }
+
+        return hex.Length == 6 &&
+               int.TryParse(hex[..2], System.Globalization.NumberStyles.HexNumber, null, out var red) &&
+               int.TryParse(hex[2..4], System.Globalization.NumberStyles.HexNumber, null, out var green) &&
+               int.TryParse(hex[4..], System.Globalization.NumberStyles.HexNumber, null, out var blue)
+            ? (red, green, blue)
+            : fallback;
     }
 
     private static double GetDistanceLy(JumpRangeOriginSettings from, MapNode to)

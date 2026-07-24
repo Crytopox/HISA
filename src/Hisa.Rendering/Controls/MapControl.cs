@@ -331,6 +331,8 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, IReadOnlyDictionary<long, IReadOnlyList<IntelMapHoverKillmail>>?>(nameof(ZkillRecentReportsByNodeId));
     public static readonly StyledProperty<IReadOnlyDictionary<long, int>?> IntelHostileScoresByNodeIdProperty =
         AvaloniaProperty.Register<MapControl, IReadOnlyDictionary<long, int>?>(nameof(IntelHostileScoresByNodeId));
+    public static readonly StyledProperty<HostileColorSettings> HostileColorSettingsProperty =
+        AvaloniaProperty.Register<MapControl, HostileColorSettings>(nameof(HostileColorSettings), new HostileColorSettings());
     public static readonly StyledProperty<bool> ShowInfoBoxCharacterPresenceProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowInfoBoxCharacterPresence), true);
     public static readonly StyledProperty<int> CharacterPresenceHoverMaxNamesProperty =
@@ -858,6 +860,12 @@ public sealed class MapControl : Control
         set => SetValue(IntelHostileScoresByNodeIdProperty, value);
     }
 
+    public HostileColorSettings HostileColorSettings
+    {
+        get => GetValue(HostileColorSettingsProperty);
+        set => SetValue(HostileColorSettingsProperty, value);
+    }
+
     public bool ShowInfoBoxCharacterPresence
     {
         get => GetValue(ShowInfoBoxCharacterPresenceProperty);
@@ -945,6 +953,7 @@ public sealed class MapControl : Control
             IntelRecentReportsByNodeIdProperty,
             ZkillRecentReportsByNodeIdProperty,
             IntelHostileScoresByNodeIdProperty,
+            HostileColorSettingsProperty,
             ShowInfoBoxCharacterPresenceProperty,
             CharacterPresenceHoverMaxNamesProperty,
             EnableIntelRingAnimationsProperty);
@@ -5806,12 +5815,49 @@ public sealed class MapControl : Control
         }
     }
 
-    private static Color GetIntelHostileColor(int hostileScore)
+    private Color GetIntelHostileColor(int hostileScore)
     {
-        var t = Math.Clamp(hostileScore / 12.0, 0.0, 1.0);
-        var start = Color.Parse("#E6D86C");
-        var end = Color.Parse("#D83B2F");
-        return BlendColors(start, end, t);
+        var settings = HostileColorSettings;
+        var lowMax = Math.Max(1, settings.LowMaxHostiles);
+        var mediumMax = Math.Max(lowMax + 1, settings.MediumMaxHostiles);
+        var highMax = Math.Max(mediumMax + 1, settings.HighMaxHostiles);
+        var low = ParseHostileColor(settings.LowColorHex, "#E6D86C");
+        var medium = ParseHostileColor(settings.MediumColorHex, "#EE8639");
+        var high = ParseHostileColor(settings.HighColorHex, "#D90F13");
+        var aboveHigh = ParseHostileColor(settings.AboveHighColorHex, "#DD008C");
+
+        if (hostileScore <= lowMax)
+        {
+            return low;
+        }
+
+        if (hostileScore <= mediumMax)
+        {
+            return BlendColors(low, medium, (hostileScore - lowMax) / (double)(mediumMax - lowMax));
+        }
+
+        if (hostileScore <= highMax)
+        {
+            return BlendColors(medium, high, (hostileScore - mediumMax) / (double)(highMax - mediumMax));
+        }
+
+        // Above High has no maximum. Use the preceding band width as a smooth
+        // transition span, approaching the configured Above High color thereafter.
+        var highBandWidth = Math.Max(1, highMax - mediumMax);
+        var aboveHighProgress = 1.0 - Math.Exp(-(hostileScore - highMax) / (double)highBandWidth);
+        return BlendColors(high, aboveHigh, aboveHighProgress);
+    }
+
+    private static Color ParseHostileColor(string? value, string fallback)
+    {
+        try
+        {
+            return Color.Parse(value ?? fallback);
+        }
+        catch (Exception)
+        {
+            return Color.Parse(fallback);
+        }
     }
 
     private static void DrawIntelIcon(DrawingContext context, string iconKey, Point topLeft, double size)
