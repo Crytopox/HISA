@@ -10,7 +10,7 @@ This is the first full release, so most of the core features and important piece
 
 I’m daily driving HISA myself, so anything I run into will be fixed as quickly as I can. If you find bugs, weird behavior, edge cases, or have suggestions, feel free to share them and I’ll be happy to look into them. 
 
-**Available for both Windows and Linux**, but expect compatibility to depend a bit on your distro/setup. 
+**Available for Windows, Linux, and macOS**, with compatibility depending a little on your setup.
 
 Go to releases to download the latest version.
 
@@ -33,13 +33,22 @@ DBus, and OpenGL/Mesa-related packages.
 For Avalonia UI dependencies for Linux:
 https://docs.avaloniaui.net/docs/supported-platforms
 
+## macOS support
+
+HISA ships self-contained macOS builds for Intel Macs (`osx-x64`) and Apple
+Silicon Macs (`osx-arm64`). No separate .NET installation is required.
+
+The release archives contain an unsigned standalone executable, rather than a
+signed `.app` bundle. macOS may therefore require you to explicitly allow the
+app the first time you open it.
+
 
 ## Publishing a release
 
 Releases are built manually from the current `main` branch by GitHub Actions. The
-release workflow builds the solution, runs the test suite, publishes the Windows
-and Linux packages, generates SHA-256 checksums and signed build provenance, and
-attaches the resulting files to a GitHub Release.
+release workflow builds the solution, runs the test suite, publishes the Windows,
+Linux, and macOS packages, generates SHA-256 checksums and signed build
+provenance, and attaches the resulting files to a GitHub Release.
 
 To publish a release:
 
@@ -81,11 +90,13 @@ Use the PowerShell publish scripts when building release archives locally:
 ```powershell
 ./build/publish-windows.ps1
 ./build/publish-linux.ps1
+./build/publish-macos.ps1
 ```
 
 The Windows script produces the `win-x64` ZIP archive. The Linux script produces
-`linux-x64`, `linux-arm64`, and `linux-musl-x64` tar archives. Output is written
-under `build/releases/`.
+`linux-x64`, `linux-arm64`, and `linux-musl-x64` tar archives. The macOS script
+produces `osx-x64` and `osx-arm64` tar archives. Output is written under
+`build/releases/`.
 
 ## Main Features
 ### Interactive EVE Maps

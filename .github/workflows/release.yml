@@ -52,6 +52,10 @@ jobs:
         shell: pwsh
         run: ./build/publish-linux.ps1
 
+      - name: Publish macOS packages
+        shell: pwsh
+        run: ./build/publish-macos.ps1
+
       - name: Generate checksums
         shell: bash
         run: |
@@ -72,6 +76,7 @@ jobs:
           gh release create "${RELEASE_TAG}" \
             build/releases/windows/win-x64/*.zip \
             build/releases/linux/*/*.tar.gz \
+            build/releases/macos/*/*.tar.gz \
             build/releases/SHA256SUMS.txt \
             --target "${RELEASE_TARGET}" \
             --generate-notes
