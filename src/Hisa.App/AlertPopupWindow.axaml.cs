@@ -27,6 +27,7 @@ public partial class AlertPopupWindow : Window
         }
     }
     public event EventHandler<PixelPoint>? DragPositionCommitted;
+    public event Action<long>? SystemNavigationRequested;
 
     public AlertPopupWindow()
     {
@@ -173,27 +174,25 @@ public partial class AlertPopupWindow : Window
         }
     }
 
-    private async void OnIntelCardSystemClicked(object? sender, RoutedEventArgs e)
+    private void OnIntelCardSystemClicked(object? sender, RoutedEventArgs e)
     {
-        if (DataContext is not MainWindowViewModel vm ||
-            sender is not Control { DataContext: AlertPopupCard { IntelCard: { } card } } ||
+        if (sender is not Control { DataContext: AlertPopupCard { IntelCard: { } card } } ||
             card.SolarSystemId <= 0)
         {
             return;
         }
 
-        await vm.NavigateToSystemFromReportAsync(card.SolarSystemId);
+        SystemNavigationRequested?.Invoke(card.SolarSystemId);
     }
 
-    private async void OnZkillCardSystemClicked(object? sender, RoutedEventArgs e)
+    private void OnZkillCardSystemClicked(object? sender, RoutedEventArgs e)
     {
-        if (DataContext is not MainWindowViewModel vm ||
-            sender is not Control { DataContext: AlertPopupCard { ZkillmailCard: { } card } } ||
+        if (sender is not Control { DataContext: AlertPopupCard { ZkillmailCard: { } card } } ||
             card.SolarSystemId <= 0)
         {
             return;
         }
 
-        await vm.NavigateToSystemFromReportAsync(card.SolarSystemId);
+        SystemNavigationRequested?.Invoke(card.SolarSystemId);
     }
 }

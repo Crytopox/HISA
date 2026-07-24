@@ -2253,6 +2253,22 @@ public sealed class MapControl : Control
         return true;
     }
 
+    public bool FocusOnNodeWithZoom(long nodeId, double zoom)
+    {
+        if (Graph is null || !double.IsFinite(zoom) || zoom <= 0)
+        {
+            return false;
+        }
+
+        if (!_nodeById.TryGetValue(nodeId, out var node))
+        {
+            return false;
+        }
+
+        CenterOnWorld(node.X, node.Y, zoom);
+        return true;
+    }
+
     private void FocusOnConstellation(int constellationId)
     {
         if (Graph is null)

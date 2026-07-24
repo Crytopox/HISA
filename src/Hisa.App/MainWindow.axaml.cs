@@ -613,6 +613,7 @@ public partial class MainWindow : Window
             DataContext = _boundVm
         };
         _alertPopupWindow.DragPositionCommitted += OnAlertPopupDragPositionCommitted;
+        _alertPopupWindow.SystemNavigationRequested += OnAlertPopupSystemNavigationRequested;
         _alertPopupWindow.Closed += (_, _) => _alertPopupWindow = null;
         var itemsControl = _alertPopupWindow.FindControl<ItemsControl>("AlertsItemsControl");
         if (itemsControl is not null)
@@ -620,6 +621,16 @@ public partial class MainWindow : Window
             itemsControl.ItemsSource = _alertPopupCards;
         }
         ApplyAlertPopupWindowSettings();
+    }
+
+    private async void OnAlertPopupSystemNavigationRequested(long systemId)
+    {
+        if (_boundVm is null || systemId <= 0)
+        {
+            return;
+        }
+
+        await NavigateAndCenterSystemFromReportAsync(_boundVm, systemId);
     }
 
     private void ApplyAlertPopupWindowSettings()
@@ -1141,10 +1152,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        await vm.NavigateToSystemFromReportAsync(systemId);
-        vm.SelectedNodeId = systemId;
-        MainMapControl.FocusOnNodeWithZoomPercent(systemId, 0.9);
-        await FocusSelectedNodeAtZoomAsync(systemId, 0.9);
+        await NavigateAndCenterSystemFromReportAsync(vm, systemId);
     }
 
     private async void OnActivityCardSystemClicked(object? sender, RoutedEventArgs e)
@@ -1166,10 +1174,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        await vm.NavigateToSystemFromReportAsync(systemId);
-        vm.SelectedNodeId = systemId;
-        MainMapControl.FocusOnNodeWithZoomPercent(systemId, 0.9);
-        await FocusSelectedNodeAtZoomAsync(systemId, 0.9);
+        await NavigateAndCenterSystemFromReportAsync(vm, systemId);
     }
 
     private async void OnZkillmailCardSystemClicked(object? sender, RoutedEventArgs e)
@@ -1362,9 +1367,32 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task FocusSelectedNodeAtZoomAsync(long nodeId, double zoomPercent)
+    private async Task NavigateAndCenterSystemFromReportAsync(MainWindowViewModel vm, long systemId)
     {
-        // Re-apply explicit center/zoom after UI/layout settles to avoid fit-to-view overrides.
+        var zoom = MainMapControl.GetViewportState().Zoom;
+        var preserveZoom = double.IsFinite(zoom) && zoom > 0;
+
+        await vm.NavigateToSystemFromReportAsync(systemId);
+        vm.SelectedNodeId = systemId;
+        FocusSelectedNodeAtZoom(systemId, zoom, preserveZoom);
+        await FocusSelectedNodeAtZoomAsync(systemId, zoom, preserveZoom);
+    }
+
+    private void FocusSelectedNodeAtZoom(long nodeId, double zoom, bool preserveZoom)
+    {
+        if (preserveZoom)
+        {
+            MainMapControl.FocusOnNodeWithZoom(nodeId, zoom);
+            return;
+        }
+
+        // A comfortable overview when the viewport does not yet have a usable zoom level.
+        MainMapControl.FocusOnNodeWithZoomPercent(nodeId, 0.3);
+    }
+
+    private async Task FocusSelectedNodeAtZoomAsync(long nodeId, double zoom, bool preserveZoom)
+    {
+        // Re-apply center/zoom after UI/layout settles to avoid fit-to-view overrides.
         for (var i = 0; i < 3; i++)
         {
             await Dispatcher.UIThread.InvokeAsync(async () =>
@@ -1372,7 +1400,7 @@ public partial class MainWindow : Window
                 await Task.Delay(40);
                 if (_boundVm?.CurrentGraph?.Nodes.Any(n => n.Id == nodeId) == true)
                 {
-                    MainMapControl.FocusOnNodeWithZoomPercent(nodeId, zoomPercent);
+                    FocusSelectedNodeAtZoom(nodeId, zoom, preserveZoom);
                 }
             });
         }
