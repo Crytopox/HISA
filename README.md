@@ -148,3 +148,5 @@ produces `osx-x64` and `osx-arm64` tar archives. Output is written under
 ![Preview4](https://i.imgur.com/AjQowco.png)
 ---
 ![Preview5](https://i.imgur.com/lYkn0p2.png)
+---
+![Preview6](https://i.imgur.com/vXS1MVo.png)
