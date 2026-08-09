@@ -618,6 +618,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
     public event EventHandler<AlertTriggered>? AlertTriggered;
 
+    public bool IsDebugBuild
+    {
+        get
+        {
+#if DEBUG
+            return true;
+#else
+            return false;
+#endif
+        }
+    }
+
     public ObservableCollection<MapViewMode> ViewModes { get; }
     public ObservableCollection<MapCoordinateMode> CoordinateModes { get; }
     public ObservableCollection<MiningStatsRangeMode> MiningRangeModes { get; }

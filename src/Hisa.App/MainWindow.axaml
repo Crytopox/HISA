@@ -1299,7 +1299,7 @@
 
     <Border Grid.Row="2" Padding="8" Background="#121A26" BorderThickness="0">
       <Grid ColumnDefinitions="*,Auto">
-        <TextBlock Grid.Column="0" Text="{Binding StatusText}" Foreground="#8A96A8" VerticalAlignment="Center" />
+        <TextBlock Grid.Column="0" Text="{Binding StatusText}" Foreground="#8A96A8" VerticalAlignment="Center" IsVisible="{Binding IsDebugBuild}" />
         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
           <ToggleButton Content="Thera/Turnur Wormholes"
                         IsChecked="{Binding IsHubWormholesOverlayOpen, Mode=TwoWay}"
