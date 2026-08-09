@@ -406,6 +406,7 @@
                   BorderThickness="1"
                   CornerRadius="6"
                   Padding="2"
+                  Opacity="0.92"
                   HorizontalAlignment="Right"
                   IsVisible="{Binding HasFollowableCharacters}">
             <ComboBox Width="118"
@@ -423,16 +424,16 @@
               </ComboBox.ItemTemplate>
             </ComboBox>
           </Border>
-          <Button Width="33"
-                  Height="33"
+          <Button Width="28"
+                  Height="28"
                   Padding="0"
-                  CornerRadius="16.5"
-                  Background="#2A3A52"
-                  BorderBrush="#5D83B5"
+                  CornerRadius="14"
+                  Background="#C02A3A52"
+                  BorderBrush="#A05D83B5"
                   BorderThickness="1"
                   Foreground="#EAF2FF"
                   FontWeight="Bold"
-                  FontSize="18"
+                  FontSize="16"
                   HorizontalAlignment="Right"
                   HorizontalContentAlignment="Center"
                   VerticalContentAlignment="Center"
@@ -530,12 +531,12 @@
               </Border>
             </ToolTip.Tip>
           </Button>
-          <Button Width="33"
-                  Height="33"
+          <Button Width="27"
+                  Height="27"
                   Padding="0"
-                  CornerRadius="9"
-                  Background="#1E3147"
-                  BorderBrush="#5D83B5"
+                  CornerRadius="7"
+                  Background="#B01E3147"
+                  BorderBrush="#805D83B5"
                   BorderThickness="1"
                   HorizontalAlignment="Right"
                   Click="OnFitCenterClicked"
@@ -543,8 +544,8 @@
                   ToolTip.ShowDelay="80"
                   ToolTip.Placement="Left">
             <Image Source="avares://HISA/Assets/Icons/expand.png"
-                   Width="18"
-                   Height="18"
+                   Width="15"
+                   Height="15"
                    Stretch="Uniform" />
           </Button>
         </StackPanel>
