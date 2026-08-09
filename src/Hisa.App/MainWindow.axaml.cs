@@ -470,6 +470,12 @@ public partial class MainWindow : Window
         _sovUpgradesWindow.Activate();
     }
 
+    private void OnToggleTopNavigationClicked(object? sender, RoutedEventArgs e)
+        => _boundVm?.ToggleTopNavigation();
+
+    private void OnToggleBottomNavigationClicked(object? sender, RoutedEventArgs e)
+        => _boundVm?.ToggleBottomNavigation();
+
     private void OnOpenMiningSitesClicked(object? sender, RoutedEventArgs e) => OpenMiningSitesWindow();
 
     private void OnManageMiningSitesClicked(object? sender, RoutedEventArgs e) => OpenMiningSitesWindow(_contextSystemId);

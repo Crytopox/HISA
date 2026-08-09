@@ -24,6 +24,10 @@
             <TextBlock Text="Off keeps 1:1 node spacing and avoids shape distortion when resizing."
                        Foreground="#8A96A8"
                        TextWrapping="Wrap" />
+            <CheckBox IsChecked="{Binding AutoHideNavigation}" Content="Auto-hide top and bottom navigation" />
+            <TextBlock Text="Collapsed navigation leaves small handles to toggle them on an off."
+                       Foreground="#8A96A8"
+                       TextWrapping="Wrap" />
           </StackPanel>
         </Border>
 

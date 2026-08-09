@@ -265,6 +265,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private string _regionSearchText = string.Empty;
     private string _statusText = "Loading map...";
     private bool _stretchMapToWindow;
+    private bool _autoHideNavigation;
+    private bool _isTopNavigationCollapsed;
+    private bool _isBottomNavigationCollapsed;
     private bool _isDisplaySettingsOpen;
     private MapNodeColorMode _nodeColorMode = MapNodeColorMode.None;
     private MapNodeColorMode _nodeBackgroundColorMode = MapNodeColorMode.None;
@@ -435,6 +438,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string CoordinateModeUniverseKey = "Map.SelectedCoordinateMode.Universe";
     private const string CoordinateModeRegionKey = "Map.SelectedCoordinateMode.Region";
     private const string StretchMapToWindowKey = "Map.StretchToWindow";
+    private const string AutoHideNavigationKey = "Window.AutoHideNavigation";
     private const string NodeColorModeKey = "Map.NodeColorMode";
     private const string NodeBackgroundColorModeKey = "Map.NodeBackgroundColorMode";
     private const string HostileColorSettingsKey = "Map.HostileColorSettings";
@@ -2325,6 +2329,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _savedRegionCoordinateMode = await _settingsService.GetAsync<MapCoordinateMode?>(CoordinateModeRegionKey) ?? legacyCoordinateMode;
         SelectedCoordinateMode = _savedUniverseCoordinateMode;
         StretchMapToWindow = await _settingsService.GetAsync<bool?>(StretchMapToWindowKey) ?? false;
+        AutoHideNavigation = await _settingsService.GetAsync<bool?>(AutoHideNavigationKey) ?? false;
         NodeColorMode = await _settingsService.GetAsync<MapNodeColorMode?>(NodeColorModeKey) ?? MapNodeColorMode.None;
         NodeBackgroundColorMode = await _settingsService.GetAsync<MapNodeColorMode?>(NodeBackgroundColorModeKey) ?? MapNodeColorMode.None;
         HostileColorSettings = SanitizeHostileColorSettings(
@@ -2745,6 +2750,59 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         {
             await ReloadGraphAsync();
         });
+    }
+
+    public bool AutoHideNavigation
+    {
+        get => _autoHideNavigation;
+        set
+        {
+            if (!SetProperty(ref _autoHideNavigation, value))
+            {
+                return;
+            }
+
+            SetNavigationCollapsed(value, value);
+            if (!_isInitializing)
+            {
+                _ = _settingsService.SetAsync(AutoHideNavigationKey, value);
+            }
+        }
+    }
+
+    public bool IsTopNavigationVisible => !AutoHideNavigation || !_isTopNavigationCollapsed;
+    public bool IsBottomNavigationVisible => !AutoHideNavigation || !_isBottomNavigationCollapsed;
+    public bool IsTopNavigationHandleVisible => AutoHideNavigation && _isTopNavigationCollapsed;
+    public bool IsBottomNavigationHandleVisible => AutoHideNavigation && _isBottomNavigationCollapsed;
+    public bool IsTopNavigationCollapseButtonVisible => AutoHideNavigation && !_isTopNavigationCollapsed;
+    public bool IsBottomNavigationCollapseButtonVisible => AutoHideNavigation && !_isBottomNavigationCollapsed;
+
+    public void ToggleTopNavigation()
+    {
+        if (AutoHideNavigation)
+        {
+            SetNavigationCollapsed(!_isTopNavigationCollapsed, _isBottomNavigationCollapsed);
+        }
+    }
+
+    public void ToggleBottomNavigation()
+    {
+        if (AutoHideNavigation)
+        {
+            SetNavigationCollapsed(_isTopNavigationCollapsed, !_isBottomNavigationCollapsed);
+        }
+    }
+
+    private void SetNavigationCollapsed(bool topCollapsed, bool bottomCollapsed)
+    {
+        _isTopNavigationCollapsed = topCollapsed;
+        _isBottomNavigationCollapsed = bottomCollapsed;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsTopNavigationVisible)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsBottomNavigationVisible)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsTopNavigationHandleVisible)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsBottomNavigationHandleVisible)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsTopNavigationCollapseButtonVisible)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsBottomNavigationCollapseButtonVisible)));
     }
 
     private void OnMiningSiteReportsUpdated(object? sender, EventArgs e)

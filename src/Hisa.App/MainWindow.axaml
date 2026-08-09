@@ -90,7 +90,8 @@
     </Style>
   </Window.Styles>
   <Grid RowDefinitions="Auto,*,Auto">
-    <Border Padding="10,10" Background="#121A26" BorderBrush="#263244" BorderThickness="0,0,0,1">
+    <Grid Grid.Row="0" RowDefinitions="Auto,Auto">
+    <Border Grid.Row="0" Padding="10,10" Background="#121A26" BorderBrush="#263244" BorderThickness="0,0,0,1" IsVisible="{Binding IsTopNavigationVisible}">
       <Grid x:Name="TopToolbarRootGrid"
             ColumnDefinitions="Auto,*,Auto"
             RowDefinitions="Auto,Auto"
@@ -265,6 +266,13 @@
         </Grid>
       </Grid>
     </Border>
+    <Button Grid.Row="1" Content="&#x25B2; Hide top navigation" Click="OnToggleTopNavigationClicked"
+            IsVisible="{Binding IsTopNavigationCollapseButtonVisible}"
+            HorizontalAlignment="Center" Padding="10,1" FontSize="10" Background="#121A26" BorderBrush="#263244" Foreground="#8A96A8" />
+    <Button Grid.Row="1" Content="&#x25BC; Show top navigation" Click="OnToggleTopNavigationClicked"
+            IsVisible="{Binding IsTopNavigationHandleVisible}"
+            HorizontalAlignment="Center" Padding="10,1" FontSize="10" Background="#121A26" BorderBrush="#263244" Foreground="#AFC6E2" />
+    </Grid>
 
     <Grid Grid.Row="1" ColumnDefinitions="*,Auto">
       <Grid Grid.Column="0">
@@ -1297,7 +1305,8 @@
       </Border>
     </Grid>
 
-    <Border Grid.Row="2" Padding="8" Background="#121A26" BorderThickness="0">
+    <Grid Grid.Row="2" RowDefinitions="Auto,Auto">
+    <Border Grid.Row="1" Padding="8" Background="#121A26" BorderThickness="0" IsVisible="{Binding IsBottomNavigationVisible}">
       <Grid ColumnDefinitions="*,Auto">
         <TextBlock Grid.Column="0" Text="{Binding StatusText}" Foreground="#8A96A8" VerticalAlignment="Center" IsVisible="{Binding IsDebugBuild}" />
         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
@@ -1339,5 +1348,12 @@
         </StackPanel>
       </Grid>
     </Border>
+    <Button Grid.Row="0" Content="&#x25BC; Hide bottom navigation" Click="OnToggleBottomNavigationClicked"
+            IsVisible="{Binding IsBottomNavigationCollapseButtonVisible}"
+            HorizontalAlignment="Center" Padding="10,1" FontSize="10" Background="#121A26" BorderBrush="#263244" Foreground="#8A96A8" />
+    <Button Grid.Row="1" Content="&#x25B2; Show bottom navigation" Click="OnToggleBottomNavigationClicked"
+            IsVisible="{Binding IsBottomNavigationHandleVisible}"
+            HorizontalAlignment="Center" Padding="10,1" FontSize="10" Background="#121A26" BorderBrush="#263244" Foreground="#AFC6E2" />
+    </Grid>
   </Grid>
 </Window>
