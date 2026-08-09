@@ -146,7 +146,7 @@ public sealed class MiningSessionLogFeedHostedServiceTests
         {
             return new HttpClient(handler, disposeHandler: false)
             {
-                BaseAddress = new Uri("https://evehaklabs.cloud/")
+                BaseAddress = new Uri("https://haakario.com/")
             };
         }
     }

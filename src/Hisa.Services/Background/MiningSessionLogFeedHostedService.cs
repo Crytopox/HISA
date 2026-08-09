@@ -338,7 +338,7 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
         try
         {
             var client = _httpClientFactory.CreateClient(nameof(MiningSessionLogFeedHostedService));
-            client.BaseAddress ??= new Uri("https://evehaklabs.cloud/");
+            client.BaseAddress ??= new Uri("https://haakario.com/");
             client.Timeout = TimeSpan.FromSeconds(20);
 
             var standardTask = client.GetFromJsonAsync<OreEnvelope<List<StandardOreDto>>>("api/public/v1/ores/standard", cancellationToken);
