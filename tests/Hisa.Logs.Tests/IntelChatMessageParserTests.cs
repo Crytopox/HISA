@@ -149,12 +149,13 @@ public sealed class IntelChatMessageParserTests
     }
 
     [Fact]
-    public void Parse_XCountPattern_DetectsHostileCount()
+    public void Parse_BareXCountPattern_IsNotTreatedAsHostileCount()
     {
         var parser = CreateParser();
         var result = parser.Parse("D-P1EH x4");
 
-        Assert.Equal(4, result.HostileCount);
+        Assert.Equal(0, result.HostileCount);
+        Assert.Equal(0, result.ExplicitHostileCount);
     }
 
     [Fact]
@@ -183,5 +184,28 @@ public sealed class IntelChatMessageParserTests
         var result = parser.Parse("D-P1EH GC spike WT in gate");
 
         Assert.Empty(result.HostileNames);
+    }
+
+    [Theory]
+    [InlineData("D-P1EH Askulen Akasa Soikutsu Astero", "Askulen Akasa Soikutsu")]
+    [InlineData("D-P1EH Liam Liam Liam", "Liam Liam Liam")]
+    [InlineData("D-P1EH shinestar 02 Von-TheAurora1", "shinestar 02")]
+    [InlineData("D-P1EH 0314227 Kevin Teiniks", "0314227")]
+    public void Parse_NameCandidates_PreserveOneToThreeWordReportedNames(string message, string expectedCandidate)
+    {
+        var parser = CreateParser();
+        var result = parser.Parse(message);
+
+        Assert.Contains(expectedCandidate, result.HostileNameCandidates, StringComparer.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Parse_WormholeSignatureAndBareXCount_DoNotCreateHostileCount()
+    {
+        var parser = CreateParser();
+        var result = parser.Parse("D-P1EH C1-C3 WH x4 50% mass");
+
+        Assert.Equal(0, result.HostileCount);
+        Assert.DoesNotContain("C1-C3", result.HostileNameCandidates, StringComparer.OrdinalIgnoreCase);
     }
 }

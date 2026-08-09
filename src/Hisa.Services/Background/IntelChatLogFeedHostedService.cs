@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
@@ -103,12 +104,14 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
     private static readonly TimeSpan ZkillRateLimitDelay = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan ZkillAcceptedAgeWindow = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan ReportDedupeRetention = TimeSpan.FromHours(1);
+    private static readonly TimeSpan CharacterNameResolutionCacheLifetime = TimeSpan.FromHours(12);
     private long? _nextZkillSequence;
     private DateTime _nextZkillPollAfterUtc = DateTime.MinValue;
     private HashSet<string> _includeChannels = new(StringComparer.OrdinalIgnoreCase);
     private TimeSpan _systemExpiry = TimeSpan.FromMinutes(15);
     private readonly DateTime _startupHistoryCutoffUtc = DateTime.UtcNow - TimeSpan.FromMinutes(10);
     private readonly Dictionary<string, DateTime> _recentReportKeys = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, CharacterNameResolution> _characterNameResolutionCache = new(StringComparer.OrdinalIgnoreCase);
     private string? _chatLogsDirectory;
 
     public IntelChatLogFeedHostedService(
@@ -909,9 +912,14 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             ShipNames = [],
             Alerts = [],
             HostileNames = [],
+            HostileNameCandidates = [],
             IsClear = false,
-            HostileCount = 0
+            HostileCount = 0,
+            ExplicitHostileCount = 0
         };
+        var reportedHostileNames = parsed.IsClear
+            ? (IReadOnlyList<string>)[]
+            : await ResolveReportedCharacterNamesAsync(parsed.HostileNameCandidates, cancellationToken);
         var linkedData = await TryLoadExternalIntelLinkDataAsync(message, cancellationToken);
         var mergedSystems = parsed.Systems.Count > 0
             ? parsed.Systems.ToHashSet(StringComparer.OrdinalIgnoreCase)
@@ -936,7 +944,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         var reportedShipTypeIds = ResolveShipTypeIds(mergedShipNames);
         var hostileCount = parsed.IsClear
             ? 0
-            : Math.Max(parsed.HostileCount, Math.Max(mergedShipNames.Count, mergedShipClasses.Count));
+            : Math.Max(parsed.ExplicitHostileCount, Math.Max(reportedHostileNames.Count, Math.Max(mergedShipNames.Count, mergedShipClasses.Count)));
         return new IntelChatReport
         {
             DedupeKey = BuildIntelReportDedupeKey(timestampUtc, reporter, message),
@@ -950,11 +958,123 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             ReportedShipNames = mergedShipNames,
             ReportedShipTypeIds = reportedShipTypeIds,
             Alerts = parsed.Alerts,
-            ReportedHostileNames = parsed.HostileNames,
+            ReportedHostileNames = reportedHostileNames,
             IsClear = parsed.IsClear,
             ReportedHostileCount = hostileCount,
             Killmail = null
         };
+    }
+
+    // Chat intel is free-form, so name-shaped text is only a candidate.  The ESI
+    // universe resolver is the authority: only exact character results reach the
+    // report/snapshot state.
+    private async Task<IReadOnlyList<string>> ResolveReportedCharacterNamesAsync(
+        IReadOnlyList<string> candidates,
+        CancellationToken cancellationToken)
+    {
+        if (candidates.Count == 0)
+        {
+            return [];
+        }
+
+        var now = DateTime.UtcNow;
+        var normalizedCandidates = candidates
+            .Select(x => x.Trim())
+            .Where(x => x.Length is >= 2 and <= 96)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(64)
+            .ToList();
+        var unresolvedCandidates = new List<string>();
+
+        foreach (var candidate in normalizedCandidates)
+        {
+            if (_characterNameResolutionCache.TryGetValue(candidate, out var cached) && cached.ExpiresAtUtc > now)
+            {
+                continue;
+            }
+
+            _characterNameResolutionCache.TryRemove(candidate, out _);
+            unresolvedCandidates.Add(candidate);
+        }
+
+        foreach (var batch in unresolvedCandidates.Chunk(50))
+        {
+            try
+            {
+                var payload = JsonSerializer.Serialize(batch);
+                using var request = new HttpRequestMessage(HttpMethod.Post, "https://esi.evetech.net/latest/universe/ids/?datasource=tranquility")
+                {
+                    Content = new StringContent(payload, Encoding.UTF8, "application/json")
+                };
+                using var response = await CreateIntelLinkHttpClient().SendAsync(request, cancellationToken);
+                if (!response.IsSuccessStatusCode)
+                {
+                    continue;
+                }
+
+                await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+                var result = await JsonSerializer.DeserializeAsync<EsiUniverseIdsResponse>(stream, cancellationToken: cancellationToken);
+                var charactersByName = (result?.Characters ?? [])
+                    .Where(x => x.Id > 0 && !string.IsNullOrWhiteSpace(x.Name))
+                    .ToDictionary(x => x.Name, StringComparer.OrdinalIgnoreCase);
+                var expiresAtUtc = DateTime.UtcNow + CharacterNameResolutionCacheLifetime;
+                foreach (var candidate in batch)
+                {
+                    if (charactersByName.TryGetValue(candidate, out var character))
+                    {
+                        _characterNameResolutionCache[candidate] = new CharacterNameResolution(character.Name, expiresAtUtc);
+                    }
+                    else
+                    {
+                        _characterNameResolutionCache[candidate] = new CharacterNameResolution(null, expiresAtUtc);
+                    }
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Failed to validate intel character-name candidates with ESI.");
+            }
+        }
+
+        var exactMatches = normalizedCandidates
+            .Select(candidate => _characterNameResolutionCache.TryGetValue(candidate, out var cached) ? cached.CanonicalName : null)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Cast<string>()
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        // The candidate generator deliberately includes one-, two-, and three-word
+        // spans. When ESI says both "Zich Masor" and "Zich" are real characters,
+        // the shorter result is part of the reported full name, not another hostile.
+        return exactMatches
+            .Where(name => !exactMatches.Any(other =>
+                !string.Equals(name, other, StringComparison.OrdinalIgnoreCase) &&
+                ContainsWholeName(other, name)))
+            .ToList();
+    }
+
+    private static bool ContainsWholeName(string longerName, string shorterName)
+    {
+        var longerParts = longerName.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var shorterParts = shorterName.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (shorterParts.Length >= longerParts.Length)
+        {
+            return false;
+        }
+
+        for (var start = 0; start <= longerParts.Length - shorterParts.Length; start++)
+        {
+            if (shorterParts.Select((part, index) => string.Equals(part, longerParts[start + index], StringComparison.OrdinalIgnoreCase)).All(x => x))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private IReadOnlyList<IntelShipClass> ResolveShipClasses(IReadOnlyList<string> shipNames)
@@ -1958,5 +2078,22 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         [JsonPropertyName("sequence")]
         public long? Sequence { get; init; }
     }
+
+    private sealed class EsiUniverseIdsResponse
+    {
+        [JsonPropertyName("characters")]
+        public List<EsiUniverseId> Characters { get; init; } = [];
+    }
+
+    private sealed class EsiUniverseId
+    {
+        [JsonPropertyName("id")]
+        public int Id { get; init; }
+
+        [JsonPropertyName("name")]
+        public string Name { get; init; } = string.Empty;
+    }
+
+    private sealed record CharacterNameResolution(string? CanonicalName, DateTime ExpiresAtUtc);
 
 }

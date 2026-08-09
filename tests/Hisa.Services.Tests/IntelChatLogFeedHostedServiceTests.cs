@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Net;
 using Hisa.Core.Abstractions;
 using Hisa.Core.Models;
 using Hisa.Data.Database;
@@ -272,6 +273,28 @@ public class IntelChatLogFeedHostedServiceTests
         Assert.Contains(IntelShipClass.Cruiser, shipClasses);
     }
 
+    [Fact]
+    public async Task ResolveReportedCharacterNamesAsync_UsesOnlyExactEsiCharacterMatches()
+    {
+        var service = new IntelChatLogFeedHostedService(
+            new NoopSettingsService(),
+            new NoopSdeDatabase(),
+            new StubHttpClientFactory("""
+                {"characters":[{"id":123,"name":"Askulen Akasa Soikutsu"},{"id":124,"name":"Askulen"},{"id":125,"name":"Akasa"},{"id":126,"name":"Soikutsu"},{"id":456,"name":"0314227"}]}
+                """),
+            NullLogger<IntelChatLogFeedHostedService>.Instance);
+        var method = typeof(IntelChatLogFeedHostedService).GetMethod(
+            "ResolveReportedCharacterNamesAsync",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(method);
+
+        var task = (Task<IReadOnlyList<string>>)method!.Invoke(service,
+            [new List<string> { "Askulen Akasa Soikutsu", "Askulen", "Akasa", "Soikutsu", "C1-C3", "0314227", "not a pilot" }, CancellationToken.None])!;
+        var names = await task;
+
+        Assert.Equal(["Askulen Akasa Soikutsu", "0314227"], names);
+    }
+
     private static IntelChatLogFeedHostedService CreateServiceWithSystems(NoopSettingsService? settings = null)
     {
         var service = new IntelChatLogFeedHostedService(
@@ -440,5 +463,23 @@ public class IntelChatLogFeedHostedServiceTests
     private sealed class NoopHttpClientFactory : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => new();
+    }
+
+    private sealed class StubHttpClientFactory(string responseBody) : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) => new(new StubHttpMessageHandler(responseBody));
+    }
+
+    private sealed class StubHttpMessageHandler(string responseBody) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Assert.Equal(HttpMethod.Post, request.Method);
+            Assert.Equal("https://esi.evetech.net/latest/universe/ids/?datasource=tranquility", request.RequestUri?.ToString());
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(responseBody)
+            });
+        }
     }
 }

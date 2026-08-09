@@ -57,6 +57,7 @@ public sealed partial class IntelChatMessageParser
         var isClear = IsClear(lower);
         var explicitCount = isClear ? 0 : ExtractExplicitHostileCount(message.ToLowerInvariant());
         var hostileNames = isClear ? [] : ExtractBestHostileNames(message, systems, explicitCount);
+        var hostileNameCandidates = isClear ? [] : ExtractHostileNameCandidates(message, systems);
         if (isClear)
         {
             alerts.Add(IntelAlertType.Clear);
@@ -71,7 +72,9 @@ public sealed partial class IntelChatMessageParser
             Alerts = alerts.ToList(),
             IsClear = isClear,
             HostileCount = hostileCount,
-            HostileNames = hostileNames
+            ExplicitHostileCount = explicitCount,
+            HostileNames = hostileNames,
+            HostileNameCandidates = hostileNameCandidates
         };
     }
 
@@ -209,6 +212,67 @@ public sealed partial class IntelChatMessageParser
         }
 
         return max;
+    }
+
+    private List<string> ExtractHostileNameCandidates(string message, IReadOnlySet<string> systems)
+    {
+        var tokens = WordRegex.Matches(message)
+            .Select(x => x.Value.Trim())
+            .Where(x => x.Length > 0)
+            .ToList();
+        var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        for (var i = 0; i < tokens.Count; i++)
+        {
+            if (!LooksLikePotentialCharacterToken(tokens[i], systems))
+            {
+                continue;
+            }
+
+            var parts = new List<string>(3);
+            for (var length = 1; length <= 3 && i + length <= tokens.Count; length++)
+            {
+                var token = tokens[i + length - 1];
+                if (!LooksLikePotentialCharacterToken(token, systems))
+                {
+                    break;
+                }
+
+                parts.Add(token);
+                candidates.Add(string.Join(" ", parts));
+            }
+        }
+
+        return candidates.Take(80).ToList();
+    }
+
+    private static bool LooksLikePotentialCharacterToken(string token, IReadOnlySet<string> systems)
+    {
+        if (systems.Contains(token) || token.Length < 2 || IsBareXCountToken(token))
+        {
+            return false;
+        }
+
+        var lower = token.ToLowerInvariant();
+        if (CharacterStopWords.Contains(lower) || IntelAcronymStopWords.Contains(lower) ||
+            lower.StartsWith("http", StringComparison.OrdinalIgnoreCase) ||
+            LooksLikeWormholeSignature(token))
+        {
+            return false;
+        }
+
+        return token.All(c => char.IsLetterOrDigit(c) || c == '\'' || c == '-');
+    }
+
+    private static bool LooksLikeWormholeSignature(string token)
+    {
+        return Regex.IsMatch(token, "^[A-Za-z]\\d-[A-Za-z]\\d$") ||
+               Regex.IsMatch(token, "^[A-Za-z]\\d{2}-\\d{3}$");
+    }
+
+    private static bool IsBareXCountToken(string token)
+    {
+        return Regex.IsMatch(token, "^[xX]\\d+$") || Regex.IsMatch(token, "^\\d+[xX*]$");
     }
 
     private static bool IsCountToken(string token)
@@ -504,7 +568,7 @@ public sealed partial class IntelChatMessageParser
     [GeneratedRegex(@"[A-Za-z0-9'\-]+", RegexOptions.Compiled | RegexOptions.CultureInvariant)]
     private static partial Regex BuildWordRegex();
 
-    [GeneratedRegex(@"\+(?<n>\d{1,3})|(?<n>\d{1,3})\+|=(?<n>\d{1,3})|(?<n>\d{1,3})\s+neuts?\b|(?<n>\d{1,3})x\b|x(?<n>\d{1,3})\b", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"(?<!\S)\+(?<n>\d{1,3})(?!\S)|(?<!\S)(?<n>\d{1,3})\+(?!\S)|(?<!\S)=(?<n>\d{1,3})(?!\S)|(?<!\S)(?<n>\d{1,3})\s+(?:hostiles?|neuts?|reds?|in\s+(?:ess|system|local))\b", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
     private static partial Regex BuildHostileCountRegex();
 }
 
@@ -515,6 +579,8 @@ public sealed class IntelParseResult
     public required IReadOnlyList<string> ShipNames { get; init; }
     public required IReadOnlyList<IntelAlertType> Alerts { get; init; }
     public required IReadOnlyList<string> HostileNames { get; init; }
+    public required IReadOnlyList<string> HostileNameCandidates { get; init; }
     public bool IsClear { get; init; }
     public int HostileCount { get; init; }
+    public int ExplicitHostileCount { get; init; }
 }

@@ -6962,85 +6962,17 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 _characterIdLookupInFlight.Add(trimmed);
             }
 
-            var alternatives = BuildAlternativePilotNameCandidates(trimmed);
-            _ = ResolveCharacterIdByNameAsync(trimmed, alternatives);
+            _ = ResolveCharacterIdByNameAsync(trimmed);
         }
 
         return Task.CompletedTask;
     }
 
-    private IReadOnlyList<string> BuildAlternativePilotNameCandidates(string seedName)
-    {
-        var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var card in _intelCardsForView)
-        {
-            if (!card.Hostiles.Any(h => string.Equals(h.Name, seedName, StringComparison.OrdinalIgnoreCase)))
-            {
-                continue;
-            }
-
-            foreach (var candidate in ExtractPilotNameCandidates(card.MessageText))
-            {
-                candidates.Add(candidate);
-            }
-        }
-
-        candidates.RemoveWhere(x => string.Equals(x, seedName, StringComparison.OrdinalIgnoreCase));
-        return candidates.ToList();
-    }
-
-    private static IReadOnlyList<string> ExtractPilotNameCandidates(string message)
-    {
-        if (string.IsNullOrWhiteSpace(message))
-        {
-            return [];
-        }
-
-        var words = message
-            .Split([' ', '\t', ',', ';', ':', '|', '/', '\\', '(', ')', '[', ']', '{', '}', '<', '>', '.', '!', '?'], StringSplitOptions.RemoveEmptyEntries)
-            .Select(x => x.Trim())
-            .Where(x => x.Length >= 3 && x.All(c => char.IsLetter(c) || c == '\'' || c == '-'))
-            .ToList();
-        if (words.Count == 0)
-        {
-            return [];
-        }
-
-        static bool IsNameToken(string word) => char.IsUpper(word[0]);
-
-        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        for (var i = 0; i < words.Count; i++)
-        {
-            if (!IsNameToken(words[i]))
-            {
-                continue;
-            }
-
-            // Single token candidate
-            result.Add(words[i]);
-
-            // Two-token candidate (most common EVE pilot name pattern in intel)
-            if (i + 1 < words.Count && IsNameToken(words[i + 1]))
-            {
-                result.Add($"{words[i]} {words[i + 1]}");
-            }
-        }
-
-        return result.ToList();
-    }
-
-    private async Task ResolveCharacterIdByNameAsync(string characterName, IReadOnlyList<string> alternatives)
+    private async Task ResolveCharacterIdByNameAsync(string characterName)
     {
         try
         {
             var searchNames = new List<string> { characterName };
-            foreach (var candidate in alternatives)
-            {
-                if (!searchNames.Contains(candidate, StringComparer.OrdinalIgnoreCase))
-                {
-                    searchNames.Add(candidate);
-                }
-            }
 
             var payload = JsonSerializer.Serialize(searchNames);
             using var request = new HttpRequestMessage(HttpMethod.Post, "https://esi.evetech.net/latest/universe/ids/?datasource=tranquility");
@@ -7088,7 +7020,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         Dispatcher.UIThread.Post(() =>
         {
             var changed = false;
-            var pendingAdditionsByCard = new Dictionary<IntelOverlayCard, List<IntelOverlayHostileCard>>();
             foreach (var card in _intelCardsForView)
             {
                 foreach (var hostile in card.Hostiles)
@@ -7096,20 +7027,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                     if (!string.Equals(hostile.Name, characterName, StringComparison.OrdinalIgnoreCase))
                     {
                         continue;
-                    }
-
-                    string? additionalPilotCandidate = null;
-                    var parts = characterName.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                    if (parts.Length == 2)
-                    {
-                        if (string.Equals(resolvedName, parts[0], StringComparison.OrdinalIgnoreCase))
-                        {
-                            additionalPilotCandidate = parts[1];
-                        }
-                        else if (string.Equals(resolvedName, parts[1], StringComparison.OrdinalIgnoreCase))
-                        {
-                            additionalPilotCandidate = parts[0];
-                        }
                     }
 
                     if (!string.Equals(hostile.Name, resolvedName, StringComparison.Ordinal))
@@ -7151,42 +7068,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                     }
                     changed = true;
 
-                    if (!string.IsNullOrWhiteSpace(additionalPilotCandidate) &&
-                        additionalPilotCandidate.Length >= 3 &&
-                        card.Hostiles.All(h => !string.Equals(h.Name, additionalPilotCandidate, StringComparison.OrdinalIgnoreCase)))
-                    {
-                        var inferred = new IntelOverlayHostileCard
-                        {
-                            Name = additionalPilotCandidate,
-                            ShipDisplayName = "Unknown",
-                            ShipIconKey = "crosshair"
-                        };
-                        if (!pendingAdditionsByCard.TryGetValue(card, out var pending))
-                        {
-                            pending = [];
-                            pendingAdditionsByCard[card] = pending;
-                        }
-                        pending.Add(inferred);
-                    }
-                }
-            }
-
-            foreach (var kvp in pendingAdditionsByCard)
-            {
-                if (kvp.Key.Hostiles is not List<IntelOverlayHostileCard> hostileList)
-                {
-                    continue;
-                }
-
-                foreach (var inferred in kvp.Value)
-                {
-                    if (hostileList.Any(h => string.Equals(h.Name, inferred.Name, StringComparison.OrdinalIgnoreCase)))
-                    {
-                        continue;
-                    }
-
-                    hostileList.Add(inferred);
-                    changed = true;
                 }
             }
 
