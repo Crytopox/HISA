@@ -71,6 +71,15 @@ public sealed class AlertSourceEvent
     public int? MiningSiteTier { get; init; }
     public DateTime? MiningSiteReadyAtUtc { get; init; }
     public bool MiningSiteWasOverdue { get; init; }
+    public string? SystemName { get; init; }
+    public string? ConstellationName { get; init; }
+    public string? RegionName { get; init; }
+    public StormType? StormType { get; init; }
+    public int? StormAffectedSystemCount { get; init; }
+    public int? StormStrongSystemCount { get; init; }
+    public int? StormWeakSystemCount { get; init; }
+    public HubWormholeConnection? HubWormholeConnection { get; init; }
+    public IncursionInfo? Incursion { get; init; }
 }
 
 public sealed class AlertTriggered

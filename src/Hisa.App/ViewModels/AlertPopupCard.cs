@@ -21,6 +21,24 @@ public sealed class AlertPopupCard
     public bool HasZkillmailCard => ZkillmailCard is not null;
     public bool HasOverlayCard => HasIntelCard || HasZkillmailCard;
     public bool HasNoOverlayCard => !HasOverlayCard;
-    public bool HasGenericAlert => HasNoOverlayCard && !IsMiningSiteAlert;
+    public EnvironmentalAlertPopupCard? EnvironmentalCard { get; init; }
+    public bool HasEnvironmentalCard => EnvironmentalCard is not null;
+    public bool HasGenericAlert => HasNoOverlayCard && !IsMiningSiteAlert && !HasEnvironmentalCard;
     public required DateTime ExpiresAtUtc { get; init; }
+}
+
+public sealed class EnvironmentalAlertPopupCard
+{
+    public required long SolarSystemId { get; init; }
+    public required string SystemName { get; init; }
+    public required string ConstellationName { get; init; }
+    public required string RegionName { get; init; }
+    public required string CategoryLabel { get; init; }
+    public required string Headline { get; init; }
+    public required string AccentHex { get; init; }
+    public required string AccentBackgroundHex { get; init; }
+    public required string DetailOne { get; init; }
+    public required string DetailTwo { get; init; }
+    public required string DetailThree { get; init; }
+    public required string TimestampLabel { get; init; }
 }

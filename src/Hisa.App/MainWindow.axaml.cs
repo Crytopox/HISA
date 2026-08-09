@@ -587,6 +587,7 @@ public partial class MainWindow : Window
                 var zkillCard = TryFindPopupZkillmailCard(alert);
                 var intelCard = zkillCard is null ? TryFindPopupIntelCard(alert) : null;
                 var isMiningSiteAlert = alert.SourceEvent.EventType == AlertEventType.MiningSiteReady;
+                var environmentalCard = BuildEnvironmentalAlertCard(alert);
                 var card = new AlertPopupCard
                 {
                     Title = $"{alert.SourceEvent.EventType}: {alert.RuleName}",
@@ -596,6 +597,7 @@ public partial class MainWindow : Window
                         : $"{alert.TriggeredAtUtc:HH:mm:ss} UTC",
                     IntelCard = intelCard,
                     ZkillmailCard = zkillCard,
+                    EnvironmentalCard = environmentalCard,
                     IsMiningSiteAlert = isMiningSiteAlert,
                     MiningSiteSystemName = alert.SourceEvent.MiningSiteSystemName ?? string.Empty,
                     MiningSiteUpgradeLabel = alert.SourceEvent.MiningSiteUpgradeName is { Length: > 0 } name
@@ -614,6 +616,106 @@ public partial class MainWindow : Window
                 _alertPopupWindow!.Show();
             }
         });
+    }
+
+    private static EnvironmentalAlertPopupCard? BuildEnvironmentalAlertCard(AlertTriggered alert)
+    {
+        var source = alert.SourceEvent;
+        var systemName = source.SystemName ?? $"System {source.SolarSystemId}";
+        var constellationName = source.ConstellationName ?? "Unknown Constellation";
+        var regionName = source.RegionName ?? "Unknown Region";
+        var timestampLabel = $"{alert.TriggeredAtUtc:HH:mm:ss} UTC";
+
+        if (source.EventType == AlertEventType.StormSpawn && source.StormType is { } stormType)
+        {
+            var (typeLabel, accent, accentBackground) = stormType switch
+            {
+                StormType.Electrical => ("Electrical", "#4AA8FF", "#172D45"),
+                StormType.Gamma => ("Gamma", "#E69138", "#3A2B19"),
+                StormType.Exotic => ("Exotic", "#CFD4DC", "#30363D"),
+                StormType.Plasma => ("Plasma", "#DE5B52", "#3A2024"),
+                _ => ("Unknown", "#9BA8B8", "#27313D")
+            };
+
+            return new EnvironmentalAlertPopupCard
+            {
+                SolarSystemId = source.SolarSystemId,
+                SystemName = systemName,
+                ConstellationName = constellationName,
+                RegionName = regionName,
+                CategoryLabel = "METALIMINAL STORM",
+                Headline = $"{typeLabel} storm center detected",
+                AccentHex = accent,
+                AccentBackgroundHex = accentBackground,
+                DetailOne = $"Coverage: {source.StormAffectedSystemCount ?? 0} systems affected",
+                DetailTwo = $"Strength: {source.StormStrongSystemCount ?? 0} strong | {source.StormWeakSystemCount ?? 0} weak",
+                DetailThree = "Center system",
+                TimestampLabel = timestampLabel
+            };
+        }
+
+        if (source.EventType == AlertEventType.HubWormholeSpawn && source.HubWormholeConnection is { } wormhole)
+        {
+            var isThera = wormhole.HubType == WormholeHubType.Thera;
+            var accent = isThera ? "#44D19D" : "#FFB34D";
+            var hubName = isThera ? "Thera" : "Turnur";
+            var inSignature = string.IsNullOrWhiteSpace(wormhole.InSignature) ? "?" : wormhole.InSignature.Trim().ToUpperInvariant();
+            var outSignature = string.IsNullOrWhiteSpace(wormhole.OutSignature) ? "?" : wormhole.OutSignature.Trim().ToUpperInvariant();
+            var shipSize = string.IsNullOrWhiteSpace(wormhole.MaxShipSize) ? "Unknown" : wormhole.MaxShipSize.Trim().ToUpperInvariant();
+            var expires = wormhole.ExpiresAtUtc is null
+                ? "Expiry unknown"
+                : wormhole.ExpiresAtUtc <= DateTimeOffset.UtcNow
+                    ? "Expires now"
+                    : $"Expires in {FormatDuration(wormhole.ExpiresAtUtc.Value - DateTimeOffset.UtcNow)}";
+
+            return new EnvironmentalAlertPopupCard
+            {
+                SolarSystemId = source.SolarSystemId,
+                SystemName = systemName,
+                ConstellationName = constellationName,
+                RegionName = regionName,
+                CategoryLabel = $"{hubName.ToUpperInvariant()} WORMHOLE",
+                Headline = $"New connection to {hubName}",
+                AccentHex = accent,
+                AccentBackgroundHex = isThera ? "#183A2B" : "#3A2C19",
+                DetailOne = $"Signatures: In {inSignature} | Out {outSignature}",
+                DetailTwo = $"Max ship size: {shipSize}",
+                DetailThree = expires,
+                TimestampLabel = timestampLabel
+            };
+        }
+
+        if (source.EventType == AlertEventType.IncursionSpawn && source.Incursion is { } incursion)
+        {
+            var state = string.IsNullOrWhiteSpace(incursion.State) ? "Unknown" : CultureInfo.InvariantCulture.TextInfo.ToTitleCase(incursion.State);
+
+            return new EnvironmentalAlertPopupCard
+            {
+                SolarSystemId = source.SolarSystemId,
+                SystemName = systemName,
+                ConstellationName = constellationName,
+                RegionName = regionName,
+                CategoryLabel = "SANSHA INCURSION",
+                Headline = $"{incursion.Type} — {state}",
+                AccentHex = "#A77BFF",
+                AccentBackgroundHex = "#31223F",
+                DetailOne = $"Staging system | Constellation: {constellationName}",
+                DetailTwo = $"Influence: {incursion.Influence:P0} | Systems: {incursion.InfestedSolarSystems.Count}",
+                DetailThree = incursion.HasBoss ? "Mothership present" : "Mothership not present",
+                TimestampLabel = timestampLabel
+            };
+        }
+
+        return null;
+    }
+
+    private static string FormatDuration(TimeSpan duration)
+    {
+        return duration.TotalHours >= 24
+            ? $"{(int)duration.TotalDays}d {duration.Hours}h"
+            : duration.TotalHours >= 1
+                ? $"{(int)duration.TotalHours}h {duration.Minutes}m"
+                : $"{Math.Max(1, duration.Minutes)}m";
     }
 
     private IntelOverlayCard? TryFindPopupIntelCard(AlertTriggered alert)

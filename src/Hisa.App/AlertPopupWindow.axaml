@@ -232,6 +232,34 @@
                 </Grid>
               </Border>
             </Grid>
+            <Grid ColumnDefinitions="4,*" IsVisible="{Binding HasEnvironmentalCard}">
+              <Border Grid.Column="0" Background="{Binding EnvironmentalCard.AccentHex}" CornerRadius="5,0,0,5" />
+              <Border Grid.Column="1" Padding="8,7" Background="#E012211B" BorderBrush="{Binding EnvironmentalCard.AccentHex}" BorderThickness="1" CornerRadius="0,7,7,0">
+                <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="4">
+                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                    <StackPanel Spacing="1">
+                      <TextBlock Text="{Binding EnvironmentalCard.CategoryLabel}" Foreground="{Binding EnvironmentalCard.AccentHex}" FontSize="9" FontWeight="Bold" />
+                      <Button HorizontalAlignment="Left" Background="Transparent" BorderThickness="0" Padding="0" Cursor="Hand" ClickMode="Press" Click="OnEnvironmentalCardSystemClicked">
+                        <TextBlock Foreground="#F0FFF5" FontSize="14" FontWeight="Bold" TextTrimming="CharacterEllipsis">
+                          <Run Text="{Binding EnvironmentalCard.SystemName}" />
+                          <Run Text=" | " Foreground="#7F779C" />
+                          <Run Text="{Binding EnvironmentalCard.RegionName}" FontSize="9" FontWeight="SemiBold" />
+                        </TextBlock>
+                      </Button>
+                    </StackPanel>
+                    <Border Grid.Column="1" Background="{Binding EnvironmentalCard.AccentBackgroundHex}" BorderBrush="{Binding EnvironmentalCard.AccentHex}" BorderThickness="1" CornerRadius="4" Padding="5,2" VerticalAlignment="Top">
+                      <TextBlock Text="{Binding EnvironmentalCard.TimestampLabel}" Foreground="#FFF4C8" FontSize="9" FontWeight="Bold" />
+                    </Border>
+                  </Grid>
+                  <TextBlock Grid.Row="1" Text="{Binding EnvironmentalCard.Headline}" Foreground="#D4E8DB" FontSize="10" FontWeight="SemiBold" />
+                  <StackPanel Grid.Row="2" Spacing="2">
+                    <TextBlock Text="{Binding EnvironmentalCard.DetailOne}" Foreground="#BFD8FF" FontSize="9" />
+                    <TextBlock Text="{Binding EnvironmentalCard.DetailTwo}" Foreground="#BFD8FF" FontSize="9" />
+                    <TextBlock Text="{Binding EnvironmentalCard.DetailThree}" Foreground="#FFF4C8" FontSize="9" FontWeight="SemiBold" />
+                  </StackPanel>
+                </Grid>
+              </Border>
+            </Grid>
             <Border IsVisible="{Binding HasGenericAlert}" Padding="6" Background="#182434" BorderBrush="#364D6D" BorderThickness="1" CornerRadius="6">
               <StackPanel Spacing="2">
                 <TextBlock Text="{Binding Title}" Foreground="#F1E8FF" FontSize="10" FontWeight="Bold"/>

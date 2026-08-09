@@ -195,4 +195,15 @@ public partial class AlertPopupWindow : Window
 
         SystemNavigationRequested?.Invoke(card.SolarSystemId);
     }
+
+    private void OnEnvironmentalCardSystemClicked(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control { DataContext: AlertPopupCard { EnvironmentalCard: { } card } } ||
+            card.SolarSystemId <= 0)
+        {
+            return;
+        }
+
+        SystemNavigationRequested?.Invoke(card.SolarSystemId);
+    }
 }

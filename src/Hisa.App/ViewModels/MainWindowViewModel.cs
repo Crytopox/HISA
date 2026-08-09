@@ -2636,7 +2636,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
-    private void OnStormSnapshotUpdated(object? sender, StormSnapshot snapshot)
+    private async void OnStormSnapshotUpdated(object? sender, StormSnapshot snapshot)
     {
         var newStormKeys = ObserveSpawnKeys(AlertEventType.StormSpawn,
             snapshot.Centers.Select(center => $"storm:{center.Type}:{center.SolarSystemId}"));
@@ -2648,8 +2648,16 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             return;
         }
 
+        var metadataById = await _mapDataService.GetSystemMetadataByIdsAsync(
+            newCenters.Select(x => x.SolarSystemId).Distinct().ToArray());
+
         foreach (var center in newCenters)
         {
+            metadataById.TryGetValue(center.SolarSystemId, out var metadata);
+            var effects = snapshot.EffectsBySystemId
+                .SelectMany(x => x.Value)
+                .Where(x => x.CenterSolarSystemId == center.SolarSystemId)
+                .ToList();
             EvaluateAlertRules(new AlertSourceEvent
             {
                 EventType = AlertEventType.StormSpawn,
@@ -2657,7 +2665,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 SolarSystemId = center.SolarSystemId,
                 RegionId = ResolveRegionId(center.SolarSystemId),
                 DedupeKey = $"storm:{center.Type}:{center.SolarSystemId}",
-                Summary = $"{center.DisplayName ?? center.Type.ToString()} storm in system {center.SolarSystemId}"
+                Summary = $"{center.DisplayName ?? center.Type.ToString()} storm in {metadata?.SolarSystemName ?? $"system {center.SolarSystemId}"}",
+                SystemName = metadata?.SolarSystemName ?? center.DisplayName,
+                ConstellationName = metadata?.ConstellationName,
+                RegionName = metadata?.RegionName,
+                StormType = center.Type,
+                StormAffectedSystemCount = effects.Count,
+                StormStrongSystemCount = effects.Count(x => x.Strength == StormStrength.Strong),
+                StormWeakSystemCount = effects.Count(x => x.Strength == StormStrength.Weak)
             });
         }
 
@@ -2667,7 +2682,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         });
     }
 
-    private void OnHubWormholeSnapshotUpdated(object? sender, HubWormholeSnapshot snapshot)
+    private async void OnHubWormholeSnapshotUpdated(object? sender, HubWormholeSnapshot snapshot)
     {
         var connections = snapshot.ConnectionsBySystemId.Values.SelectMany(x => x).ToList();
         var newWormholeKeys = ObserveSpawnKeys(AlertEventType.HubWormholeSpawn,
@@ -2680,8 +2695,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             return;
         }
 
+        var metadataById = await _mapDataService.GetSystemMetadataByIdsAsync(
+            newConnections.Select(x => x.SolarSystemId).Distinct().ToArray());
+
         foreach (var connection in newConnections)
         {
+            metadataById.TryGetValue(connection.SolarSystemId, out var metadata);
             EvaluateAlertRules(new AlertSourceEvent
             {
                 EventType = AlertEventType.HubWormholeSpawn,
@@ -2689,7 +2708,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 SolarSystemId = connection.SolarSystemId,
                 RegionId = ResolveRegionId(connection.SolarSystemId),
                 DedupeKey = $"hub-wormhole:{connection.HubType}:{connection.SolarSystemId}",
-                Summary = $"{connection.HubType} wormhole in system {connection.SolarSystemId}"
+                Summary = $"{connection.HubType} wormhole in {metadata?.SolarSystemName ?? $"system {connection.SolarSystemId}"}",
+                SystemName = metadata?.SolarSystemName,
+                ConstellationName = metadata?.ConstellationName,
+                RegionName = metadata?.RegionName,
+                HubWormholeConnection = connection
             });
         }
 
@@ -2771,7 +2794,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private static string MiningSiteAlertKey(MiningSiteReport report) =>
         $"mining-site:{report.SolarSystemId}:{report.UpgradeName}:{report.Tier}:{report.AvailableAtUtc:O}";
 
-    private void OnIncursionSnapshotUpdated(object? sender, IncursionSnapshot snapshot)
+    private async void OnIncursionSnapshotUpdated(object? sender, IncursionSnapshot snapshot)
     {
         var newIncursionKeys = ObserveSpawnKeys(AlertEventType.IncursionSpawn,
             snapshot.Incursions.Select(incursion => $"incursion:{incursion.ConstellationId}:{incursion.StagingSolarSystemId}:{incursion.Type}"));
@@ -2783,8 +2806,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             return;
         }
 
+        var metadataById = await _mapDataService.GetSystemMetadataByIdsAsync(
+            newIncursions.Select(x => (long)x.StagingSolarSystemId).Distinct().ToArray());
+
         foreach (var incursion in newIncursions)
         {
+            metadataById.TryGetValue(incursion.StagingSolarSystemId, out var metadata);
             EvaluateAlertRules(new AlertSourceEvent
             {
                 EventType = AlertEventType.IncursionSpawn,
@@ -2792,7 +2819,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 SolarSystemId = incursion.StagingSolarSystemId,
                 RegionId = ResolveRegionId(incursion.StagingSolarSystemId),
                 DedupeKey = $"incursion:{incursion.ConstellationId}:{incursion.StagingSolarSystemId}:{incursion.Type}",
-                Summary = $"{incursion.Type} incursion ({incursion.State}) staging in system {incursion.StagingSolarSystemId}"
+                Summary = $"{incursion.Type} incursion ({incursion.State}) staging in {metadata?.SolarSystemName ?? $"system {incursion.StagingSolarSystemId}"}",
+                SystemName = metadata?.SolarSystemName,
+                ConstellationName = metadata?.ConstellationName,
+                RegionName = metadata?.RegionName,
+                Incursion = incursion
             });
         }
 
