@@ -10,10 +10,12 @@ namespace Hisa.App;
 
 public partial class MiningOverlayWindow : Window
 {
+    private const int DefaultPositionMargin = 16;
     public static MiningOverlayWindow? Current { get; private set; }
 
     private bool _isApplyingWindowPlacement;
     private bool _isRestoringInitialPlacement = true;
+    private bool _positionResetRequested;
 
     public MiningOverlayWindow()
     {
@@ -40,9 +42,18 @@ public partial class MiningOverlayWindow : Window
         }
 
         var placement = await vm.GetMiningOverlayWindowPlacementAsync();
-        if (placement is null)
+        if (_positionResetRequested)
         {
             _isRestoringInitialPlacement = false;
+            return;
+        }
+
+        if (placement is null)
+        {
+            var defaultPlacement = CreateDefaultWindowPlacement();
+            ApplyWindowPlacement(defaultPlacement);
+            await vm.SaveMiningOverlayWindowPlacementAsync(defaultPlacement);
+            Dispatcher.UIThread.Post(() => _isRestoringInitialPlacement = false, DispatcherPriority.Background);
             return;
         }
 
@@ -88,6 +99,42 @@ public partial class MiningOverlayWindow : Window
         {
             _isApplyingWindowPlacement = false;
         }
+    }
+
+    public void ResetPosition()
+    {
+        _positionResetRequested = true;
+        var defaultPlacement = CreateDefaultWindowPlacement();
+        ApplyWindowPlacement(defaultPlacement);
+
+        if (DataContext is MainWindowViewModel vm)
+        {
+            _ = vm.SaveMiningOverlayWindowPlacementAsync(defaultPlacement);
+        }
+    }
+
+    private WindowPlacementState CreateDefaultWindowPlacement()
+    {
+        var screen = Screens.ScreenFromWindow(this) ?? Screens.Primary;
+        var workingArea = screen?.WorkingArea;
+        var position = new Avalonia.PixelPoint(
+            (workingArea?.X ?? 0) + DefaultPositionMargin,
+            (workingArea?.Y ?? 0) + DefaultPositionMargin);
+
+        return new WindowPlacementState
+        {
+            Width = Width,
+            Height = Height,
+            PositionX = position.X,
+            PositionY = position.Y,
+            WindowState = WindowState.ToString(),
+            ScreenWorkingAreaX = workingArea?.X,
+            ScreenWorkingAreaY = workingArea?.Y,
+            ScreenWorkingAreaWidth = workingArea?.Width,
+            ScreenWorkingAreaHeight = workingArea?.Height,
+            ScreenOffsetX = DefaultPositionMargin,
+            ScreenOffsetY = DefaultPositionMargin
+        };
     }
 
     private void OnClosing(object? sender, WindowClosingEventArgs e)

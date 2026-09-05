@@ -352,12 +352,22 @@ public sealed class SqliteSettingsService : ISettingsService
         command.Parameters.AddWithValue("$key", key);
 
         var result = await command.ExecuteScalarAsync(cancellationToken);
-        if (result is not string json)
+        if (result is not string json || string.IsNullOrWhiteSpace(json))
         {
             return default;
         }
 
-        return JsonSerializer.Deserialize<T>(json);
+        try
+        {
+            return JsonSerializer.Deserialize<T>(json);
+        }
+        catch (JsonException)
+        {
+            // Settings are user-local and may have been manually cleared or
+            // written by an older version. Treat an invalid value as absent so
+            // the caller can recreate it with its defaults.
+            return default;
+        }
     }
 
     public async Task SetAsync<T>(string key, T value, CancellationToken cancellationToken = default)

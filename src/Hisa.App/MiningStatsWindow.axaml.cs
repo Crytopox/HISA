@@ -119,6 +119,17 @@ public partial class MiningStatsWindow : Window
         vm.IsMiningOverlayVisible = false;
     }
 
+    private void OnResetOverlayPositionClicked(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel vm)
+        {
+            return;
+        }
+
+        EnsureOverlayWindow(vm);
+        _overlayWindow?.ResetPosition();
+    }
+
     private void OnOpenCharacterBreakdownClicked(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not MainWindowViewModel vm)

@@ -51,6 +51,7 @@
             </ComboBox>
             <Button Content="Refresh" Click="OnRefreshClicked" Margin="0,0,8,0" />
             <Button Content="{Binding MiningOverlayToggleLabel}" Click="OnToggleOverlayClicked" />
+            <Button Content="Reset Overlay Position" Click="OnResetOverlayPositionClicked" Margin="8,0,0,0" />
             <Button Content="Character Breakdown" Click="OnOpenCharacterBreakdownClicked" Margin="8,0,0,0" />
           </WrapPanel>
         </Grid>
