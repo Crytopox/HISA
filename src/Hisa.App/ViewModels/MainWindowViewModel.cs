@@ -5849,6 +5849,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                     var hostileBadgeColors = GetHostileBadgeColors(hostileScore);
                     var hostileCards = BuildIntelHostileCards(r.ReportedHostileNames, r.ReportedShipNames, r.ReportedShipTypeIds, r.ShipClasses, applyCachedIdentityData: false);
                     var shipsSummary = BuildIntelShipsSummary(r.ReportedShipNames, r.ReportedShipTypeIds, r.ShipClasses);
+                    var friendlyShipsSummary = BuildIntelShipsSummary(
+                        r.ReportedFriendlyShipNames,
+                        r.ReportedFriendlyShipTypeIds,
+                        r.ReportedFriendlyShipClasses);
 
                     return new IntelOverlayCard
                     {
@@ -5866,6 +5870,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                         MessageText = r.MessageText,
                         Hostiles = hostileCards,
                         ShipsSummary = shipsSummary,
+                        FriendlyShipsSummary = friendlyShipsSummary,
                         ShipClassSummary = shipSummary,
                         HostileCount = hostileScore,
                         ShipBadgeBackgroundHex = shipBadgeColors.BackgroundHex,
@@ -6095,6 +6100,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             .Where(id => id is > 0)
             .Select(id => id!.Value)
             .Concat(_intelCardsForView.SelectMany(c => c.ShipsSummary).Select(s => s.ShipTypeId).Where(id => id is > 0).Select(id => id!.Value))
+            .Concat(_intelCardsForView.SelectMany(c => c.FriendlyShipsSummary).Select(s => s.ShipTypeId).Where(id => id is > 0).Select(id => id!.Value))
             .Concat(_zkillmailCardsForView.Select(c => c.Victim.ShipTypeId).Where(id => id is > 0).Select(id => id!.Value))
             .Concat(_zkillmailCardsForView.SelectMany(c => c.VisibleAttackers).Select(a => a.ShipTypeId).Where(id => id is > 0).Select(id => id!.Value))
             .Concat(_zkillmailCardsForView.SelectMany(c => c.ShipsSummary).Select(s => s.ShipTypeId).Where(id => id is > 0).Select(id => id!.Value))
@@ -6133,6 +6139,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                     }
                 }
                 foreach (var ship in card.ShipsSummary)
+                {
+                    if (ship.ShipTypeId == typeId)
+                    {
+                        ship.ShipBitmap = bitmap;
+                    }
+                }
+                foreach (var ship in card.FriendlyShipsSummary)
                 {
                     if (ship.ShipTypeId == typeId)
                     {
@@ -6536,6 +6549,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         var hostileBadgeColors = GetHostileBadgeColors(hostileScore);
         var hostileCards = BuildIntelHostileCards(report.ReportedHostileNames, report.ReportedShipNames, report.ReportedShipTypeIds, report.ShipClasses, applyCachedIdentityData);
         var shipsSummary = BuildIntelShipsSummary(report.ReportedShipNames, report.ReportedShipTypeIds, report.ShipClasses);
+        var friendlyShipsSummary = BuildIntelShipsSummary(
+            report.ReportedFriendlyShipNames,
+            report.ReportedFriendlyShipTypeIds,
+            report.ReportedFriendlyShipClasses);
 
         return new IntelOverlayCard
         {
@@ -6553,6 +6570,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             MessageText = report.MessageText,
             Hostiles = hostileCards,
             ShipsSummary = shipsSummary,
+            FriendlyShipsSummary = friendlyShipsSummary,
             ShipClassSummary = shipSummary,
             HostileCount = hostileScore,
             ShipBadgeBackgroundHex = shipBadgeColors.BackgroundHex,

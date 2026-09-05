@@ -286,6 +286,16 @@ public sealed class IntelOverlayCard : System.ComponentModel.INotifyPropertyChan
     public int PopupHiddenShipSummaryCount => Math.Max(0, ShipsSummary.Count - PopupVisibleShips.Count);
     public bool PopupHasHiddenShipSummary => PopupHiddenShipSummaryCount > 0;
     public string PopupHiddenShipSummaryLabel => $"+{PopupHiddenShipSummaryCount} more";
+    public IReadOnlyList<IntelOverlayShipSummaryCard> FriendlyShipsSummary { get; init; } = [];
+    public bool HasFriendlyShips => FriendlyShipsSummary.Count > 0;
+    public IReadOnlyList<IntelOverlayShipSummaryCard> VisibleFriendlyShipsSummary => FriendlyShipsSummary.Take(MaxVisibleShipSummaryCards).ToList();
+    public int HiddenFriendlyShipSummaryCount => Math.Max(0, FriendlyShipsSummary.Count - VisibleFriendlyShipsSummary.Count);
+    public bool HasHiddenFriendlyShipSummary => HiddenFriendlyShipSummaryCount > 0;
+    public string HiddenFriendlyShipSummaryLabel => $"+{HiddenFriendlyShipSummaryCount} more";
+    public IReadOnlyList<IntelOverlayShipSummaryCard> PopupVisibleFriendlyShips => FriendlyShipsSummary.Take(MaxPopupVisibleShipSummaryCards).ToList();
+    public int PopupHiddenFriendlyShipSummaryCount => Math.Max(0, FriendlyShipsSummary.Count - PopupVisibleFriendlyShips.Count);
+    public bool PopupHasHiddenFriendlyShipSummary => PopupHiddenFriendlyShipSummaryCount > 0;
+    public string PopupHiddenFriendlyShipSummaryLabel => $"+{PopupHiddenFriendlyShipSummaryCount} more";
     public required string ShipClassSummary { get; init; }
     public required int HostileCount { get; init; }
     public required string ShipBadgeBackgroundHex { get; init; }

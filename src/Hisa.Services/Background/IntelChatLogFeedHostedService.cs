@@ -49,12 +49,18 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
     private static readonly Regex DscanInfoSystemRegex = new(
         @"System:\s*<b><a[^>]*>(?<system>[^<]+)</a>",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+    private static readonly Regex DscanInfoShipsListRegex = new(
+        @"<ul[^>]*\bid\s*=\s*[""']ships[""'][^>]*>(?<list>.*?)</ul>",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase | RegexOptions.Singleline);
     private static readonly Regex DscanInfoShipItemRegex = new(
         @"<li[^>]*data-sclid=""[^""]+""[^>]*>\s*<span[^>]*>\s*(?<count>\d+)\s*</span>\s*<b>(?<name>[^<]+)</b>",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase | RegexOptions.Singleline);
     private static readonly Regex DashboardShipRowRegex = new(
-        @"<tr[^>]*>\s*<td[^>]*title=""(?<class>[^""]+)""[^>]*>.*?&nbsp;(?<name>[^<]+)</td>\s*<td[^>]*>\s*<span>\s*(?<count>\d+)\s*</span>",
+        @"<tr(?<row>[^>]*)>\s*<td[^>]*title=""(?<class>[^""]+)""[^>]*>.*?&nbsp;(?<name>[^<]+)</td>\s*<td[^>]*>\s*<span>\s*(?<count>\d+)\s*</span>",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase | RegexOptions.Singleline);
+    private static readonly Regex HtmlBackgroundColorRegex = new(
+        @"background(?:-color)?\s*:\s*#(?<hex>[0-9A-Fa-f]{3,8})",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
     private readonly ISettingsService _settingsService;
     private readonly ISdeDatabase _sdeDatabase;
@@ -925,15 +931,19 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             ? parsed.Systems.ToHashSet(StringComparer.OrdinalIgnoreCase)
             : (linkedData?.Systems?.ToHashSet(StringComparer.OrdinalIgnoreCase) ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase));
         var mergedShipNames = parsed.ShipNames.ToList();
+        var mergedFriendlyShipNames = new List<string>();
         if (linkedData is not null)
         {
             mergedShipNames.AddRange(linkedData.ShipNames);
+            mergedFriendlyShipNames.AddRange(linkedData.FriendlyShipNames);
         }
 
         var mergedShipClasses = parsed.ShipClasses.ToList();
+        var mergedFriendlyShipClasses = new List<IntelShipClass>();
         if (linkedData is not null)
         {
             mergedShipClasses.AddRange(linkedData.ShipClasses);
+            mergedFriendlyShipClasses.AddRange(linkedData.FriendlyShipClasses);
         }
 
         if (mergedShipClasses.Count == 0 && mergedShipNames.Count > 0)
@@ -941,7 +951,13 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             mergedShipClasses.AddRange(ResolveShipClasses(mergedShipNames));
         }
 
+        if (mergedFriendlyShipClasses.Count == 0 && mergedFriendlyShipNames.Count > 0)
+        {
+            mergedFriendlyShipClasses.AddRange(ResolveShipClasses(mergedFriendlyShipNames));
+        }
+
         var reportedShipTypeIds = ResolveShipTypeIds(mergedShipNames);
+        var reportedFriendlyShipTypeIds = ResolveShipTypeIds(mergedFriendlyShipNames);
         var hostileCount = parsed.IsClear
             ? 0
             : Math.Max(parsed.ExplicitHostileCount, Math.Max(reportedHostileNames.Count, Math.Max(mergedShipNames.Count, mergedShipClasses.Count)));
@@ -957,6 +973,9 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             ShipClasses = mergedShipClasses,
             ReportedShipNames = mergedShipNames,
             ReportedShipTypeIds = reportedShipTypeIds,
+            ReportedFriendlyShipNames = mergedFriendlyShipNames,
+            ReportedFriendlyShipTypeIds = reportedFriendlyShipTypeIds,
+            ReportedFriendlyShipClasses = mergedFriendlyShipClasses,
             Alerts = parsed.Alerts,
             ReportedHostileNames = reportedHostileNames,
             IsClear = parsed.IsClear,
@@ -1044,6 +1063,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             .Select(candidate => _characterNameResolutionCache.TryGetValue(candidate, out var cached) ? cached.CanonicalName : null)
             .Where(name => !string.IsNullOrWhiteSpace(name))
             .Cast<string>()
+            .Where(name => !IsKnownShipTypeName(name))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
@@ -1116,6 +1136,8 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         var mergedSystems = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var mergedShipNames = new List<string>();
         var mergedShipClasses = new List<IntelShipClass>();
+        var mergedFriendlyShipNames = new List<string>();
+        var mergedFriendlyShipClasses = new List<IntelShipClass>();
         var client = CreateIntelLinkHttpClient();
         foreach (var url in urls)
         {
@@ -1140,6 +1162,8 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
 
                 mergedShipNames.AddRange(parsed.ShipNames);
                 mergedShipClasses.AddRange(parsed.ShipClasses);
+                mergedFriendlyShipNames.AddRange(parsed.FriendlyShipNames);
+                mergedFriendlyShipClasses.AddRange(parsed.FriendlyShipClasses);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -1151,7 +1175,8 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             }
         }
 
-        if (mergedSystems.Count == 0 && mergedShipNames.Count == 0 && mergedShipClasses.Count == 0)
+        if (mergedSystems.Count == 0 && mergedShipNames.Count == 0 && mergedShipClasses.Count == 0 &&
+            mergedFriendlyShipNames.Count == 0)
         {
             return null;
         }
@@ -1161,11 +1186,18 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             mergedShipClasses.AddRange(ResolveShipClasses(mergedShipNames));
         }
 
+        if (mergedFriendlyShipClasses.Count == 0 && mergedFriendlyShipNames.Count > 0)
+        {
+            mergedFriendlyShipClasses.AddRange(ResolveShipClasses(mergedFriendlyShipNames));
+        }
+
         return new ExternalIntelLinkData
         {
             Systems = mergedSystems,
             ShipNames = mergedShipNames,
-            ShipClasses = mergedShipClasses
+            ShipClasses = mergedShipClasses,
+            FriendlyShipNames = mergedFriendlyShipNames,
+            FriendlyShipClasses = mergedFriendlyShipClasses
         };
     }
 
@@ -1216,11 +1248,19 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             }
         }
 
+        var shipListHtml = html;
+        var shipsListMatch = DscanInfoShipsListRegex.Match(html);
+        if (shipsListMatch.Success)
+        {
+            shipListHtml = shipsListMatch.Groups["list"].Value;
+        }
+
         var shipNames = new List<string>();
-        foreach (Match match in DscanInfoShipItemRegex.Matches(html))
+        foreach (Match match in DscanInfoShipItemRegex.Matches(shipListHtml))
         {
             var shipName = WebUtility.HtmlDecode(match.Groups["name"].Value).Trim();
-            if (!int.TryParse(match.Groups["count"].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var count) || shipName.Length == 0)
+            if (!int.TryParse(match.Groups["count"].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var count) ||
+                !TryGetKnownShipType(shipName, out _, out _))
             {
                 continue;
             }
@@ -1246,22 +1286,39 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         data = new ExternalIntelLinkData();
         var shipNames = new List<string>();
         var shipClasses = new List<IntelShipClass>();
+        var friendlyShipNames = new List<string>();
+        var friendlyShipClasses = new List<IntelShipClass>();
         foreach (Match match in DashboardShipRowRegex.Matches(html))
         {
             var shipName = WebUtility.HtmlDecode(match.Groups["name"].Value).Trim();
             var shipClassName = WebUtility.HtmlDecode(match.Groups["class"].Value).Trim();
-            if (!int.TryParse(match.Groups["count"].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var count) || shipName.Length == 0)
+            if (!int.TryParse(match.Groups["count"].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var count) ||
+                !TryGetKnownShipType(shipName, out _, out var resolvedClass))
             {
                 continue;
             }
 
-            var mappedClass = MapExternalShipClass(shipClassName);
+            var mappedClass = resolvedClass != IntelShipClass.Unknown
+                ? resolvedClass
+                : MapExternalShipClass(shipClassName);
+            var affiliation = ParseScanRowAffiliation(match.Groups["row"].Value);
             for (var i = 0; i < count; i++)
             {
-                shipNames.Add(shipName);
-                if (mappedClass != IntelShipClass.Unknown)
+                if (affiliation == ScanShipAffiliation.Friendly)
                 {
-                    shipClasses.Add(mappedClass);
+                    friendlyShipNames.Add(shipName);
+                    if (mappedClass != IntelShipClass.Unknown)
+                    {
+                        friendlyShipClasses.Add(mappedClass);
+                    }
+                }
+                else
+                {
+                    shipNames.Add(shipName);
+                    if (mappedClass != IntelShipClass.Unknown)
+                    {
+                        shipClasses.Add(mappedClass);
+                    }
                 }
             }
         }
@@ -1271,13 +1328,20 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             shipClasses.AddRange(ResolveShipClasses(shipNames));
         }
 
+        if (friendlyShipClasses.Count == 0 && friendlyShipNames.Count > 0)
+        {
+            friendlyShipClasses.AddRange(ResolveShipClasses(friendlyShipNames));
+        }
+
         data = new ExternalIntelLinkData
         {
             Systems = new HashSet<string>(StringComparer.OrdinalIgnoreCase),
             ShipNames = shipNames,
-            ShipClasses = shipClasses
+            ShipClasses = shipClasses,
+            FriendlyShipNames = friendlyShipNames,
+            FriendlyShipClasses = friendlyShipClasses
         };
-        return shipNames.Count > 0 || shipClasses.Count > 0;
+        return shipNames.Count > 0 || shipClasses.Count > 0 || friendlyShipNames.Count > 0;
     }
 
     private static string RemoveExternalIntelLinks(string message)
@@ -1308,11 +1372,102 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         };
     }
 
+    private bool IsKnownShipTypeName(string name)
+    {
+        return TryGetKnownShipType(name, out _, out _);
+    }
+
+    private bool TryGetKnownShipType(string name, out int typeId, out IntelShipClass shipClass)
+    {
+        typeId = 0;
+        shipClass = IntelShipClass.Unknown;
+        var key = (name ?? string.Empty).Trim();
+        if (key.Length == 0)
+        {
+            return false;
+        }
+
+        if (ShipAliases.TryGetValue(key, out var canonical))
+        {
+            key = canonical;
+        }
+
+        var hasType = _shipTypeIdByName.TryGetValue(key, out typeId);
+        var hasClass = _shipClassByName.TryGetValue(key, out shipClass) && shipClass != IntelShipClass.Unknown;
+        return hasType || hasClass;
+    }
+
+    private static ScanShipAffiliation ParseScanRowAffiliation(string rowAttributes)
+    {
+        var match = HtmlBackgroundColorRegex.Match(rowAttributes ?? string.Empty);
+        if (!match.Success || !TryParseHtmlHexColor(match.Groups["hex"].Value, out var r, out var g, out var b))
+        {
+            return ScanShipAffiliation.Unknown;
+        }
+
+        var max = Math.Max(r, Math.Max(g, b));
+        var min = Math.Min(r, Math.Min(g, b));
+        if (max - min < 30)
+        {
+            return ScanShipAffiliation.Unknown;
+        }
+
+        if (g > r + 20 && g >= b)
+        {
+            return ScanShipAffiliation.Friendly;
+        }
+
+        if (r > g + 20 && r >= b)
+        {
+            return ScanShipAffiliation.Hostile;
+        }
+
+        return ScanShipAffiliation.Unknown;
+    }
+
+    private static bool TryParseHtmlHexColor(string hex, out int r, out int g, out int b)
+    {
+        r = 0;
+        g = 0;
+        b = 0;
+        var value = (hex ?? string.Empty).Trim();
+        if (value.Length is 3 or 4)
+        {
+            value = string.Concat(value[0], value[0], value[1], value[1], value[2], value[2]);
+        }
+        else if (value.Length is 8)
+        {
+            value = value[..6];
+        }
+
+        if (value.Length != 6 ||
+            !int.TryParse(value[..2], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out r) ||
+            !int.TryParse(value.Substring(2, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out g) ||
+            !int.TryParse(value.Substring(4, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out b))
+        {
+            r = 0;
+            g = 0;
+            b = 0;
+            return false;
+        }
+
+        return true;
+    }
+
+    private enum ScanShipAffiliation
+    {
+        Unknown = 0,
+        Hostile = 1,
+        Friendly = 2
+    }
+
     private sealed class ExternalIntelLinkData
     {
         public HashSet<string> Systems { get; init; } = new(StringComparer.OrdinalIgnoreCase);
         public List<string> ShipNames { get; init; } = [];
         public List<IntelShipClass> ShipClasses { get; init; } = [];
+        public List<string> FriendlyShipNames { get; init; } = [];
+        public List<IntelShipClass> FriendlyShipClasses { get; init; } = [];
     }
 
     private bool TryRegisterReport(IntelChatReport report)

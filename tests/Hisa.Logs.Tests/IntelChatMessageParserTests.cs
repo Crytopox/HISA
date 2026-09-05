@@ -27,7 +27,9 @@ public sealed class IntelChatMessageParserTests
         ["loki"] = IntelShipClass.Cruiser,
         ["raven"] = IntelShipClass.Battleship,
         ["nidhoggur"] = IntelShipClass.Capital,
-        ["capsule"] = IntelShipClass.Capsule
+        ["capsule"] = IntelShipClass.Capsule,
+        ["astero"] = IntelShipClass.Frigate,
+        ["nyx"] = IntelShipClass.Supercapital
     };
 
     private static IntelChatMessageParser CreateParser() => new(Systems, Ships, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -197,6 +199,33 @@ public sealed class IntelChatMessageParserTests
         var result = parser.Parse(message);
 
         Assert.Contains(expectedCandidate, result.HostileNameCandidates, StringComparer.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData("D-P1EH Astero")]
+    [InlineData("D-P1EH Nyx")]
+    [InlineData("D-P1EH 2x Astero")]
+    public void Parse_KnownShipHulls_AreNotNameCandidates(string message)
+    {
+        var parser = CreateParser();
+        var result = parser.Parse(message);
+
+        Assert.DoesNotContain("Astero", result.HostileNameCandidates, StringComparer.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Nyx", result.HostileNameCandidates, StringComparer.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Astero", result.HostileNames, StringComparer.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Nyx", result.HostileNames, StringComparer.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Parse_ThreeWordNameFollowedByShipHull_KeepsNameAndShip()
+    {
+        var parser = CreateParser();
+        var result = parser.Parse("D-P1EH Askulen Akasa Soikutsu Astero");
+
+        Assert.Contains("Askulen Akasa Soikutsu", result.HostileNameCandidates, StringComparer.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Astero", result.HostileNameCandidates, StringComparer.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Soikutsu Astero", result.HostileNameCandidates, StringComparer.OrdinalIgnoreCase);
+        Assert.Contains("Astero", result.ShipNames, StringComparer.OrdinalIgnoreCase);
     }
 
     [Fact]

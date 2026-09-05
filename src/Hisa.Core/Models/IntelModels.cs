@@ -45,6 +45,9 @@ public sealed class IntelChatReport
     public required IReadOnlyList<IntelShipClass> ShipClasses { get; init; }
     public required IReadOnlyList<string> ReportedShipNames { get; init; }
     public required IReadOnlyList<int> ReportedShipTypeIds { get; init; }
+    public IReadOnlyList<string> ReportedFriendlyShipNames { get; init; } = [];
+    public IReadOnlyList<int> ReportedFriendlyShipTypeIds { get; init; } = [];
+    public IReadOnlyList<IntelShipClass> ReportedFriendlyShipClasses { get; init; } = [];
     public required IReadOnlyList<IntelAlertType> Alerts { get; init; }
     public required IReadOnlyList<string> ReportedHostileNames { get; init; }
     public bool IsClear { get; init; }

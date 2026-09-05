@@ -133,30 +133,7 @@ public sealed partial class IntelChatMessageParser
             return [];
         }
 
-        var used = new bool[tokens.Count];
-        for (var i = 0; i < tokens.Count; i++)
-        {
-            var token = tokens[i];
-            if (systems.Contains(token) || IsCountToken(token))
-            {
-                used[i] = true;
-                continue;
-            }
-
-            // Mark ship tokens as used so they don't get counted as character names.
-            for (var len = Math.Min(5, tokens.Count - i); len >= 1; len--)
-            {
-                var phrase = string.Join(" ", tokens.Skip(i).Take(len));
-                if (TryResolveShipClass(phrase, out var shipClass) && shipClass != IntelShipClass.Unknown)
-                {
-                    for (var j = i; j < i + len; j++)
-                    {
-                        used[j] = true;
-                    }
-                    break;
-                }
-            }
-        }
+        var used = MarkNonCharacterTokens(tokens, systems, markCountTokens: true);
 
         var names = new List<string>();
         for (var i = 0; i < tokens.Count; i++)
@@ -221,10 +198,15 @@ public sealed partial class IntelChatMessageParser
             .Where(x => x.Length > 0)
             .ToList();
         var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (tokens.Count == 0)
+        {
+            return [];
+        }
 
+        var used = MarkNonCharacterTokens(tokens, systems, markCountTokens: false);
         for (var i = 0; i < tokens.Count; i++)
         {
-            if (!LooksLikePotentialCharacterToken(tokens[i], systems))
+            if (used[i] || !LooksLikePotentialCharacterToken(tokens[i], systems))
             {
                 continue;
             }
@@ -233,7 +215,7 @@ public sealed partial class IntelChatMessageParser
             for (var length = 1; length <= 3 && i + length <= tokens.Count; length++)
             {
                 var token = tokens[i + length - 1];
-                if (!LooksLikePotentialCharacterToken(token, systems))
+                if (used[i + length - 1] || !LooksLikePotentialCharacterToken(token, systems))
                 {
                     break;
                 }
@@ -244,6 +226,43 @@ public sealed partial class IntelChatMessageParser
         }
 
         return candidates.Take(80).ToList();
+    }
+
+    private bool[] MarkNonCharacterTokens(IReadOnlyList<string> tokens, IReadOnlySet<string> systems, bool markCountTokens)
+    {
+        var used = new bool[tokens.Count];
+        for (var i = 0; i < tokens.Count; i++)
+        {
+            if (used[i])
+            {
+                continue;
+            }
+
+            if (systems.Contains(tokens[i]) || (markCountTokens && IsCountToken(tokens[i])))
+            {
+                used[i] = true;
+                continue;
+            }
+
+            // Known hull names (and aliases) are ships, never character-name tokens.
+            for (var len = Math.Min(5, tokens.Count - i); len >= 1; len--)
+            {
+                var phrase = string.Join(" ", tokens.Skip(i).Take(len));
+                if (!TryResolveShipPhrase(phrase, out _))
+                {
+                    continue;
+                }
+
+                for (var j = i; j < i + len; j++)
+                {
+                    used[j] = true;
+                }
+
+                break;
+            }
+        }
+
+        return used;
     }
 
     private static bool LooksLikePotentialCharacterToken(string token, IReadOnlySet<string> systems)
@@ -411,6 +430,24 @@ public sealed partial class IntelChatMessageParser
             return true;
         }
 
+        return false;
+    }
+
+    private bool TryResolveShipPhrase(string phrase, out IntelShipClass shipClass)
+    {
+        if (TryResolveShipClass(phrase, out shipClass) && shipClass != IntelShipClass.Unknown)
+        {
+            return true;
+        }
+
+        if (phrase.Length > 1 && phrase.EndsWith('s') &&
+            TryResolveShipClass(phrase[..^1], out shipClass) &&
+            shipClass != IntelShipClass.Unknown)
+        {
+            return true;
+        }
+
+        shipClass = IntelShipClass.Unknown;
         return false;
     }
 

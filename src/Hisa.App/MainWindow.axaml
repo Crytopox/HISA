@@ -904,6 +904,51 @@
                             <TextBlock Text="{Binding HiddenShipSummaryLabel}" Foreground="#CDE1F8" FontSize="10" FontWeight="SemiBold" />
                           </Border>
 
+                          <TextBlock Text="Friendly"
+                                     Foreground="#8FDCB0"
+                                     FontSize="9"
+                                     FontWeight="Bold"
+                                     Margin="0,2,0,0"
+                                     IsVisible="{Binding HasFriendlyShips}" />
+                          <ItemsControl ItemsSource="{Binding VisibleFriendlyShipsSummary}" IsVisible="{Binding HasFriendlyShips}">
+                            <ItemsControl.ItemsPanel>
+                              <ItemsPanelTemplate>
+                                <WrapPanel ItemWidth="128" />
+                              </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                              <DataTemplate>
+                                <Border Background="#172A22"
+                                        BorderBrush="#2A5840"
+                                        BorderThickness="1"
+                                        CornerRadius="4"
+                                        Padding="3"
+                                        Margin="0,0,4,4"
+                                        Width="122"
+                                        ToolTip.Tip="{Binding ShipName}">
+                                  <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <Image Width="24" Height="24" Source="{Binding ShipBitmap}" IsVisible="{Binding HasShipBitmap}" />
+                                    <TextBlock Foreground="#C8F0D4" FontSize="10" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="86">
+                                      <Run Text="{Binding Count}" />
+                                      <Run Text="x " />
+                                      <Run Text="{Binding ShipName}" />
+                                    </TextBlock>
+                                  </StackPanel>
+                                </Border>
+                              </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                          </ItemsControl>
+                          <Border Background="#1B3A2A"
+                                  BorderBrush="#2A5840"
+                                  BorderThickness="1"
+                                  CornerRadius="4"
+                                  Padding="6,2"
+                                  Margin="0,0,4,4"
+                                  HorizontalAlignment="Left"
+                                  IsVisible="{Binding HasHiddenFriendlyShipSummary}">
+                            <TextBlock Text="{Binding HiddenFriendlyShipSummaryLabel}" Foreground="#C8F0D4" FontSize="10" FontWeight="SemiBold" />
+                          </Border>
+
                           <ItemsControl ItemsSource="{Binding VisibleHostiles}">
                             <ItemsControl.ItemTemplate>
                               <DataTemplate>

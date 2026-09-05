@@ -245,10 +245,38 @@ public class IntelChatLogFeedHostedServiceTests
         Assert.Equal(2, shipNames.Count(x => x == "Augoror"));
         Assert.Contains(IntelShipClass.Cruiser, shipClasses);
         Assert.Contains(IntelShipClass.Frigate, shipClasses);
+        Assert.Empty(GetStringList(parsed, "FriendlyShipNames"));
     }
 
     [Fact]
-    public void TryParseExternalIntelLinkData_AdashboardHtml_ExtractsShipsAndClasses()
+    public void TryParseExternalIntelLinkData_DscanInfoHtml_IgnoresShipClassSummaryList()
+    {
+        const string html = """
+            <div class="panel-heading lead headline">System: <b><a href="#">5C-RPA</a></b></div>
+            <ul class="list-group" id="ships">
+                <li class="list-group-item shipclass26" data-sclid="26"><span class="badge label label-default">2</span><b>Augoror</b></li>
+                <li class="list-group-item shipclass25" data-sclid="25"><span class="badge label label-default">1</span><b>Astero</b></li>
+            </ul>
+            <ul class="list-group" id="shipclasses">
+                <li class="list-group-item" data-sclid="26"><span class="badge label label-default">2</span><b>Cruiser</b></li>
+                <li class="list-group-item" data-sclid="419"><span class="badge label label-default">1</span><b>Covert Ops</b></li>
+                <li class="list-group-item" data-sclid="27"><span class="badge label label-default">3</span><b>Battlecruiser</b></li>
+            </ul>
+            """;
+
+        var parsed = ParseExternalIntelLinkData("https://dscan.info/v/example", html);
+        var shipNames = GetStringList(parsed, "ShipNames");
+
+        Assert.Equal(3, shipNames.Count);
+        Assert.Equal(2, shipNames.Count(x => x == "Augoror"));
+        Assert.Contains("Astero", shipNames);
+        Assert.DoesNotContain("Cruiser", shipNames);
+        Assert.DoesNotContain("Covert Ops", shipNames);
+        Assert.DoesNotContain("Battlecruiser", shipNames);
+    }
+
+    [Fact]
+    public void TryParseExternalIntelLinkData_AdashboardHtml_ExtractsShipsAndSplitsFriendly()
     {
         const string html = """
             <table class="table table-condensed">
@@ -260,17 +288,40 @@ public class IntelChatLogFeedHostedServiceTests
                 <td style="vertical-align: middle;" title="Cruiser"><span data-typeID="17720">&nbsp;</span>&nbsp;Cynabal</td>
                 <td style="text-align: right; width: 10%;"><span>1</span></td>
               </tr>
+              <tr data-race="1" style="background: #f5c6c6;">
+                <td style="vertical-align: middle;" title="Frigate"><span data-typeID="33468">&nbsp;</span>&nbsp;Astero</td>
+                <td style="text-align: right; width: 10%;"><span>1</span></td>
+              </tr>
+            </table>
+            <table class="table table-condensed">
+              <tr>
+                <td style="vertical-align: middle;" title="Battlecruiser">&nbsp;Battlecruiser</td>
+                <td style="text-align: right; width: 10%;"><span>4</span></td>
+              </tr>
+              <tr>
+                <td style="vertical-align: middle;" title="Destroyer">&nbsp;Destroyer</td>
+                <td style="text-align: right; width: 10%;"><span>2</span></td>
+              </tr>
             </table>
             """;
 
         var parsed = ParseExternalIntelLinkData("https://adashboard.info/intel/dscan/view/example", html);
         var shipNames = GetStringList(parsed, "ShipNames");
+        var friendlyShipNames = GetStringList(parsed, "FriendlyShipNames");
         var shipClasses = GetShipClassList(parsed, "ShipClasses");
+        var friendlyShipClasses = GetShipClassList(parsed, "FriendlyShipClasses");
 
-        Assert.Equal(3, shipNames.Count);
-        Assert.Equal(2, shipNames.Count(x => x == "Stiletto"));
-        Assert.Contains(IntelShipClass.Frigate, shipClasses);
+        Assert.Equal(2, shipNames.Count);
+        Assert.Contains("Cynabal", shipNames);
+        Assert.Contains("Astero", shipNames);
+        Assert.Equal(2, friendlyShipNames.Count);
+        Assert.All(friendlyShipNames, name => Assert.Equal("Stiletto", name));
+        Assert.DoesNotContain("Battlecruiser", shipNames);
+        Assert.DoesNotContain("Destroyer", shipNames);
+        Assert.DoesNotContain("Battlecruiser", friendlyShipNames);
         Assert.Contains(IntelShipClass.Cruiser, shipClasses);
+        Assert.Contains(IntelShipClass.Frigate, shipClasses);
+        Assert.Contains(IntelShipClass.Frigate, friendlyShipClasses);
     }
 
     [Fact]
@@ -295,6 +346,30 @@ public class IntelChatLogFeedHostedServiceTests
         Assert.Equal(["Askulen Akasa Soikutsu", "0314227"], names);
     }
 
+    [Fact]
+    public async Task ResolveReportedCharacterNamesAsync_DropsKnownShipHullNames()
+    {
+        var service = new IntelChatLogFeedHostedService(
+            new NoopSettingsService(),
+            new NoopSdeDatabase(),
+            new StubHttpClientFactory("""
+                {"characters":[{"id":123,"name":"Askulen Akasa Soikutsu"},{"id":124,"name":"Astero"},{"id":125,"name":"Nyx"}]}
+                """),
+            NullLogger<IntelChatLogFeedHostedService>.Instance);
+        ApplyShipMaps(service);
+
+        var method = typeof(IntelChatLogFeedHostedService).GetMethod(
+            "ResolveReportedCharacterNamesAsync",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(method);
+
+        var task = (Task<IReadOnlyList<string>>)method!.Invoke(service,
+            [new List<string> { "Astero", "Askulen Akasa Soikutsu", "Nyx" }, CancellationToken.None])!;
+        var names = await task;
+
+        Assert.Equal(["Askulen Akasa Soikutsu"], names);
+    }
+
     private static IntelChatLogFeedHostedService CreateServiceWithSystems(NoopSettingsService? settings = null)
     {
         var service = new IntelChatLogFeedHostedService(
@@ -317,6 +392,12 @@ public class IntelChatLogFeedHostedServiceTests
     private static IntelChatLogFeedHostedService CreateServiceWithSystemsAndShips()
     {
         var service = CreateServiceWithSystems();
+        ApplyShipMaps(service);
+        return service;
+    }
+
+    private static void ApplyShipMaps(IntelChatLogFeedHostedService service)
+    {
         var shipField = typeof(IntelChatLogFeedHostedService).GetField(
             "_shipClassByName",
             BindingFlags.Instance | BindingFlags.NonPublic);
@@ -326,9 +407,9 @@ public class IntelChatLogFeedHostedServiceTests
             ["Augoror"] = IntelShipClass.Cruiser,
             ["Astero"] = IntelShipClass.Frigate,
             ["Stiletto"] = IntelShipClass.Frigate,
-            ["Cynabal"] = IntelShipClass.Cruiser
+            ["Cynabal"] = IntelShipClass.Cruiser,
+            ["Nyx"] = IntelShipClass.Supercapital
         });
-        return service;
     }
 
     private static void ApplyReport(IntelChatLogFeedHostedService service, IntelChatReport report)
