@@ -148,6 +148,121 @@ public sealed class AlertRuleEngineTests
         Assert.Empty(nonMatching);
     }
 
+    [Fact]
+    public void Evaluate_JumpCount_UsesSpecificCharacterEvenWhenAnotherIsCloser()
+    {
+        var graph = CreateChainGraph();
+        var result = new AlertRuleEngine(new DijkstraRouteDistanceService()).Evaluate(new AlertEvaluationRequest
+        {
+            Rules =
+            [
+                new AlertRule
+                {
+                    Id = "specific",
+                    Name = "Specific",
+                    ScopeMode = AlertLocationScopeMode.SpecificCharacters,
+                    CharacterIds = [1],
+                    DistanceMode = AlertDistanceMode.Any
+                }
+            ],
+            SourceEvent = new AlertSourceEvent
+            {
+                EventType = AlertEventType.IntelReport,
+                TimestampUtc = DateTime.UtcNow,
+                SolarSystemId = 3,
+                DedupeKey = "jump-specific"
+            },
+            Graph = graph,
+            RoutingGraph = graph,
+            CharacterLocationsByCharacterId = new Dictionary<int, long> { [1] = 1, [2] = 3 }
+        });
+
+        Assert.Equal(2, Assert.Single(result).JumpCount);
+    }
+
+    [Fact]
+    public void Evaluate_JumpCount_UsesClosestTrackedCharacter()
+    {
+        var graph = CreateChainGraph();
+        var result = new AlertRuleEngine(new DijkstraRouteDistanceService()).Evaluate(new AlertEvaluationRequest
+        {
+            Rules =
+            [
+                new AlertRule
+                {
+                    Id = "any",
+                    Name = "Any",
+                    ScopeMode = AlertLocationScopeMode.AnyTrackedCharacter,
+                    DistanceMode = AlertDistanceMode.Any
+                }
+            ],
+            SourceEvent = new AlertSourceEvent
+            {
+                EventType = AlertEventType.IntelReport,
+                TimestampUtc = DateTime.UtcNow,
+                SolarSystemId = 3,
+                DedupeKey = "jump-closest"
+            },
+            Graph = graph,
+            RoutingGraph = graph,
+            CharacterLocationsByCharacterId = new Dictionary<int, long> { [1] = 1, [2] = 2 }
+        });
+
+        Assert.Equal(1, Assert.Single(result).JumpCount);
+    }
+
+    [Fact]
+    public void Evaluate_JumpCount_SameSystemIsZero()
+    {
+        var graph = CreateChainGraph();
+        var result = new AlertRuleEngine(new DijkstraRouteDistanceService()).Evaluate(new AlertEvaluationRequest
+        {
+            Rules =
+            [
+                new AlertRule
+                {
+                    Id = "zero",
+                    Name = "Zero",
+                    ScopeMode = AlertLocationScopeMode.Global
+                }
+            ],
+            SourceEvent = new AlertSourceEvent
+            {
+                EventType = AlertEventType.IntelReport,
+                TimestampUtc = DateTime.UtcNow,
+                SolarSystemId = 2,
+                DedupeKey = "jump-zero"
+            },
+            Graph = graph,
+            RoutingGraph = graph,
+            CharacterLocationsByCharacterId = new Dictionary<int, long> { [9] = 2 }
+        });
+
+        Assert.Equal(0, Assert.Single(result).JumpCount);
+    }
+
+    [Fact]
+    public void Evaluate_JumpCount_OmittedWhenNoCharacterLocation()
+    {
+        var graph = CreateChainGraph();
+        var result = new AlertRuleEngine(new DijkstraRouteDistanceService()).Evaluate(new AlertEvaluationRequest
+        {
+            Rules = [new AlertRule { Id = "global", Name = "Global", ScopeMode = AlertLocationScopeMode.Global }],
+            SourceEvent = new AlertSourceEvent
+            {
+                EventType = AlertEventType.IntelReport,
+                TimestampUtc = DateTime.UtcNow,
+                SolarSystemId = 2,
+                DedupeKey = "jump-none"
+            },
+            Graph = graph,
+            RoutingGraph = graph,
+            CharacterLocationsByCharacterId = new Dictionary<int, long>()
+        });
+
+        Assert.Null(Assert.Single(result).JumpCount);
+    }
+
     private static IReadOnlyList<AlertTriggered> EvaluateClearIntelReport(bool showClearIntelReports)
     {
         var engine = new AlertRuleEngine(new DijkstraRouteDistanceService());
@@ -222,6 +337,24 @@ public sealed class AlertRuleEngineTests
             SourceEvent = new AlertSourceEvent { EventType = AlertEventType.IntelReport, TimestampUtc = DateTime.UtcNow, SolarSystemId = 2 },
             Graph = graph,
             CharacterLocationsByCharacterId = new Dictionary<int, long> { [7] = 1 }
+        };
+    }
+
+    private static MapGraph CreateChainGraph()
+    {
+        return new MapGraph
+        {
+            Nodes =
+            [
+                new MapNode { Id = 1, Name = "A", X = 0, Y = 0 },
+                new MapNode { Id = 2, Name = "B", X = 1, Y = 0 },
+                new MapNode { Id = 3, Name = "C", X = 2, Y = 0 }
+            ],
+            Links =
+            [
+                new MapLink { FromId = 1, ToId = 2 },
+                new MapLink { FromId = 2, ToId = 3 }
+            ]
         };
     }
 }

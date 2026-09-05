@@ -19,6 +19,9 @@ public sealed class MapDataService : IMapDataService
     private readonly IIncursionStateService _incursionStateService;
     private readonly ISystemActivityStateService _systemActivityStateService;
 
+    private readonly object _systemJumpGraphGate = new();
+    private Task<MapGraph>? _systemJumpGraphTask;
+
     private sealed record StaticSolarSystemData(bool HasJoveObservatory, int IceFieldCount);
 
     private IReadOnlyList<SovUpgradeEntry> DecorateMiningSites(int solarSystemId, IReadOnlyList<SovUpgradeEntry> upgrades)
@@ -111,6 +114,32 @@ public sealed class MapDataService : IMapDataService
         var systems = await QuerySystemsAsync(null, coordinateMode, cancellationToken);
         var links = await QuerySystemLinksAsync(null, cancellationToken);
         return BuildNormalizedGraph(systems, links, applyLightDeoverlap: coordinateMode == MapCoordinateMode.ThreeDProjectedXZ);
+    }
+
+    public Task<MapGraph> GetSystemJumpGraphAsync(CancellationToken cancellationToken = default)
+    {
+        lock (_systemJumpGraphGate)
+        {
+            _systemJumpGraphTask ??= LoadSystemJumpGraphAsync();
+            return _systemJumpGraphTask;
+        }
+    }
+
+    private async Task<MapGraph> LoadSystemJumpGraphAsync()
+    {
+        var links = await QuerySystemLinksAsync(null, CancellationToken.None);
+        var nodeIds = new HashSet<long>();
+        foreach (var link in links)
+        {
+            nodeIds.Add(link.FromId);
+            nodeIds.Add(link.ToId);
+        }
+
+        var nodes = nodeIds
+            .OrderBy(id => id)
+            .Select(id => new MapNode { Id = id, Name = string.Empty, X = 0, Y = 0 })
+            .ToList();
+        return new MapGraph { Nodes = nodes, Links = links };
     }
 
     public async Task<MapGraph> GetUniverseRegionsGraphAsync(MapCoordinateMode coordinateMode, CancellationToken cancellationToken = default)

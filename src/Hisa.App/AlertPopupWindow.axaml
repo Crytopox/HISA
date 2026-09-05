@@ -31,7 +31,7 @@
                       BorderBrush="#2F4566"
                       CornerRadius="0,7,7,0">
                 <StackPanel Spacing="3">
-                  <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="4">
+                  <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="4">
                     <Button Grid.Column="0"
                             HorizontalAlignment="Left"
                             Background="Transparent"
@@ -46,10 +46,14 @@
                         <Run Text="{Binding IntelCard.RegionName}" FontWeight="SemiBold" FontSize="9" />
                       </TextBlock>
                     </Button>
-                    <Border Grid.Column="1" Background="{Binding IntelCard.HostileBadgeBackgroundHex}" BorderThickness="1" CornerRadius="4" Padding="5,1" BorderBrush="{Binding IntelCard.HostileBadgeBorderHex}">
+                    <Border Grid.Column="1" Padding="5,1" CornerRadius="4" BorderBrush="#5D83B5" BorderThickness="1" IsVisible="{Binding HasJumpCount}" ToolTip.Tip="{Binding JumpCountTooltip}">
+                      <Border.Background>#192838</Border.Background>
+                      <TextBlock Text="{Binding JumpCountLabel}" Foreground="#BFD8FF" FontSize="9" FontWeight="Bold" />
+                    </Border>
+                    <Border Grid.Column="2" Background="{Binding IntelCard.HostileBadgeBackgroundHex}" BorderThickness="1" CornerRadius="4" Padding="5,1" BorderBrush="{Binding IntelCard.HostileBadgeBorderHex}">
                       <TextBlock Text="{Binding IntelCard.HostileCount, StringFormat='Hostiles: {0}'}" Foreground="#FFFFFF" FontSize="9" FontWeight="SemiBold" />
                     </Border>
-                    <Border Grid.Column="2" Padding="5,1" CornerRadius="4" BorderBrush="#5D83B5" BorderThickness="1">
+                    <Border Grid.Column="3" Padding="5,1" CornerRadius="4" BorderBrush="#5D83B5" BorderThickness="1">
                       <Border.Background>#192838</Border.Background>
                       <TextBlock Text="{Binding IntelCard.AgeSummary}" Foreground="#BFD8FF" FontSize="9" FontWeight="Bold" />
                     </Border>
@@ -126,7 +130,7 @@
               <Border Grid.Column="0" CornerRadius="4,0,0,4" Background="#FFB347" />
               <Border Grid.Column="1" Padding="6,5" Background="#D01A2232" BorderThickness="1" BorderBrush="#3B4262" CornerRadius="0,7,7,0">
                 <StackPanel Spacing="3">
-                  <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="4">
+                  <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="4">
                     <Button Grid.Column="0"
                             HorizontalAlignment="Left"
                             Background="Transparent"
@@ -141,10 +145,14 @@
                         <Run Text="{Binding ZkillmailCard.RegionName}" FontWeight="SemiBold" FontSize="9" />
                       </TextBlock>
                     </Button>
-                    <Border Grid.Column="1" Background="#3A2A2A" BorderThickness="1" CornerRadius="4" Padding="5,1" BorderBrush="#8A4C4C">
+                    <Border Grid.Column="1" Padding="5,1" CornerRadius="4" BorderBrush="#5D83B5" BorderThickness="1" IsVisible="{Binding HasJumpCount}" ToolTip.Tip="{Binding JumpCountTooltip}">
+                      <Border.Background>#192838</Border.Background>
+                      <TextBlock Text="{Binding JumpCountLabel}" Foreground="#BFD8FF" FontSize="9" FontWeight="Bold" />
+                    </Border>
+                    <Border Grid.Column="2" Background="#3A2A2A" BorderThickness="1" CornerRadius="4" Padding="5,1" BorderBrush="#8A4C4C">
                       <TextBlock Text="{Binding ZkillmailCard.HostileCount, StringFormat='Hostiles: {0}'}" Foreground="#FFFFFF" FontSize="9" FontWeight="SemiBold" />
                     </Border>
-                    <Border Grid.Column="2" Padding="5,1" CornerRadius="4" Background="#241C35" BorderThickness="1" BorderBrush="#5D83B5">
+                    <Border Grid.Column="3" Padding="5,1" CornerRadius="4" Background="#241C35" BorderThickness="1" BorderBrush="#5D83B5">
                       <TextBlock Text="{Binding ZkillmailCard.AgeSummary}" Foreground="#BFD8FF" FontSize="9" FontWeight="Bold" />
                     </Border>
                   </Grid>
@@ -215,7 +223,7 @@
             <Grid ColumnDefinitions="4,*" IsVisible="{Binding IsMiningSiteAlert}">
               <Border Grid.Column="0" Background="{Binding MiningSiteAccentHex}" CornerRadius="5,0,0,5" />
               <Border Grid.Column="1" Padding="8,7" Background="#E012211B" BorderBrush="{Binding MiningSiteAccentHex}" BorderThickness="1" CornerRadius="0,7,7,0">
-                <Grid ColumnDefinitions="42,*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="8" RowSpacing="2">
+                <Grid ColumnDefinitions="42,*,Auto,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="8" RowSpacing="2">
                   <Border Grid.RowSpan="2" Width="38" Height="38" Background="{Binding MiningSiteAccentBackgroundHex}" BorderBrush="{Binding MiningSiteAccentHex}" BorderThickness="1" CornerRadius="6" Padding="4">
                     <Image Source="{Binding MiningSiteIcon}" Stretch="Uniform" />
                   </Border>
@@ -223,7 +231,11 @@
                     <TextBlock Text="{Binding MiningSiteLabel}" Foreground="{Binding MiningSiteAccentHex}" FontSize="9" FontWeight="Bold" />
                     <TextBlock Text="{Binding MiningSiteSystemName}" Foreground="#F0FFF5" FontSize="14" FontWeight="Bold" TextTrimming="CharacterEllipsis" />
                   </StackPanel>
-                  <Border Grid.Column="2" Background="{Binding MiningSiteAccentBackgroundHex}" BorderBrush="{Binding MiningSiteAccentHex}" BorderThickness="1" CornerRadius="4" Padding="5,2" VerticalAlignment="Top">
+                  <Border Grid.Column="2" Padding="5,1" CornerRadius="4" BorderBrush="#5D83B5" BorderThickness="1" VerticalAlignment="Top" IsVisible="{Binding HasJumpCount}" ToolTip.Tip="{Binding JumpCountTooltip}">
+                    <Border.Background>#192838</Border.Background>
+                    <TextBlock Text="{Binding JumpCountLabel}" Foreground="#BFD8FF" FontSize="9" FontWeight="Bold" />
+                  </Border>
+                  <Border Grid.Column="3" Background="{Binding MiningSiteAccentBackgroundHex}" BorderBrush="{Binding MiningSiteAccentHex}" BorderThickness="1" CornerRadius="4" Padding="5,2" VerticalAlignment="Top">
                     <TextBlock Text="{Binding TimestampLabel}" Foreground="#FFF4C8" FontSize="9" FontWeight="Bold" />
                   </Border>
                   <StackPanel Grid.Column="1" Grid.Row="1" Orientation="Horizontal" Spacing="6">
@@ -236,7 +248,7 @@
               <Border Grid.Column="0" Background="{Binding EnvironmentalCard.AccentHex}" CornerRadius="5,0,0,5" />
               <Border Grid.Column="1" Padding="8,7" Background="#E012211B" BorderBrush="{Binding EnvironmentalCard.AccentHex}" BorderThickness="1" CornerRadius="0,7,7,0">
                 <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="4">
-                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                  <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
                     <StackPanel Spacing="1">
                       <TextBlock Text="{Binding EnvironmentalCard.CategoryLabel}" Foreground="{Binding EnvironmentalCard.AccentHex}" FontSize="9" FontWeight="Bold" />
                       <Button HorizontalAlignment="Left" Background="Transparent" BorderThickness="0" Padding="0" Cursor="Hand" ClickMode="Press" Click="OnEnvironmentalCardSystemClicked">
@@ -247,7 +259,11 @@
                         </TextBlock>
                       </Button>
                     </StackPanel>
-                    <Border Grid.Column="1" Background="{Binding EnvironmentalCard.AccentBackgroundHex}" BorderBrush="{Binding EnvironmentalCard.AccentHex}" BorderThickness="1" CornerRadius="4" Padding="5,2" VerticalAlignment="Top">
+                    <Border Grid.Column="1" Padding="5,1" CornerRadius="4" BorderBrush="#5D83B5" BorderThickness="1" VerticalAlignment="Top" IsVisible="{Binding HasJumpCount}" ToolTip.Tip="{Binding JumpCountTooltip}">
+                      <Border.Background>#192838</Border.Background>
+                      <TextBlock Text="{Binding JumpCountLabel}" Foreground="#BFD8FF" FontSize="9" FontWeight="Bold" />
+                    </Border>
+                    <Border Grid.Column="2" Background="{Binding EnvironmentalCard.AccentBackgroundHex}" BorderBrush="{Binding EnvironmentalCard.AccentHex}" BorderThickness="1" CornerRadius="4" Padding="5,2" VerticalAlignment="Top">
                       <TextBlock Text="{Binding EnvironmentalCard.TimestampLabel}" Foreground="#FFF4C8" FontSize="9" FontWeight="Bold" />
                     </Border>
                   </Grid>
@@ -262,7 +278,13 @@
             </Grid>
             <Border IsVisible="{Binding HasGenericAlert}" Padding="6" Background="#182434" BorderBrush="#364D6D" BorderThickness="1" CornerRadius="6">
               <StackPanel Spacing="2">
-                <TextBlock Text="{Binding Title}" Foreground="#F1E8FF" FontSize="10" FontWeight="Bold"/>
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="4">
+                  <TextBlock Text="{Binding Title}" Foreground="#F1E8FF" FontSize="10" FontWeight="Bold"/>
+                  <Border Grid.Column="1" Padding="5,1" CornerRadius="4" BorderBrush="#5D83B5" BorderThickness="1" IsVisible="{Binding HasJumpCount}" ToolTip.Tip="{Binding JumpCountTooltip}">
+                    <Border.Background>#192838</Border.Background>
+                    <TextBlock Text="{Binding JumpCountLabel}" Foreground="#BFD8FF" FontSize="9" FontWeight="Bold" />
+                  </Border>
+                </Grid>
                 <TextBlock Text="{Binding Details}" Foreground="#E4ECF8" FontSize="10" TextWrapping="Wrap"/>
                 <TextBlock Text="{Binding TimestampLabel}" Foreground="#BFD8FF" FontSize="9" FontWeight="Bold"/>
               </StackPanel>

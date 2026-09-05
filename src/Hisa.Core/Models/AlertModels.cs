@@ -91,6 +91,7 @@ public sealed class AlertTriggered
     public required IReadOnlyList<AlertActionType> Actions { get; init; }
     public required string SoundFile { get; init; }
     public double SoundVolume { get; init; } = 1.0;
+    public int? JumpCount { get; init; }
 }
 
 public sealed class AlertEvaluationRequest
@@ -99,6 +100,7 @@ public sealed class AlertEvaluationRequest
     public required AlertSourceEvent SourceEvent { get; init; }
     public required MapGraph? Graph { get; init; }
     public required IReadOnlyDictionary<int, long> CharacterLocationsByCharacterId { get; init; }
+    public MapGraph? RoutingGraph { get; init; }
     public IReadOnlyList<AnsiblexLinkEntry> AnsiblexLinks { get; init; } = [];
     public double AnsiblexCostMultiplier { get; init; } = 1.0;
 }

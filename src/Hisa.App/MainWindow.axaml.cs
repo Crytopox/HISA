@@ -611,6 +611,7 @@ public partial class MainWindow : Window
                         : string.Empty,
                     MiningSiteIcon = isMiningSiteAlert ? LoadMiningSiteAlertIcon(alert.SourceEvent.MiningSiteUpgradeName, alert.SourceEvent.MiningSiteTier) : null,
                     MiningSiteWasOverdue = alert.SourceEvent.MiningSiteWasOverdue,
+                    JumpCount = alert.JumpCount,
                     ExpiresAtUtc = DateTime.UtcNow.AddSeconds(_alertPopupSettings.AutoDismissSeconds)
                 };
                 _alertPopupCards.Insert(0, card);
@@ -620,6 +621,7 @@ public partial class MainWindow : Window
                 }
 
                 _alertPopupWindow!.Show();
+                UpdateAlertPopupClickThrough();
             }
         });
     }
@@ -807,8 +809,8 @@ public partial class MainWindow : Window
         }
 
         _alertPopupWindow.Opacity = _alertPopupSettings.Opacity;
-        _alertPopupWindow.IsHitTestVisible = true;
         _alertPopupWindow.IsDragModeEnabled = _isAlertPopupDragMode;
+        UpdateAlertPopupClickThrough();
         if (_isAlertPopupDragMode)
         {
             _alertPopupWindow.SizeToContent = SizeToContent.Manual;
@@ -850,6 +852,30 @@ public partial class MainWindow : Window
         }
 
         _alertPopupWindow.Position = new PixelPoint(x, y);
+        UpdateAlertPopupClickThrough();
+    }
+
+    private void UpdateAlertPopupClickThrough()
+    {
+        if (_alertPopupWindow is null)
+        {
+            return;
+        }
+
+        var clickThrough = !_isAlertPopupDragMode && _alertPopupCards.Count == 0;
+        OverlayClickThrough.Set(_alertPopupWindow, clickThrough);
+        if (_alertPopupWindow.IsVisible)
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (_alertPopupWindow is null)
+                {
+                    return;
+                }
+
+                OverlayClickThrough.Set(_alertPopupWindow, !_isAlertPopupDragMode && _alertPopupCards.Count == 0);
+            }, DispatcherPriority.Background);
+        }
     }
 
     private void OnEnterPopupDragModeRequested(object? sender, EventArgs e)
@@ -858,6 +884,7 @@ public partial class MainWindow : Window
         EnsureAlertPopupWindow();
         ApplyAlertPopupWindowSettings();
         _alertPopupWindow!.Show();
+        UpdateAlertPopupClickThrough();
         _alertPopupSettingsWindow?.SetPlacementModeState(true);
     }
 
@@ -943,6 +970,8 @@ public partial class MainWindow : Window
             {
                 _alertPopupWindow.Hide();
             }
+
+            UpdateAlertPopupClickThrough();
             return;
         }
 
@@ -959,6 +988,8 @@ public partial class MainWindow : Window
         {
             _alertPopupWindow.Hide();
         }
+
+        UpdateAlertPopupClickThrough();
     }
 
     private void OnFitCenterClicked(object? sender, RoutedEventArgs e)
@@ -1920,17 +1951,12 @@ public partial class MainWindow : Window
 
         if (e.PropertyName == nameof(MainWindowViewModel.CurrentGraph))
         {
-            if (_boundVm.SelectedViewMode == Hisa.Core.Models.MapViewMode.Region)
+            if (_boundVm.SelectedViewMode == Hisa.Core.Models.MapViewMode.Region &&
+                _pendingFitToViewForRegionGraphChange)
             {
-                if (_pendingFitToViewForRegionGraphChange)
-                {
-                    _pendingFitToViewForRegionGraphChange = false;
-                    await Dispatcher.UIThread.InvokeAsync(() => MainMapControl.FitToView());
-                }
-                return;
+                _pendingFitToViewForRegionGraphChange = false;
+                await Dispatcher.UIThread.InvokeAsync(() => MainMapControl.FitToView());
             }
-
-            await RestoreViewportForCurrentModeAsync(fallbackToFit: true);
         }
     }
 

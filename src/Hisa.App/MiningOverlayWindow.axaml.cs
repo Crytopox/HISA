@@ -4,6 +4,8 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input;
 using Avalonia.Platform;
 using Avalonia.Threading;
+using Hisa.App.Services;
+using System.ComponentModel;
 using System.Linq;
 
 namespace Hisa.App;
@@ -16,6 +18,7 @@ public partial class MiningOverlayWindow : Window
     private bool _isApplyingWindowPlacement;
     private bool _isRestoringInitialPlacement = true;
     private bool _positionResetRequested;
+    private MainWindowViewModel? _subscribedVm;
 
     public MiningOverlayWindow()
     {
@@ -24,6 +27,8 @@ public partial class MiningOverlayWindow : Window
         Closing += OnClosing;
         Closed += OnClosed;
         PositionChanged += OnWindowPositionChanged;
+        DataContextChanged += OnDataContextChanged;
+        SubscribeToViewModel(DataContext as MainWindowViewModel);
     }
 
     public MiningOverlayWindow(MainWindowViewModel vm) : this()
@@ -34,6 +39,7 @@ public partial class MiningOverlayWindow : Window
     private async void OnOpened(object? sender, EventArgs e)
     {
         Current = this;
+        UpdateClickThrough();
 
         if (DataContext is not MainWindowViewModel vm)
         {
@@ -53,7 +59,11 @@ public partial class MiningOverlayWindow : Window
             var defaultPlacement = CreateDefaultWindowPlacement();
             ApplyWindowPlacement(defaultPlacement);
             await vm.SaveMiningOverlayWindowPlacementAsync(defaultPlacement);
-            Dispatcher.UIThread.Post(() => _isRestoringInitialPlacement = false, DispatcherPriority.Background);
+            Dispatcher.UIThread.Post(() =>
+            {
+                _isRestoringInitialPlacement = false;
+                UpdateClickThrough();
+            }, DispatcherPriority.Background);
             return;
         }
 
@@ -62,7 +72,47 @@ public partial class MiningOverlayWindow : Window
         {
             ApplyWindowPlacement(placement);
             _isRestoringInitialPlacement = false;
+            UpdateClickThrough();
         }, DispatcherPriority.Background);
+    }
+
+    private void OnDataContextChanged(object? sender, EventArgs e)
+    {
+        SubscribeToViewModel(DataContext as MainWindowViewModel);
+        UpdateClickThrough();
+    }
+
+    private void SubscribeToViewModel(MainWindowViewModel? vm)
+    {
+        if (ReferenceEquals(_subscribedVm, vm))
+        {
+            return;
+        }
+
+        if (_subscribedVm is not null)
+        {
+            _subscribedVm.PropertyChanged -= OnViewModelPropertyChanged;
+        }
+
+        _subscribedVm = vm;
+        if (_subscribedVm is not null)
+        {
+            _subscribedVm.PropertyChanged += OnViewModelPropertyChanged;
+        }
+    }
+
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(MainWindowViewModel.HasOverlayAggregateMiningStats))
+        {
+            UpdateClickThrough();
+        }
+    }
+
+    private void UpdateClickThrough()
+    {
+        var hasStats = DataContext is MainWindowViewModel vm && vm.HasOverlayAggregateMiningStats;
+        OverlayClickThrough.Set(this, clickThrough: !hasStats);
     }
 
     private void ApplyWindowPlacement(WindowPlacementState placement)
@@ -144,6 +194,7 @@ public partial class MiningOverlayWindow : Window
 
     private void OnClosed(object? sender, EventArgs e)
     {
+        SubscribeToViewModel(null);
         if (ReferenceEquals(Current, this))
         {
             Current = null;
@@ -152,6 +203,11 @@ public partial class MiningOverlayWindow : Window
 
     private void OnRootPointerPressed(object? sender, PointerPressedEventArgs e)
     {
+        if (DataContext is MainWindowViewModel vm && !vm.HasOverlayAggregateMiningStats)
+        {
+            return;
+        }
+
         try
         {
             BeginMoveDrag(e);

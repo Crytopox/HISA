@@ -85,9 +85,56 @@ public sealed class AlertRuleEngine : IAlertRuleEngine
                 TriggeredAtUtc = now,
                 Actions = actions,
                 SoundFile = string.IsNullOrWhiteSpace(winningRule.SoundFile) ? "default-alert.wav" : winningRule.SoundFile,
-                SoundVolume = Math.Clamp(winningRule.SoundVolume, 0.0, 1.0)
+                SoundVolume = Math.Clamp(winningRule.SoundVolume, 0.0, 1.0),
+                JumpCount = TryComputeJumpCount(winningRule, source, request)
             }
         ];
+    }
+
+    private int? TryComputeJumpCount(AlertRule rule, AlertSourceEvent source, AlertEvaluationRequest request)
+    {
+        var routingGraph = request.RoutingGraph ?? request.Graph;
+        if (routingGraph is null || routingGraph.Nodes.Count == 0 || source.SolarSystemId <= 0)
+        {
+            return null;
+        }
+
+        var sourceSystemIds = GetJumpReferenceSystemIds(rule, request.CharacterLocationsByCharacterId);
+        if (sourceSystemIds.Count == 0)
+        {
+            return null;
+        }
+
+        var distanceMap = _routeDistanceService.ComputeDistances(new RoutingDistancesRequest
+        {
+            Graph = routingGraph,
+            SourceSystemIds = sourceSystemIds,
+            CostMode = RoutingCostMode.HopCount,
+            IncludeAnsiblexLinks = rule.IncludeAnsiblexLinks,
+            AnsiblexLinks = rule.IncludeAnsiblexLinks ? request.AnsiblexLinks : [],
+            AnsiblexCostMultiplier = request.AnsiblexCostMultiplier
+        });
+        if (!distanceMap.TryGetValue(source.SolarSystemId, out var distance) || !double.IsFinite(distance) || distance < 0)
+        {
+            return null;
+        }
+
+        return (int)Math.Round(distance);
+    }
+
+    private static List<long> GetJumpReferenceSystemIds(AlertRule rule, IReadOnlyDictionary<int, long> characterLocations)
+    {
+        if (rule.ScopeMode == AlertLocationScopeMode.SpecificCharacters)
+        {
+            return rule.CharacterIds
+                .Where(characterLocations.ContainsKey)
+                .Select(characterId => characterLocations[characterId])
+                .Where(id => id > 0)
+                .Distinct()
+                .ToList();
+        }
+
+        return characterLocations.Values.Where(id => id > 0).Distinct().ToList();
     }
 
     private static (AlertRule Rule, int Index)? SelectWinningRule(IReadOnlyList<(AlertRule Rule, int Index)> matchingRules)

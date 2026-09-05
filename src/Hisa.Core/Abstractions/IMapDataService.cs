@@ -12,4 +12,5 @@ public interface IMapDataService
     Task<IReadOnlyList<MapSearchCandidate>> SearchAsync(string term, CancellationToken cancellationToken = default);
     Task<IReadOnlyDictionary<long, MapSystemMetadata>> GetSystemMetadataByIdsAsync(IReadOnlyCollection<long> systemIds, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<MapSystemPosition>> GetSystemsWithSdeCoordinatesAsync(CancellationToken cancellationToken = default);
+    Task<MapGraph> GetSystemJumpGraphAsync(CancellationToken cancellationToken = default);
 }

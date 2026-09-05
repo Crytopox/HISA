@@ -259,6 +259,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private MapCoordinateMode _selectedCoordinateMode;
     private RegionOption? _selectedRegion;
     private MapGraph? _currentGraph;
+    private MapGraph? _systemJumpGraph;
     private long? _selectedNodeId;
     private string _mapSearchText = string.Empty;
     private MapSearchCandidate? _selectedSearchSuggestion;
@@ -2477,6 +2478,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             }
         }
         RebuildMiningStatsCards();
+        _systemJumpGraph = await _mapDataService.GetSystemJumpGraphAsync();
         await ReloadGraphAsync();
         RebuildCharacterPresenceForView();
         RebuildIntelPresenceForView();
@@ -2602,7 +2604,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
-    private async Task ReloadGraphAsync()
+    private async Task ReloadGraphAsync(bool resetSelection = true)
     {
         if (_isBusy)
         {
@@ -2628,7 +2630,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             RebuildCharacterPresenceForView();
             RebuildIntelPresenceForView();
             await RebuildActivityCardsAsync(graph);
-            SelectedNodeId = null;
+            if (resetSelection)
+            {
+                SelectedNodeId = null;
+            }
             StatusText = $"Mode: {SelectedViewMode} | Coordinates: {SelectedCoordinateMode} | Nodes: {graph.Nodes.Count} | Links: {graph.Links.Count}";
             _ = _settingsService.SetAsync(ViewModeKey, SelectedViewMode);
             _ = _settingsService.SetAsync(RegionIdKey, SelectedRegion?.RegionId);
@@ -2646,6 +2651,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             RebuildCharacterPresenceForView();
             RebuildIntelPresenceForView();
             await RebuildActivityCardsAsync(CurrentGraph);
+            if (resetSelection)
+            {
+                SelectedNodeId = null;
+            }
         }
         finally
         {
@@ -2695,7 +2704,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
         Dispatcher.UIThread.Post(async () =>
         {
-            await ReloadGraphAsync();
+            await ReloadGraphAsync(resetSelection: false);
         });
     }
 
@@ -2735,7 +2744,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
         Dispatcher.UIThread.Post(async () =>
         {
-            await ReloadGraphAsync();
+            await ReloadGraphAsync(resetSelection: false);
         });
     }
 
@@ -2748,7 +2757,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
         Dispatcher.UIThread.Post(async () =>
         {
-            await ReloadGraphAsync();
+            await ReloadGraphAsync(resetSelection: false);
         });
     }
 
@@ -2809,7 +2818,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     {
         if (!_isInitializing)
         {
-            Dispatcher.UIThread.Post(async () => await ReloadGraphAsync());
+            Dispatcher.UIThread.Post(async () => await ReloadGraphAsync(resetSelection: false));
         }
     }
 
@@ -2899,7 +2908,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
         Dispatcher.UIThread.Post(async () =>
         {
-            await ReloadGraphAsync();
+            await ReloadGraphAsync(resetSelection: false);
         });
     }
 
@@ -2912,7 +2921,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
         Dispatcher.UIThread.Post(async () =>
         {
-            await ReloadGraphAsync();
+            await ReloadGraphAsync(resetSelection: false);
         });
     }
 
@@ -3088,6 +3097,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             Rules = _alertRules,
             SourceEvent = sourceEvent,
             Graph = CurrentGraph,
+            RoutingGraph = _systemJumpGraph,
             CharacterLocationsByCharacterId = characterLocations,
             AnsiblexLinks = _ansiblexNetworkStateService.CurrentLinks
         });

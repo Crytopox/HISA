@@ -24,6 +24,12 @@ public sealed class AlertPopupCard
     public EnvironmentalAlertPopupCard? EnvironmentalCard { get; init; }
     public bool HasEnvironmentalCard => EnvironmentalCard is not null;
     public bool HasGenericAlert => HasNoOverlayCard && !IsMiningSiteAlert && !HasEnvironmentalCard;
+    public int? JumpCount { get; init; }
+    public bool HasJumpCount => JumpCount is not null;
+    public string JumpCountLabel => JumpCount is int jumps ? $"{jumps}J" : string.Empty;
+    public string JumpCountTooltip => JumpCount is int jumps
+        ? jumps == 1 ? "1 jump" : $"{jumps} jumps"
+        : string.Empty;
     public required DateTime ExpiresAtUtc { get; init; }
 }
 
