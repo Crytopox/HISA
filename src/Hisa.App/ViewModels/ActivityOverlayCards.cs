@@ -353,9 +353,10 @@ public sealed class SystemMarkOverlayCard
     public required string RegionName { get; init; }
     public string? Label { get; init; }
     public required string ColorHex { get; init; }
-    public required string IconKindLabel { get; init; }
+    public Avalonia.Media.Geometry? IconGeometry { get; init; }
     public required bool ShowIcon { get; init; }
     public required bool ShowLabel { get; init; }
     public Hisa.Core.Models.SystemMarkIconKind? IconKind { get; init; }
+    public bool HasIcon => IconGeometry is not null;
     public bool HasLabel => !string.IsNullOrWhiteSpace(Label);
 }

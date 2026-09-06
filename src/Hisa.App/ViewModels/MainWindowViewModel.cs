@@ -16,6 +16,7 @@ using Hisa.App.ViewModels;
 using Hisa.Core.Abstractions;
 using Hisa.Core.Models;
 using Hisa.Logs.LocalChatLogs;
+using Hisa.Rendering;
 
 namespace Hisa.App;
 
@@ -2034,9 +2035,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 RegionName = string.IsNullOrWhiteSpace(mark.RegionName) ? "Unknown Region" : mark.RegionName,
                 Label = string.IsNullOrWhiteSpace(mark.Label) ? null : mark.Label.Trim(),
                 ColorHex = TryParseMarkColor(mark.ColorHex, out _, out var hex) ? hex : "#7AA5D6",
-                IconKindLabel = mark.ShowIcon && mark.IconKind is not null
-                    ? SystemMarkIcons.GetDisplayName(mark.IconKind.Value)
-                    : "Label",
+                IconGeometry = mark.ShowIcon && mark.IconKind is not null
+                    ? SystemMarkIconGeometry.Get(mark.IconKind.Value)
+                    : null,
                 ShowIcon = mark.ShowIcon && mark.IconKind is not null,
                 ShowLabel = mark.ShowLabel && !string.IsNullOrWhiteSpace(mark.Label),
                 IconKind = mark.IconKind
