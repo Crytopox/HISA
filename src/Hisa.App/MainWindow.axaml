@@ -17,14 +17,19 @@
   </Window.Resources>
   <Window.Styles>
     <Style Selector="ToggleButton.view-mode">
-      <Setter Property="Padding" Value="8,3" />
-      <Setter Property="MinWidth" Value="64" />
-      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Padding" Value="8,0" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="MinHeight" Value="24" />
+      <Setter Property="Height" Value="24" />
+      <Setter Property="CornerRadius" Value="3" />
       <Setter Property="Background" Value="#182333" />
       <Setter Property="BorderBrush" Value="#2B3C55" />
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="Foreground" Value="#C4D4EA" />
-      <Setter Property="FontSize" Value="12" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
     <Style Selector="ToggleButton.view-mode:checked">
       <Setter Property="Background" Value="#2E4664" />
@@ -55,19 +60,33 @@
       <Setter Property="Background" Value="#6695CCFF" />
     </Style>
     <Style Selector="Button.top-toolbar-action">
-      <Setter Property="MinWidth" Value="72" />
-      <Setter Property="Padding" Value="10,3" />
-      <Setter Property="FontSize" Value="12" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="MinHeight" Value="24" />
+      <Setter Property="Height" Value="24" />
+      <Setter Property="Padding" Value="8,0" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
     <Style Selector="ToggleButton.top-toolbar-action">
-      <Setter Property="MinWidth" Value="82" />
-      <Setter Property="Padding" Value="10,3" />
-      <Setter Property="FontSize" Value="12" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="MinHeight" Value="24" />
+      <Setter Property="Height" Value="24" />
+      <Setter Property="Padding" Value="8,0" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
     <Style Selector="ComboBox.top-toolbar-select">
-      <Setter Property="MinHeight" Value="30" />
-      <Setter Property="FontSize" Value="12" />
+      <Setter Property="MinHeight" Value="24" />
+      <Setter Property="Height" Value="24" />
+      <Setter Property="Padding" Value="6,1,0,1" />
+      <Setter Property="FontSize" Value="11" />
       <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
     <Style Selector="Button.region-favorite-button">
       <Setter Property="MinWidth" Value="24" />
@@ -84,23 +103,88 @@
       <Setter Property="BorderThickness" Value="1" />
     </Style>
     <Style Selector="TextBox.top-toolbar-search">
-      <Setter Property="MinHeight" Value="30" />
-      <Setter Property="FontSize" Value="12" />
+      <Setter Property="MinHeight" Value="24" />
+      <Setter Property="Height" Value="24" />
+      <Setter Property="Padding" Value="6,1" />
+      <Setter Property="FontSize" Value="11" />
       <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.chrome-handle">
+      <Setter Property="Padding" Value="10,0" />
+      <Setter Property="MinHeight" Value="14" />
+      <Setter Property="Height" Value="14" />
+      <Setter Property="FontSize" Value="9" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="Background" Value="#121A26" />
+      <Setter Property="BorderBrush" Value="#263244" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="Button.chrome-collapse">
+      <Setter Property="MinWidth" Value="22" />
+      <Setter Property="Width" Value="22" />
+      <Setter Property="MinHeight" Value="24" />
+      <Setter Property="Height" Value="24" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="FontSize" Value="10" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="ToggleButton.activity-strip">
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="MinHeight" Value="22" />
+      <Setter Property="Height" Value="22" />
+      <Setter Property="Padding" Value="8,0" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="CornerRadius" Value="3" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="ToggleButton.activity-strip:checked">
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="ToggleButton.view-mode /template/ ContentPresenter#PART_ContentPresenter,
+                     Button.top-toolbar-action /template/ ContentPresenter#PART_ContentPresenter,
+                     ToggleButton.top-toolbar-action /template/ ContentPresenter#PART_ContentPresenter,
+                     ToggleButton.activity-strip /template/ ContentPresenter#PART_ContentPresenter,
+                     Button.chrome-handle /template/ ContentPresenter#PART_ContentPresenter,
+                     Button.chrome-collapse /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="ToggleButton.view-mode TextBlock,
+                     Button.top-toolbar-action TextBlock,
+                     ToggleButton.top-toolbar-action TextBlock,
+                     ToggleButton.activity-strip TextBlock">
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="LineHeight" Value="12" />
+      <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="Button.chrome-handle TextBlock,
+                     Button.chrome-collapse TextBlock">
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="LineHeight" Value="10" />
+      <Setter Property="Padding" Value="0" />
     </Style>
   </Window.Styles>
   <Grid RowDefinitions="Auto,*,Auto">
     <Grid Grid.Row="0" RowDefinitions="Auto,Auto">
-    <Border Grid.Row="0" Padding="10,10" Background="#121A26" BorderBrush="#263244" BorderThickness="0,0,0,1" IsVisible="{Binding IsTopNavigationVisible}">
+    <Border Grid.Row="0" Padding="6,3" Background="#121A26" BorderBrush="#263244" BorderThickness="0,0,0,1" IsVisible="{Binding IsTopNavigationVisible}">
       <Grid x:Name="TopToolbarRootGrid"
             ColumnDefinitions="Auto,*,Auto"
             RowDefinitions="Auto,Auto"
-            ColumnSpacing="8"
+            ColumnSpacing="6"
             VerticalAlignment="Center">
         <StackPanel x:Name="TopToolbarModesPanel"
                     Grid.Column="0"
                     Orientation="Horizontal"
-                    Spacing="4">
+                    Spacing="3"
+                    VerticalAlignment="Center">
             <ToggleButton Classes="view-mode" Content="Universe" IsChecked="{Binding IsUniverseMode, Mode=TwoWay}" />
             <ToggleButton Classes="view-mode" Content="Regions" IsChecked="{Binding IsUniverseRegionsMode, Mode=TwoWay}" />
             <ToggleButton Classes="view-mode" Content="Region" IsChecked="{Binding IsRegionMode, Mode=TwoWay}" />
@@ -108,8 +192,9 @@
         <Grid x:Name="TopToolbarInputsPanel"
               Grid.Column="1"
               ColumnDefinitions="1.35*,1.9*,2.15*"
-              ColumnSpacing="6"
-              Margin="4,0">
+              ColumnSpacing="4"
+              Margin="4,0"
+              VerticalAlignment="Center">
           <ComboBox Grid.Column="0"
                     Classes="top-toolbar-select"
                     MinWidth="104"
@@ -196,9 +281,12 @@
                      Foreground="#D8E5F8" />
           </Border>
         </Popup>
-        <Grid x:Name="TopToolbarActionsHost"
-              Grid.Column="2">
-          <StackPanel x:Name="TopToolbarActionsPanel" Orientation="Horizontal" Spacing="6">
+        <StackPanel x:Name="TopToolbarActionsHost"
+                    Grid.Column="2"
+                    Orientation="Horizontal"
+                    Spacing="4"
+                    VerticalAlignment="Center">
+          <StackPanel x:Name="TopToolbarActionsPanel" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
             <Button Classes="top-toolbar-action" Content="Tools">
               <Button.Flyout>
                 <MenuFlyout>
@@ -231,7 +319,6 @@
           </StackPanel>
           <Button x:Name="TopToolbarOverflowButton"
                   Classes="top-toolbar-action"
-                  HorizontalAlignment="Right"
                   Content="Menu"
                   IsVisible="False">
             <Button.Flyout>
@@ -263,15 +350,20 @@
               </MenuFlyout>
             </Button.Flyout>
           </Button>
-        </Grid>
+          <Button Classes="chrome-collapse"
+                  Content="&#x25B2;"
+                  Click="OnToggleTopNavigationClicked"
+                  IsVisible="{Binding IsTopNavigationCollapseButtonVisible}"
+                  ToolTip.Tip="Hide top navigation"
+                  Foreground="#8A96A8"
+                  Background="#182333"
+                  BorderBrush="#2B3C55" />
+        </StackPanel>
       </Grid>
     </Border>
-    <Button Grid.Row="1" Content="&#x25B2; Hide top navigation" Click="OnToggleTopNavigationClicked"
-            IsVisible="{Binding IsTopNavigationCollapseButtonVisible}"
-            HorizontalAlignment="Center" Padding="10,1" FontSize="10" Background="#121A26" BorderBrush="#263244" Foreground="#8A96A8" />
-    <Button Grid.Row="1" Content="&#x25BC; Show top navigation" Click="OnToggleTopNavigationClicked"
+    <Button Grid.Row="1" Classes="chrome-handle" Content="&#x25BC; Show" Click="OnToggleTopNavigationClicked"
             IsVisible="{Binding IsTopNavigationHandleVisible}"
-            HorizontalAlignment="Center" Padding="10,1" FontSize="10" Background="#121A26" BorderBrush="#263244" Foreground="#AFC6E2" />
+            Foreground="#AFC6E2" ToolTip.Tip="Show top navigation" />
     </Grid>
 
     <Grid Grid.Row="1" ColumnDefinitions="*,Auto">
@@ -554,7 +646,7 @@
 
         <Border HorizontalAlignment="Right"
                 VerticalAlignment="Bottom"
-                Margin="12,12,12,56"
+                Margin="12,12,12,40"
                 Width="360"
                 MaxHeight="420"
                 Padding="10"
@@ -641,7 +733,7 @@
 
         <Border HorizontalAlignment="Right"
                 VerticalAlignment="Bottom"
-                Margin="12,12,12,56"
+                Margin="12,12,12,40"
                 Width="360"
                 MaxHeight="420"
                 Padding="10"
@@ -728,7 +820,7 @@
 
         <Border HorizontalAlignment="Right"
                 VerticalAlignment="Bottom"
-                Margin="12,12,12,56"
+                Margin="12,12,12,40"
                 Width="360"
                 MaxHeight="420"
                 Padding="10"
@@ -813,7 +905,7 @@
 
         <Border HorizontalAlignment="Right"
                 VerticalAlignment="Bottom"
-                Margin="12,12,12,56"
+                Margin="12,12,12,40"
                 Width="360"
                 MaxHeight="420"
                 Padding="10"
@@ -892,7 +984,7 @@
 
         <Border HorizontalAlignment="Right"
                 VerticalAlignment="Bottom"
-                Margin="12,12,12,56"
+                Margin="12,12,12,40"
                 Width="320"
                 MaxHeight="440"
                 Padding="10"
@@ -1143,7 +1235,7 @@
 
         <Border HorizontalAlignment="Right"
                 VerticalAlignment="Bottom"
-                Margin="12,12,12,56"
+                Margin="12,12,12,40"
                 Width="320"
                 MaxHeight="440"
                 Padding="10"
@@ -1442,61 +1534,64 @@
     </Grid>
 
     <Grid Grid.Row="2" RowDefinitions="Auto,Auto">
-    <Border Grid.Row="1" Padding="8" Background="#121A26" BorderThickness="0" IsVisible="{Binding IsBottomNavigationVisible}">
+    <Border Grid.Row="1" Padding="6,3" Background="#121A26" BorderBrush="#263244" BorderThickness="0,1,0,0" IsVisible="{Binding IsBottomNavigationVisible}">
       <Grid ColumnDefinitions="*,Auto">
-        <TextBlock Grid.Column="0" Text="{Binding StatusText}" Foreground="#8A96A8" VerticalAlignment="Center" IsVisible="{Binding IsDebugBuild}" />
-        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-          <ToggleButton Content="System Marks"
+        <TextBlock Grid.Column="0" Text="{Binding StatusText}" Foreground="#8A96A8" FontSize="11" VerticalAlignment="Center" IsVisible="{Binding IsDebugBuild}" />
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
+          <ToggleButton Classes="activity-strip"
+                        Content="System Marks"
                         IsChecked="{Binding IsSystemMarksOverlayOpen, Mode=TwoWay}"
                         Background="#162131"
                         BorderBrush="#2E4B73"
-                        Foreground="#D5E7FF"
-                        Padding="10,4"
-                        MinWidth="118" />
-          <ToggleButton Content="Thera/Turnur Wormholes"
+                        Foreground="#D5E7FF" />
+          <ToggleButton Classes="activity-strip"
+                        Content="Wormholes"
+                        ToolTip.Tip="Thera/Turnur Wormholes"
                         IsChecked="{Binding IsHubWormholesOverlayOpen, Mode=TwoWay}"
                         Background="#162131"
                         BorderBrush="#2E4B73"
-                        Foreground="#D5E7FF"
-                        Padding="10,4"
-                        MinWidth="188" />
-          <ToggleButton Content="Incursions"
+                        Foreground="#D5E7FF" />
+          <ToggleButton Classes="activity-strip"
+                        Content="Incursions"
                         IsChecked="{Binding IsIncursionsOverlayOpen, Mode=TwoWay}"
                         Background="#24172F"
                         BorderBrush="#5B3D7A"
-                        Foreground="#E6D9FF"
-                        Padding="10,4"
-                        MinWidth="108" />
-          <ToggleButton Content="Storms"
+                        Foreground="#E6D9FF" />
+          <ToggleButton Classes="activity-strip"
+                        Content="Storms"
                         IsChecked="{Binding IsStormsOverlayOpen, Mode=TwoWay}"
                         Background="#18283B"
                         BorderBrush="#35587B"
-                        Foreground="#D9EBFF"
-                        Padding="10,4"
-                        MinWidth="92" />
-          <ToggleButton Content="zKillmails"
+                        Foreground="#D9EBFF" />
+          <ToggleButton Classes="activity-strip"
+                        Content="zKillmails"
                         IsChecked="{Binding IsZkillmailsOverlayOpen, Mode=TwoWay}"
                         Background="#1E2133"
                         BorderBrush="#4B5E8E"
-                        Foreground="#D8E6FF"
-                        Padding="10,4"
-                        MinWidth="110" />
-          <ToggleButton Content="Intel Reports"
+                        Foreground="#D8E6FF" />
+          <ToggleButton Classes="activity-strip"
+                        Content="Intel"
+                        ToolTip.Tip="Intel Reports"
                         IsChecked="{Binding IsIntelOverlayOpen, Mode=TwoWay}"
                         Background="#2D2416"
                         BorderBrush="#8A6C34"
-                        Foreground="#FFE8C4"
-                        Padding="10,4"
-                        MinWidth="120" />
+                        Foreground="#FFE8C4" />
+          <Button Classes="chrome-collapse"
+                  Content="&#x25BC;"
+                  Click="OnToggleBottomNavigationClicked"
+                  IsVisible="{Binding IsBottomNavigationCollapseButtonVisible}"
+                  ToolTip.Tip="Hide bottom navigation"
+                  Foreground="#8A96A8"
+                  Background="#182333"
+                  BorderBrush="#2B3C55"
+                  Height="22"
+                  MinHeight="22" />
         </StackPanel>
       </Grid>
     </Border>
-    <Button Grid.Row="0" Content="&#x25BC; Hide bottom navigation" Click="OnToggleBottomNavigationClicked"
-            IsVisible="{Binding IsBottomNavigationCollapseButtonVisible}"
-            HorizontalAlignment="Center" Padding="10,1" FontSize="10" Background="#121A26" BorderBrush="#263244" Foreground="#8A96A8" />
-    <Button Grid.Row="1" Content="&#x25B2; Show bottom navigation" Click="OnToggleBottomNavigationClicked"
+    <Button Grid.Row="0" Classes="chrome-handle" Content="&#x25B2; Show" Click="OnToggleBottomNavigationClicked"
             IsVisible="{Binding IsBottomNavigationHandleVisible}"
-            HorizontalAlignment="Center" Padding="10,1" FontSize="10" Background="#121A26" BorderBrush="#263244" Foreground="#AFC6E2" />
+            Foreground="#AFC6E2" ToolTip.Tip="Show bottom navigation" />
     </Grid>
   </Grid>
 </Window>

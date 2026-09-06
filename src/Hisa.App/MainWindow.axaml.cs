@@ -21,7 +21,7 @@ namespace Hisa.App;
 
 public partial class MainWindow : Window
 {
-    private const double CompactTopToolbarThreshold = 1180;
+    private const double CompactTopToolbarThreshold = 1040;
     private const double TwoLineTopToolbarThreshold = 660;
     private bool _clearSearchOnNextFocus;
     private bool _isApplyingWindowPlacement;
@@ -266,7 +266,7 @@ public partial class MainWindow : Window
             Grid.SetRow(TopToolbarInputsPanel, 1);
             Grid.SetColumn(TopToolbarInputsPanel, 0);
             Grid.SetColumnSpan(TopToolbarInputsPanel, 3);
-            TopToolbarInputsPanel.Margin = new Thickness(0, 8, 0, 0);
+            TopToolbarInputsPanel.Margin = new Thickness(0, 4, 0, 0);
         }
         else
         {
