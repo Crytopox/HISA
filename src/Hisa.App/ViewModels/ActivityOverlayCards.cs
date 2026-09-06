@@ -345,3 +345,17 @@ public sealed class ZkillmailOverlayCard : System.ComponentModel.INotifyProperty
     public bool HasHiddenShipSummary => HiddenShipSummaryCount > 0;
     public string HiddenShipSummaryLabel => $"+{HiddenShipSummaryCount} more";
 }
+
+public sealed class SystemMarkOverlayCard
+{
+    public required long SolarSystemId { get; init; }
+    public required string SystemName { get; init; }
+    public required string RegionName { get; init; }
+    public string? Label { get; init; }
+    public required string ColorHex { get; init; }
+    public required string IconKindLabel { get; init; }
+    public required bool ShowIcon { get; init; }
+    public required bool ShowLabel { get; init; }
+    public Hisa.Core.Models.SystemMarkIconKind? IconKind { get; init; }
+    public bool HasLabel => !string.IsNullOrWhiteSpace(Label);
+}

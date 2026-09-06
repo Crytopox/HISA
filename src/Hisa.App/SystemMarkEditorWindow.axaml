@@ -1,0 +1,93 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:colorPicker="clr-namespace:Avalonia.Controls;assembly=Avalonia.Controls.ColorPicker"
+        xmlns:local="clr-namespace:Hisa.App"
+        x:Class="Hisa.App.SystemMarkEditorWindow"
+        x:DataType="local:SystemMarkEditorWindow"
+        Title="System Mark"
+        Width="460"
+        SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        Background="#0D131D">
+  <Border Margin="12" Padding="12" Background="#121A26" BorderBrush="#263244" BorderThickness="1" CornerRadius="6">
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="12">
+      <StackPanel Spacing="4">
+        <TextBlock Text="{Binding HeaderText}" FontSize="16" FontWeight="SemiBold" Foreground="#D8E5F8" />
+        <TextBlock Text="Choose an icon, color, and optional label. At least one of icon or label must be shown."
+                   Foreground="#8A96A8"
+                   TextWrapping="Wrap" />
+      </StackPanel>
+
+      <StackPanel Grid.Row="1" Spacing="6">
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock Text="Icon" FontWeight="SemiBold" Foreground="#C9D9EE" VerticalAlignment="Center" />
+          <CheckBox Grid.Column="1"
+                    Content="Show icon"
+                    IsChecked="{Binding ShowIcon, Mode=TwoWay}"
+                    Foreground="#BFD2EC" />
+        </Grid>
+        <ItemsControl ItemsSource="{Binding IconOptions}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <WrapPanel />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="local:SystemMarkIconOption">
+              <ToggleButton Margin="3"
+                            Padding="6,5"
+                            MinWidth="72"
+                            IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                            Tag="{Binding Kind}"
+                            Click="OnIconClicked">
+                <StackPanel Spacing="4" HorizontalAlignment="Center">
+                  <Path Width="16"
+                        Height="16"
+                        Stretch="Uniform"
+                        Fill="#EAF2FF"
+                        Data="{Binding Geometry}" />
+                  <TextBlock Text="{Binding DisplayName}"
+                             FontSize="10"
+                             Foreground="#C4D4EA"
+                             HorizontalAlignment="Center" />
+                </StackPanel>
+              </ToggleButton>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+
+      <Grid Grid.Row="2" ColumnDefinitions="*,160" ColumnSpacing="10">
+        <StackPanel Spacing="6">
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Text="Label" FontWeight="SemiBold" Foreground="#C9D9EE" VerticalAlignment="Center" />
+            <CheckBox Grid.Column="1"
+                      Content="Show label"
+                      IsChecked="{Binding ShowLabel, Mode=TwoWay}"
+                      Foreground="#BFD2EC" />
+          </Grid>
+          <TextBox Text="{Binding LabelText, Mode=TwoWay}"
+                   Watermark="Home, staging, clones…"
+                   MaxLength="32" />
+        </StackPanel>
+        <StackPanel Grid.Column="1" Spacing="6">
+          <TextBlock Text="Color" FontWeight="SemiBold" Foreground="#C9D9EE" />
+          <colorPicker:ColorPicker Color="{Binding PickerColor, Mode=TwoWay}"
+                                   IsAlphaEnabled="False"
+                                   IsAlphaVisible="False" />
+        </StackPanel>
+      </Grid>
+
+      <TextBlock Grid.Row="3" Text="{Binding ValidationText}" Foreground="#FF8F8F" TextWrapping="Wrap" />
+
+      <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+        <Button Content="Remove"
+                IsVisible="{Binding CanRemove}"
+                MinWidth="80"
+                Click="OnRemoveClicked" />
+        <Button Content="Save" MinWidth="80" Click="OnSaveClicked" />
+        <Button Content="Cancel" MinWidth="80" Click="OnCancelClicked" />
+      </StackPanel>
+    </Grid>
+  </Border>
+</Window>

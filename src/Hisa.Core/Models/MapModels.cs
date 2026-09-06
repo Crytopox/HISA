@@ -277,6 +277,73 @@ public sealed class JumpRangeDistanceDisplay
     public required bool IsInRange { get; init; }
 }
 
+public enum SystemMarkIconKind
+{
+    Pin = 0,
+    Home = 1,
+    Clone = 2,
+    Industry = 3,
+    Market = 4,
+    Staging = 5,
+    Mining = 6,
+    Capital = 7,
+    Station = 8,
+    Star = 9,
+    Flag = 10,
+    Shield = 11,
+    Crosshair = 12,
+    Warning = 13
+}
+
+public static class SystemMarkIcons
+{
+    public static IReadOnlyList<SystemMarkIconKind> All { get; } = Enum.GetValues<SystemMarkIconKind>();
+
+    public static string GetDisplayName(SystemMarkIconKind kind) => kind switch
+    {
+        SystemMarkIconKind.Pin => "Pin",
+        SystemMarkIconKind.Home => "Home",
+        SystemMarkIconKind.Clone => "Clone",
+        SystemMarkIconKind.Industry => "Industry",
+        SystemMarkIconKind.Market => "Market",
+        SystemMarkIconKind.Staging => "Staging",
+        SystemMarkIconKind.Mining => "Mining",
+        SystemMarkIconKind.Capital => "Capital",
+        SystemMarkIconKind.Station => "Station",
+        SystemMarkIconKind.Star => "Star",
+        SystemMarkIconKind.Flag => "Flag",
+        SystemMarkIconKind.Shield => "Shield",
+        SystemMarkIconKind.Crosshair => "Crosshair",
+        SystemMarkIconKind.Warning => "Warning",
+        _ => kind.ToString()
+    };
+}
+
+public sealed class UserSystemMark
+{
+    public required long SolarSystemId { get; init; }
+    public required string SolarSystemName { get; init; }
+    public string? RegionName { get; init; }
+    public SystemMarkIconKind? IconKind { get; init; }
+    public string? Label { get; init; }
+    public required string ColorHex { get; init; }
+    public bool ShowIcon { get; init; } = true;
+    public bool ShowLabel { get; init; }
+}
+
+public sealed class UserSystemMarkDisplay
+{
+    public required long NodeId { get; init; }
+    public required string SystemName { get; init; }
+    public string? RegionName { get; init; }
+    public SystemMarkIconKind? IconKind { get; init; }
+    public string? Label { get; init; }
+    public required uint ColorArgb { get; init; }
+    public required string ColorHex { get; init; }
+    public required bool ShowIcon { get; init; }
+    public required bool ShowLabel { get; init; }
+}
+
 public sealed class RegionOption : INotifyPropertyChanged
 {
     private bool _isFavorite;

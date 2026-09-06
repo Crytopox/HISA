@@ -317,6 +317,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _isStormsOverlayOpen;
     private bool _isIntelOverlayOpen;
     private bool _isZkillmailsOverlayOpen;
+    private bool _isSystemMarksOverlayOpen;
+    private bool _showUserSystemMarks = true;
+    private bool _limitSystemMarksToCurrentRegion;
     private HubWormholeMarkerMode _hubWormholeMarkerMode = HubWormholeMarkerMode.Badge;
     private readonly Dictionary<long, JumpRangeOriginSettings> _jumpRangeOriginsLyByNodeId = [];
     private readonly Dictionary<long, uint> _jumpRangeOriginColorByNodeId = [];
@@ -332,6 +335,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private IReadOnlyList<StormOverlayCard> _stormCardsForView = [];
     private IReadOnlyList<IntelOverlayCard> _intelCardsForView = [];
     private IReadOnlyList<ZkillmailOverlayCard> _zkillmailCardsForView = [];
+    private IReadOnlyList<SystemMarkOverlayCard> _systemMarkCardsForView = [];
+    private readonly Dictionary<long, UserSystemMark> _userSystemMarksByNodeId = [];
+    private IReadOnlyDictionary<long, UserSystemMarkDisplay> _userSystemMarksByNodeIdForView =
+        new Dictionary<long, UserSystemMarkDisplay>();
+    private readonly SemaphoreSlim _userSystemMarksPersistenceGate = new(1, 1);
     private readonly Dictionary<int, LocalCharacterSystemChange> _localCharacterLocationsByCharacterId = [];
     private readonly Dictionary<int, CharacterTrackingPreference> _characterTrackingPreferencesById = [];
     private readonly ObservableCollection<CharacterTrackingCardViewModel> _characterTrackingCards = [];
@@ -489,6 +497,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string OverlaySovFilterConfiguredKey = "Map.OverlaySovFilter.Configured";
     private const string AlwaysShowHubWormholesKey = "Map.AlwaysShowHubWormholes";
     private const string AlwaysShowIncursionsKey = "Map.AlwaysShowIncursions";
+    private const string UserSystemMarksKey = "Map.UserSystemMarks";
+    private const string ShowUserSystemMarksKey = "Map.ShowUserSystemMarks";
+    private const string SystemMarksLimitToCurrentRegionKey = "Map.SystemMarksLimitToCurrentRegion";
     private const string HubWormholeMarkerModeKey = "Map.HubWormholeMarkerMode";
     private const string ShowMissingConnectionMarkersKey = "Map.ShowMissingConnectionMarkers";
     private const string WindowPlacementKey = "Window.Main.Placement";
@@ -659,6 +670,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public IReadOnlyList<StormOverlayCard> StormCardsForView => _stormCardsForView;
     public IReadOnlyList<IntelOverlayCard> IntelCardsForView => _intelCardsForView;
     public IReadOnlyList<ZkillmailOverlayCard> ZkillmailCardsForView => _zkillmailCardsForView;
+    public IReadOnlyList<SystemMarkOverlayCard> SystemMarkCardsForView => _systemMarkCardsForView;
+    public IReadOnlyDictionary<long, UserSystemMarkDisplay> UserSystemMarksByNodeIdForView =>
+        _userSystemMarksByNodeIdForView;
     public IReadOnlyDictionary<long, int> CharacterPresenceCountsByNodeIdForView => _characterPresenceCountsByNodeId;
     public IReadOnlyDictionary<long, IReadOnlyList<string>> CharacterPresenceNamesByNodeIdForView => _characterPresenceNamesByNodeId;
     public IReadOnlyDictionary<long, IReadOnlyList<int>> CharacterPresenceCharacterIdsByNodeIdForView => _characterPresenceCharacterIdsByNodeId;
@@ -706,6 +720,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public string StormOverlayTitle => $"Metaliminal Storms ({_stormCardsForView.Count})";
     public string IntelOverlayTitle => $"Intel Reports ({_intelCardsForView.Count})";
     public string ZkillmailOverlayTitle => $"zKillmails ({_zkillmailCardsForView.Count})";
+    public string SystemMarkOverlayTitle => $"System Marks ({_systemMarkCardsForView.Count})";
     public bool LimitHubWormholesToCurrentRegion
     {
         get => _limitHubWormholesToCurrentRegion;
@@ -794,6 +809,25 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             _ = _settingsService.SetAsync(ZkillHideOutsideKnownSpaceKey, value);
             ScheduleActivityCardsRebuild();
             RebuildIntelPresenceForView();
+        }
+    }
+
+    public bool LimitSystemMarksToCurrentRegion
+    {
+        get => _limitSystemMarksToCurrentRegion;
+        set
+        {
+            if (!SetProperty(ref _limitSystemMarksToCurrentRegion, value))
+            {
+                return;
+            }
+
+            if (!_isInitializing)
+            {
+                _ = _settingsService.SetAsync(SystemMarksLimitToCurrentRegionKey, value);
+            }
+
+            RebuildUserSystemMarkCards();
         }
     }
     public string LogsPathValidationStatus => _logsPathValidationStatus;
@@ -1598,6 +1632,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
+    public bool ShowUserSystemMarks
+    {
+        get => _showUserSystemMarks;
+        set
+        {
+            if (SetProperty(ref _showUserSystemMarks, value) && !_isInitializing)
+            {
+                _ = _settingsService.SetAsync(ShowUserSystemMarksKey, value);
+            }
+        }
+    }
+
     public IEnumerable<string> SelectedIndicatorSovUpgradeKeys =>
         IndicatorSovUpgradeOptions.Where(x => x.IsSelected).Select(x => x.Key).ToList();
 
@@ -1714,11 +1760,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public bool HasStormOverlayData => _stormCardsForView.Count > 0;
     public bool HasIntelOverlayData => _intelCardsForView.Count > 0;
     public bool HasZkillmailOverlayData => _zkillmailCardsForView.Count > 0;
+    public bool HasSystemMarkOverlayData => _systemMarkCardsForView.Count > 0;
     public bool HasNoHubWormholeOverlayData => _hubWormholeCardsForView.Count == 0;
     public bool HasNoIncursionOverlayData => _incursionCardsForView.Count == 0;
     public bool HasNoStormOverlayData => _stormCardsForView.Count == 0;
     public bool HasNoIntelOverlayData => _intelCardsForView.Count == 0;
     public bool HasNoZkillmailOverlayData => _zkillmailCardsForView.Count == 0;
+    public bool HasNoSystemMarkOverlayData => _systemMarkCardsForView.Count == 0;
     public Task InitialLoadTask => _initialLoadTask;
 
     public bool IsHubWormholesOverlayOpen
@@ -1731,41 +1779,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 return;
             }
 
-            if (_isIncursionsOverlayOpen)
-            {
-                _isIncursionsOverlayOpen = false;
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsIncursionsOverlayOpen)));
-            }
-
-            if (_isIntelOverlayOpen)
-            {
-                _isIntelOverlayOpen = false;
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsIntelOverlayOpen)));
-            }
-
-            if (_isZkillmailsOverlayOpen)
-            {
-                _isZkillmailsOverlayOpen = false;
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsZkillmailsOverlayOpen)));
-            }
-
-            if (_isStormsOverlayOpen)
-            {
-                _isStormsOverlayOpen = false;
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsStormsOverlayOpen)));
-            }
-
-            if (_isIntelOverlayOpen)
-            {
-                _isIntelOverlayOpen = false;
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsIntelOverlayOpen)));
-            }
-
-            if (_isZkillmailsOverlayOpen)
-            {
-                _isZkillmailsOverlayOpen = false;
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsZkillmailsOverlayOpen)));
-            }
+            CloseOtherActivityOverlays(nameof(IsHubWormholesOverlayOpen));
         }
     }
 
@@ -1779,29 +1793,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 return;
             }
 
-            if (_isHubWormholesOverlayOpen)
-            {
-                _isHubWormholesOverlayOpen = false;
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsHubWormholesOverlayOpen)));
-            }
-
-            if (_isStormsOverlayOpen)
-            {
-                _isStormsOverlayOpen = false;
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsStormsOverlayOpen)));
-            }
-
-            if (_isIntelOverlayOpen)
-            {
-                _isIntelOverlayOpen = false;
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsIntelOverlayOpen)));
-            }
-
-            if (_isZkillmailsOverlayOpen)
-            {
-                _isZkillmailsOverlayOpen = false;
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsZkillmailsOverlayOpen)));
-            }
+            CloseOtherActivityOverlays(nameof(IsIncursionsOverlayOpen));
         }
     }
 
@@ -1815,29 +1807,21 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 return;
             }
 
-            if (_isHubWormholesOverlayOpen)
+            CloseOtherActivityOverlays(nameof(IsStormsOverlayOpen));
+        }
+    }
+
+    public bool IsSystemMarksOverlayOpen
+    {
+        get => _isSystemMarksOverlayOpen;
+        set
+        {
+            if (!SetProperty(ref _isSystemMarksOverlayOpen, value) || !value)
             {
-                _isHubWormholesOverlayOpen = false;
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsHubWormholesOverlayOpen)));
+                return;
             }
 
-            if (_isIncursionsOverlayOpen)
-            {
-                _isIncursionsOverlayOpen = false;
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsIncursionsOverlayOpen)));
-            }
-
-            if (_isIntelOverlayOpen)
-            {
-                _isIntelOverlayOpen = false;
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsIntelOverlayOpen)));
-            }
-
-            if (_isZkillmailsOverlayOpen)
-            {
-                _isZkillmailsOverlayOpen = false;
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsZkillmailsOverlayOpen)));
-            }
+            CloseOtherActivityOverlays(nameof(IsSystemMarksOverlayOpen));
         }
     }
 
@@ -1908,6 +1892,215 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         finally
         {
             _jumpRangeOriginsPersistenceGate.Release();
+        }
+    }
+
+    private void CloseOtherActivityOverlays(string keepPropertyName)
+    {
+        CloseActivityOverlayIfOpen(ref _isHubWormholesOverlayOpen, nameof(IsHubWormholesOverlayOpen), keepPropertyName);
+        CloseActivityOverlayIfOpen(ref _isIncursionsOverlayOpen, nameof(IsIncursionsOverlayOpen), keepPropertyName);
+        CloseActivityOverlayIfOpen(ref _isStormsOverlayOpen, nameof(IsStormsOverlayOpen), keepPropertyName);
+        CloseActivityOverlayIfOpen(ref _isIntelOverlayOpen, nameof(IsIntelOverlayOpen), keepPropertyName);
+        CloseActivityOverlayIfOpen(ref _isZkillmailsOverlayOpen, nameof(IsZkillmailsOverlayOpen), keepPropertyName);
+        CloseActivityOverlayIfOpen(ref _isSystemMarksOverlayOpen, nameof(IsSystemMarksOverlayOpen), keepPropertyName);
+    }
+
+    private void CloseActivityOverlayIfOpen(ref bool isOpen, string propertyName, string keepPropertyName)
+    {
+        if (isOpen && !string.Equals(propertyName, keepPropertyName, StringComparison.Ordinal))
+        {
+            isOpen = false;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    public bool TryGetUserSystemMark(long nodeId, out UserSystemMark? mark)
+    {
+        return _userSystemMarksByNodeId.TryGetValue(nodeId, out mark);
+    }
+
+    public bool HasUserSystemMark(long nodeId) => _userSystemMarksByNodeId.ContainsKey(nodeId);
+
+    public bool UpsertUserSystemMark(UserSystemMark mark)
+    {
+        var sanitized = SanitizeUserSystemMark(mark);
+        if (sanitized is null)
+        {
+            return false;
+        }
+
+        _userSystemMarksByNodeId[sanitized.SolarSystemId] = sanitized;
+        PublishUserSystemMarks();
+        _ = PersistUserSystemMarksAsync();
+        return true;
+    }
+
+    public bool ApplyUserSystemMarkPreset(
+        long nodeId,
+        string systemName,
+        string? regionName,
+        SystemMarkIconKind iconKind,
+        string label,
+        string colorHex)
+    {
+        return UpsertUserSystemMark(new UserSystemMark
+        {
+            SolarSystemId = nodeId,
+            SolarSystemName = systemName,
+            RegionName = regionName,
+            IconKind = iconKind,
+            Label = label,
+            ColorHex = colorHex,
+            ShowIcon = true,
+            ShowLabel = !string.IsNullOrWhiteSpace(label)
+        });
+    }
+
+    public bool RemoveUserSystemMark(long nodeId)
+    {
+        if (!_userSystemMarksByNodeId.Remove(nodeId))
+        {
+            return false;
+        }
+
+        PublishUserSystemMarks();
+        _ = PersistUserSystemMarksAsync();
+        return true;
+    }
+
+    private Task PersistUserSystemMarksAsync()
+    {
+        return PersistUserSystemMarksCoreAsync();
+    }
+
+    private async Task PersistUserSystemMarksCoreAsync()
+    {
+        await _userSystemMarksPersistenceGate.WaitAsync();
+        try
+        {
+            var marks = _userSystemMarksByNodeId.Values
+                .OrderBy(x => x.SolarSystemName, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(x => x.SolarSystemId)
+                .ToList();
+            await _settingsService.SetAsync(UserSystemMarksKey, marks);
+        }
+        finally
+        {
+            _userSystemMarksPersistenceGate.Release();
+        }
+    }
+
+    private void PublishUserSystemMarks()
+    {
+        var display = new Dictionary<long, UserSystemMarkDisplay>(_userSystemMarksByNodeId.Count);
+        foreach (var mark in _userSystemMarksByNodeId.Values)
+        {
+            if (!TryParseMarkColor(mark.ColorHex, out var argb, out var hex))
+            {
+                continue;
+            }
+
+            display[mark.SolarSystemId] = new UserSystemMarkDisplay
+            {
+                NodeId = mark.SolarSystemId,
+                SystemName = mark.SolarSystemName,
+                RegionName = mark.RegionName,
+                IconKind = mark.IconKind,
+                Label = string.IsNullOrWhiteSpace(mark.Label) ? null : mark.Label.Trim(),
+                ColorArgb = argb,
+                ColorHex = hex,
+                ShowIcon = mark.ShowIcon && mark.IconKind is not null,
+                ShowLabel = mark.ShowLabel && !string.IsNullOrWhiteSpace(mark.Label)
+            };
+        }
+
+        _userSystemMarksByNodeIdForView = display;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(UserSystemMarksByNodeIdForView)));
+        RebuildUserSystemMarkCards();
+    }
+
+    private void RebuildUserSystemMarkCards()
+    {
+        var visibleNodeIds = CurrentGraph?.Nodes.Select(n => n.Id).ToHashSet() ?? [];
+        var limitToCurrent = LimitSystemMarksToCurrentRegion && SelectedViewMode == MapViewMode.Region;
+        _systemMarkCardsForView = _userSystemMarksByNodeId.Values
+            .Where(mark => !limitToCurrent || visibleNodeIds.Contains(mark.SolarSystemId))
+            .OrderBy(mark => mark.SolarSystemName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(mark => mark.SolarSystemId)
+            .Select(mark => new SystemMarkOverlayCard
+            {
+                SolarSystemId = mark.SolarSystemId,
+                SystemName = mark.SolarSystemName,
+                RegionName = string.IsNullOrWhiteSpace(mark.RegionName) ? "Unknown Region" : mark.RegionName,
+                Label = string.IsNullOrWhiteSpace(mark.Label) ? null : mark.Label.Trim(),
+                ColorHex = TryParseMarkColor(mark.ColorHex, out _, out var hex) ? hex : "#7AA5D6",
+                IconKindLabel = mark.ShowIcon && mark.IconKind is not null
+                    ? SystemMarkIcons.GetDisplayName(mark.IconKind.Value)
+                    : "Label",
+                ShowIcon = mark.ShowIcon && mark.IconKind is not null,
+                ShowLabel = mark.ShowLabel && !string.IsNullOrWhiteSpace(mark.Label),
+                IconKind = mark.IconKind
+            })
+            .ToList();
+
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SystemMarkCardsForView)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SystemMarkOverlayTitle)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasSystemMarkOverlayData)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasNoSystemMarkOverlayData)));
+    }
+
+    private static UserSystemMark? SanitizeUserSystemMark(UserSystemMark mark)
+    {
+        if (mark.SolarSystemId <= 0 || string.IsNullOrWhiteSpace(mark.SolarSystemName))
+        {
+            return null;
+        }
+
+        var label = string.IsNullOrWhiteSpace(mark.Label) ? null : mark.Label.Trim();
+        var showIcon = mark.ShowIcon && mark.IconKind is not null;
+        var showLabel = mark.ShowLabel && !string.IsNullOrWhiteSpace(label);
+        if (!showIcon && !showLabel)
+        {
+            return null;
+        }
+
+        if (!TryParseMarkColor(mark.ColorHex, out _, out var hex))
+        {
+            hex = "#7AA5D6";
+        }
+
+        return new UserSystemMark
+        {
+            SolarSystemId = mark.SolarSystemId,
+            SolarSystemName = mark.SolarSystemName.Trim(),
+            RegionName = string.IsNullOrWhiteSpace(mark.RegionName) ? null : mark.RegionName.Trim(),
+            IconKind = showIcon ? mark.IconKind : null,
+            Label = label,
+            ColorHex = hex,
+            ShowIcon = showIcon,
+            ShowLabel = showLabel
+        };
+    }
+
+    private static bool TryParseMarkColor(string? hex, out uint argb, out string normalizedHex)
+    {
+        argb = 0xFF7AA5D6;
+        normalizedHex = "#7AA5D6";
+        if (string.IsNullOrWhiteSpace(hex))
+        {
+            return false;
+        }
+
+        try
+        {
+            var color = Avalonia.Media.Color.Parse(hex.Trim());
+            argb = color.ToUInt32();
+            normalizedHex = $"#{color.R:X2}{color.G:X2}{color.B:X2}";
+            return true;
+        }
+        catch
+        {
+            return false;
         }
     }
 
@@ -2426,6 +2619,19 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         ApplySelectedSovKeys(OverlaySovUpgradeOptions, overlayKeys, overlayConfigured);
         AlwaysShowHubWormholes = await _settingsService.GetAsync<bool?>(AlwaysShowHubWormholesKey) ?? true;
         AlwaysShowIncursions = await _settingsService.GetAsync<bool?>(AlwaysShowIncursionsKey) ?? true;
+        ShowUserSystemMarks = await _settingsService.GetAsync<bool?>(ShowUserSystemMarksKey) ?? true;
+        LimitSystemMarksToCurrentRegion = await _settingsService.GetAsync<bool?>(SystemMarksLimitToCurrentRegionKey) ?? false;
+        var savedSystemMarks = await _settingsService.GetAsync<List<UserSystemMark>>(UserSystemMarksKey) ?? [];
+        _userSystemMarksByNodeId.Clear();
+        foreach (var saved in savedSystemMarks)
+        {
+            var sanitized = SanitizeUserSystemMark(saved);
+            if (sanitized is not null)
+            {
+                _userSystemMarksByNodeId[sanitized.SolarSystemId] = sanitized;
+            }
+        }
+        PublishUserSystemMarks();
         HubWormholeMarkerMode = await _settingsService.GetAsync<HubWormholeMarkerMode?>(HubWormholeMarkerModeKey) ?? HubWormholeMarkerMode.Badge;
         ShowMissingConnectionMarkers = await _settingsService.GetAsync<bool?>(ShowMissingConnectionMarkersKey) ?? true;
         ValidateLogsRootPath();
@@ -2542,29 +2748,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 return;
             }
 
-            if (_isHubWormholesOverlayOpen)
-            {
-                _isHubWormholesOverlayOpen = false;
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsHubWormholesOverlayOpen)));
-            }
-
-            if (_isIncursionsOverlayOpen)
-            {
-                _isIncursionsOverlayOpen = false;
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsIncursionsOverlayOpen)));
-            }
-
-            if (_isStormsOverlayOpen)
-            {
-                _isStormsOverlayOpen = false;
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsStormsOverlayOpen)));
-            }
-
-            if (_isZkillmailsOverlayOpen)
-            {
-                _isZkillmailsOverlayOpen = false;
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsZkillmailsOverlayOpen)));
-            }
+            CloseOtherActivityOverlays(nameof(IsIntelOverlayOpen));
         }
     }
 
@@ -2578,29 +2762,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 return;
             }
 
-            if (_isHubWormholesOverlayOpen)
-            {
-                _isHubWormholesOverlayOpen = false;
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsHubWormholesOverlayOpen)));
-            }
-
-            if (_isIncursionsOverlayOpen)
-            {
-                _isIncursionsOverlayOpen = false;
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsIncursionsOverlayOpen)));
-            }
-
-            if (_isStormsOverlayOpen)
-            {
-                _isStormsOverlayOpen = false;
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsStormsOverlayOpen)));
-            }
-
-            if (_isIntelOverlayOpen)
-            {
-                _isIntelOverlayOpen = false;
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsIntelOverlayOpen)));
-            }
+            CloseOtherActivityOverlays(nameof(IsZkillmailsOverlayOpen));
         }
     }
 
@@ -2629,6 +2791,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             RebuildJumpRangeOverlay();
             RebuildCharacterPresenceForView();
             RebuildIntelPresenceForView();
+            RebuildUserSystemMarkCards();
             await RebuildActivityCardsAsync(graph);
             if (resetSelection)
             {
@@ -2650,6 +2813,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             RebuildJumpRangeOverlay();
             RebuildCharacterPresenceForView();
             RebuildIntelPresenceForView();
+            RebuildUserSystemMarkCards();
             await RebuildActivityCardsAsync(CurrentGraph);
             if (resetSelection)
             {

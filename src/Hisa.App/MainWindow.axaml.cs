@@ -60,6 +60,10 @@ public partial class MainWindow : Window
     private readonly MenuItem _openInZkillboardMenuItem;
     private readonly MenuItem _openInKillmailAppMenuItem;
     private readonly MenuItem _jumpRangeMenuItem;
+    private readonly MenuItem _markSystemMenuItem;
+    private readonly MenuItem _markSystemPresetsMenuItem;
+    private readonly MenuItem _editMarkMenuItem;
+    private readonly MenuItem _removeMarkMenuItem;
     private readonly MenuItem _manageMiningSitesMenuItem;
     private readonly KillmailAppService _killmailAppService;
     private Point? _mapRightPressPoint;
@@ -130,6 +134,34 @@ public partial class MainWindow : Window
         _openInKillmailAppMenuItem.Classes.Add("map-node-menu-item");
         _openInKillmailAppMenuItem.Click += OnOpenInKillmailAppClicked;
         _jumpRangeMenuItem = BuildJumpRangeMenu(subMenufontSize);
+        _markSystemMenuItem = new MenuItem
+        {
+            Header = "Mark System…",
+            FontSize = subMenufontSize,
+            FontWeight = Avalonia.Media.FontWeight.SemiBold,
+            Padding = new Thickness(8, 3)
+        };
+        _markSystemMenuItem.Classes.Add("map-node-menu-item");
+        _markSystemMenuItem.Click += OnMarkSystemClicked;
+        _markSystemPresetsMenuItem = BuildSystemMarkPresetMenu(subMenufontSize);
+        _editMarkMenuItem = new MenuItem
+        {
+            Header = "Edit Mark…",
+            FontSize = subMenufontSize,
+            FontWeight = Avalonia.Media.FontWeight.SemiBold,
+            Padding = new Thickness(8, 3)
+        };
+        _editMarkMenuItem.Classes.Add("map-node-menu-item");
+        _editMarkMenuItem.Click += OnMarkSystemClicked;
+        _removeMarkMenuItem = new MenuItem
+        {
+            Header = "Remove Mark",
+            FontSize = subMenufontSize,
+            FontWeight = Avalonia.Media.FontWeight.SemiBold,
+            Padding = new Thickness(8, 3)
+        };
+        _removeMarkMenuItem.Classes.Add("map-node-menu-item");
+        _removeMarkMenuItem.Click += OnRemoveMarkClicked;
         _manageMiningSitesMenuItem = new MenuItem { Header = "Manage Mining Sites", FontSize = subMenufontSize, FontWeight = Avalonia.Media.FontWeight.SemiBold, Padding = new Thickness(8, 3) };
         _manageMiningSitesMenuItem.Classes.Add("map-node-menu-item");
         _manageMiningSitesMenuItem.Click += OnManageMiningSitesClicked;
@@ -137,7 +169,21 @@ public partial class MainWindow : Window
         {
             MinWidth = 0,
             FontSize = subMenufontSize,
-            ItemsSource = new object[] { _copySystemNameMenuItem, _openInViewMenuItem, _jumpRangeMenuItem, _manageMiningSitesMenuItem, new Separator(), _openInDotlanMenuItem, _openInKillmailAppMenuItem, _openInZkillboardMenuItem }
+            ItemsSource = new object[]
+            {
+                _copySystemNameMenuItem,
+                _openInViewMenuItem,
+                _jumpRangeMenuItem,
+                _markSystemMenuItem,
+                _markSystemPresetsMenuItem,
+                _editMarkMenuItem,
+                _removeMarkMenuItem,
+                _manageMiningSitesMenuItem,
+                new Separator(),
+                _openInDotlanMenuItem,
+                _openInKillmailAppMenuItem,
+                _openInZkillboardMenuItem
+            }
         };
         _mapNodeContextMenu.Classes.Add("map-node-menu");
         _miningSiteContextMenu = new ContextMenu
@@ -1213,6 +1259,11 @@ public partial class MainWindow : Window
                 : "Open in Universe";
             _copySystemNameMenuItem.Header = $"Copy '{_contextSystemName}'";
             _manageMiningSitesMenuItem.IsVisible = node.SovUpgrades.Any(x => x.UpgradeName.EndsWith(" Prospecting Array", StringComparison.OrdinalIgnoreCase));
+            var isMarked = vm.HasUserSystemMark(node.Id);
+            _markSystemMenuItem.IsVisible = !isMarked;
+            _markSystemPresetsMenuItem.IsVisible = !isMarked;
+            _editMarkMenuItem.IsVisible = isMarked;
+            _removeMarkMenuItem.IsVisible = isMarked;
             ConfigureMapNodeMenuPlacement(point);
             _mapNodeContextMenu.Open(MainMapControl);
             e.Handled = true;
@@ -1378,6 +1429,7 @@ public partial class MainWindow : Window
             Control { DataContext: WormholeOverlayCard wormholeCard } => wormholeCard.SolarSystemId,
             Control { DataContext: IncursionOverlayCard incursionCard } => incursionCard.SolarSystemId,
             Control { DataContext: StormOverlayCard stormCard } => stormCard.SolarSystemId,
+            Control { DataContext: SystemMarkOverlayCard markCard } => markCard.SolarSystemId,
             _ => 0
         };
         if (systemId <= 0)
@@ -1746,6 +1798,137 @@ public partial class MainWindow : Window
                 BuildJumpItem("Custom... (LY)", "custom", OnSetJumpRangeClicked)
             }
         };
+    }
+
+    private MenuItem BuildSystemMarkPresetMenu(int subMenuFontSize)
+    {
+        MenuItem BuildPreset(string header, string tag)
+        {
+            var item = new MenuItem
+            {
+                Header = header,
+                Tag = tag,
+                FontSize = subMenuFontSize,
+                FontWeight = Avalonia.Media.FontWeight.SemiBold,
+                Padding = new Thickness(8, 3)
+            };
+            item.Classes.Add("map-node-menu-item");
+            item.Click += OnSystemMarkPresetClicked;
+            return item;
+        }
+
+        return new MenuItem
+        {
+            Header = "Quick Mark",
+            FontSize = subMenuFontSize,
+            FontWeight = Avalonia.Media.FontWeight.SemiBold,
+            Padding = new Thickness(8, 3),
+            ItemsSource = new object[]
+            {
+                BuildPreset("Home", "home"),
+                BuildPreset("Clone", "clone"),
+                BuildPreset("Industry Hub", "industry"),
+                BuildPreset("Market", "market"),
+                BuildPreset("Staging", "staging"),
+                BuildPreset("Mining", "mining")
+            }
+        };
+    }
+
+    private async void OnMarkSystemClicked(object? sender, RoutedEventArgs e)
+    {
+        await OpenSystemMarkEditorForContextAsync();
+    }
+
+    private void OnRemoveMarkClicked(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel vm || _contextSystemId is null)
+        {
+            return;
+        }
+
+        vm.RemoveUserSystemMark(_contextSystemId.Value);
+    }
+
+    private void OnSystemMarkPresetClicked(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel vm ||
+            sender is not MenuItem { Tag: string tag } ||
+            _contextSystemId is null ||
+            string.IsNullOrWhiteSpace(_contextSystemName))
+        {
+            return;
+        }
+
+        var (kind, label, color) = tag switch
+        {
+            "home" => (SystemMarkIconKind.Home, "Home", "#5BA3F5"),
+            "clone" => (SystemMarkIconKind.Clone, "Clone", "#2DD4BF"),
+            "industry" => (SystemMarkIconKind.Industry, "Industry", "#F59E42"),
+            "market" => (SystemMarkIconKind.Market, "Market", "#E7C85A"),
+            "staging" => (SystemMarkIconKind.Staging, "Staging", "#EF4444"),
+            "mining" => (SystemMarkIconKind.Mining, "Mining", "#4ADE80"),
+            _ => (SystemMarkIconKind.Pin, "Mark", "#7AA5D6")
+        };
+
+        vm.ApplyUserSystemMarkPreset(
+            _contextSystemId.Value,
+            _contextSystemName,
+            ResolveContextRegionName(vm),
+            kind,
+            label,
+            color);
+    }
+
+    private async void OnEditSystemMarkClicked(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel vm ||
+            sender is not Control { DataContext: SystemMarkOverlayCard card })
+        {
+            return;
+        }
+
+        await OpenSystemMarkEditorAsync(vm, card.SolarSystemId, card.SystemName, card.RegionName);
+    }
+
+    private void OnRemoveSystemMarkClicked(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel vm ||
+            sender is not Control { DataContext: SystemMarkOverlayCard card })
+        {
+            return;
+        }
+
+        vm.RemoveUserSystemMark(card.SolarSystemId);
+    }
+
+    private async Task OpenSystemMarkEditorForContextAsync()
+    {
+        if (DataContext is not MainWindowViewModel vm ||
+            _contextSystemId is null ||
+            string.IsNullOrWhiteSpace(_contextSystemName))
+        {
+            return;
+        }
+
+        await OpenSystemMarkEditorAsync(vm, _contextSystemId.Value, _contextSystemName, ResolveContextRegionName(vm));
+    }
+
+    private async Task OpenSystemMarkEditorAsync(
+        MainWindowViewModel vm,
+        long systemId,
+        string systemName,
+        string? regionName)
+    {
+        vm.TryGetUserSystemMark(systemId, out var existing);
+        var editor = new SystemMarkEditorWindow(vm, systemId, systemName, regionName, existing);
+        await editor.ShowDialog(this);
+    }
+
+    private string? ResolveContextRegionName(MainWindowViewModel vm)
+    {
+        var node = vm.CurrentGraph?.Nodes.FirstOrDefault(n => n.Id == _contextSystemId);
+        return string.IsNullOrWhiteSpace(node?.RegionName) ? null : node.RegionName;
     }
 
     private async void OnSetJumpRangeClicked(object? sender, RoutedEventArgs e)

@@ -8,6 +8,7 @@ using Avalonia.Platform;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Hisa.Core.Models;
+using Hisa.Rendering;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -273,6 +274,10 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, bool>(nameof(AlwaysShowHubWormholes), false);
     public static readonly StyledProperty<bool> AlwaysShowIncursionsProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(AlwaysShowIncursions), false);
+    public static readonly StyledProperty<bool> ShowUserSystemMarksProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(ShowUserSystemMarks), true);
+    public static readonly StyledProperty<IReadOnlyDictionary<long, UserSystemMarkDisplay>?> UserSystemMarksByNodeIdProperty =
+        AvaloniaProperty.Register<MapControl, IReadOnlyDictionary<long, UserSystemMarkDisplay>?>(nameof(UserSystemMarksByNodeId));
     public static readonly StyledProperty<HubWormholeMarkerMode> HubWormholeMarkerModeProperty =
         AvaloniaProperty.Register<MapControl, HubWormholeMarkerMode>(nameof(HubWormholeMarkerMode), HubWormholeMarkerMode.Badge);
     public static readonly StyledProperty<bool> ShowEditorGridProperty =
@@ -391,6 +396,8 @@ public sealed class MapControl : Control
     private static readonly TimeSpan CharacterPortraitRetryDelay = TimeSpan.FromMinutes(2);
     private readonly List<(Rect Bounds, string Url)> _intelOverlayLinks = [];
     private readonly List<(Rect Bounds, MapSovUpgradeHit Hit)> _sovUpgradeIconHitTargets = [];
+    private readonly List<(Rect Bounds, IReadOnlyList<UserSystemMarkDisplay> Marks, Point Anchor)> _systemMarkClusterHits = [];
+    private int _hoveredSystemMarkClusterIndex = -1;
     private Point[] _screenPositions = [];
     private double _graphMinX;
     private double _graphMaxX;
@@ -687,6 +694,18 @@ public sealed class MapControl : Control
         set => SetValue(AlwaysShowIncursionsProperty, value);
     }
 
+    public bool ShowUserSystemMarks
+    {
+        get => GetValue(ShowUserSystemMarksProperty);
+        set => SetValue(ShowUserSystemMarksProperty, value);
+    }
+
+    public IReadOnlyDictionary<long, UserSystemMarkDisplay>? UserSystemMarksByNodeId
+    {
+        get => GetValue(UserSystemMarksByNodeIdProperty);
+        set => SetValue(UserSystemMarksByNodeIdProperty, value);
+    }
+
     public HubWormholeMarkerMode HubWormholeMarkerMode
     {
         get => GetValue(HubWormholeMarkerModeProperty);
@@ -925,6 +944,8 @@ public sealed class MapControl : Control
             OverlaySovUpgradeFilterKeysProperty,
             AlwaysShowHubWormholesProperty,
             AlwaysShowIncursionsProperty,
+            ShowUserSystemMarksProperty,
+            UserSystemMarksByNodeIdProperty,
             HubWormholeMarkerModeProperty,
             ShowEditorGridProperty,
             ShowEditorRegionLabelProperty,
@@ -1745,6 +1766,27 @@ public sealed class MapControl : Control
                 var skippedRadius = radius + 23.4;
                 context.DrawEllipse(null, JumpRouteSkippedRingPen, p, skippedRadius, skippedRadius);
             }
+        }
+
+        if (ViewMode != MapViewMode.UniverseRegions)
+        {
+            DrawUserSystemMarks(context, bounds);
+        }
+
+        for (var i = 0; i < Graph.Nodes.Count; i++)
+        {
+            var node = Graph.Nodes[i];
+            var p = _screenPositions[i];
+            if (ViewMode == MapViewMode.UniverseRegions || !IsPointVisible(p, bounds, 24))
+            {
+                continue;
+            }
+
+            var isSelected = SelectedNodeId == node.Id || (additionalSelectedSet?.Contains(node.Id) ?? false);
+            var isHovered = _hoveredNodeId == node.Id;
+            var universeNodeScale = GetUniverseNodeZoomScale();
+            var radius = (isSelected ? 9.3 : isHovered ? 8.4 : 6.75) * universeNodeScale;
+            var badgeY = p.Y - radius - 9.0;
             if (AlwaysShowHubWormholes && node.HubWormholeConnections.Count > 0)
             {
                 switch (HubWormholeMarkerMode)
@@ -1756,26 +1798,35 @@ public sealed class MapControl : Control
                         DrawHubWormholeHalo(context, p, node, radius);
                         break;
                     default:
-                        DrawHubWormholeBeacon(context, p, node);
+                    {
+                        var wormholeSize = MeasureHubWormholeBadge(node);
+                        var wormholeTopLeft = new Point(p.X - radius - NodeBadgeGap - wormholeSize.Width, badgeY);
+                        DrawHubWormholeBeacon(context, wormholeTopLeft, node);
                         break;
+                    }
                 }
             }
             var hasHubWormholeBadge = AlwaysShowHubWormholes &&
                                       node.HubWormholeConnections.Count > 0 &&
                                       HubWormholeMarkerMode == HubWormholeMarkerMode.Badge;
-            var hasIncursionBadge = AlwaysShowIncursions && node.HasActiveIncursion;
             if (AlwaysShowIncursions && node.HasActiveIncursion)
             {
-                var incursionVerticalOffset = hasHubWormholeBadge ? 14.0 : 0.0;
-                DrawIncursionBeacon(context, p, incursionVerticalOffset);
+                var incursionSize = 12.0;
+                var incursionX = p.X - radius - NodeBadgeGap - incursionSize;
+                if (hasHubWormholeBadge)
+                {
+                    var wormholeSize = MeasureHubWormholeBadge(node);
+                    incursionX -= NodeBadgeGap + wormholeSize.Width;
+                }
+
+                DrawIncursionBeacon(context, new Point(incursionX, badgeY));
             }
             if (ShowIndicatorCharacterPresence &&
                 CharacterPresenceCountsByNodeId is not null &&
                 CharacterPresenceCountsByNodeId.TryGetValue(node.Id, out var localCharacterCount) &&
                 localCharacterCount > 0)
             {
-                var placeLeft = hasHubWormholeBadge || hasIncursionBadge;
-                DrawCharacterPresenceBadge(context, p, radius, localCharacterCount, placeLeft);
+                DrawCharacterPresenceBadge(context, p, radius, localCharacterCount);
             }
 
             var labelVisibilityMargin = ViewMode == MapViewMode.Universe ? 180 : 96;
@@ -1809,6 +1860,8 @@ public sealed class MapControl : Control
             {
                 DrawHoverOverlay(context, _screenPositions[hoverIndex], hoverNode);
             }
+
+            DrawHoveredSystemMarkClusterOverlay(context, bounds);
         }
 
         if (ShouldShowUniverseRegionLabels())
@@ -2111,6 +2164,11 @@ public sealed class MapControl : Control
                 _hoveredNodeId = null;
                 InvalidateVisual();
             }
+            if (_hoveredSystemMarkClusterIndex >= 0)
+            {
+                _hoveredSystemMarkClusterIndex = -1;
+                InvalidateVisual();
+            }
             if (_hoveredRegionId is not null)
             {
                 _hoveredRegionId = null;
@@ -2128,6 +2186,16 @@ public sealed class MapControl : Control
             hoveredRegionId = TryGetHoveredRegionFromRegionLabel(point);
         }
 
+        var hoveredCluster = -1;
+        for (var i = _systemMarkClusterHits.Count - 1; i >= 0; i--)
+        {
+            if (_systemMarkClusterHits[i].Bounds.Contains(point))
+            {
+                hoveredCluster = i;
+                break;
+            }
+        }
+
         var changed = false;
         if (_hoveredNodeId != hoverId)
         {
@@ -2138,6 +2206,12 @@ public sealed class MapControl : Control
         if (_hoveredRegionId != hoveredRegionId)
         {
             _hoveredRegionId = hoveredRegionId;
+            changed = true;
+        }
+
+        if (_hoveredSystemMarkClusterIndex != hoveredCluster)
+        {
+            _hoveredSystemMarkClusterIndex = hoveredCluster;
             changed = true;
         }
 
@@ -4560,6 +4634,17 @@ public sealed class MapControl : Control
         {
             detailLines.Add("Incursion: Active");
         }
+        if (ShowUserSystemMarks &&
+            UserSystemMarksByNodeId is not null &&
+            UserSystemMarksByNodeId.TryGetValue(node.Id, out var userMark))
+        {
+            var markSummary = userMark.ShowLabel && !string.IsNullOrWhiteSpace(userMark.Label)
+                ? userMark.Label
+                : userMark.IconKind is { } iconKind
+                    ? SystemMarkIcons.GetDisplayName(iconKind)
+                    : "Marked";
+            detailLines.Add($"Mark: {markSummary}");
+        }
         if (InfoBoxShowSystemJumps && node.SystemJumps > 0)
         {
             detailLines.Add($"Jumps: {node.SystemJumps}");
@@ -5966,7 +6051,311 @@ public sealed class MapControl : Control
         return size + 1.5 + text.Width + IndicatorIconSlotGap;
     }
 
-    private static void DrawIncursionBeacon(DrawingContext context, Point nodePoint, double verticalOffset = 0.0)
+    private const double SystemMarkIconSize = 14.0;
+    private const double NodeBadgeGap = 3.0;
+
+    private Point GetSystemMarkAnchor(MapNode node, Point nodePoint)
+    {
+        var isSelected = SelectedNodeId == node.Id;
+        var isHovered = _hoveredNodeId == node.Id;
+        var radius = (isSelected ? 9.3 : isHovered ? 8.4 : 6.75) * GetUniverseNodeZoomScale();
+        var x = nodePoint.X + radius + NodeBadgeGap;
+        var y = nodePoint.Y - radius - 9.0;
+        if (TryGetCharacterPresenceCount(node.Id, out var characterCount))
+        {
+            x = GetCharacterPresenceRect(nodePoint, radius, characterCount).Right + NodeBadgeGap;
+        }
+
+        return new Point(x, y);
+    }
+
+    private bool TryGetCharacterPresenceCount(long nodeId, out int count)
+    {
+        count = 0;
+        return ShowIndicatorCharacterPresence &&
+               CharacterPresenceCountsByNodeId is not null &&
+               CharacterPresenceCountsByNodeId.TryGetValue(nodeId, out count) &&
+               count > 0;
+    }
+
+    private void DrawUserSystemMarks(DrawingContext context, Rect bounds)
+    {
+        _systemMarkClusterHits.Clear();
+        if (!ShowUserSystemMarks ||
+            UserSystemMarksByNodeId is null ||
+            UserSystemMarksByNodeId.Count == 0 ||
+            ViewMode == MapViewMode.UniverseRegions)
+        {
+            if (_hoveredSystemMarkClusterIndex >= 0)
+            {
+                _hoveredSystemMarkClusterIndex = -1;
+            }
+
+            return;
+        }
+
+        var visible = new List<(UserSystemMarkDisplay Mark, Point Anchor)>();
+        foreach (var kvp in UserSystemMarksByNodeId)
+        {
+            if (!_nodeIndexById.TryGetValue(kvp.Key, out var index) ||
+                index < 0 ||
+                index >= _screenPositions.Length)
+            {
+                continue;
+            }
+
+            var nodePoint = _screenPositions[index];
+            if (!IsPointVisible(nodePoint, bounds, 48) ||
+                !_nodeById.TryGetValue(kvp.Key, out var markedNode))
+            {
+                continue;
+            }
+
+            visible.Add((kvp.Value, GetSystemMarkAnchor(markedNode, nodePoint)));
+        }
+
+        if (visible.Count == 0)
+        {
+            return;
+        }
+
+        var parent = new int[visible.Count];
+        for (var i = 0; i < parent.Length; i++)
+        {
+            parent[i] = i;
+        }
+
+        int Find(int i)
+        {
+            while (parent[i] != i)
+            {
+                parent[i] = parent[parent[i]];
+                i = parent[i];
+            }
+
+            return i;
+        }
+
+        const double clusterDistanceSquared = 18.0 * 18.0;
+        for (var i = 0; i < visible.Count; i++)
+        {
+            for (var j = i + 1; j < visible.Count; j++)
+            {
+                var dx = visible[i].Anchor.X - visible[j].Anchor.X;
+                var dy = visible[i].Anchor.Y - visible[j].Anchor.Y;
+                if ((dx * dx) + (dy * dy) > clusterDistanceSquared)
+                {
+                    continue;
+                }
+
+                var a = Find(i);
+                var b = Find(j);
+                if (a != b)
+                {
+                    parent[b] = a;
+                }
+            }
+        }
+
+        var groups = new Dictionary<int, List<int>>();
+        for (var i = 0; i < visible.Count; i++)
+        {
+            var root = Find(i);
+            if (!groups.TryGetValue(root, out var members))
+            {
+                members = [];
+                groups[root] = members;
+            }
+
+            members.Add(i);
+        }
+
+        foreach (var members in groups.Values)
+        {
+            if (members.Count == 1)
+            {
+                var item = visible[members[0]];
+                var hit = DrawUserSystemMark(context, item.Anchor, item.Mark);
+                _systemMarkClusterHits.Add((hit, [item.Mark], item.Anchor));
+                continue;
+            }
+
+            var marks = members.Select(index => visible[index].Mark).ToList();
+            var anchor = new Point(
+                members.Average(index => visible[index].Anchor.X),
+                members.Average(index => visible[index].Anchor.Y));
+            var clusterHit = DrawUserSystemMarkCluster(context, anchor, marks);
+            _systemMarkClusterHits.Add((clusterHit, marks, anchor));
+        }
+
+        if (_hoveredSystemMarkClusterIndex >= _systemMarkClusterHits.Count)
+        {
+            _hoveredSystemMarkClusterIndex = -1;
+        }
+    }
+
+    private Rect DrawUserSystemMark(DrawingContext context, Point anchor, UserSystemMarkDisplay mark)
+    {
+        var color = Color.FromUInt32(mark.ColorArgb);
+        const double iconSize = SystemMarkIconSize;
+        var cursorX = anchor.X;
+        var top = anchor.Y;
+        var bottom = anchor.Y;
+        var hasIcon = mark.ShowIcon && mark.IconKind is not null;
+        if (hasIcon && mark.IconKind is { } iconKind)
+        {
+            var iconRect = new Rect(cursorX, anchor.Y, iconSize, iconSize);
+            context.FillRectangle(new ImmutableSolidColorBrush(Color.FromArgb(230, 12, 18, 28)), iconRect, 3);
+            context.DrawRectangle(new Pen(GetCachedBrush(color), 1.2), iconRect, 3);
+            DrawSystemMarkIcon(context, iconKind, new Point(iconRect.X + 2.0, iconRect.Y + 2.0), iconSize - 4.0, color);
+            cursorX = iconRect.Right + NodeBadgeGap;
+            bottom = iconRect.Bottom;
+        }
+
+        if (mark.ShowLabel && !string.IsNullOrWhiteSpace(mark.Label))
+        {
+            var text = new FormattedText(
+                mark.Label.Trim(),
+                CultureInfo.InvariantCulture,
+                FlowDirection.LeftToRight,
+                new Typeface("Inter", FontStyle.Normal, FontWeight.SemiBold),
+                10,
+                Brushes.White);
+            var chipWidth = Math.Max(18.0, text.Width + 8.0);
+            var chipHeight = Math.Max(iconSize, text.Height + 4.0);
+            var chip = new Rect(cursorX, anchor.Y + ((iconSize - chipHeight) / 2.0), chipWidth, chipHeight);
+            context.FillRectangle(GetCachedBrush(color, 0.9), chip, 3);
+            context.DrawRectangle(new Pen(new ImmutableSolidColorBrush(Color.FromArgb(220, 8, 12, 18)), 1), chip, 3);
+            context.DrawText(text, new Point(
+                chip.X + ((chip.Width - text.Width) / 2.0),
+                chip.Y + ((chip.Height - text.Height) / 2.0) - 0.5));
+            cursorX = chip.Right;
+            top = Math.Min(top, chip.Y);
+            bottom = Math.Max(bottom, chip.Bottom);
+        }
+
+        return new Rect(anchor.X, top, Math.Max(iconSize, cursorX - anchor.X), Math.Max(iconSize, bottom - top));
+    }
+
+    private Rect DrawUserSystemMarkCluster(
+        DrawingContext context,
+        Point anchor,
+        IReadOnlyList<UserSystemMarkDisplay> marks)
+    {
+        var first = marks[0];
+        var color = Color.FromUInt32(first.ColorArgb);
+        const double iconSize = SystemMarkIconSize;
+        var countLabel = marks.Count.ToString(CultureInfo.InvariantCulture);
+        var text = new FormattedText(
+            countLabel,
+            CultureInfo.InvariantCulture,
+            FlowDirection.LeftToRight,
+            new Typeface("Inter", FontStyle.Normal, FontWeight.Bold),
+            10,
+            Brushes.White);
+        var width = iconSize + 4.0 + text.Width + 8.0;
+        var rect = new Rect(anchor.X, anchor.Y, width, iconSize);
+        context.FillRectangle(new ImmutableSolidColorBrush(Color.FromArgb(220, 12, 18, 28)), rect, 4);
+        context.DrawRectangle(new Pen(GetCachedBrush(color), 1.2), rect, 4);
+        if (first.ShowIcon && first.IconKind is { } iconKind)
+        {
+            DrawSystemMarkIcon(context, iconKind, new Point(rect.X + 2.0, rect.Y + 2.0), iconSize - 4.0, color);
+        }
+        else
+        {
+            context.FillRectangle(GetCachedBrush(color), new Rect(rect.X + 3, rect.Y + 3, 8, 8), 2);
+        }
+
+        context.DrawText(text, new Point(
+            rect.X + iconSize + 2.0,
+            rect.Y + ((rect.Height - text.Height) / 2.0) - 0.5));
+        return rect;
+    }
+
+    private void DrawHoveredSystemMarkClusterOverlay(DrawingContext context, Rect bounds)
+    {
+        if (_hoveredSystemMarkClusterIndex < 0 ||
+            _hoveredSystemMarkClusterIndex >= _systemMarkClusterHits.Count)
+        {
+            return;
+        }
+
+        var hit = _systemMarkClusterHits[_hoveredSystemMarkClusterIndex];
+        if (hit.Marks.Count < 2)
+        {
+            return;
+        }
+
+        var lines = hit.Marks
+            .Take(8)
+            .Select(mark =>
+            {
+                var label = mark.ShowLabel && !string.IsNullOrWhiteSpace(mark.Label)
+                    ? mark.Label
+                    : mark.IconKind is { } iconKind
+                        ? SystemMarkIcons.GetDisplayName(iconKind)
+                        : "Mark";
+                return string.IsNullOrWhiteSpace(mark.RegionName)
+                    ? $"{mark.SystemName}  {label}"
+                    : $"{mark.SystemName}  {label}  ({mark.RegionName})";
+            })
+            .ToList();
+        if (hit.Marks.Count > 8)
+        {
+            lines.Add($"+{hit.Marks.Count - 8} more");
+        }
+
+        var body = new FormattedText(
+            string.Join('\n', lines),
+            CultureInfo.InvariantCulture,
+            FlowDirection.LeftToRight,
+            new Typeface("Inter"),
+            11,
+            Brushes.White);
+        var header = new FormattedText(
+            $"{hit.Marks.Count} marked systems",
+            CultureInfo.InvariantCulture,
+            FlowDirection.LeftToRight,
+            new Typeface("Inter", FontStyle.Normal, FontWeight.SemiBold),
+            12,
+            Brushes.White);
+        var width = Math.Max(header.Width, body.Width) + 16;
+        var height = header.Height + body.Height + 16;
+        var x = hit.Anchor.X + 18;
+        var y = hit.Anchor.Y - height - 6;
+        if (x + width > bounds.Width - 8)
+        {
+            x = hit.Anchor.X - width - 6;
+        }
+
+        if (y < 8)
+        {
+            y = hit.Anchor.Y + 18;
+        }
+
+        var rect = new Rect(x, y, width, height);
+        context.FillRectangle(new ImmutableSolidColorBrush(Color.FromArgb(230, 16, 24, 36)), rect, 6);
+        context.DrawRectangle(new Pen(new ImmutableSolidColorBrush(Color.FromArgb(180, 90, 130, 180)), 1), rect, 6);
+        context.DrawText(header, new Point(rect.X + 8, rect.Y + 6));
+        context.DrawText(body, new Point(rect.X + 8, rect.Y + 8 + header.Height));
+    }
+
+    private void DrawSystemMarkIcon(
+        DrawingContext context,
+        SystemMarkIconKind kind,
+        Point topLeft,
+        double size,
+        Color color)
+    {
+        var geometry = SystemMarkIconGeometry.Get(kind);
+        var scale = size / 16.0;
+        using (context.PushTransform(Matrix.CreateScale(scale, scale) * Matrix.CreateTranslation(topLeft.X, topLeft.Y)))
+        {
+            context.DrawGeometry(GetCachedBrush(color), null, geometry);
+        }
+    }
+
+    private static void DrawIncursionBeacon(DrawingContext context, Point topLeft)
     {
         var icon = IncursionIcon.Value;
         if (icon is null)
@@ -5975,7 +6364,7 @@ public sealed class MapControl : Control
         }
 
         var size = 12.0;
-        var rect = new Rect(nodePoint.X + 7.0, nodePoint.Y - 14.0 + verticalOffset, size, size);
+        var rect = new Rect(topLeft.X, topLeft.Y, size, size);
         var bg = new ImmutableSolidColorBrush(Color.FromArgb(178, 74, 46, 120));
         var border = new Pen(new ImmutableSolidColorBrush(Color.FromArgb(255, 58, 110, 168)), 1);
         context.FillRectangle(bg, rect, 3);
@@ -5983,7 +6372,7 @@ public sealed class MapControl : Control
         DrawBitmap(context, icon, new Point(rect.X + 1, rect.Y + 1), size - 2);
     }
 
-    private static void DrawCharacterPresenceBadge(DrawingContext context, Point nodePoint, double nodeRadius, int count, bool placeLeft)
+    private static Rect GetCharacterPresenceRect(Point nodePoint, double nodeRadius, int count)
     {
         var text = count > 99 ? "99+" : count.ToString(CultureInfo.InvariantCulture);
         var textLayout = new FormattedText(
@@ -5993,17 +6382,26 @@ public sealed class MapControl : Control
             new Typeface("Inter"),
             10,
             Brushes.White);
-
         var width = Math.Max(14.0, textLayout.Width + 8.0);
         var height = Math.Max(14.0, textLayout.Height + 4.0);
-        var x = placeLeft
-            ? nodePoint.X - nodeRadius - 3.0 - width
-            : nodePoint.X + nodeRadius + 3.0;
-        var rect = new Rect(
-            x,
+        return new Rect(
+            nodePoint.X + nodeRadius + NodeBadgeGap,
             nodePoint.Y - nodeRadius - 9.0,
             width,
             height);
+    }
+
+    private static void DrawCharacterPresenceBadge(DrawingContext context, Point nodePoint, double nodeRadius, int count)
+    {
+        var text = count > 99 ? "99+" : count.ToString(CultureInfo.InvariantCulture);
+        var textLayout = new FormattedText(
+            text,
+            CultureInfo.InvariantCulture,
+            FlowDirection.LeftToRight,
+            new Typeface("Inter"),
+            10,
+            Brushes.White);
+        var rect = GetCharacterPresenceRect(nodePoint, nodeRadius, count);
 
         var bg = new ImmutableSolidColorBrush(GetCharacterPresenceBadgeColor(count));
         var border = new Pen(new ImmutableSolidColorBrush(Color.Parse("#0B2A1A")), 1.0);
@@ -6369,7 +6767,22 @@ public sealed class MapControl : Control
         context.DrawImage(icon, src, dst);
     }
 
-    private static void DrawHubWormholeBeacon(DrawingContext context, Point nodePoint, MapNode node)
+    private static Size MeasureHubWormholeBadge(MapNode node)
+    {
+        var hasThera = node.HubWormholeConnections.Any(c => c.HubType == WormholeHubType.Thera);
+        var hasTurnur = node.HubWormholeConnections.Any(c => c.HubType == WormholeHubType.Turnur);
+        var label = hasThera && hasTurnur ? "T+U" : hasThera ? "T" : "U";
+        var text = new FormattedText(
+            label,
+            CultureInfo.InvariantCulture,
+            FlowDirection.LeftToRight,
+            new Typeface("Inter"),
+            10,
+            Brushes.Black);
+        return new Size(Math.Max(14, text.Width + 6), 12);
+    }
+
+    private static void DrawHubWormholeBeacon(DrawingContext context, Point topLeft, MapNode node)
     {
         var hasThera = node.HubWormholeConnections.Any(c => c.HubType == WormholeHubType.Thera);
         var hasTurnur = node.HubWormholeConnections.Any(c => c.HubType == WormholeHubType.Turnur);
@@ -6386,8 +6799,8 @@ public sealed class MapControl : Control
             Brushes.Black);
 
         var rect = new Rect(
-            nodePoint.X + 7.0,
-            nodePoint.Y - 14.0,
+            topLeft.X,
+            topLeft.Y,
             Math.Max(14, text.Width + 6),
             12);
         context.FillRectangle(fill, rect, 3);
