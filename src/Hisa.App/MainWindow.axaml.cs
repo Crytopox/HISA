@@ -211,7 +211,14 @@ public partial class MainWindow : Window
         _miningSiteContextMenu.Classes.Add("map-node-menu");
         MainMapControl.UniverseRegionNodeDoubleClicked += OnUniverseRegionNodeClicked;
         Opened += OnOpened;
-        Opened += (_, _) => UpdateTopToolbarLayout();
+        Opened += (_, _) =>
+        {
+            UpdateTopToolbarLayout();
+            UpdateMapAnimationSuspension();
+        };
+        Activated += (_, _) => UpdateMapAnimationSuspension();
+        Deactivated += (_, _) => UpdateMapAnimationSuspension();
+        PropertyChanged += OnMainWindowPropertyChanged;
         Closing += (_, _) =>
         {
             _isClosingApp = true;
@@ -240,7 +247,6 @@ public partial class MainWindow : Window
         vm.CharacterSystemChanged += OnCharacterSystemChanged;
         _alertPopupSettings = vm.GetAlertPopupSettingsSnapshot();
         _alertPopupCleanupTimer.Tick += (_, _) => CleanupExpiredAlertPopupCards();
-        _alertPopupCleanupTimer.Start();
         Opened += OnCheckForUpdatesOnStartup;
     }
 
@@ -661,6 +667,7 @@ public partial class MainWindow : Window
                     ExpiresAtUtc = DateTime.UtcNow.AddSeconds(_alertPopupSettings.AutoDismissSeconds)
                 };
                 _alertPopupCards.Insert(0, card);
+                _alertPopupCleanupTimer.Start();
                 while (_alertPopupCards.Count > _alertPopupSettings.MaxCards)
                 {
                     _alertPopupCards.RemoveAt(_alertPopupCards.Count - 1);
@@ -1008,10 +1015,24 @@ public partial class MainWindow : Window
         _alertPopupSettingsWindow?.UpdateOffsetsFromPlacement(offsetX, offsetY);
     }
 
+    private void OnMainWindowPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+    {
+        if (e.Property == WindowStateProperty || e.Property == IsActiveProperty)
+        {
+            UpdateMapAnimationSuspension();
+        }
+    }
+
+    private void UpdateMapAnimationSuspension()
+    {
+        MainMapControl.SuspendAnimations = !IsActive || WindowState == WindowState.Minimized;
+    }
+
     private void CleanupExpiredAlertPopupCards()
     {
         if (_alertPopupCards.Count == 0)
         {
+            _alertPopupCleanupTimer.Stop();
             if (!_isAlertPopupDragMode && _alertPopupWindow is { IsVisible: true })
             {
                 _alertPopupWindow.Hide();
@@ -1033,6 +1054,11 @@ public partial class MainWindow : Window
         if (_alertPopupCards.Count == 0 && !_isAlertPopupDragMode && _alertPopupWindow is { IsVisible: true })
         {
             _alertPopupWindow.Hide();
+        }
+
+        if (_alertPopupCards.Count == 0)
+        {
+            _alertPopupCleanupTimer.Stop();
         }
 
         UpdateAlertPopupClickThrough();

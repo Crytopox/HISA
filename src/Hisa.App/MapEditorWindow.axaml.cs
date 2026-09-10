@@ -43,6 +43,9 @@ public partial class MapEditorWindow : Window
         vm.PropertyChanged += OnViewModelPropertyChanged;
         Opened += OnOpened;
         Closed += OnClosed;
+        Activated += (_, _) => UpdateMapAnimationSuspension();
+        Deactivated += (_, _) => UpdateMapAnimationSuspension();
+        PropertyChanged += OnEditorWindowPropertyChanged;
     }
 
     private async void OnOpened(object? sender, EventArgs e)
@@ -54,6 +57,20 @@ public partial class MapEditorWindow : Window
 
         await vm.InitialLoadTask;
         EditorMapControl.FitToView();
+        UpdateMapAnimationSuspension();
+    }
+
+    private void OnEditorWindowPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+    {
+        if (e.Property == WindowStateProperty || e.Property == IsActiveProperty)
+        {
+            UpdateMapAnimationSuspension();
+        }
+    }
+
+    private void UpdateMapAnimationSuspension()
+    {
+        EditorMapControl.SuspendAnimations = !IsActive || WindowState == WindowState.Minimized;
     }
 
     private async void OnCreateCustomRegionClicked(object? sender, RoutedEventArgs e)

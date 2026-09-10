@@ -10,8 +10,6 @@ using Avalonia.VisualTree;
 using Hisa.Core.Models;
 using Hisa.Rendering;
 using System.Globalization;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
@@ -44,8 +42,8 @@ public sealed class MapControl : Control
     }
 
     private static readonly string VoronoiCacheDirectory =
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Hisa", "voronoi-cache-v1");
-    private static readonly Dictionary<string, Dictionary<long, IReadOnlyList<(double X, double Y)>>> VoronoiMemoryCache = [];
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Hisa", "voronoi-cache-v2");
+    private static readonly VoronoiCacheStore VoronoiMemoryCache = new();
     private static readonly JsonSerializerOptions VoronoiJsonOptions = new() { WriteIndented = false };
 
     private static readonly Point NodeLabelOffset = new(14, 8);
@@ -167,17 +165,6 @@ public sealed class MapControl : Control
     private static readonly Lazy<Bitmap?> JumpRangeInRangeIcon = new(() => LoadIcon("jumpRange_onRange.png"));
     private static readonly Lazy<Bitmap?> JumpRangeOutRangeIcon = new(() => LoadIcon("jumpRange_outRange.png"));
     private static readonly Dictionary<string, Lazy<Bitmap?>> SovUpgradeIcons = new(StringComparer.OrdinalIgnoreCase);
-    private static readonly HashSet<string> SingleLevelSovUpgrades = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "Advanced Logistics Network",
-        "Cynosural Navigation",
-        "Cynosural Suppression",
-        "Electric Stability Generator",
-        "Exotic Stability Generator",
-        "Gamma Stability Generator",
-        "Plasma Stability Generator",
-        "Supercapital Construction Facilities"
-    };
 
     public static readonly StyledProperty<MapGraph?> GraphProperty =
         AvaloniaProperty.Register<MapControl, MapGraph?>(nameof(Graph));
@@ -230,6 +217,8 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, bool>(nameof(EnableLinkAnimations), true);
     public static readonly StyledProperty<bool> EnableIntelRingAnimationsProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(EnableIntelRingAnimations), true);
+    public static readonly StyledProperty<bool> SuspendAnimationsProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(SuspendAnimations));
     public static readonly StyledProperty<bool> ShowAnsiblexNetworkProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowAnsiblexNetwork), true);
     public static readonly StyledProperty<IEnumerable<MapLink>?> AnsiblexLinksProperty =
@@ -411,6 +400,28 @@ public sealed class MapControl : Control
     private readonly DispatcherTimer _linkAnimationTimer;
     private bool _isAttachedToVisualTree;
     private double _linkAnimationPhase;
+    private bool _staticLayerDirty = true;
+    private RenderTargetBitmap? _staticLayer;
+    private readonly MapOverlapCache _indicatorOverlapCache = new();
+    private readonly MapOverlapCache _overlayOverlapCache = new();
+    private readonly MapPenCache _penCache = new();
+    private readonly ScreenPointGrid _hitTestGrid = new();
+    private readonly List<int> _visibleVoronoiNodeIndexes = [];
+    private readonly HashSet<long> _additionalSelectedSet = [];
+    private readonly HashSet<long> _missingConnectionSet = [];
+    private readonly HashSet<long> _lyCoveredSet = [];
+    private readonly HashSet<long> _lyUncoveredSet = [];
+    private readonly HashSet<long> _crossRegionConnectorSet = [];
+    private readonly HashSet<long> _jumpRouteSkippedSet = [];
+    private readonly List<long> _jumpRouteOrderedIds = [];
+    private readonly Dictionary<long, int> _jumpRouteOrderByNodeId = [];
+    private readonly Dictionary<long, Color> _jumpRouteColorByNodeId = [];
+    private readonly List<(int FromIndex, int ToIndex, Color Color)> _jumpRouteLegs = [];
+    private IEnumerable<long>? _cachedJumpRouteNodeIds;
+    private IEnumerable<long>? _cachedJumpRouteSkippedNodeIds;
+    private IEnumerable<long>? _cachedJumpRangeInRangeNodeIds;
+    private IEnumerable<long>? _cachedJumpRangeOriginNodeIds;
+    private IReadOnlyList<JumpRangeOriginDisplay>? _cachedJumpRangeOriginsDisplay;
 
     private const double DenseSpacingLow = 0.02;
     private const double DenseSpacingHigh = 0.07;
@@ -564,6 +575,12 @@ public sealed class MapControl : Control
     {
         get => GetValue(EnableIntelRingAnimationsProperty);
         set => SetValue(EnableIntelRingAnimationsProperty, value);
+    }
+
+    public bool SuspendAnimations
+    {
+        get => GetValue(SuspendAnimationsProperty);
+        set => SetValue(SuspendAnimationsProperty, value);
     }
 
     public bool ShowAnsiblexNetwork
@@ -982,7 +999,7 @@ public sealed class MapControl : Control
         ClipToBounds = true;
         _linkAnimationTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(40), DispatcherPriority.Render, (_, _) =>
         {
-            if (!ShouldAnimateAnyLink() && !HasAnimatedIntelRings())
+            if (SuspendAnimations || (!ShouldAnimateAnyLink() && !HasAnimatedIntelRings()))
             {
                 _linkAnimationTimer?.Stop();
                 return;
@@ -1004,18 +1021,25 @@ public sealed class MapControl : Control
     {
         _isAttachedToVisualTree = false;
         _linkAnimationTimer.Stop();
+        DisposeStaticLayer();
         base.OnDetachedFromVisualTree(e);
     }
 
     protected override void OnSizeChanged(SizeChangedEventArgs e)
     {
         base.OnSizeChanged(e);
+        InvalidateMap();
         UpdateAnimationTimerState();
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
+        if (change.Property != SuspendAnimationsProperty)
+        {
+            _staticLayerDirty = true;
+        }
+
         if (change.Property == GraphProperty ||
             change.Property == SelectedNodeIdProperty ||
             change.Property == ViewModeProperty ||
@@ -1023,7 +1047,8 @@ public sealed class MapControl : Control
             change.Property == EnableIntelRingAnimationsProperty ||
             change.Property == ShowAnsiblexNetworkProperty ||
             change.Property == AnsiblexLinksProperty ||
-            change.Property == IntelHostileScoresByNodeIdProperty)
+            change.Property == IntelHostileScoresByNodeIdProperty ||
+            change.Property == SuspendAnimationsProperty)
         {
             UpdateAnimationTimerState();
         }
@@ -1032,6 +1057,7 @@ public sealed class MapControl : Control
     private void UpdateAnimationTimerState()
     {
         if (!_isAttachedToVisualTree ||
+            SuspendAnimations ||
             (!ShouldAnimateAnyLink() && !HasAnimatedIntelRings()))
         {
             _linkAnimationTimer?.Stop();
@@ -1041,6 +1067,19 @@ public sealed class MapControl : Control
         _linkAnimationTimer?.Start();
     }
 
+    private void InvalidateMap()
+    {
+        _staticLayerDirty = true;
+        InvalidateVisual();
+    }
+
+    private void DisposeStaticLayer()
+    {
+        _staticLayer?.Dispose();
+        _staticLayer = null;
+        _staticLayerDirty = true;
+    }
+
     public void FitToView()
     {
         if (Graph is null || Graph.Nodes.Count == 0 || Bounds.Width <= 1 || Bounds.Height <= 1)
@@ -1048,7 +1087,7 @@ public sealed class MapControl : Control
             _zoom = 1.0;
             _panOffset = new Point(0, 0);
             UpdateAnimationTimerState();
-            InvalidateVisual();
+            InvalidateMap();
             return;
         }
 
@@ -1085,7 +1124,7 @@ public sealed class MapControl : Control
         _panOffset = ComputePanForWorldCenter(plot, worldCenterX, worldCenterY, _zoom);
 
         UpdateAnimationTimerState();
-        InvalidateVisual();
+        InvalidateMap();
     }
 
     private static double GetEditorFitPadding(double graphWidth, double graphHeight)
@@ -1146,7 +1185,7 @@ public sealed class MapControl : Control
         _zoom = Math.Clamp(state.Zoom, GetMinZoom(), GetMaxZoom());
         _panOffset = new Point(state.PanOffsetX, state.PanOffsetY);
         UpdateAnimationTimerState();
-        InvalidateVisual();
+        InvalidateMap();
     }
 
 
@@ -1247,27 +1286,11 @@ public sealed class MapControl : Control
         {
             var plot = GetPlotMetrics();
             UpdateScreenPositions(plot, Bounds.Width / 2.0, Bounds.Height / 2.0);
+            _hitTestGrid.Rebuild(_screenPositions, Graph.Nodes.Count, Bounds.Size);
         }
 
-        var thresholdSq = threshold * threshold;
-        var bestDistSq = thresholdSq;
-        long? bestId = null;
-
-        for (var i = 0; i < Graph.Nodes.Count; i++)
-        {
-            var p = _screenPositions[i];
-            var dx = p.X - point.X;
-            var dy = p.Y - point.Y;
-            var distSq = (dx * dx) + (dy * dy);
-
-            if (distSq <= bestDistSq)
-            {
-                bestDistSq = distSq;
-                bestId = Graph.Nodes[i].Id;
-            }
-        }
-
-        return bestId;
+        var closestIndex = _hitTestGrid.FindClosestIndex(point, threshold, _screenPositions);
+        return closestIndex is int index ? Graph.Nodes[index].Id : null;
     }
 
     public long? HitTestNode(Point point, double threshold = 10.0)
@@ -1351,7 +1374,7 @@ public sealed class MapControl : Control
     {
         _panOffset = new Point(_panOffset.X + dxPixels, _panOffset.Y + dyPixels);
         UpdateAnimationTimerState();
-        InvalidateVisual();
+        InvalidateMap();
     }
 
     public void ZoomBy(double factor)
@@ -1384,7 +1407,7 @@ public sealed class MapControl : Control
             center.X - (((newBaseX - viewCenterX) * _zoom) + viewCenterX),
             center.Y - (((newBaseY - viewCenterY) * _zoom) + viewCenterY));
         UpdateAnimationTimerState();
-        InvalidateVisual();
+        InvalidateMap();
     }
 
     private IBrush GetCachedBrush(Color color, double alpha01 = 1.0)
@@ -1408,46 +1431,220 @@ public sealed class MapControl : Control
 
     public override void Render(DrawingContext context)
     {
-        if (!ReferenceEquals(_lastGraphForCaches, Graph))
-        {
-            _lastGraphForCaches = Graph;
-            _nodeLabelCache.Clear();
-            _nodeLabelHaloCache.Clear();
-            _nodeSecondaryLabelCache.Clear();
-            _nodeSecondaryLabelHaloCache.Clear();
-            _regionLabelCache.Clear();
-            _regionLabelHaloCache.Clear();
-            _voronoiWorldPolygonsByNodeId.Clear();
-            _voronoiWorldGeometriesByNodeId.Clear();
-            _lastGraphForVoronoi = null;
-            _lastVoronoiCacheKey = null;
-            CancelVoronoiBuild();
-            RebuildGraphCaches();
-        }
+        RefreshGraphLocalCaches();
 
         var bounds = Bounds;
-        context.FillRectangle(BackgroundBrush, bounds);
-        _intelOverlayLinks.Clear();
-        _sovUpgradeIconHitTargets.Clear();
-
         if (Graph is null || Graph.Nodes.Count == 0)
         {
+            context.FillRectangle(BackgroundBrush, bounds);
             DrawCenteredText(context, "No map data loaded", bounds);
             return;
         }
 
+        PrepareVisibleState(bounds);
+        if (!TryBlitStaticLayer(context, bounds))
+        {
+            DrawStaticScene(context, bounds);
+        }
+
+        DrawAnimatedOverlays(context, bounds);
+    }
+
+    private void RefreshGraphLocalCaches()
+    {
+        if (ReferenceEquals(_lastGraphForCaches, Graph))
+        {
+            return;
+        }
+
+        _lastGraphForCaches = Graph;
+        _nodeLabelCache.Clear();
+        _nodeLabelHaloCache.Clear();
+        _nodeSecondaryLabelCache.Clear();
+        _nodeSecondaryLabelHaloCache.Clear();
+        _regionLabelCache.Clear();
+        _regionLabelHaloCache.Clear();
+        _voronoiWorldPolygonsByNodeId.Clear();
+        _voronoiWorldGeometriesByNodeId.Clear();
+        _lastGraphForVoronoi = null;
+        _lastVoronoiCacheKey = null;
+        _indicatorOverlapCache.Clear();
+        _overlayOverlapCache.Clear();
+        _cachedJumpRouteNodeIds = null;
+        _cachedJumpRangeInRangeNodeIds = null;
+        CancelVoronoiBuild();
+        RebuildGraphCaches();
+        _staticLayerDirty = true;
+    }
+
+    private void PrepareVisibleState(Rect bounds)
+    {
+        if (Graph is null)
+        {
+            return;
+        }
+
         (_indicatorExplorationOverlapByNodeId, _indicatorExplorationSourceNodeIds) =
-            BuildExplorationDetectorOverlap(IndicatorSovUpgradeFilterKeys);
+            _indicatorOverlapCache.GetExplorationOverlap(Graph, IndicatorSovUpgradeFilterKeys);
         (_overlayExplorationOverlapByNodeId, _overlayExplorationSourceNodeIds) =
-            BuildExplorationDetectorOverlap(OverlaySovUpgradeFilterKeys);
-        (_jumpRangeOverlapByNodeId, _jumpRangeOriginNodeIds) =
-            BuildNodeOverlapCounts(JumpRangeInRangeNodeIds, JumpRangeOriginNodeIds);
-        _jumpRangeOriginColorByNodeId = BuildJumpRangeOriginColorMap(JumpRangeOriginsDisplay);
+            _overlayOverlapCache.GetExplorationOverlap(Graph, OverlaySovUpgradeFilterKeys);
+        EnsureJumpRangeCaches();
+        EnsureJumpRouteCaches();
+
+        if (_staticLayerDirty || _screenPositions.Length != Graph.Nodes.Count)
+        {
+            ReplaceSet(_additionalSelectedSet, AdditionalSelectedNodeIds);
+            ReplaceSet(_missingConnectionSet, MissingConnectionNodeIds);
+            ReplaceSet(_lyCoveredSet, LyCoverageCoveredNodeIds);
+            ReplaceSet(_lyUncoveredSet, LyCoverageUncoveredNodeIds);
+            ReplaceSet(_crossRegionConnectorSet, CrossRegionConnectorNodeIds);
+            var plot = GetPlotMetrics();
+            UpdateScreenPositions(plot, Bounds.Width / 2.0, Bounds.Height / 2.0);
+            _hitTestGrid.Rebuild(_screenPositions, Graph.Nodes.Count, bounds.Size);
+        }
+    }
+
+    private static void ReplaceSet(HashSet<long> set, IEnumerable<long>? source)
+    {
+        set.Clear();
+        if (source is null)
+        {
+            return;
+        }
+
+        foreach (var id in source)
+        {
+            set.Add(id);
+        }
+    }
+
+    private void EnsureJumpRangeCaches()
+    {
+        if (!ReferenceEquals(_cachedJumpRangeInRangeNodeIds, JumpRangeInRangeNodeIds) ||
+            !ReferenceEquals(_cachedJumpRangeOriginNodeIds, JumpRangeOriginNodeIds))
+        {
+            (_jumpRangeOverlapByNodeId, _jumpRangeOriginNodeIds) =
+                MapOverlapCalculator.BuildNodeOverlapCounts(JumpRangeInRangeNodeIds, JumpRangeOriginNodeIds);
+            _cachedJumpRangeInRangeNodeIds = JumpRangeInRangeNodeIds;
+            _cachedJumpRangeOriginNodeIds = JumpRangeOriginNodeIds;
+        }
+
+        if (!ReferenceEquals(_cachedJumpRangeOriginsDisplay, JumpRangeOriginsDisplay))
+        {
+            _jumpRangeOriginColorByNodeId = BuildJumpRangeOriginColorMap(JumpRangeOriginsDisplay);
+            _cachedJumpRangeOriginsDisplay = JumpRangeOriginsDisplay;
+        }
+    }
+
+    private void EnsureJumpRouteCaches()
+    {
+        if (ReferenceEquals(_cachedJumpRouteNodeIds, JumpRouteNodeIds) &&
+            ReferenceEquals(_cachedJumpRouteSkippedNodeIds, JumpRouteSkippedNodeIds))
+        {
+            return;
+        }
+
+        _cachedJumpRouteNodeIds = JumpRouteNodeIds;
+        _cachedJumpRouteSkippedNodeIds = JumpRouteSkippedNodeIds;
+        _jumpRouteOrderedIds.Clear();
+        _jumpRouteOrderByNodeId.Clear();
+        _jumpRouteColorByNodeId.Clear();
+        _jumpRouteLegs.Clear();
+        _jumpRouteSkippedSet.Clear();
+        if (JumpRouteNodeIds is not null)
+        {
+            _jumpRouteOrderedIds.AddRange(JumpRouteNodeIds);
+        }
+
+        if (JumpRouteSkippedNodeIds is not null)
+        {
+            foreach (var id in JumpRouteSkippedNodeIds)
+            {
+                _jumpRouteSkippedSet.Add(id);
+            }
+        }
+
+        for (var i = 0; i < _jumpRouteOrderedIds.Count; i++)
+        {
+            if (!_jumpRouteOrderByNodeId.ContainsKey(_jumpRouteOrderedIds[i]))
+            {
+                _jumpRouteOrderByNodeId[_jumpRouteOrderedIds[i]] = i + 1;
+                _jumpRouteColorByNodeId[_jumpRouteOrderedIds[i]] = GetJumpRouteStepColor(i, Math.Max(1, _jumpRouteOrderedIds.Count - 1));
+            }
+        }
+
+        if (_jumpRouteOrderedIds.Count >= 2)
+        {
+            for (var i = 0; i < _jumpRouteOrderedIds.Count - 1; i++)
+            {
+                if (!_nodeIndexById.TryGetValue(_jumpRouteOrderedIds[i], out var fromIdx) ||
+                    !_nodeIndexById.TryGetValue(_jumpRouteOrderedIds[i + 1], out var toIdx))
+                {
+                    continue;
+                }
+
+                _jumpRouteLegs.Add((fromIdx, toIdx, GetJumpRouteStepColor(i, _jumpRouteOrderedIds.Count - 1)));
+            }
+        }
+    }
+
+    private bool TryBlitStaticLayer(DrawingContext context, Rect bounds)
+    {
+        if (!EnsureStaticLayer(bounds) || _staticLayer is null)
+        {
+            return false;
+        }
+
+        context.DrawImage(_staticLayer, new Rect(bounds.Size));
+        return true;
+    }
+
+    private bool EnsureStaticLayer(Rect bounds)
+    {
+        if (bounds.Width < 2 || bounds.Height < 2)
+        {
+            return false;
+        }
+
+        var scaling = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1.0;
+        var pixelSize = new PixelSize(
+            Math.Max(1, (int)Math.Ceiling(bounds.Width * scaling)),
+            Math.Max(1, (int)Math.Ceiling(bounds.Height * scaling)));
+        if (!_staticLayerDirty &&
+            _staticLayer is not null &&
+            _staticLayer.PixelSize == pixelSize)
+        {
+            return true;
+        }
+
+        try
+        {
+            _staticLayer?.Dispose();
+            _staticLayer = new RenderTargetBitmap(pixelSize, new Vector(96 * scaling, 96 * scaling));
+            using (var ctx = _staticLayer.CreateDrawingContext(true))
+            {
+                DrawStaticScene(ctx, bounds);
+            }
+
+            _staticLayerDirty = false;
+            return true;
+        }
+        catch
+        {
+            DisposeStaticLayer();
+            return false;
+        }
+    }
+
+    private void DrawStaticScene(DrawingContext context, Rect bounds)
+    {
+        context.FillRectangle(BackgroundBrush, bounds);
+        _intelOverlayLinks.Clear();
+        _sovUpgradeIconHitTargets.Clear();
 
         var plot = GetPlotMetrics();
         var viewCenterX = Bounds.Width / 2.0;
         var viewCenterY = Bounds.Height / 2.0;
-        UpdateScreenPositions(plot, viewCenterX, viewCenterY);
         if (ShowEditorGrid)
         {
             DrawEditorGrid(context, plot, viewCenterX, viewCenterY);
@@ -1464,12 +1661,12 @@ public sealed class MapControl : Control
             const double margin = 220;
             var worldToScreen = GetWorldToScreenMatrix(plot);
             var worldScale = Math.Max(1e-9, ((plot.Width + plot.Height) * 0.5) * _zoom);
-            var voronoiBorderPen = new Pen(VoronoiBorderBrush, 0.8 / worldScale);
-            var visibleVoronoiNodeIndexes = new List<int>(Math.Min(Graph.Nodes.Count, 512));
+            var voronoiBorderPen = _penCache.Get(Color.Parse("#AA0D131D"), 0.8 / worldScale);
+            _visibleVoronoiNodeIndexes.Clear();
 
             using (context.PushTransform(worldToScreen))
             {
-                for (var i = 0; i < Graph.Nodes.Count; i++)
+                for (var i = 0; i < Graph!.Nodes.Count; i++)
                 {
                     var centerPoint = _screenPositions[i];
                     if (!IsPointVisible(centerPoint, bounds, margin))
@@ -1477,19 +1674,19 @@ public sealed class MapControl : Control
                         continue;
                     }
 
-                    visibleVoronoiNodeIndexes.Add(i);
+                    _visibleVoronoiNodeIndexes.Add(i);
                     DrawVoronoiCellWorld(context, Graph.Nodes[i], voronoiBorderPen);
                 }
             }
 
-            foreach (var index in visibleVoronoiNodeIndexes)
+            foreach (var index in _visibleVoronoiNodeIndexes)
             {
                 var holeRadius = 10.8 * GetUniverseNodeZoomScale();
                 context.DrawEllipse(NodeHoleBrush, null, _screenPositions[index], holeRadius, holeRadius);
             }
         }
 
-        foreach (var link in Graph.Links)
+        foreach (var link in Graph!.Links)
         {
             if (!_nodeIndexById.TryGetValue(link.FromId, out var fromIndex) ||
                 !_nodeIndexById.TryGetValue(link.ToId, out var toIndex))
@@ -1535,10 +1732,6 @@ public sealed class MapControl : Control
                         : basePen;
 
             context.DrawLine(pen, from, to);
-            if (EnableLinkAnimations && (isSelectedLink || isHoveredLink))
-            {
-                DrawAnimatedRegularLinkEffect(context, from, to, GetAnimatedRegularLinkColor(basePen), link);
-            }
         }
 
         if (ShowAnsiblexNetwork &&
@@ -1565,58 +1758,18 @@ public sealed class MapControl : Control
                 var isHoveredLink = _hoveredNodeId is not null &&
                                     (link.FromId == _hoveredNodeId.Value || link.ToId == _hoveredNodeId.Value);
                 var pen = (isSelectedLink || isHoveredLink) ? AnsiblexHighlightedLinkPen : AnsiblexLinkPen;
-                DrawCurvedAnsiblexLink(context, from, to, link, pen, EnableLinkAnimations && (isSelectedLink || isHoveredLink));
+                DrawCurvedAnsiblexLink(context, from, to, link, pen, animate: false);
             }
         }
 
         var labelBudget = GetLabelBudget();
         var shouldShowInlineLabels = ShouldShowInlineLabels(plot);
-        var jumpRouteOrderedIds = JumpRouteNodeIds?.ToList() ?? [];
-        var jumpRouteSkippedSet = JumpRouteSkippedNodeIds is not null
-            ? new HashSet<long>(JumpRouteSkippedNodeIds)
-            : null;
-        var jumpRouteOrderByNodeId = new Dictionary<long, int>();
-        var jumpRouteColorByNodeId = new Dictionary<long, Color>();
-        for (var i = 0; i < jumpRouteOrderedIds.Count; i++)
+        foreach (var (fromIdx, toIdx, legColor) in _jumpRouteLegs)
         {
-            if (!jumpRouteOrderByNodeId.ContainsKey(jumpRouteOrderedIds[i]))
-            {
-                jumpRouteOrderByNodeId[jumpRouteOrderedIds[i]] = i + 1;
-                jumpRouteColorByNodeId[jumpRouteOrderedIds[i]] = GetJumpRouteStepColor(i, Math.Max(1, jumpRouteOrderedIds.Count - 1));
-            }
-        }
-        if (jumpRouteOrderedIds.Count >= 2)
-        {
-            for (var i = 0; i < jumpRouteOrderedIds.Count - 1; i++)
-            {
-                if (!_nodeIndexById.TryGetValue(jumpRouteOrderedIds[i], out var fromIdx) ||
-                    !_nodeIndexById.TryGetValue(jumpRouteOrderedIds[i + 1], out var toIdx))
-                {
-                    continue;
-                }
-
-                var legColor = GetJumpRouteStepColor(i, jumpRouteOrderedIds.Count - 1);
-                var legPen = new Pen(new ImmutableSolidColorBrush(legColor), 2.5);
-                context.DrawLine(legPen, _screenPositions[fromIdx], _screenPositions[toIdx]);
-            }
+            context.DrawLine(_penCache.Get(legColor, 2.5), _screenPositions[fromIdx], _screenPositions[toIdx]);
         }
 
         var labelsDrawn = 0;
-        var additionalSelectedSet = AdditionalSelectedNodeIds is not null
-            ? new HashSet<long>(AdditionalSelectedNodeIds)
-            : null;
-        var missingConnectionSet = MissingConnectionNodeIds is not null
-            ? new HashSet<long>(MissingConnectionNodeIds)
-            : null;
-        var lyCoveredSet = LyCoverageCoveredNodeIds is not null
-            ? new HashSet<long>(LyCoverageCoveredNodeIds)
-            : null;
-        var lyUncoveredSet = LyCoverageUncoveredNodeIds is not null
-            ? new HashSet<long>(LyCoverageUncoveredNodeIds)
-            : null;
-        var crossRegionConnectorSet = CrossRegionConnectorNodeIds is not null
-            ? new HashSet<long>(CrossRegionConnectorNodeIds)
-            : null;
         for (var i = 0; i < Graph.Nodes.Count; i++)
         {
             var node = Graph.Nodes[i];
@@ -1627,7 +1780,7 @@ public sealed class MapControl : Control
                 continue;
             }
 
-            var isSelected = SelectedNodeId == node.Id || (additionalSelectedSet?.Contains(node.Id) ?? false);
+            var isSelected = SelectedNodeId == node.Id || _additionalSelectedSet.Contains(node.Id);
             var isHovered = _hoveredNodeId == node.Id;
             var isSearchHighlighted = _searchHighlightedNodeId == node.Id ||
                                       (_searchHighlightedConstellationId is not null && node.ConstellationId == _searchHighlightedConstellationId.Value) ||
@@ -1647,7 +1800,7 @@ public sealed class MapControl : Control
                                 ? SelectedBrush
                                 : isInActiveRegion
                                     ? RegionSelectedBrush
-                                : ShowEditorGrid && (crossRegionConnectorSet?.Contains(node.Id) ?? false)
+                                : ShowEditorGrid && _crossRegionConnectorSet.Contains(node.Id)
                                         ? EditorCrossRegionConnectorBrush
                                         : GetCachedBrush(GetNodeBaseColor(node, NodeColorMode));
 
@@ -1697,10 +1850,10 @@ public sealed class MapControl : Control
                     intelRingIcons = configuredIcons;
                 }
 
-                DrawIntelRingWithIcons(context, p, radius, intelRingIcons, hostileScoreForNode, shouldShowInlineLabels);
+                DrawIntelRingWithIcons(context, p, radius, intelRingIcons, hostileScoreForNode, shouldShowInlineLabels && !EnableIntelRingAnimations);
             }
             if (ShowMissingConnectionMarkers &&
-                (missingConnectionSet?.Contains(node.Id) ?? false) &&
+                _missingConnectionSet.Contains(node.Id) &&
                 (ViewMode == MapViewMode.Region || ShowEditorGrid))
             {
                 var ringRadius = radius + 2.7;
@@ -1726,23 +1879,23 @@ public sealed class MapControl : Control
                 var originRadius = radius + 6.2;
                 context.DrawEllipse(null, JumpRangeOriginRingPen, p, originRadius, originRadius);
             }
-            if (lyCoveredSet?.Contains(node.Id) == true)
+            if (_lyCoveredSet.Contains(node.Id))
             {
                 var coveredRadius = radius + 7.8;
                 context.DrawEllipse(null, LyCoverageCoveredRingPen, p, coveredRadius, coveredRadius);
             }
-            if (lyUncoveredSet?.Contains(node.Id) == true)
+            if (_lyUncoveredSet.Contains(node.Id))
             {
                 var uncoveredRadius = radius + 9.8;
                 context.DrawEllipse(null, LyCoverageUncoveredRingPen, p, uncoveredRadius, uncoveredRadius);
             }
-            if (jumpRouteOrderByNodeId.ContainsKey(node.Id))
+            if (_jumpRouteOrderByNodeId.ContainsKey(node.Id))
             {
                 var routeRadius = radius + 20.2;
-                var routeColor = jumpRouteColorByNodeId.TryGetValue(node.Id, out var nodeRouteColor) ? nodeRouteColor : Color.Parse("#63D3FF");
-                var routePen = new Pen(new ImmutableSolidColorBrush(routeColor), 1.9, dashStyle: new DashStyle([2.0, 2.0], 0));
+                var routeColor = _jumpRouteColorByNodeId.TryGetValue(node.Id, out var nodeRouteColor) ? nodeRouteColor : Color.Parse("#63D3FF");
+                var routePen = _penCache.Get(routeColor, 1.9);
                 context.DrawEllipse(null, routePen, p, routeRadius, routeRadius);
-                if (jumpRouteOrderByNodeId.TryGetValue(node.Id, out var order))
+                if (_jumpRouteOrderByNodeId.TryGetValue(node.Id, out var order))
                 {
                     var numberLabel = new FormattedText(
                         order.ToString(CultureInfo.InvariantCulture),
@@ -1761,7 +1914,7 @@ public sealed class MapControl : Control
                             bubbleCenter.Y - (numberLabel.Height / 2)));
                 }
             }
-            if (jumpRouteSkippedSet?.Contains(node.Id) == true)
+            if (_jumpRouteSkippedSet.Contains(node.Id))
             {
                 var skippedRadius = radius + 23.4;
                 context.DrawEllipse(null, JumpRouteSkippedRingPen, p, skippedRadius, skippedRadius);
@@ -1782,7 +1935,7 @@ public sealed class MapControl : Control
                 continue;
             }
 
-            var isSelected = SelectedNodeId == node.Id || (additionalSelectedSet?.Contains(node.Id) ?? false);
+            var isSelected = SelectedNodeId == node.Id || _additionalSelectedSet.Contains(node.Id);
             var isHovered = _hoveredNodeId == node.Id;
             var universeNodeScale = GetUniverseNodeZoomScale();
             var radius = (isSelected ? 9.3 : isHovered ? 8.4 : 6.75) * universeNodeScale;
@@ -1870,6 +2023,111 @@ public sealed class MapControl : Control
         }
     }
 
+    private void DrawAnimatedOverlays(DrawingContext context, Rect bounds)
+    {
+        if (Graph is null || Graph.Nodes.Count == 0)
+        {
+            return;
+        }
+
+        var plot = GetPlotMetrics();
+        var shouldShowInlineLabels = ShouldShowInlineLabels(plot);
+        if (EnableLinkAnimations)
+        {
+            var anchorNodeId = _hoveredNodeId ?? SelectedNodeId;
+            if (anchorNodeId is not null)
+            {
+                foreach (var link in Graph.Links)
+                {
+                    if (link.FromId != anchorNodeId.Value && link.ToId != anchorNodeId.Value)
+                    {
+                        continue;
+                    }
+
+                    if (!_nodeIndexById.TryGetValue(link.FromId, out var fromIndex) ||
+                        !_nodeIndexById.TryGetValue(link.ToId, out var toIndex))
+                    {
+                        continue;
+                    }
+
+                    var from = _screenPositions[fromIndex];
+                    var to = _screenPositions[toIndex];
+                    if (!IsSegmentPotentiallyVisible(from, to, bounds, 48))
+                    {
+                        continue;
+                    }
+
+                    var basePen = GetLinkPen(LinksPen, SameConstellationPen, SameRegionPen, CrossRegionPen, link, _nodeById);
+                    DrawAnimatedRegularLinkEffect(context, from, to, GetAnimatedRegularLinkColor(basePen), link);
+                }
+
+                if (ShowAnsiblexNetwork &&
+                    ViewMode != MapViewMode.UniverseRegions &&
+                    AnsiblexLinks is not null)
+                {
+                    foreach (var link in AnsiblexLinks)
+                    {
+                        if (link.FromId != anchorNodeId.Value && link.ToId != anchorNodeId.Value)
+                        {
+                            continue;
+                        }
+
+                        if (!_nodeIndexById.TryGetValue(link.FromId, out var fromIndex) ||
+                            !_nodeIndexById.TryGetValue(link.ToId, out var toIndex))
+                        {
+                            continue;
+                        }
+
+                        var from = _screenPositions[fromIndex];
+                        var to = _screenPositions[toIndex];
+                        if (!IsSegmentPotentiallyVisible(from, to, bounds, 64))
+                        {
+                            continue;
+                        }
+
+                        DrawCurvedAnsiblexLink(context, from, to, link, AnsiblexHighlightedLinkPen, animate: true);
+                    }
+                }
+            }
+        }
+
+        if (!EnableIntelRingAnimations || !shouldShowInlineLabels || IntelHostileScoresByNodeId is null)
+        {
+            return;
+        }
+
+        for (var i = 0; i < Graph.Nodes.Count; i++)
+        {
+            var node = Graph.Nodes[i];
+            var p = _screenPositions[i];
+            if (!IsPointVisible(p, bounds, 24))
+            {
+                continue;
+            }
+
+            if (!IntelHostileScoresByNodeId.TryGetValue(node.Id, out var hostileScore) || hostileScore <= 0)
+            {
+                continue;
+            }
+
+            IReadOnlyList<string> intelRingIcons = ["crosshair"];
+            if (IntelIconKeysByNodeId is not null &&
+                IntelIconKeysByNodeId.TryGetValue(node.Id, out var configuredIcons) &&
+                configuredIcons.Count > 0)
+            {
+                intelRingIcons = configuredIcons;
+            }
+
+            var isSelected = SelectedNodeId == node.Id || _additionalSelectedSet.Contains(node.Id);
+            var isHovered = _hoveredNodeId == node.Id;
+            var isSearchHighlighted = _searchHighlightedNodeId == node.Id ||
+                                      (_searchHighlightedConstellationId is not null && node.ConstellationId == _searchHighlightedConstellationId.Value) ||
+                                      (_searchHighlightedRegionId is not null && node.RegionId == _searchHighlightedRegionId.Value);
+            var universeNodeScale = GetUniverseNodeZoomScale();
+            var radius = (isSelected ? 9.3 : isHovered ? 8.4 : isSearchHighlighted ? 7.8 : 6.75) * universeNodeScale;
+            DrawIntelOrbitIcons(context, p, radius, intelRingIcons);
+        }
+    }
 
     private double GetLabelZoomThreshold()
     {
@@ -2000,7 +2258,7 @@ public sealed class MapControl : Control
             var origin = new Point(layout.Center.X - ((layout.Label.Width * scale) / 2.0), layout.Center.Y - ((layout.Label.Height * scale) / 2.0));
             using (context.PushTransform(Matrix.CreateScale(scale, scale) * Matrix.CreateTranslation(origin.X, origin.Y)))
             {
-                DrawLabelWithHalo(context, layout.Label, GetRegionLabelHalo(layout.RegionId, layout.RegionName), new Point(0, 0));
+                context.DrawText(layout.Label, new Point(0, 0));
             }
         }
     }
@@ -2038,7 +2296,7 @@ public sealed class MapControl : Control
             {
                 SelectedNodeId = null;
                 ClearSearchHighlight();
-                InvalidateVisual();
+                InvalidateMap();
                 return;
             }
 
@@ -2046,7 +2304,7 @@ public sealed class MapControl : Control
             {
                 _selectedRegionId = null;
                 ClearSearchHighlight();
-                InvalidateVisual();
+                InvalidateMap();
                 return;
             }
 
@@ -2087,7 +2345,7 @@ public sealed class MapControl : Control
         _panOffset += delta;
         _lastPanPoint = point;
         UpdateAnimationTimerState();
-        InvalidateVisual();
+        InvalidateMap();
     }
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
@@ -2098,7 +2356,7 @@ public sealed class MapControl : Control
             SelectedNodeId = null;
             _selectedRegionId = null;
             ClearSearchHighlight();
-            InvalidateVisual();
+            InvalidateMap();
         }
 
         _pendingClearSelectionOnLeftRelease = false;
@@ -2139,7 +2397,7 @@ public sealed class MapControl : Control
             mouse.Y - (((newBaseY - viewCenterY) * _zoom) + viewCenterY));
 
         UpdateAnimationTimerState();
-        InvalidateVisual();
+        InvalidateMap();
     }
 
     private bool TrySelectNodeAt(Point point)
@@ -2162,17 +2420,17 @@ public sealed class MapControl : Control
             if (_hoveredNodeId is not null)
             {
                 _hoveredNodeId = null;
-                InvalidateVisual();
+                InvalidateMap();
             }
             if (_hoveredSystemMarkClusterIndex >= 0)
             {
                 _hoveredSystemMarkClusterIndex = -1;
-                InvalidateVisual();
+                InvalidateMap();
             }
             if (_hoveredRegionId is not null)
             {
                 _hoveredRegionId = null;
-                InvalidateVisual();
+                InvalidateMap();
             }
 
             return;
@@ -2218,7 +2476,7 @@ public sealed class MapControl : Control
         if (changed)
         {
             UpdateAnimationTimerState();
-            InvalidateVisual();
+            InvalidateMap();
         }
     }
 
@@ -2242,7 +2500,7 @@ public sealed class MapControl : Control
                 if (focus.PreferPreserveZoom)
                 {
                     FocusOnNode(focus.SolarSystemId.Value);
-                    InvalidateVisual();
+                    InvalidateMap();
                     return;
                 }
             }
@@ -2254,7 +2512,7 @@ public sealed class MapControl : Control
                 if (focus.PreferPreserveZoom)
                 {
                     CenterOnConstellation(focus.ConstellationId.Value);
-                    InvalidateVisual();
+                    InvalidateMap();
                     return;
                 }
             }
@@ -2264,7 +2522,7 @@ public sealed class MapControl : Control
             }
 
             FitToView();
-            InvalidateVisual();
+            InvalidateMap();
             return;
         }
 
@@ -2274,7 +2532,7 @@ public sealed class MapControl : Control
             {
                 _searchHighlightedRegionId = focus.RegionId.Value;
                 SelectedNodeId = null;
-                InvalidateVisual();
+                InvalidateMap();
             }
 
             return;
@@ -2303,7 +2561,7 @@ public sealed class MapControl : Control
             _selectedRegionId = ViewMode == MapViewMode.Universe ? focus.RegionId.Value : null;
             SelectedNodeId = null;
             FocusOnRegion(focus.RegionId.Value);
-            InvalidateVisual();
+            InvalidateMap();
         }
     }
 
@@ -2465,7 +2723,7 @@ public sealed class MapControl : Control
         _panOffset = new Point(
             cx - (((baseX - cx) * _zoom) + cx),
             cy - (((baseY - cy) * _zoom) + cy));
-        InvalidateVisual();
+        InvalidateMap();
     }
 
     private Point ToScreenPoint(MapNode node)
@@ -2521,10 +2779,6 @@ public sealed class MapControl : Control
     private void DrawEditorGrid(DrawingContext context, PlotMetrics plot, double viewCenterX, double viewCenterY)
     {
         var step = Math.Max(0.0001, EditorGridStep);
-        var worldScale = Math.Max(1e-9, ((plot.Width + plot.Height) * 0.5) * _zoom);
-        var minorPen = new Pen(new ImmutableSolidColorBrush(Color.Parse("#1E6A8A9E")), 1.0 / worldScale);
-        var majorPen = new Pen(new ImmutableSolidColorBrush(Color.Parse("#32AFD5F2")), 1.25 / worldScale);
-
         if (!TryScreenToWorld(new Point(0, 0), out var worldTopLeft) ||
             !TryScreenToWorld(new Point(Bounds.Width, Bounds.Height), out var worldBottomRight))
         {
@@ -2535,6 +2789,24 @@ public sealed class MapControl : Control
         var maxX = Math.Max(worldTopLeft.X, worldBottomRight.X);
         var minY = Math.Min(worldTopLeft.Y, worldBottomRight.Y);
         var maxY = Math.Max(worldTopLeft.Y, worldBottomRight.Y);
+        const int maxLinesPerAxis = 160;
+        var spanX = Math.Max(step, maxX - minX);
+        var spanY = Math.Max(step, maxY - minY);
+        var needed = Math.Max(spanX / step, spanY / step);
+        if (needed > maxLinesPerAxis)
+        {
+            step *= Math.Ceiling(needed / maxLinesPerAxis);
+        }
+
+        var worldScale = Math.Max(1e-9, ((plot.Width + plot.Height) * 0.5) * _zoom);
+        var lineWidth = 1.0 / worldScale;
+        if (lineWidth * worldScale < 0.35)
+        {
+            return;
+        }
+
+        var minorPen = _penCache.Get(Color.Parse("#1E6A8A9E"), 1.0 / worldScale);
+        var majorPen = _penCache.Get(Color.Parse("#32AFD5F2"), 1.25 / worldScale);
 
         var firstX = Math.Floor(minX / step) * step;
         var firstY = Math.Floor(minY / step) * step;
@@ -3147,7 +3419,7 @@ public sealed class MapControl : Control
                 }
 
                 SaveVoronoiToCache(cacheKey, _voronoiWorldPolygonsByNodeId);
-                InvalidateVisual();
+                InvalidateMap();
             }, DispatcherPriority.Background);
         }, CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
     }
@@ -3280,32 +3552,11 @@ public sealed class MapControl : Control
         }
     }
 
-    private static string ComputeVoronoiCacheKey(MapGraph graph)
-    {
-        var sb = new StringBuilder(graph.Nodes.Count * 48 + graph.Links.Count * 24);
-        sb.Append("v1|");
-        sb.Append(graph.Nodes.Count).Append('|').Append(graph.Links.Count).Append('|');
-        foreach (var node in graph.Nodes.OrderBy(n => n.Id))
-        {
-            sb.Append(node.Id).Append(':')
-                .Append(node.X.ToString("F8", CultureInfo.InvariantCulture)).Append(',')
-                .Append(node.Y.ToString("F8", CultureInfo.InvariantCulture)).Append('|');
-        }
-
-        foreach (var link in graph.Links)
-        {
-            var a = Math.Min(link.FromId, link.ToId);
-            var b = Math.Max(link.FromId, link.ToId);
-            sb.Append(a).Append('-').Append(b).Append('|');
-        }
-
-        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));
-        return Convert.ToHexString(hashBytes);
-    }
+    private static string ComputeVoronoiCacheKey(MapGraph graph) => VoronoiCacheStore.ComputeKey(graph);
 
     private static bool TryLoadVoronoiFromCache(string key, out Dictionary<long, IReadOnlyList<(double X, double Y)>> polygons)
     {
-        if (VoronoiMemoryCache.TryGetValue(key, out polygons!))
+        if (VoronoiMemoryCache.TryGet(key, out polygons))
         {
             return true;
         }
@@ -3331,7 +3582,7 @@ public sealed class MapControl : Control
                 polygons[kvp.Key] = kvp.Value.Select(p => (p.X, p.Y)).ToList();
             }
 
-            VoronoiMemoryCache[key] = polygons;
+            VoronoiMemoryCache.Set(key, polygons);
             return polygons.Count > 0;
         }
         catch
@@ -3353,7 +3604,7 @@ public sealed class MapControl : Control
         {
             inMemory[kvp.Key] = kvp.Value.ToList();
         }
-        VoronoiMemoryCache[key] = inMemory;
+        VoronoiMemoryCache.Set(key, inMemory);
 
         try
         {
@@ -4206,7 +4457,7 @@ public sealed class MapControl : Control
             label.Width + 6,
             label.Height + 4);
         context.FillRectangle(NodeLabelBackgroundBrush, rect, 3);
-        DrawLabelWithHalo(context, label, halo, origin);
+        context.DrawText(label, origin);
     }
 
     private void DrawIndicatorLabel(DrawingContext context, MapNode node, Point origin)
@@ -5575,83 +5826,7 @@ public sealed class MapControl : Control
         IReadOnlyList<SovUpgradeEntry> upgrades,
         IEnumerable<string>? selectedKeys)
     {
-        if (selectedKeys is null)
-        {
-            return upgrades;
-        }
-
-        var set = selectedKeys.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        if (set.Count == 0)
-        {
-            return [];
-        }
-
-        return upgrades.Where(x => set.Contains(BuildSovFilterKey(x))).ToList();
-    }
-
-    private (Dictionary<long, int> CountsByNodeId, HashSet<long> SourceNodeIds) BuildExplorationDetectorOverlap(IEnumerable<string>? selectedKeys)
-    {
-        if (Graph is null || Graph.Nodes.Count == 0)
-        {
-            return ([], []);
-        }
-
-        var sourceNodeIds = Graph.Nodes
-            .Where(n => GetVisibleSovUpgrades(n.SovUpgrades, selectedKeys)
-                .Any(u => u.UpgradeName.Equals("Exploration Detector", StringComparison.OrdinalIgnoreCase)))
-            .Select(n => n.Id)
-            .ToHashSet();
-        if (sourceNodeIds.Count == 0)
-        {
-            return ([], []);
-        }
-
-        var adjacency = new Dictionary<long, List<long>>();
-        foreach (var node in Graph.Nodes)
-        {
-            adjacency[node.Id] = [];
-        }
-
-        foreach (var link in Graph.Links)
-        {
-            if (!adjacency.ContainsKey(link.FromId) || !adjacency.ContainsKey(link.ToId))
-            {
-                continue;
-            }
-
-            adjacency[link.FromId].Add(link.ToId);
-            adjacency[link.ToId].Add(link.FromId);
-        }
-
-        var counts = new Dictionary<long, int>();
-        foreach (var source in sourceNodeIds)
-        {
-            var visited = new HashSet<long> { source };
-            var queue = new Queue<(long NodeId, int Depth)>();
-            queue.Enqueue((source, 0));
-
-            while (queue.Count > 0)
-            {
-                var (current, depth) = queue.Dequeue();
-                counts[current] = counts.TryGetValue(current, out var existing) ? existing + 1 : 1;
-                if (depth >= 5)
-                {
-                    continue;
-                }
-
-                foreach (var next in adjacency[current])
-                {
-                    if (!visited.Add(next))
-                    {
-                        continue;
-                    }
-
-                    queue.Enqueue((next, depth + 1));
-                }
-            }
-        }
-
-        return (counts, sourceNodeIds);
+        return SovUpgradeFilters.GetVisible(upgrades, selectedKeys);
     }
 
     private static SovUpgradeEntry? GetNodeExplorationDetector(MapNode node, IEnumerable<string>? selectedKeys)
@@ -5662,24 +5837,16 @@ public sealed class MapControl : Control
             .FirstOrDefault();
     }
 
-    private static string BuildSovFilterKey(SovUpgradeEntry upgrade)
-    {
-        return IsSingleLevelSovUpgrade(upgrade.UpgradeName)
-            ? upgrade.UpgradeName
-            : $"{upgrade.UpgradeName}|{Math.Clamp(upgrade.Tier, 1, 3)}";
-    }
+    private static string BuildSovFilterKey(SovUpgradeEntry upgrade) => SovUpgradeFilters.BuildFilterKey(upgrade);
 
     private static string BuildSovIconFileName(SovUpgradeEntry upgrade)
     {
-        return IsSingleLevelSovUpgrade(upgrade.UpgradeName)
+        return SovUpgradeFilters.IsSingleLevel(upgrade.UpgradeName)
             ? $"{upgrade.UpgradeName}.png"
             : $"{upgrade.UpgradeName} {Math.Clamp(upgrade.Tier, 1, 3)}.png";
     }
 
-    private static bool IsSingleLevelSovUpgrade(string upgradeName)
-    {
-        return SingleLevelSovUpgrades.Contains(upgradeName);
-    }
+    private static bool IsSingleLevelSovUpgrade(string upgradeName) => SovUpgradeFilters.IsSingleLevel(upgradeName);
 
     private static Bitmap? LoadSovUpgradeIcon(string fileName)
     {
@@ -5738,25 +5905,6 @@ public sealed class MapControl : Control
         context.DrawImage(icon, src, dst);
     }
 
-    private static (Dictionary<long, int> CountsByNodeId, HashSet<long> SourceNodeIds) BuildNodeOverlapCounts(
-        IEnumerable<long>? nodeIds,
-        IEnumerable<long>? sourceNodeIds)
-    {
-        var counts = new Dictionary<long, int>();
-        if (nodeIds is not null)
-        {
-            foreach (var nodeId in nodeIds)
-            {
-                counts[nodeId] = counts.TryGetValue(nodeId, out var existing) ? existing + 1 : 1;
-            }
-        }
-
-        var sources = sourceNodeIds is null
-            ? []
-            : sourceNodeIds.ToHashSet();
-        return (counts, sources);
-    }
-
     private static Dictionary<long, Color> BuildJumpRangeOriginColorMap(IReadOnlyList<JumpRangeOriginDisplay>? origins)
     {
         var result = new Dictionary<long, Color>();
@@ -5789,8 +5937,7 @@ public sealed class MapControl : Control
 
         if (segments.Count == 1)
         {
-            var pen = new Pen(new ImmutableSolidColorBrush(segments[0]), 3.2);
-            context.DrawEllipse(null, pen, center, radius, radius);
+            context.DrawEllipse(null, _penCache.Get(segments[0], 3.2), center, radius, radius);
             return;
         }
 
@@ -5799,8 +5946,7 @@ public sealed class MapControl : Control
         for (var i = 0; i < segments.Count; i++)
         {
             var start = (360.0 / segments.Count) * i + (gapDegrees * 0.5);
-            var pen = new Pen(new ImmutableSolidColorBrush(segments[i]), 3.2);
-            DrawArcSegment(context, center, radius, start, sweep, pen);
+            DrawArcSegment(context, center, radius, start, sweep, _penCache.Get(segments[i], 3.2));
         }
     }
 
@@ -5899,9 +6045,8 @@ public sealed class MapControl : Control
         bool showOrbitIcons)
     {
         var ringColor = GetIntelHostileColor(hostileScore);
-        // Keep intel ring ratios bound to node size so it scales 1:1 with node zoom.
         var scaledRingRadius = nodeRadius * 2.2;
-        var corePen = new Pen(new ImmutableSolidColorBrush(Color.FromArgb(220, ringColor.R, ringColor.G, ringColor.B)), Math.Max(1.8, nodeRadius * 0.67));
+        var corePen = _penCache.Get(Color.FromArgb(220, ringColor.R, ringColor.G, ringColor.B), Math.Max(1.8, nodeRadius * 0.67));
         context.DrawEllipse(null, corePen, center, scaledRingRadius, scaledRingRadius);
 
         if (!showOrbitIcons)
@@ -5909,14 +6054,23 @@ public sealed class MapControl : Control
             return;
         }
 
-        var fadePen1 = new Pen(new ImmutableSolidColorBrush(Color.FromArgb(130, ringColor.R, ringColor.G, ringColor.B)), Math.Max(1.2, nodeRadius * 0.47));
-        var fadePen2 = new Pen(new ImmutableSolidColorBrush(Color.FromArgb(70, ringColor.R, ringColor.G, ringColor.B)), Math.Max(0.9, nodeRadius * 0.31));
+        var fadePen1 = _penCache.Get(Color.FromArgb(130, ringColor.R, ringColor.G, ringColor.B), Math.Max(1.2, nodeRadius * 0.47));
+        var fadePen2 = _penCache.Get(Color.FromArgb(70, ringColor.R, ringColor.G, ringColor.B), Math.Max(0.9, nodeRadius * 0.31));
         var fadeOffset1 = Math.Max(0.5, nodeRadius * 0.13);
         var fadeOffset2 = Math.Max(0.9, nodeRadius * 0.25);
         context.DrawEllipse(null, fadePen1, center, scaledRingRadius + fadeOffset1, scaledRingRadius + fadeOffset1);
         context.DrawEllipse(null, fadePen2, center, scaledRingRadius + fadeOffset2, scaledRingRadius + fadeOffset2);
+        DrawIntelOrbitIcons(context, center, nodeRadius, iconKeys);
+    }
 
-        var icons = iconKeys.Take(10).ToList();
+    private void DrawIntelOrbitIcons(
+        DrawingContext context,
+        Point center,
+        double nodeRadius,
+        IReadOnlyList<string> iconKeys)
+    {
+        var scaledRingRadius = nodeRadius * 2.2;
+        var icons = iconKeys.Count <= 10 ? iconKeys : iconKeys.Take(10).ToArray();
         if (icons.Count == 0)
         {
             return;
@@ -6566,7 +6720,7 @@ public sealed class MapControl : Control
                     OrganizationLogoRetryAfterUtc[cacheKey] = DateTime.UtcNow + CharacterPortraitRetryDelay;
                 }
                 OrganizationLogoLoading.TryRemove(cacheKey, out _);
-                Dispatcher.UIThread.Post(InvalidateVisual);
+                Dispatcher.UIThread.Post(InvalidateMap);
             }
         });
 
@@ -6628,7 +6782,7 @@ public sealed class MapControl : Control
                 }
 
                 ShipTypeIconLoading.TryRemove(typeId, out _);
-                Dispatcher.UIThread.Post(InvalidateVisual);
+                Dispatcher.UIThread.Post(InvalidateMap);
             }
         });
 
@@ -6713,7 +6867,7 @@ public sealed class MapControl : Control
                 }
 
                 CharacterPortraitLoading.TryRemove(characterId, out _);
-                Dispatcher.UIThread.Post(InvalidateVisual);
+                Dispatcher.UIThread.Post(InvalidateMap);
             }
         });
 

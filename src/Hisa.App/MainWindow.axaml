@@ -59,6 +59,21 @@
     <Style Selector="ContextMenu.map-node-menu MenuItem.map-node-menu-item:pressed">
       <Setter Property="Background" Value="#6695CCFF" />
     </Style>
+    <Style Selector="ListBox.overlay-cards">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Focusable" Value="False" />
+      <Setter Property="MaxHeight" Value="360" />
+      <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+      <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto" />
+    </Style>
+    <Style Selector="ListBox.overlay-cards ListBoxItem">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Margin" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
     <Style Selector="Button.top-toolbar-action">
       <Setter Property="MinWidth" Value="0" />
       <Setter Property="MinHeight" Value="24" />
@@ -1003,9 +1018,8 @@
                         VerticalAlignment="Center" />
             </Grid>
             <TextBlock Text="Data source: EVE chat logs (configured intel channels)" Foreground="#8FA5C4" FontSize="11" />
-            <ScrollViewer MaxHeight="360" VerticalScrollBarVisibility="Auto">
-              <ItemsControl ItemsSource="{Binding IntelCardsForView}">
-                <ItemsControl.ItemTemplate>
+            <ListBox Classes="overlay-cards" ItemsSource="{Binding IntelCardsForView}">
+                <ListBox.ItemTemplate>
                   <DataTemplate>
                     <Grid Margin="0,0,0,8" ColumnDefinitions="4,*">
                       <Border Grid.Column="0" CornerRadius="4,0,0,4" Background="{Binding AccentHex}" />
@@ -1226,9 +1240,8 @@
                       </Border>
                     </Grid>
                   </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-            </ScrollViewer>
+                </ListBox.ItemTemplate>
+              </ListBox>
             <TextBlock Text="No intel reports available in this view." Foreground="#7F93AE" IsVisible="{Binding HasNoIntelOverlayData}" />
           </StackPanel>
         </Border>
@@ -1254,9 +1267,8 @@
                         VerticalAlignment="Center" />
             </Grid>
             <TextBlock Text="Data source: zKillboard R2Z2" Foreground="#8FA5C4" FontSize="11" />
-            <ScrollViewer MaxHeight="360" VerticalScrollBarVisibility="Auto">
-              <ItemsControl ItemsSource="{Binding ZkillmailCardsForView}">
-                <ItemsControl.ItemTemplate>
+            <ListBox Classes="overlay-cards" ItemsSource="{Binding ZkillmailCardsForView}">
+                <ListBox.ItemTemplate>
                   <DataTemplate>
                     <Grid Margin="0,0,0,8" ColumnDefinitions="4,*">
                       <Border Grid.Column="0" CornerRadius="4,0,0,4" Background="#FFB347" />
@@ -1371,9 +1383,8 @@
                       </Border>
                     </Grid>
                   </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-            </ScrollViewer>
+                </ListBox.ItemTemplate>
+              </ListBox>
             <TextBlock Text="No zKillmails available in this view." Foreground="#7F93AE" IsVisible="{Binding HasNoZkillmailOverlayData}" />
           </StackPanel>
         </Border>

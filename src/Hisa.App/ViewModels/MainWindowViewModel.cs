@@ -13,6 +13,7 @@ using Avalonia.Threading;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Hisa.App.ViewModels;
+using Hisa.Core;
 using Hisa.Core.Abstractions;
 using Hisa.Core.Models;
 using Hisa.Logs.LocalChatLogs;
@@ -325,6 +326,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly Dictionary<long, JumpRangeOriginSettings> _jumpRangeOriginsLyByNodeId = [];
     private readonly Dictionary<long, uint> _jumpRangeOriginColorByNodeId = [];
     private readonly SemaphoreSlim _jumpRangeOriginsPersistenceGate = new(1, 1);
+    private int _jumpRangeRebuildVersion;
     private List<long> _jumpRangeInRangeNodeIdsForView = [];
     private IReadOnlyList<JumpRangeOriginDisplay> _jumpRangeOriginsDisplayForView = [];
     private List<long> _lyCoverageCoveredNodeIdsForView = [];
@@ -593,7 +595,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _miningSessionFeed.SnapshotUpdated += OnMiningSnapshotUpdated;
         _intelOverlayAgeTimer = new DispatcherTimer { Interval = OverlayAgeChipRefreshInterval };
         _intelOverlayAgeTimer.Tick += (_, _) => RefreshIntelOverlayCardAges();
-        _intelOverlayAgeTimer.Start();
         _miningSiteReminderTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(20) };
         _miningSiteReminderTimer.Tick += async (_, _) => await CheckMiningSiteRemindersAsync();
         _miningSiteReminderTimer.Start();
@@ -3473,6 +3474,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ZkillmailOverlayTitle)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasZkillmailOverlayData)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasNoZkillmailOverlayData)));
+        UpdateOverlayAgeTimer();
 
         _ = EnsureShipImagesForIntelCardsAsync();
         _ = EnsureZkillIdentityAssetsAsync();
@@ -3532,6 +3534,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelOverlayTitle)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasIntelOverlayData)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasNoIntelOverlayData)));
+        UpdateOverlayAgeTimer();
 
         _ = ResolveIntelCharacterIdsAsync();
         _ = EnsureShipImagesForIntelCardsAsync();
@@ -5640,6 +5643,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     private void RebuildJumpRangeOverlay()
     {
+        var version = Interlocked.Increment(ref _jumpRangeRebuildVersion);
         if (CurrentGraph is null || CurrentGraph.Nodes.Count == 0 || _jumpRangeOriginsLyByNodeId.Count == 0)
         {
             if (_jumpRangeInRangeNodeIdsForView.Count > 0)
@@ -5650,13 +5654,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             _jumpRangeOriginsDisplayForView = [];
             _jumpRangeMembershipByNodeId.Clear();
             _jumpRangeDistancesByNodeId.Clear();
-
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(JumpRangeOriginNodeIdsForView)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(JumpRangeInRangeNodeIdsForView)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(JumpRangeOriginsDisplayForView)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(JumpRangeMembershipByNodeIdForView)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(JumpRangeDistancesByNodeIdForView)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasJumpRangeOverlay)));
+            PublishJumpRangeOverlayProperties();
             return;
         }
 
@@ -5693,60 +5691,38 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             })
             .ToList();
 
-        var inRange = new List<long>();
-        _jumpRangeMembershipByNodeId.Clear();
-        _jumpRangeDistancesByNodeId.Clear();
-        if (_jumpRangeOriginsLyByNodeId.Count > 0)
+        var nodes = CurrentGraph.Nodes;
+        var origins = new Dictionary<long, JumpRangeOriginSettings>(_jumpRangeOriginsLyByNodeId);
+        _ = Task.Run(() =>
         {
-            foreach (var targetNode in CurrentGraph.Nodes)
+            var result = JumpRangeOverlayCalculator.Build(nodes, origins);
+            Dispatcher.UIThread.Post(() =>
             {
-                foreach (var (originId, origin) in _jumpRangeOriginsLyByNodeId)
+                if (version != _jumpRangeRebuildVersion)
                 {
-                    if (originId == targetNode.Id)
-                    {
-                        AddJumpRangeDistance(targetNode, origin, 0);
-                        if (targetNode.Security is null || targetNode.Security.Value <= 0.45)
-                        {
-                            inRange.Add(targetNode.Id);
-                            if (!_jumpRangeMembershipByNodeId.TryGetValue(targetNode.Id, out var sourceList))
-                            {
-                                sourceList = [];
-                                _jumpRangeMembershipByNodeId[targetNode.Id] = sourceList;
-                            }
-                            sourceList.Add(originId);
-                        }
-                        continue;
-                    }
-
-                    var distanceLy = GetDistanceLy(origin, targetNode);
-                    if (distanceLy < 0)
-                    {
-                        continue;
-                    }
-
-                    var isInRange = distanceLy > 0 && distanceLy < origin.RangeLy;
-                    AddJumpRangeDistance(targetNode, origin, distanceLy);
-                    if (isInRange && (targetNode.Security is null || targetNode.Security.Value <= 0.45))
-                    {
-                        inRange.Add(targetNode.Id);
-                        if (!_jumpRangeMembershipByNodeId.TryGetValue(targetNode.Id, out var sourceList))
-                        {
-                            sourceList = [];
-                            _jumpRangeMembershipByNodeId[targetNode.Id] = sourceList;
-                        }
-                        sourceList.Add(originId);
-                    }
+                    return;
                 }
-            }
-        }
-        foreach (var targetId in _jumpRangeDistancesByNodeId.Keys.ToList())
-        {
-            _jumpRangeDistancesByNodeId[targetId] = _jumpRangeDistancesByNodeId[targetId]
-                .OrderBy(x => x.DistanceLy)
-                .ToList();
-        }
 
-        _jumpRangeInRangeNodeIdsForView = inRange;
+                _jumpRangeMembershipByNodeId.Clear();
+                _jumpRangeDistancesByNodeId.Clear();
+                foreach (var kvp in result.MembershipByNodeId)
+                {
+                    _jumpRangeMembershipByNodeId[kvp.Key] = kvp.Value;
+                }
+
+                foreach (var kvp in result.DistancesByNodeId)
+                {
+                    _jumpRangeDistancesByNodeId[kvp.Key] = kvp.Value;
+                }
+
+                _jumpRangeInRangeNodeIdsForView = result.InRangeNodeIds;
+                PublishJumpRangeOverlayProperties();
+            });
+        });
+    }
+
+    private void PublishJumpRangeOverlayProperties()
+    {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(JumpRangeOriginNodeIdsForView)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(JumpRangeInRangeNodeIdsForView)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(JumpRangeOriginsDisplayForView)));
@@ -5817,6 +5793,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasNoIntelOverlayData)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasZkillmailOverlayData)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasNoZkillmailOverlayData)));
+            UpdateOverlayAgeTimer();
             return;
         }
 
@@ -6095,6 +6072,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasNoIntelOverlayData)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasZkillmailOverlayData)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasNoZkillmailOverlayData)));
+        UpdateOverlayAgeTimer();
 
         _ = ResolveIntelCharacterIdsAsync();
         _ = EnsureShipImagesForIntelCardsAsync();
@@ -7064,11 +7042,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     {
         if (_intelCardsForView.Count == 0 && _zkillmailCardsForView.Count == 0)
         {
+            _intelOverlayAgeTimer.Stop();
             return;
         }
 
         var now = DateTime.UtcNow;
-        var intelChanged = false;
         foreach (var card in _intelCardsForView)
         {
             var age = now - card.LastUpdatedUtc;
@@ -7081,11 +7059,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             if (!string.Equals(card.AgeSummary, nextAge, StringComparison.Ordinal))
             {
                 card.AgeSummary = nextAge;
-                intelChanged = true;
             }
         }
 
-        var zkillChanged = false;
         foreach (var card in _zkillmailCardsForView)
         {
             var age = now - card.TimestampUtc;
@@ -7098,19 +7074,19 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             if (!string.Equals(card.AgeSummary, nextAge, StringComparison.Ordinal))
             {
                 card.AgeSummary = nextAge;
-                zkillChanged = true;
             }
         }
+    }
 
-        if (intelChanged)
+    private void UpdateOverlayAgeTimer()
+    {
+        if (_intelCardsForView.Count > 0 || _zkillmailCardsForView.Count > 0)
         {
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IntelCardsForView)));
+            _intelOverlayAgeTimer.Start();
+            return;
         }
 
-        if (zkillChanged)
-        {
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ZkillmailCardsForView)));
-        }
+        _intelOverlayAgeTimer.Stop();
     }
 
     private static string FormatOverlayAgeClock(TimeSpan age)
@@ -7863,24 +7839,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
 
         return "#6FE38E";
-    }
-
-    private void AddJumpRangeDistance(MapNode targetNode, JumpRangeOriginSettings origin, double distanceLy)
-    {
-        if (!_jumpRangeDistancesByNodeId.TryGetValue(targetNode.Id, out var values))
-        {
-            values = [];
-            _jumpRangeDistancesByNodeId[targetNode.Id] = values;
-        }
-
-        values.Add(new JumpRangeDistanceDisplay
-        {
-            OriginNodeId = origin.SolarSystemId,
-            OriginSystemName = origin.SolarSystemName,
-            DistanceLy = distanceLy,
-            MaxLy = origin.RangeLy,
-            IsInRange = distanceLy == 0 || (distanceLy > 0 && distanceLy < origin.RangeLy)
-        });
     }
 
     private (string BackgroundHex, string BorderHex) GetHostileBadgeColors(int hostileCount)
