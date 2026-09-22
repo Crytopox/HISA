@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Hisa.Core\Hisa.Core.csproj" />
+    <InternalsVisibleTo Include="Hisa.Rendering.Tests" />
   </ItemGroup>
 
   <ItemGroup>

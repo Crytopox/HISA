@@ -55,6 +55,9 @@ public sealed class MapControl : Control
     private const double NodeRegionConstellationFontSize = 9.5;
     private const double EditorRegionConstellationFontSize = 9.0;
     private const double UniverseMinNodeScale = 0.55;
+    private const int MaxUniverseTileEdge = 8192;
+    private const long MaxUniverseAtlasPixels = 512L * 1024 * 1024 / 4;
+    private const double UniverseAtlasPad = 48.0;
     private const double IconSize = 18.0;
     private const double SovIconSize = 22.0;
     private const double IndicatorIconLeftPadding = 2.0;
@@ -412,6 +415,8 @@ public sealed class MapControl : Control
     private readonly List<(Rect Bounds, IReadOnlyList<UserSystemMarkDisplay> Marks, Point Anchor)> _systemMarkClusterHits = [];
     private int _hoveredSystemMarkClusterIndex = -1;
     private Point[] _screenPositions = [];
+    private Point _screenCameraPan;
+    private double _screenCameraZoom = double.NaN;
     private double _graphMinX;
     private double _graphMaxX;
     private double _graphMinY;
@@ -422,10 +427,48 @@ public sealed class MapControl : Control
     private const double EditorFitPadding = 60.0;
     private const double EditorFitPaddingWide = 40.0;
     private readonly DispatcherTimer _linkAnimationTimer;
+    private readonly DispatcherTimer _universeIdleBakeTimer;
     private bool _isAttachedToVisualTree;
     private double _linkAnimationPhase;
     private bool _staticLayerDirty = true;
     private RenderTargetBitmap? _staticLayer;
+    private bool _universeBakeValid;
+    private bool _universeBakeBaseOnly;
+    private double _bakedZoom = 1.0;
+    private Size _bakedViewport;
+    private double _bakeMargin;
+    private readonly List<UniverseAtlasTile> _universeTiles = [];
+    private DateTime _universeBakeNotBefore = DateTime.MinValue;
+    private DateTime _universeWheelIdleUntil = DateTime.MinValue;
+    private MapGraph? _nodeGeometryGraph;
+    private MapNodeColorMode _nodeGeometryColorMode;
+    private MapNodeColorMode _nodeGeometryBackgroundMode;
+    private int _nodeGeometryVoronoiCount = -1;
+    private double _nodeGeometryZoom = double.NaN;
+    private double _nodeGeometryPlotWidth;
+    private double _nodeGeometryPlotHeight;
+    private readonly List<(Color Color, StreamGeometry Geometry)> _nodeGeometries = [];
+    private StreamGeometry? _voronoiHoleGeometry;
+    private MapGraph? _voronoiFillGraph;
+    private MapNodeColorMode _voronoiFillMode;
+    private int _voronoiFillPolygonCount = -1;
+    private readonly List<(IBrush Fill, StreamGeometry Geometry)> _voronoiFillGeometries = [];
+    private MapGraph? _linkBatchGraph;
+    private StreamGeometry? _linkSameConstellationGeometry;
+    private StreamGeometry? _linkSameRegionGeometry;
+    private StreamGeometry? _linkCrossRegionGeometry;
+    private MapGraph? _regionCentroidGraph;
+    private List<UniverseRegionCentroid> _regionCentroids = [];
+    private readonly List<(StreamGeometry Geometry, Pen Pen)> _highlightLinkBatches = [];
+    private readonly Dictionary<long, Pen> _worldPenCache = [];
+    private readonly List<int> _highlightNodeIndexes = [];
+    private long? _highlightBuiltSelected;
+    private long? _highlightBuiltHovered;
+    private long? _highlightBuiltSearchNode;
+    private int? _highlightBuiltSearchConstellation;
+    private int? _highlightBuiltSearchRegion;
+    private int? _highlightBuiltActiveRegion;
+    private IEnumerable<long>? _highlightBuiltAdditional;
     private readonly MapOverlapCache _indicatorOverlapCache = new();
     private readonly MapOverlapCache _overlayOverlapCache = new();
     private readonly MapPenCache _penCache = new();
@@ -1081,6 +1124,8 @@ public sealed class MapControl : Control
             _linkAnimationPhase += 0.012;
             InvalidateVisual();
         });
+        _universeIdleBakeTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
+        _universeIdleBakeTimer.Tick += (_, _) => OnUniverseIdleBakeTick();
     }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
@@ -1094,6 +1139,7 @@ public sealed class MapControl : Control
     {
         _isAttachedToVisualTree = false;
         _linkAnimationTimer.Stop();
+        _universeIdleBakeTimer.Stop();
         DisposeStaticLayer();
         base.OnDetachedFromVisualTree(e);
     }
@@ -1108,9 +1154,30 @@ public sealed class MapControl : Control
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
-        if (change.Property != SuspendAnimationsProperty)
+        if (change.Property != SuspendAnimationsProperty &&
+            change.Property != SelectedNodeIdProperty)
         {
             _staticLayerDirty = true;
+            if (change.Property == IntelHostileScoresByNodeIdProperty &&
+                (NodeColorMode == MapNodeColorMode.Hostiles || NodeBackgroundColorMode == MapNodeColorMode.Hostiles))
+            {
+                InvalidateUniverseGeometryCaches();
+            }
+
+            if (UseUniverseFastPath() && _universeTiles.Count > 0)
+            {
+                ScheduleUniverseIdleBake(resetDeadline: true);
+            }
+            else
+            {
+                _universeBakeValid = false;
+            }
+        }
+
+        if (change.Property == ViewModeProperty && ViewMode != MapViewMode.Universe)
+        {
+            _universeBakeValid = false;
+            DisposeStaticLayer();
         }
 
         if (change.Property == GraphProperty ||
@@ -1140,10 +1207,61 @@ public sealed class MapControl : Control
         _linkAnimationTimer?.Start();
     }
 
+    private void InvalidateUniverseGeometryCaches()
+    {
+        _nodeGeometryZoom = double.NaN;
+        _voronoiFillPolygonCount = -1;
+    }
+
     private void InvalidateMap()
     {
         _staticLayerDirty = true;
+        if (UseUniverseFastPath() && _universeTiles.Count > 0)
+        {
+            ScheduleUniverseIdleBake(resetDeadline: true);
+            InvalidateVisual();
+            return;
+        }
+
+        _universeBakeValid = false;
         InvalidateVisual();
+    }
+
+    private void InvalidateCamera(bool zoomChanged = false)
+    {
+        if (UseUniverseFastPath())
+        {
+            if (zoomChanged || !_universeBakeValid || _staticLayerDirty || _universeTiles.Count == 0)
+            {
+                ScheduleUniverseIdleBake(resetDeadline: true);
+            }
+
+            InvalidateVisual();
+            return;
+        }
+
+        InvalidateMap();
+    }
+
+    private void InvalidateInteractive()
+    {
+        if (UseUniverseFastPath())
+        {
+            InvalidateVisual();
+            return;
+        }
+
+        InvalidateMap();
+    }
+
+    private bool UseUniverseFastPath()
+    {
+        return ViewMode == MapViewMode.Universe &&
+               !ShowEditorGrid &&
+               Graph is not null &&
+               Graph.Nodes.Count > 0 &&
+               Bounds.Width > 2 &&
+               Bounds.Height > 2;
     }
 
     private void DisposeStaticLayer()
@@ -1151,6 +1269,18 @@ public sealed class MapControl : Control
         _staticLayer?.Dispose();
         _staticLayer = null;
         _staticLayerDirty = true;
+        _universeBakeValid = false;
+        DisposeUniverseAtlas();
+    }
+
+    private void DisposeUniverseAtlas()
+    {
+        foreach (var tile in _universeTiles)
+        {
+            tile.Dispose();
+        }
+
+        _universeTiles.Clear();
     }
 
     public void FitToView()
@@ -1328,6 +1458,18 @@ public sealed class MapControl : Control
             var node = Graph.Nodes[i];
             _screenPositions[i] = ToScreenPointFast(node.X, node.Y, plot, viewCenterX, viewCenterY);
         }
+
+        _screenCameraPan = _panOffset;
+        _screenCameraZoom = _zoom;
+    }
+
+    private bool ScreenCameraMatches()
+    {
+        return Graph is not null &&
+               _screenPositions.Length == Graph.Nodes.Count &&
+               Math.Abs(_screenCameraZoom - _zoom) < 1e-6 &&
+               Math.Abs(_screenCameraPan.X - _panOffset.X) < 0.5 &&
+               Math.Abs(_screenCameraPan.Y - _panOffset.Y) < 0.5;
     }
 
     private long? FindClosestNodeAt(Point point, double threshold)
@@ -1447,7 +1589,14 @@ public sealed class MapControl : Control
     {
         _panOffset = new Point(_panOffset.X + dxPixels, _panOffset.Y + dyPixels);
         UpdateAnimationTimerState();
-        InvalidateMap();
+        if (UseUniverseFastPath())
+        {
+            var plot = GetPlotMetrics();
+            UpdateScreenPositions(plot, Bounds.Width / 2.0, Bounds.Height / 2.0);
+            _hitTestGrid.Rebuild(_screenPositions, Graph!.Nodes.Count, Bounds.Size);
+        }
+
+        InvalidateCamera();
     }
 
     public void ZoomBy(double factor)
@@ -1480,7 +1629,7 @@ public sealed class MapControl : Control
             center.X - (((newBaseX - viewCenterX) * _zoom) + viewCenterX),
             center.Y - (((newBaseY - viewCenterY) * _zoom) + viewCenterY));
         UpdateAnimationTimerState();
-        InvalidateMap();
+        InvalidateCamera(zoomChanged: true);
     }
 
     private IBrush GetCachedBrush(Color color, double alpha01 = 1.0)
@@ -1515,6 +1664,12 @@ public sealed class MapControl : Control
         }
 
         PrepareVisibleState(bounds);
+        if (UseUniverseFastPath())
+        {
+            RenderUniverseFast(context, bounds);
+            return;
+        }
+
         if (!TryBlitStaticLayer(context, bounds))
         {
             DrawStaticScene(context, bounds);
@@ -1547,7 +1702,15 @@ public sealed class MapControl : Control
         _cachedJumpRangeInRangeNodeIds = null;
         CancelVoronoiBuild();
         RebuildGraphCaches();
+        _linkBatchGraph = null;
+        _regionCentroidGraph = null;
+        _nodeGeometryGraph = null;
+        _nodeGeometryZoom = double.NaN;
+        _voronoiFillGraph = null;
+        _voronoiFillPolygonCount = -1;
+        _highlightBuiltSelected = null;
         _staticLayerDirty = true;
+        _universeBakeValid = false;
     }
 
     private void PrepareVisibleState(Rect bounds)
@@ -1563,16 +1726,22 @@ public sealed class MapControl : Control
             _overlayOverlapCache.GetExplorationOverlap(Graph, OverlaySovUpgradeFilterKeys);
         EnsureJumpRangeCaches();
         EnsureJumpRouteCaches();
+        ReplaceSet(_additionalSelectedSet, AdditionalSelectedNodeIds);
+        ReplaceSet(_missingConnectionSet, MissingConnectionNodeIds);
+        ReplaceSet(_lyCoveredSet, LyCoverageCoveredNodeIds);
+        ReplaceSet(_lyUncoveredSet, LyCoverageUncoveredNodeIds);
+        ReplaceSet(_crossRegionConnectorSet, CrossRegionConnectorNodeIds);
 
-        if (_staticLayerDirty || _screenPositions.Length != Graph.Nodes.Count)
+        if (ShouldDeferHitGeometry() ||
+            (!_staticLayerDirty && ScreenCameraMatches() && !NeedsUniverseRebake()))
         {
-            ReplaceSet(_additionalSelectedSet, AdditionalSelectedNodeIds);
-            ReplaceSet(_missingConnectionSet, MissingConnectionNodeIds);
-            ReplaceSet(_lyCoveredSet, LyCoverageCoveredNodeIds);
-            ReplaceSet(_lyUncoveredSet, LyCoverageUncoveredNodeIds);
-            ReplaceSet(_crossRegionConnectorSet, CrossRegionConnectorNodeIds);
-            var plot = GetPlotMetrics();
-            UpdateScreenPositions(plot, Bounds.Width / 2.0, Bounds.Height / 2.0);
+            return;
+        }
+
+        var plot = GetPlotMetrics();
+        UpdateScreenPositions(plot, Bounds.Width / 2.0, Bounds.Height / 2.0);
+        if (_lastPanPoint is null || !UseUniverseFastPath())
+        {
             _hitTestGrid.Rebuild(_screenPositions, Graph.Nodes.Count, bounds.Size);
         }
     }
@@ -1661,6 +1830,287 @@ public sealed class MapControl : Control
         }
     }
 
+    private bool ShouldDeferHitGeometry()
+    {
+        return UseUniverseFastPath() && _lastPanPoint is not null;
+    }
+
+    private bool IsUniverseInteractionActive()
+    {
+        return _lastPanPoint is not null || DateTime.UtcNow < _universeWheelIdleUntil;
+    }
+
+    private bool CanBakeUniverseNow()
+    {
+        if (IsUniverseInteractionActive())
+        {
+            return false;
+        }
+
+        if (DateTime.UtcNow >= _universeBakeNotBefore)
+        {
+            return true;
+        }
+
+        return Math.Abs(Bounds.Width - _bakedViewport.Width) > 0.5 ||
+               Math.Abs(Bounds.Height - _bakedViewport.Height) > 0.5;
+    }
+
+    private void ScheduleUniverseIdleBake(bool resetDeadline)
+    {
+        var now = DateTime.UtcNow;
+        if (resetDeadline || _universeBakeNotBefore <= now)
+        {
+            _universeBakeNotBefore = now.AddMilliseconds(150);
+        }
+
+        var delay = _universeBakeNotBefore - now;
+        if (delay < TimeSpan.FromMilliseconds(1))
+        {
+            delay = TimeSpan.FromMilliseconds(1);
+        }
+
+        _universeIdleBakeTimer.Interval = delay;
+        _universeIdleBakeTimer.Start();
+    }
+
+    private void OnUniverseIdleBakeTick()
+    {
+        if (!UseUniverseFastPath())
+        {
+            return;
+        }
+
+        if (_lastPanPoint is not null)
+        {
+            ScheduleUniverseIdleBake(resetDeadline: false);
+            return;
+        }
+
+        if (DateTime.UtcNow < _universeWheelIdleUntil || DateTime.UtcNow < _universeBakeNotBefore)
+        {
+            ScheduleUniverseIdleBake(resetDeadline: false);
+            return;
+        }
+
+        if (NeedsUniverseRebake())
+        {
+            InvalidateVisual();
+        }
+    }
+
+    private bool NeedsUniverseRebake()
+    {
+        if (!UseUniverseFastPath())
+        {
+            return false;
+        }
+
+        if (!_universeBakeValid || _universeTiles.Count == 0 || _staticLayerDirty)
+        {
+            return true;
+        }
+
+        if (Math.Abs(Bounds.Width - _bakedViewport.Width) > 0.5 ||
+            Math.Abs(Bounds.Height - _bakedViewport.Height) > 0.5)
+        {
+            return true;
+        }
+
+        return Math.Abs(_zoom - _bakedZoom) > 1e-6;
+    }
+
+    private void RenderUniverseFast(DrawingContext context, Rect bounds)
+    {
+        if (NeedsUniverseRebake())
+        {
+            if (_universeTiles.Count == 0 || CanBakeUniverseNow())
+            {
+                try
+                {
+                    BakeUniverseLayer(bounds);
+                }
+                catch
+                {
+                    _universeBakeBaseOnly = false;
+                    if (_universeTiles.Count == 0)
+                    {
+                        DisposeStaticLayer();
+                    }
+                }
+            }
+            else
+            {
+                ScheduleUniverseIdleBake(resetDeadline: false);
+            }
+        }
+
+        if (_lastPanPoint is not null && _leftDragPanned && _universeTiles.Count > 0)
+        {
+            using (context.PushClip(new Rect(bounds.Size)))
+            {
+                context.FillRectangle(BackgroundBrush, new Rect(bounds.Size));
+                BlitUniverseLayer(context);
+                DrawUniverseDragDecorations(context, bounds);
+                DrawUniverseInteractiveOverlay(context, bounds);
+            }
+
+            return;
+        }
+
+        DrawStaticScene(context, bounds);
+        DrawAnimatedOverlays(context, bounds);
+    }
+
+    private void BakeUniverseLayer(Rect bounds)
+    {
+        _bakeMargin = 0;
+        var scaling = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1.0;
+        var plot = GetPlotMetrics();
+        var viewCenterX = bounds.Width / 2.0;
+        var viewCenterY = bounds.Height / 2.0;
+        var minWorldX = _graphMinX;
+        var maxWorldX = _graphMaxX;
+        var minWorldY = _graphMinY;
+        var maxWorldY = _graphMaxY;
+        if (NodeBackgroundColorMode != MapNodeColorMode.None)
+        {
+            foreach (var polygon in _voronoiWorldPolygonsByNodeId.Values)
+            {
+                foreach (var point in polygon)
+                {
+                    minWorldX = Math.Min(minWorldX, point.X);
+                    maxWorldX = Math.Max(maxWorldX, point.X);
+                    minWorldY = Math.Min(minWorldY, point.Y);
+                    maxWorldY = Math.Max(maxWorldY, point.Y);
+                }
+            }
+        }
+
+        var minX = PanFreeScreenX(minWorldX, plot, viewCenterX, _zoom) - UniverseAtlasPad;
+        var maxX = PanFreeScreenX(maxWorldX, plot, viewCenterX, _zoom) + UniverseAtlasPad;
+        var minY = PanFreeScreenY(minWorldY, plot, viewCenterY, _zoom) - UniverseAtlasPad;
+        var maxY = PanFreeScreenY(maxWorldY, plot, viewCenterY, _zoom) + UniverseAtlasPad;
+        var dipWidth = Math.Max(1.0, maxX - minX);
+        var dipHeight = Math.Max(1.0, maxY - minY);
+        var nativePixels = dipWidth * scaling * dipHeight * scaling;
+        var resolution = nativePixels > MaxUniverseAtlasPixels
+            ? Math.Sqrt(MaxUniverseAtlasPixels / nativePixels)
+            : 1.0;
+        var bakeScaling = Math.Max(0.05, scaling * resolution);
+        var maxTileDip = Math.Max(1.0, (MaxUniverseTileEdge - 2) / bakeScaling);
+        const double overlapDip = 200.0;
+        var tileDip = Math.Max(256.0, maxTileDip - overlapDip);
+        EnsureUniverseVoronoiFills();
+
+        var fresh = new List<UniverseAtlasTile>();
+        try
+        {
+            for (var top = minY; top < maxY - 0.01; top += tileDip)
+            {
+                for (var left = minX; left < maxX - 0.01; left += tileDip)
+                {
+                    var tileWidth = Math.Min(tileDip + overlapDip, maxX - left);
+                    var tileHeight = Math.Min(tileDip + overlapDip, maxY - top);
+                    var pixelSize = new PixelSize(
+                        Math.Max(1, (int)Math.Ceiling(tileWidth * bakeScaling)),
+                        Math.Max(1, (int)Math.Ceiling(tileHeight * bakeScaling)));
+                    var bitmap = new RenderTargetBitmap(pixelSize, new Vector(96 * bakeScaling, 96 * bakeScaling));
+                    using (var ctx = bitmap.CreateDrawingContext(true))
+                    {
+                        DrawCachedUniverseScene(
+                            ctx,
+                            new Rect(0, 0, tileWidth, tileHeight),
+                            WorldToAtlasMatrix(plot, viewCenterX, viewCenterY, _zoom, left, top),
+                            left,
+                            top,
+                            viewCenterX,
+                            viewCenterY);
+                    }
+
+                    fresh.Add(new UniverseAtlasTile(bitmap, left, top));
+                }
+            }
+        }
+        catch
+        {
+            foreach (var tile in fresh)
+            {
+                tile.Dispose();
+            }
+
+            throw;
+        }
+
+        _staticLayer?.Dispose();
+        _staticLayer = null;
+        DisposeUniverseAtlas();
+        _universeTiles.AddRange(fresh);
+        _bakedZoom = _zoom;
+        _bakedViewport = bounds.Size;
+        _universeBakeValid = true;
+        _staticLayerDirty = false;
+    }
+
+    private static double PanFreeScreenX(double worldX, PlotMetrics plot, double viewCenterX, double zoom)
+    {
+        var x = plot.OriginX + (worldX * plot.Width);
+        return ((x - viewCenterX) * zoom) + viewCenterX;
+    }
+
+    private static double PanFreeScreenY(double worldY, PlotMetrics plot, double viewCenterY, double zoom)
+    {
+        var y = plot.OriginY + (worldY * plot.Height);
+        return ((y - viewCenterY) * zoom) + viewCenterY;
+    }
+
+    private static Matrix WorldToAtlasMatrix(
+        PlotMetrics plot,
+        double viewCenterX,
+        double viewCenterY,
+        double zoom,
+        double originX,
+        double originY)
+    {
+        var scaleX = plot.Width * zoom;
+        var scaleY = plot.Height * zoom;
+        var offsetX = ((plot.OriginX - viewCenterX) * zoom) + viewCenterX - originX;
+        var offsetY = ((plot.OriginY - viewCenterY) * zoom) + viewCenterY - originY;
+        return new Matrix(scaleX, 0, 0, scaleY, offsetX, offsetY);
+    }
+
+    private void BlitUniverseLayer(DrawingContext context)
+    {
+        if (_universeTiles.Count == 0)
+        {
+            return;
+        }
+
+        var zoomRatio = Math.Abs(_bakedZoom) < 1e-9 ? 1.0 : _zoom / _bakedZoom;
+        var viewCenterX = Bounds.Width / 2.0;
+        var viewCenterY = Bounds.Height / 2.0;
+        foreach (var tile in _universeTiles)
+        {
+            var offsetX = ((tile.OriginX - viewCenterX) * zoomRatio) + viewCenterX + _panOffset.X;
+            var offsetY = ((tile.OriginY - viewCenterY) * zoomRatio) + viewCenterY + _panOffset.Y;
+            var bitmapSize = tile.Bitmap.Size;
+            var destWidth = bitmapSize.Width * zoomRatio;
+            var destHeight = bitmapSize.Height * zoomRatio;
+            if (offsetX + destWidth < 0 ||
+                offsetY + destHeight < 0 ||
+                offsetX > Bounds.Width ||
+                offsetY > Bounds.Height)
+            {
+                continue;
+            }
+
+            using (context.PushTransform(new Matrix(zoomRatio, 0, 0, zoomRatio, offsetX, offsetY)))
+            {
+                context.DrawImage(tile.Bitmap, new Rect(bitmapSize));
+            }
+        }
+    }
+
     private bool TryBlitStaticLayer(DrawingContext context, Rect bounds)
     {
         if (!EnsureStaticLayer(bounds) || _staticLayer is null)
@@ -1692,8 +2142,12 @@ public sealed class MapControl : Control
 
         try
         {
-            _staticLayer?.Dispose();
-            _staticLayer = new RenderTargetBitmap(pixelSize, new Vector(96 * scaling, 96 * scaling));
+            if (_staticLayer is null || _staticLayer.PixelSize != pixelSize)
+            {
+                _staticLayer?.Dispose();
+                _staticLayer = new RenderTargetBitmap(pixelSize, new Vector(96 * scaling, 96 * scaling));
+            }
+
             using (var ctx = _staticLayer.CreateDrawingContext(true))
             {
                 DrawStaticScene(ctx, bounds);
@@ -1711,9 +2165,14 @@ public sealed class MapControl : Control
 
     private void DrawStaticScene(DrawingContext context, Rect bounds)
     {
+        var drawInteractive = true;
+        if (drawInteractive)
+        {
+            _intelOverlayLinks.Clear();
+            _sovUpgradeIconHitTargets.Clear();
+        }
+
         context.FillRectangle(BackgroundBrush, bounds);
-        _intelOverlayLinks.Clear();
-        _sovUpgradeIconHitTargets.Clear();
 
         var plot = GetPlotMetrics();
         var viewCenterX = Bounds.Width / 2.0;
@@ -1731,36 +2190,53 @@ public sealed class MapControl : Control
 
         if (renderVoronoiBackground && _voronoiWorldGeometriesByNodeId.Count > 0)
         {
-            const double margin = 220;
-            var worldToScreen = GetWorldToScreenMatrix(plot);
-            var worldScale = Math.Max(1e-9, ((plot.Width + plot.Height) * 0.5) * _zoom);
-            var voronoiBorderPen = _penCache.Get(Color.Parse("#AA0D131D"), 0.8 / worldScale);
-            _visibleVoronoiNodeIndexes.Clear();
-
-            using (context.PushTransform(worldToScreen))
+            if (_universeBakeBaseOnly)
             {
-                for (var i = 0; i < Graph!.Nodes.Count; i++)
-                {
-                    var centerPoint = _screenPositions[i];
-                    if (!IsPointVisible(centerPoint, bounds, margin))
-                    {
-                        continue;
-                    }
+                DrawUniverseVoronoiBatches(context, plot);
+            }
+            else
+            {
+                const double margin = 220;
+                var worldToScreen = GetWorldToScreenMatrix(plot);
+                var worldScale = Math.Max(1e-9, ((plot.Width + plot.Height) * 0.5) * _zoom);
+                var voronoiBorderPen = _penCache.Get(Color.Parse("#AA0D131D"), 0.8 / worldScale);
+                _visibleVoronoiNodeIndexes.Clear();
 
-                    _visibleVoronoiNodeIndexes.Add(i);
-                    DrawVoronoiCellWorld(context, Graph.Nodes[i], voronoiBorderPen);
+                using (context.PushTransform(worldToScreen))
+                {
+                    for (var i = 0; i < Graph!.Nodes.Count; i++)
+                    {
+                        var centerPoint = _screenPositions[i];
+                        if (!IsPointVisible(centerPoint, bounds, margin))
+                        {
+                            continue;
+                        }
+
+                        _visibleVoronoiNodeIndexes.Add(i);
+                        DrawVoronoiCellWorld(context, Graph.Nodes[i], voronoiBorderPen);
+                    }
+                }
+
+                foreach (var index in _visibleVoronoiNodeIndexes)
+                {
+                    var holeRadius = 10.8 * GetUniverseNodeZoomScale();
+                    context.DrawEllipse(NodeHoleBrush, null, _screenPositions[index], holeRadius, holeRadius);
                 }
             }
+        }
 
-            foreach (var index in _visibleVoronoiNodeIndexes)
-            {
-                var holeRadius = 10.8 * GetUniverseNodeZoomScale();
-                context.DrawEllipse(NodeHoleBrush, null, _screenPositions[index], holeRadius, holeRadius);
-            }
+        if (_universeBakeBaseOnly)
+        {
+            DrawUniverseLinkBatches(context, plot);
         }
 
         foreach (var link in Graph!.Links)
         {
+            if (_universeBakeBaseOnly)
+            {
+                break;
+            }
+
             if (!_nodeIndexById.TryGetValue(link.FromId, out var fromIndex) ||
                 !_nodeIndexById.TryGetValue(link.ToId, out var toIndex))
             {
@@ -1775,22 +2251,27 @@ public sealed class MapControl : Control
                 continue;
             }
 
-            var isSelectedLink = SelectedNodeId is not null &&
+            var isSelectedLink = drawInteractive &&
+                                 SelectedNodeId is not null &&
                                  (link.FromId == SelectedNodeId.Value || link.ToId == SelectedNodeId.Value);
-            var isHoveredLink = _hoveredNodeId is not null &&
+            var isHoveredLink = drawInteractive &&
+                                _hoveredNodeId is not null &&
                                 (link.FromId == _hoveredNodeId.Value || link.ToId == _hoveredNodeId.Value);
-            var isSearchConstellationLink = _searchHighlightedConstellationId is not null &&
+            var isSearchConstellationLink = drawInteractive &&
+                                            _searchHighlightedConstellationId is not null &&
                                             _nodeById.TryGetValue(link.FromId, out var fromNodeForSearchConstellation) &&
                                             _nodeById.TryGetValue(link.ToId, out var toNodeForSearchConstellation) &&
                                             fromNodeForSearchConstellation.ConstellationId == _searchHighlightedConstellationId.Value &&
                                             toNodeForSearchConstellation.ConstellationId == _searchHighlightedConstellationId.Value;
-            var isSearchRegionLink = _searchHighlightedRegionId is not null &&
+            var isSearchRegionLink = drawInteractive &&
+                                     _searchHighlightedRegionId is not null &&
                                      _nodeById.TryGetValue(link.FromId, out var fromNodeForSearchRegion) &&
                                      _nodeById.TryGetValue(link.ToId, out var toNodeForSearchRegion) &&
                                      (fromNodeForSearchRegion.RegionId == _searchHighlightedRegionId.Value ||
                                       toNodeForSearchRegion.RegionId == _searchHighlightedRegionId.Value);
             var activeRegionId = _selectedRegionId ?? _hoveredRegionId;
-            var isRegionLink = activeRegionId is not null &&
+            var isRegionLink = drawInteractive &&
+                               activeRegionId is not null &&
                                _nodeById.TryGetValue(link.FromId, out var fromNodeForRegion) &&
                                _nodeById.TryGetValue(link.ToId, out var toNodeForRegion) &&
                                (fromNodeForRegion.RegionId == activeRegionId.Value || toNodeForRegion.RegionId == activeRegionId.Value);
@@ -1826,9 +2307,11 @@ public sealed class MapControl : Control
                     continue;
                 }
 
-                var isSelectedLink = SelectedNodeId is not null &&
+                var isSelectedLink = drawInteractive &&
+                                     SelectedNodeId is not null &&
                                      (link.FromId == SelectedNodeId.Value || link.ToId == SelectedNodeId.Value);
-                var isHoveredLink = _hoveredNodeId is not null &&
+                var isHoveredLink = drawInteractive &&
+                                    _hoveredNodeId is not null &&
                                     (link.FromId == _hoveredNodeId.Value || link.ToId == _hoveredNodeId.Value);
                 DrawCurvedAnsiblexLink(context, from, to, link, highlighted: isSelectedLink || isHoveredLink, animate: false);
             }
@@ -1842,6 +2325,11 @@ public sealed class MapControl : Control
         }
 
         var labelsDrawn = 0;
+        if (_universeBakeBaseOnly)
+        {
+            DrawUniverseNodeBatches(context);
+        }
+
         for (var i = 0; i < Graph.Nodes.Count; i++)
         {
             var node = Graph.Nodes[i];
@@ -1852,11 +2340,11 @@ public sealed class MapControl : Control
                 continue;
             }
 
-            var isSelected = SelectedNodeId == node.Id || _additionalSelectedSet.Contains(node.Id);
-            var isHovered = _hoveredNodeId == node.Id;
-            var isSearchHighlighted = _searchHighlightedNodeId == node.Id ||
+            var isSelected = drawInteractive && !_universeBakeBaseOnly && (SelectedNodeId == node.Id || _additionalSelectedSet.Contains(node.Id));
+            var isHovered = drawInteractive && !_universeBakeBaseOnly && _hoveredNodeId == node.Id;
+            var isSearchHighlighted = drawInteractive && !_universeBakeBaseOnly && (_searchHighlightedNodeId == node.Id ||
                                       (_searchHighlightedConstellationId is not null && node.ConstellationId == _searchHighlightedConstellationId.Value) ||
-                                      (_searchHighlightedRegionId is not null && node.RegionId == _searchHighlightedRegionId.Value);
+                                      (_searchHighlightedRegionId is not null && node.RegionId == _searchHighlightedRegionId.Value));
             var activeRegionId = _selectedRegionId ?? _hoveredRegionId;
             var isInActiveRegion = activeRegionId is not null && node.RegionId == activeRegionId.Value;
             var isSelectedRegionNode = _selectedRegionId is not null && node.RegionId == _selectedRegionId.Value;
@@ -1907,7 +2395,11 @@ public sealed class MapControl : Control
                 continue;
             }
 
-            context.DrawEllipse(brush, NodeOutlinePen, p, radius, radius);
+            if (!_universeBakeBaseOnly)
+            {
+                context.DrawEllipse(brush, NodeOutlinePen, p, radius, radius);
+            }
+
             var hostileScoreForNode = 0;
             var hasHostileScore = IntelHostileScoresByNodeId is not null &&
                                   IntelHostileScoresByNodeId.TryGetValue(node.Id, out hostileScoreForNode) &&
@@ -2013,8 +2505,8 @@ public sealed class MapControl : Control
                 continue;
             }
 
-            var isSelected = SelectedNodeId == node.Id || _additionalSelectedSet.Contains(node.Id);
-            var isHovered = _hoveredNodeId == node.Id;
+            var isSelected = drawInteractive && !_universeBakeBaseOnly && (SelectedNodeId == node.Id || _additionalSelectedSet.Contains(node.Id));
+            var isHovered = drawInteractive && !_universeBakeBaseOnly && _hoveredNodeId == node.Id;
             var universeNodeScale = GetUniverseNodeZoomScale();
             var radius = (isSelected ? 9.3 : isHovered ? 8.4 : 6.75) * universeNodeScale;
             var badgeY = p.Y - radius - 9.0;
@@ -2064,7 +2556,8 @@ public sealed class MapControl : Control
             var suppressInlineLabel =
                 (SelectedNodeId is not null && node.Id == SelectedNodeId.Value) ||
                 (_hoveredNodeId is not null && node.Id == _hoveredNodeId.Value);
-            if (!suppressInlineLabel &&
+            if (drawInteractive &&
+                !suppressInlineLabel &&
                 (shouldShowInlineLabels || isSelected || isHovered) &&
                 labelsDrawn < labelBudget &&
                 IsPointVisible(p, bounds, labelVisibilityMargin))
@@ -2073,6 +2566,11 @@ public sealed class MapControl : Control
                 DrawIndicatorLabel(context, node, labelOrigin);
                 labelsDrawn++;
             }
+        }
+
+        if (!drawInteractive || _universeBakeBaseOnly)
+        {
+            return;
         }
 
         if (ViewMode != MapViewMode.UniverseRegions)
@@ -2099,6 +2597,987 @@ public sealed class MapControl : Control
         {
             DrawUniverseRegionLabels(context);
         }
+    }
+
+    private void DrawCachedUniverseScene(
+        DrawingContext context,
+        Rect clearRect,
+        Matrix worldToLocal,
+        double originX,
+        double originY,
+        double viewCenterX,
+        double viewCenterY)
+    {
+        context.FillRectangle(BackgroundBrush, clearRect);
+        var plot = GetPlotMetrics();
+        var worldScale = Math.Max(1e-9, ((plot.Width + plot.Height) * 0.5) * _zoom);
+        EnsureUniverseVoronoiFills();
+        var borderPen = ScaleWorldPen(new Pen(new ImmutableSolidColorBrush(Color.Parse("#AA0D131D")), 0.8), worldScale);
+        using (context.PushTransform(worldToLocal))
+        {
+            foreach (var (fill, geometry) in _voronoiFillGeometries)
+            {
+                context.DrawGeometry(fill, borderPen, geometry);
+            }
+        }
+
+        if (Graph is null)
+        {
+            return;
+        }
+
+        var nodeRadius = 6.75 * GetUniverseNodeZoomScale();
+        var holeRadius = 10.8 * GetUniverseNodeZoomScale();
+        var drawHoles = NodeBackgroundColorMode != MapNodeColorMode.None && _voronoiWorldPolygonsByNodeId.Count > 0;
+        if (drawHoles)
+        {
+            for (var i = 0; i < Graph.Nodes.Count; i++)
+            {
+                var node = Graph.Nodes[i];
+                if (!TryGetVoronoiFill(node, out _))
+                {
+                    continue;
+                }
+
+                var point = AtlasLocalPoint(node, plot, viewCenterX, viewCenterY, originX, originY);
+                if (!IsPointVisible(point, clearRect, 24))
+                {
+                    continue;
+                }
+
+                context.DrawEllipse(NodeHoleBrush, null, point, holeRadius, holeRadius);
+            }
+        }
+
+        foreach (var link in Graph.Links)
+        {
+            if (!_nodeById.TryGetValue(link.FromId, out var fromNode) ||
+                !_nodeById.TryGetValue(link.ToId, out var toNode))
+            {
+                continue;
+            }
+
+            var from = AtlasLocalPoint(fromNode, plot, viewCenterX, viewCenterY, originX, originY);
+            var to = AtlasLocalPoint(toNode, plot, viewCenterX, viewCenterY, originX, originY);
+            if (!IsSegmentPotentiallyVisible(from, to, clearRect, 48))
+            {
+                continue;
+            }
+
+            var pen = GetLinkPen(LinksPen, SameConstellationPen, SameRegionPen, CrossRegionPen, link, _nodeById);
+            context.DrawLine(pen, from, to);
+        }
+
+        for (var i = 0; i < Graph.Nodes.Count; i++)
+        {
+            var node = Graph.Nodes[i];
+            var point = AtlasLocalPoint(node, plot, viewCenterX, viewCenterY, originX, originY);
+            if (!IsPointVisible(point, clearRect, 24))
+            {
+                continue;
+            }
+
+            context.DrawEllipse(GetCachedBrush(GetNodeBaseColor(node, NodeColorMode)), NodeOutlinePen, point, nodeRadius, nodeRadius);
+        }
+    }
+
+    private Point AtlasLocalPoint(
+        MapNode node,
+        PlotMetrics plot,
+        double viewCenterX,
+        double viewCenterY,
+        double originX,
+        double originY)
+    {
+        return new Point(
+            PanFreeScreenX(node.X, plot, viewCenterX, _zoom) - originX,
+            PanFreeScreenY(node.Y, plot, viewCenterY, _zoom) - originY);
+    }
+
+    private void EnsureUniverseNodeGeometries(double worldScale)
+    {
+        var plot = GetPlotMetrics();
+        if (ReferenceEquals(_nodeGeometryGraph, Graph) &&
+            _nodeGeometryColorMode == NodeColorMode &&
+            _nodeGeometryBackgroundMode == NodeBackgroundColorMode &&
+            _nodeGeometryVoronoiCount == _voronoiWorldPolygonsByNodeId.Count &&
+            Math.Abs(_nodeGeometryZoom - _zoom) < 1e-6 &&
+            Math.Abs(_nodeGeometryPlotWidth - plot.Width) < 0.5 &&
+            Math.Abs(_nodeGeometryPlotHeight - plot.Height) < 0.5)
+        {
+            return;
+        }
+
+        _nodeGeometryGraph = Graph;
+        _nodeGeometryColorMode = NodeColorMode;
+        _nodeGeometryBackgroundMode = NodeBackgroundColorMode;
+        _nodeGeometryVoronoiCount = _voronoiWorldPolygonsByNodeId.Count;
+        _nodeGeometryZoom = _zoom;
+        _nodeGeometryPlotWidth = plot.Width;
+        _nodeGeometryPlotHeight = plot.Height;
+        _nodeGeometries.Clear();
+        _voronoiHoleGeometry = null;
+        if (Graph is null || Graph.Nodes.Count == 0)
+        {
+            return;
+        }
+
+        var radius = (6.75 * GetUniverseNodeZoomScale()) / worldScale;
+        var count = Graph.Nodes.Count;
+        var distinct = new HashSet<uint>();
+        var colors = new Color[count];
+        for (var i = 0; i < count; i++)
+        {
+            colors[i] = GetNodeBaseColor(Graph.Nodes[i], NodeColorMode);
+            distinct.Add(UniverseSceneBatch.PackColor(colors[i].R, colors[i].G, colors[i].B));
+        }
+
+        var quantize = UniverseSceneBatch.ShouldQuantize(distinct.Count);
+        var groups = new Dictionary<uint, (Color Color, StreamGeometry Geometry, StreamGeometryContext Context)>();
+        for (var i = 0; i < count; i++)
+        {
+            var color = colors[i];
+            var key = quantize
+                ? UniverseSceneBatch.QuantizeColorKey(color.R, color.G, color.B)
+                : UniverseSceneBatch.PackColor(color.R, color.G, color.B);
+            if (!groups.TryGetValue(key, out var group))
+            {
+                var geometry = new StreamGeometry();
+                group = (color, geometry, geometry.Open());
+                groups[key] = group;
+            }
+
+            UniverseSceneBatch.AddCircle(group.Context, new Point(Graph.Nodes[i].X, Graph.Nodes[i].Y), radius);
+        }
+
+        foreach (var group in groups.Values)
+        {
+            group.Context.Dispose();
+            _nodeGeometries.Add((group.Color, group.Geometry));
+        }
+
+        if (NodeBackgroundColorMode == MapNodeColorMode.None || _voronoiWorldPolygonsByNodeId.Count == 0)
+        {
+            return;
+        }
+
+        var holeRadius = (10.8 * GetUniverseNodeZoomScale()) / worldScale;
+        var holes = new StreamGeometry();
+        var drewHole = false;
+        using (var holeContext = holes.Open())
+        {
+            for (var i = 0; i < count; i++)
+            {
+                if (!TryGetVoronoiFill(Graph.Nodes[i], out _))
+                {
+                    continue;
+                }
+
+                UniverseSceneBatch.AddCircle(holeContext, new Point(Graph.Nodes[i].X, Graph.Nodes[i].Y), holeRadius);
+                drewHole = true;
+            }
+        }
+
+        if (drewHole)
+        {
+            _voronoiHoleGeometry = holes;
+        }
+    }
+
+    private void EnsureUniverseVoronoiFills()
+    {
+        var polygonCount = _voronoiWorldPolygonsByNodeId.Count;
+        if (ReferenceEquals(_voronoiFillGraph, Graph) &&
+            _voronoiFillMode == NodeBackgroundColorMode &&
+            _voronoiFillPolygonCount == polygonCount)
+        {
+            return;
+        }
+
+        _voronoiFillGraph = Graph;
+        _voronoiFillMode = NodeBackgroundColorMode;
+        _voronoiFillPolygonCount = polygonCount;
+        _voronoiFillGeometries.Clear();
+        if (Graph is null ||
+            NodeBackgroundColorMode == MapNodeColorMode.None ||
+            polygonCount == 0)
+        {
+            return;
+        }
+
+        var quantizeFills = NodeBackgroundColorMode is MapNodeColorMode.SystemJumps
+            or MapNodeColorMode.ShipKills
+            or MapNodeColorMode.PodKills
+            or MapNodeColorMode.NpcKills
+            or MapNodeColorMode.NullsecTrueSec
+            or MapNodeColorMode.Hostiles;
+        var groups = new Dictionary<uint, (IBrush Fill, StreamGeometry Geometry, StreamGeometryContext Context)>();
+        foreach (var node in Graph.Nodes)
+        {
+            if (!TryGetVoronoiFill(node, out var fill) ||
+                fill is not ISolidColorBrush solidFill ||
+                !_voronoiWorldPolygonsByNodeId.TryGetValue(node.Id, out var polygon) ||
+                polygon.Count < 3)
+            {
+                continue;
+            }
+
+            var color = solidFill.Color;
+            var key = quantizeFills
+                ? UniverseSceneBatch.QuantizeColorKey(color.R, color.G, color.B)
+                : UniverseSceneBatch.PackColor(color.R, color.G, color.B);
+            if (!groups.TryGetValue(key, out var group))
+            {
+                var geometry = new StreamGeometry();
+                group = (fill, geometry, geometry.Open());
+                groups[key] = group;
+            }
+
+            group.Context.BeginFigure(new Point(polygon[0].X, polygon[0].Y), true);
+            for (var p = 1; p < polygon.Count; p++)
+            {
+                group.Context.LineTo(new Point(polygon[p].X, polygon[p].Y));
+            }
+
+            group.Context.EndFigure(true);
+        }
+
+        foreach (var group in groups.Values)
+        {
+            group.Context.Dispose();
+            _voronoiFillGeometries.Add((group.Fill, group.Geometry));
+        }
+    }
+
+    private void DrawUniverseBakedLabels(DrawingContext context, Rect bounds)
+    {
+        if (Graph is null)
+        {
+            return;
+        }
+
+        var plot = GetPlotMetrics();
+        var viewCenterX = bounds.Width / 2.0;
+        var viewCenterY = bounds.Height / 2.0;
+        var labelBudget = GetLabelBudget();
+        var labelsDrawn = 0;
+        const double labelVisibilityMargin = 180;
+        for (var i = 0; i < Graph.Nodes.Count; i++)
+        {
+            if (labelsDrawn >= labelBudget)
+            {
+                break;
+            }
+
+            var node = Graph.Nodes[i];
+            var point = ToScreenPointFast(node.X, node.Y, plot, viewCenterX, viewCenterY);
+            if (!IsPointVisible(point, bounds, labelVisibilityMargin))
+            {
+                continue;
+            }
+
+            if ((SelectedNodeId is not null && node.Id == SelectedNodeId.Value) ||
+                (_hoveredNodeId is not null && node.Id == _hoveredNodeId.Value))
+            {
+                continue;
+            }
+
+            DrawIndicatorLabel(context, node, GetNodeLabelOrigin(point));
+            labelsDrawn++;
+        }
+    }
+
+    private void DrawUniverseLinkBatches(DrawingContext context, PlotMetrics plot)
+    {
+        EnsureUniverseLinkGeometries();
+        var worldScale = Math.Max(1e-9, ((plot.Width + plot.Height) * 0.5) * _zoom);
+        using (context.PushTransform(GetWorldToScreenMatrix(plot)))
+        {
+            DrawWorldLinkGeometry(context, _linkSameConstellationGeometry, SameConstellationPen, worldScale);
+            DrawWorldLinkGeometry(context, _linkSameRegionGeometry, SameRegionPen, worldScale);
+            DrawWorldLinkGeometry(context, _linkCrossRegionGeometry, CrossRegionPen, worldScale);
+        }
+    }
+
+    private void DrawWorldLinkGeometry(DrawingContext context, StreamGeometry? geometry, Pen screenPen, double worldScale)
+    {
+        if (geometry is null)
+        {
+            return;
+        }
+
+        context.DrawGeometry(null, ScaleWorldPen(screenPen, worldScale), geometry);
+    }
+
+    private Pen ScaleWorldPen(Pen screenPen, double worldScale)
+    {
+        var thickness = Math.Max(1e-6, screenPen.Thickness / Math.Max(1e-9, worldScale));
+        var color = screenPen.Brush is ISolidColorBrush solid ? solid.Color : Colors.White;
+        var micro = (int)Math.Round(thickness * 1_000_000.0);
+        var key = ((long)color.ToUInt32() << 32) ^ micro;
+        if (_worldPenCache.TryGetValue(key, out var pen))
+        {
+            return pen;
+        }
+
+        pen = new Pen(new ImmutableSolidColorBrush(color), thickness);
+        _worldPenCache[key] = pen;
+        return pen;
+    }
+
+    private void EnsureUniverseLinkGeometries()
+    {
+        if (ReferenceEquals(_linkBatchGraph, Graph) &&
+            (_linkSameConstellationGeometry is not null ||
+             _linkSameRegionGeometry is not null ||
+             _linkCrossRegionGeometry is not null ||
+             Graph is null ||
+             Graph.Links.Count == 0))
+        {
+            return;
+        }
+
+        _linkBatchGraph = Graph;
+        _linkSameConstellationGeometry = null;
+        _linkSameRegionGeometry = null;
+        _linkCrossRegionGeometry = null;
+        if (Graph is null)
+        {
+            return;
+        }
+
+        var sameConstellation = new List<UniverseLinkSegment>();
+        var sameRegion = new List<UniverseLinkSegment>();
+        var crossRegion = new List<UniverseLinkSegment>();
+        UniverseSceneBatch.AppendLinks(Graph.Links, _nodeById, sameConstellation, sameRegion, crossRegion);
+        _linkSameConstellationGeometry = UniverseSceneBatch.CreateSegmentGeometry(sameConstellation);
+        _linkSameRegionGeometry = UniverseSceneBatch.CreateSegmentGeometry(sameRegion);
+        _linkCrossRegionGeometry = UniverseSceneBatch.CreateSegmentGeometry(crossRegion);
+    }
+
+    private void DrawUniverseNodeBatches(DrawingContext context)
+    {
+        if (Graph is null || _screenPositions.Length < Graph.Nodes.Count)
+        {
+            return;
+        }
+
+        var radius = 6.75 * GetUniverseNodeZoomScale();
+        var count = Graph.Nodes.Count;
+        var distinct = new HashSet<uint>();
+        var colors = new Color[count];
+        for (var i = 0; i < count; i++)
+        {
+            colors[i] = GetNodeBaseColor(Graph.Nodes[i], NodeColorMode);
+            distinct.Add(UniverseSceneBatch.PackColor(colors[i].R, colors[i].G, colors[i].B));
+        }
+
+        var quantize = UniverseSceneBatch.ShouldQuantize(distinct.Count);
+        var groups = new Dictionary<uint, (Color Color, StreamGeometry Geometry, StreamGeometryContext Context)>();
+        for (var i = 0; i < count; i++)
+        {
+            var color = colors[i];
+            var key = quantize
+                ? UniverseSceneBatch.QuantizeColorKey(color.R, color.G, color.B)
+                : UniverseSceneBatch.PackColor(color.R, color.G, color.B);
+            if (!groups.TryGetValue(key, out var group))
+            {
+                var geometry = new StreamGeometry();
+                group = (color, geometry, geometry.Open());
+                groups[key] = group;
+            }
+
+            UniverseSceneBatch.AddCircle(group.Context, _screenPositions[i], radius);
+        }
+
+        foreach (var group in groups.Values)
+        {
+            group.Context.Dispose();
+            context.DrawGeometry(GetCachedBrush(group.Color), NodeOutlinePen, group.Geometry);
+        }
+    }
+
+    private void DrawUniverseVoronoiBatches(DrawingContext context, PlotMetrics plot)
+    {
+        if (Graph is null)
+        {
+            return;
+        }
+
+        var worldScale = Math.Max(1e-9, ((plot.Width + plot.Height) * 0.5) * _zoom);
+        var borderPen = ScaleWorldPen(new Pen(new ImmutableSolidColorBrush(Color.Parse("#AA0D131D")), 0.8), worldScale);
+        var groups = new Dictionary<uint, (IBrush Fill, StreamGeometry Geometry, StreamGeometryContext Context)>();
+        var holeGeometry = new StreamGeometry();
+        var holeRadius = 10.8 * GetUniverseNodeZoomScale();
+        using (var holes = holeGeometry.Open())
+        {
+            for (var i = 0; i < Graph.Nodes.Count; i++)
+            {
+                var node = Graph.Nodes[i];
+                if (!TryGetVoronoiFill(node, out var fill))
+                {
+                    continue;
+                }
+
+                if (!_voronoiWorldPolygonsByNodeId.TryGetValue(node.Id, out var polygon) || polygon.Count < 3)
+                {
+                    continue;
+                }
+
+                if (fill is not ISolidColorBrush solidFill)
+                {
+                    continue;
+                }
+
+                var color = solidFill.Color;
+                var quantizeFills = NodeBackgroundColorMode is MapNodeColorMode.SystemJumps
+                    or MapNodeColorMode.ShipKills
+                    or MapNodeColorMode.PodKills
+                    or MapNodeColorMode.NpcKills
+                    or MapNodeColorMode.NullsecTrueSec
+                    or MapNodeColorMode.Hostiles;
+                var key = quantizeFills
+                    ? UniverseSceneBatch.QuantizeColorKey(color.R, color.G, color.B)
+                    : UniverseSceneBatch.PackColor(color.R, color.G, color.B);
+                if (!groups.TryGetValue(key, out var group))
+                {
+                    var geometry = new StreamGeometry();
+                    group = (fill, geometry, geometry.Open());
+                    groups[key] = group;
+                }
+
+                group.Context.BeginFigure(new Point(polygon[0].X, polygon[0].Y), true);
+                for (var p = 1; p < polygon.Count; p++)
+                {
+                    group.Context.LineTo(new Point(polygon[p].X, polygon[p].Y));
+                }
+
+                group.Context.EndFigure(true);
+                if (i < _screenPositions.Length)
+                {
+                    UniverseSceneBatch.AddCircle(holes, _screenPositions[i], holeRadius);
+                }
+            }
+        }
+
+        using (context.PushTransform(GetWorldToScreenMatrix(plot)))
+        {
+            foreach (var group in groups.Values)
+            {
+                group.Context.Dispose();
+                context.DrawGeometry(group.Fill, borderPen, group.Geometry);
+            }
+        }
+
+        context.DrawGeometry(NodeHoleBrush, null, holeGeometry);
+    }
+
+    private bool TryGetVoronoiFill(MapNode node, out IBrush fill)
+    {
+        fill = NodeHoleBrush;
+        if (!_voronoiWorldGeometriesByNodeId.ContainsKey(node.Id))
+        {
+            return false;
+        }
+
+        if (NodeBackgroundColorMode == MapNodeColorMode.JoveObservatory && !node.HasJoveObservatory)
+        {
+            return false;
+        }
+
+        if (NodeBackgroundColorMode == MapNodeColorMode.IceBelts && node.IceFieldCount <= 0)
+        {
+            return false;
+        }
+
+        if (NodeBackgroundColorMode == MapNodeColorMode.Storms && node.StormEffects.Count == 0)
+        {
+            return false;
+        }
+
+        if (NodeBackgroundColorMode == MapNodeColorMode.Wormholes && node.HubWormholeConnections.Count == 0)
+        {
+            return false;
+        }
+
+        if (NodeBackgroundColorMode == MapNodeColorMode.SovUpgrades &&
+            !GetVisibleSovUpgrades(node.SovUpgrades, IndicatorSovUpgradeFilterKeys).Any())
+        {
+            return false;
+        }
+
+        if (NodeBackgroundColorMode == MapNodeColorMode.Incursions && !node.HasActiveIncursion)
+        {
+            return false;
+        }
+
+        if (NodeBackgroundColorMode == MapNodeColorMode.SystemJumps && node.SystemJumps <= 0)
+        {
+            return false;
+        }
+
+        if (NodeBackgroundColorMode == MapNodeColorMode.ShipKills && node.ShipKills <= 0)
+        {
+            return false;
+        }
+
+        if (NodeBackgroundColorMode == MapNodeColorMode.PodKills && node.PodKills <= 0)
+        {
+            return false;
+        }
+
+        if (NodeBackgroundColorMode == MapNodeColorMode.NpcKills && node.NpcKills <= 0)
+        {
+            return false;
+        }
+
+        if (NodeBackgroundColorMode == MapNodeColorMode.Hostiles &&
+            (IntelHostileScoresByNodeId is null ||
+             !IntelHostileScoresByNodeId.TryGetValue(node.Id, out var hostileScore) ||
+             hostileScore <= 0))
+        {
+            return false;
+        }
+
+        var color = GetNodeBaseColor(node, NodeBackgroundColorMode);
+        fill = GetCachedBrush(BrightenForBackground(color), 0.40);
+        return true;
+    }
+
+    private void DrawUniverseDragDecorations(DrawingContext context, Rect bounds)
+    {
+        if (Graph is null || Graph.Nodes.Count == 0)
+        {
+            return;
+        }
+
+        var plot = GetPlotMetrics();
+        var viewCenterX = bounds.Width / 2.0;
+        var viewCenterY = bounds.Height / 2.0;
+        UpdateScreenPositions(plot, viewCenterX, viewCenterY);
+        var shouldShowInlineLabels = ShouldShowInlineLabels(plot);
+        var universeNodeScale = GetUniverseNodeZoomScale();
+
+        if (ShowAnsiblexNetwork &&
+            ViewMode != MapViewMode.UniverseRegions &&
+            AnsiblexLinks is not null)
+        {
+            foreach (var link in AnsiblexLinks)
+            {
+                if (!_nodeIndexById.TryGetValue(link.FromId, out var fromIndex) ||
+                    !_nodeIndexById.TryGetValue(link.ToId, out var toIndex) ||
+                    fromIndex >= _screenPositions.Length ||
+                    toIndex >= _screenPositions.Length)
+                {
+                    continue;
+                }
+
+                var from = _screenPositions[fromIndex];
+                var to = _screenPositions[toIndex];
+                if (!IsSegmentPotentiallyVisible(from, to, bounds, 64))
+                {
+                    continue;
+                }
+
+                var highlighted = (SelectedNodeId is not null &&
+                                   (link.FromId == SelectedNodeId.Value || link.ToId == SelectedNodeId.Value)) ||
+                                  (_hoveredNodeId is not null &&
+                                   (link.FromId == _hoveredNodeId.Value || link.ToId == _hoveredNodeId.Value));
+                DrawCurvedAnsiblexLink(context, from, to, link, highlighted, animate: false);
+            }
+        }
+
+        foreach (var (fromIdx, toIdx, legColor) in _jumpRouteLegs)
+        {
+            if (fromIdx < 0 || toIdx < 0 ||
+                fromIdx >= _screenPositions.Length ||
+                toIdx >= _screenPositions.Length)
+            {
+                continue;
+            }
+
+            context.DrawLine(_penCache.Get(legColor, 2.5), _screenPositions[fromIdx], _screenPositions[toIdx]);
+        }
+
+        for (var i = 0; i < Graph.Nodes.Count; i++)
+        {
+            var node = Graph.Nodes[i];
+            var p = _screenPositions[i];
+            if (!IsPointVisible(p, bounds, 48))
+            {
+                continue;
+            }
+
+            var radius = 6.75 * universeNodeScale;
+            var hostileScoreForNode = 0;
+            var hasHostileScore = IntelHostileScoresByNodeId is not null &&
+                                  IntelHostileScoresByNodeId.TryGetValue(node.Id, out hostileScoreForNode) &&
+                                  hostileScoreForNode > 0;
+            if (hasHostileScore)
+            {
+                IReadOnlyList<string> intelRingIcons = ["crosshair"];
+                if (IntelIconKeysByNodeId is not null &&
+                    IntelIconKeysByNodeId.TryGetValue(node.Id, out var configuredIcons) &&
+                    configuredIcons.Count > 0)
+                {
+                    intelRingIcons = configuredIcons;
+                }
+
+                DrawIntelRingWithIcons(context, p, radius, intelRingIcons, hostileScoreForNode, shouldShowInlineLabels && !EnableIntelRingAnimations);
+            }
+
+            if (_jumpRangeOverlapByNodeId.TryGetValue(node.Id, out var jumpRangeOverlapCount) &&
+                jumpRangeOverlapCount > 0)
+            {
+                var inRangeRadius = radius + 3.6;
+                if (JumpRangeMembershipByNodeId is not null &&
+                    JumpRangeMembershipByNodeId.TryGetValue(node.Id, out var sourceOriginIds) &&
+                    sourceOriginIds.Count > 0)
+                {
+                    DrawJumpRangeSegments(context, p, inRangeRadius, sourceOriginIds);
+                }
+                else
+                {
+                    context.DrawEllipse(null, JumpRangeInRangeRingPen, p, inRangeRadius, inRangeRadius);
+                }
+            }
+
+            if (_jumpRangeOriginNodeIds.Contains(node.Id))
+            {
+                context.DrawEllipse(null, JumpRangeOriginRingPen, p, radius + 6.2, radius + 6.2);
+            }
+
+            if (ShowAnsiblexNetwork &&
+                AnsiblexCapitalSystemId is long capitalId &&
+                node.Id == capitalId)
+            {
+                context.DrawEllipse(null, AnsiblexCapitalRingPen, p, radius + 5.4, radius + 5.4);
+            }
+
+            if (_lyCoveredSet.Contains(node.Id))
+            {
+                context.DrawEllipse(null, LyCoverageCoveredRingPen, p, radius + 7.8, radius + 7.8);
+            }
+
+            if (_lyUncoveredSet.Contains(node.Id))
+            {
+                context.DrawEllipse(null, LyCoverageUncoveredRingPen, p, radius + 9.8, radius + 9.8);
+            }
+
+            if (_jumpRouteOrderByNodeId.ContainsKey(node.Id))
+            {
+                var routeRadius = radius + 20.2;
+                var routeColor = _jumpRouteColorByNodeId.TryGetValue(node.Id, out var nodeRouteColor) ? nodeRouteColor : Color.Parse("#63D3FF");
+                var routePen = _penCache.Get(routeColor, 1.9);
+                context.DrawEllipse(null, routePen, p, routeRadius, routeRadius);
+                if (_jumpRouteOrderByNodeId.TryGetValue(node.Id, out var order))
+                {
+                    var numberLabel = new FormattedText(
+                        order.ToString(CultureInfo.InvariantCulture),
+                        CultureInfo.InvariantCulture,
+                        FlowDirection.LeftToRight,
+                        NodeLabelTypeface,
+                        9.5,
+                        JumpRouteNumberTextBrush);
+                    var bubbleRadius = 7.2;
+                    var bubbleCenter = new Point(p.X + routeRadius + 5.0, p.Y - routeRadius - 4.0);
+                    context.DrawEllipse(GetCachedBrush(routeColor), null, bubbleCenter, bubbleRadius, bubbleRadius);
+                    context.DrawText(
+                        numberLabel,
+                        new Point(
+                            bubbleCenter.X - (numberLabel.Width / 2),
+                            bubbleCenter.Y - (numberLabel.Height / 2)));
+                }
+            }
+
+            if (_jumpRouteSkippedSet.Contains(node.Id))
+            {
+                context.DrawEllipse(null, JumpRouteSkippedRingPen, p, radius + 23.4, radius + 23.4);
+            }
+
+            var badgeY = p.Y - radius - 9.0;
+            if (AlwaysShowHubWormholes && node.HubWormholeConnections.Count > 0)
+            {
+                switch (HubWormholeMarkerMode)
+                {
+                    case HubWormholeMarkerMode.Ring:
+                        DrawHubWormholeRing(context, p, node, radius);
+                        break;
+                    case HubWormholeMarkerMode.Halo:
+                        DrawHubWormholeHalo(context, p, node, radius);
+                        break;
+                    default:
+                    {
+                        var wormholeSize = MeasureHubWormholeBadge(node);
+                        var wormholeTopLeft = new Point(p.X - radius - NodeBadgeGap - wormholeSize.Width, badgeY);
+                        DrawHubWormholeBeacon(context, wormholeTopLeft, node);
+                        break;
+                    }
+                }
+            }
+
+            var hasHubWormholeBadge = AlwaysShowHubWormholes &&
+                                      node.HubWormholeConnections.Count > 0 &&
+                                      HubWormholeMarkerMode == HubWormholeMarkerMode.Badge;
+            if (AlwaysShowIncursions && node.HasActiveIncursion)
+            {
+                var incursionSize = 12.0;
+                var incursionX = p.X - radius - NodeBadgeGap - incursionSize;
+                if (hasHubWormholeBadge)
+                {
+                    var wormholeSize = MeasureHubWormholeBadge(node);
+                    incursionX -= NodeBadgeGap + wormholeSize.Width;
+                }
+
+                DrawIncursionBeacon(context, new Point(incursionX, badgeY));
+            }
+
+            if (ShowIndicatorCharacterPresence &&
+                CharacterPresenceCountsByNodeId is not null &&
+                CharacterPresenceCountsByNodeId.TryGetValue(node.Id, out var localCharacterCount) &&
+                localCharacterCount > 0)
+            {
+                DrawCharacterPresenceBadge(context, p, radius, localCharacterCount);
+            }
+        }
+
+        if (ViewMode != MapViewMode.UniverseRegions)
+        {
+            DrawUserSystemMarks(context, bounds);
+        }
+    }
+
+    private void DrawUniverseInteractiveOverlay(DrawingContext context, Rect bounds)
+    {
+        if (Graph is null)
+        {
+            return;
+        }
+
+        _intelOverlayLinks.Clear();
+        var plot = GetPlotMetrics();
+        var viewCenterX = Bounds.Width / 2.0;
+        var viewCenterY = Bounds.Height / 2.0;
+        EnsureUniverseHighlightOverlay();
+        var worldScale = Math.Max(1e-9, ((plot.Width + plot.Height) * 0.5) * _zoom);
+        using (context.PushTransform(GetWorldToScreenMatrix(plot)))
+        {
+            foreach (var (geometry, pen) in _highlightLinkBatches)
+            {
+                context.DrawGeometry(null, ScaleWorldPen(pen, worldScale), geometry);
+            }
+        }
+
+        var universeNodeScale = GetUniverseNodeZoomScale();
+        foreach (var index in _highlightNodeIndexes)
+        {
+            if (index < 0 || index >= Graph.Nodes.Count)
+            {
+                continue;
+            }
+
+            var node = Graph.Nodes[index];
+            var point = ToScreenPointFast(node.X, node.Y, plot, viewCenterX, viewCenterY);
+            if (!IsPointVisible(point, bounds, 24))
+            {
+                continue;
+            }
+
+            var isSelected = SelectedNodeId == node.Id || _additionalSelectedSet.Contains(node.Id);
+            var isHovered = _hoveredNodeId == node.Id;
+            var isSearchHighlighted = _searchHighlightedNodeId == node.Id ||
+                                      (_searchHighlightedConstellationId is not null && node.ConstellationId == _searchHighlightedConstellationId.Value) ||
+                                      (_searchHighlightedRegionId is not null && node.RegionId == _searchHighlightedRegionId.Value);
+            var activeRegionId = _selectedRegionId ?? _hoveredRegionId;
+            var isInActiveRegion = activeRegionId is not null && node.RegionId == activeRegionId.Value;
+            var isSelectedRegionNode = _selectedRegionId is not null && node.RegionId == _selectedRegionId.Value;
+            var radius = (isSelected ? 9.3 : isHovered ? 8.4 : isSearchHighlighted ? 7.8 : 6.75) * universeNodeScale;
+            var brush = isSelected
+                ? SelectedBrush
+                : isHovered
+                    ? HoveredBrush
+                    : isSearchHighlighted
+                        ? SelectedBrush
+                        : isSelectedRegionNode
+                            ? SelectedBrush
+                            : isInActiveRegion
+                                ? RegionSelectedBrush
+                                : GetCachedBrush(GetNodeBaseColor(node, NodeColorMode));
+            context.DrawEllipse(brush, NodeOutlinePen, point, radius, radius);
+        }
+
+        if (SelectedNodeId is not null &&
+            _nodeIndexById.TryGetValue(SelectedNodeId.Value, out var selectedIndex) &&
+            _nodeById.TryGetValue(SelectedNodeId.Value, out var selectedNode))
+        {
+            var selectedPoint = ToScreenPointFast(selectedNode.X, selectedNode.Y, plot, viewCenterX, viewCenterY);
+            DrawHoverOverlay(context, selectedPoint, selectedNode);
+        }
+
+        if (_hoveredNodeId is not null &&
+            _hoveredNodeId != SelectedNodeId &&
+            _nodeIndexById.TryGetValue(_hoveredNodeId.Value, out _) &&
+            _nodeById.TryGetValue(_hoveredNodeId.Value, out var hoverNode))
+        {
+            var hoverPoint = ToScreenPointFast(hoverNode.X, hoverNode.Y, plot, viewCenterX, viewCenterY);
+            DrawHoverOverlay(context, hoverPoint, hoverNode);
+        }
+
+        if (_lastPanPoint is null)
+        {
+            DrawHoveredSystemMarkClusterOverlay(context, bounds);
+        }
+
+        if (ShouldShowInlineLabels(plot))
+        {
+            DrawUniverseBakedLabels(context, bounds);
+        }
+
+        if (ShouldShowUniverseRegionLabels())
+        {
+            DrawUniverseRegionLabels(context);
+        }
+    }
+
+    private void EnsureUniverseHighlightOverlay()
+    {
+        var activeRegionId = _selectedRegionId ?? _hoveredRegionId;
+        if (_highlightBuiltSelected == SelectedNodeId &&
+            _highlightBuiltHovered == _hoveredNodeId &&
+            _highlightBuiltSearchNode == _searchHighlightedNodeId &&
+            _highlightBuiltSearchConstellation == _searchHighlightedConstellationId &&
+            _highlightBuiltSearchRegion == _searchHighlightedRegionId &&
+            _highlightBuiltActiveRegion == activeRegionId &&
+            ReferenceEquals(_highlightBuiltAdditional, AdditionalSelectedNodeIds) &&
+            ReferenceEquals(_linkBatchGraph, Graph))
+        {
+            return;
+        }
+
+        _highlightBuiltSelected = SelectedNodeId;
+        _highlightBuiltHovered = _hoveredNodeId;
+        _highlightBuiltSearchNode = _searchHighlightedNodeId;
+        _highlightBuiltSearchConstellation = _searchHighlightedConstellationId;
+        _highlightBuiltSearchRegion = _searchHighlightedRegionId;
+        _highlightBuiltActiveRegion = activeRegionId;
+        _highlightBuiltAdditional = AdditionalSelectedNodeIds;
+        _highlightLinkBatches.Clear();
+        _highlightNodeIndexes.Clear();
+        if (Graph is null)
+        {
+            return;
+        }
+
+        var groups = new Dictionary<Pen, (StreamGeometry Geometry, StreamGeometryContext Context)>();
+        var seen = new HashSet<(long Lo, long Hi)>();
+        foreach (var link in Graph.Links)
+        {
+            var pen = GetUniverseOverlayLinkPen(link);
+            if (pen is null ||
+                !_nodeById.TryGetValue(link.FromId, out var from) ||
+                !_nodeById.TryGetValue(link.ToId, out var to))
+            {
+                continue;
+            }
+
+            var lo = Math.Min(link.FromId, link.ToId);
+            var hi = Math.Max(link.FromId, link.ToId);
+            if (!seen.Add((lo, hi)))
+            {
+                continue;
+            }
+
+            if (!groups.TryGetValue(pen, out var group))
+            {
+                var geometry = new StreamGeometry();
+                group = (geometry, geometry.Open());
+                groups[pen] = group;
+            }
+
+            group.Context.BeginFigure(new Point(from.X, from.Y), false);
+            group.Context.LineTo(new Point(to.X, to.Y));
+            group.Context.EndFigure(false);
+        }
+
+        foreach (var (pen, group) in groups)
+        {
+            group.Context.Dispose();
+            _highlightLinkBatches.Add((group.Geometry, pen));
+        }
+
+        for (var i = 0; i < Graph.Nodes.Count; i++)
+        {
+            if (IsUniverseHighlightNode(Graph.Nodes[i]))
+            {
+                _highlightNodeIndexes.Add(i);
+            }
+        }
+    }
+
+    private bool IsUniverseHighlightNode(MapNode node)
+    {
+        if (SelectedNodeId == node.Id || _additionalSelectedSet.Contains(node.Id) || _hoveredNodeId == node.Id)
+        {
+            return true;
+        }
+
+        if (_searchHighlightedNodeId == node.Id)
+        {
+            return true;
+        }
+
+        if (_searchHighlightedConstellationId is not null && node.ConstellationId == _searchHighlightedConstellationId.Value)
+        {
+            return true;
+        }
+
+        if (_searchHighlightedRegionId is not null && node.RegionId == _searchHighlightedRegionId.Value)
+        {
+            return true;
+        }
+
+        var activeRegionId = _selectedRegionId ?? _hoveredRegionId;
+        return activeRegionId is not null && node.RegionId == activeRegionId.Value;
+    }
+
+    private Pen? GetUniverseOverlayLinkPen(MapLink link)
+    {
+        if (!_nodeById.TryGetValue(link.FromId, out var fromNode) ||
+            !_nodeById.TryGetValue(link.ToId, out var toNode))
+        {
+            return null;
+        }
+
+        var isSelectedLink = SelectedNodeId is not null &&
+                             (link.FromId == SelectedNodeId.Value || link.ToId == SelectedNodeId.Value);
+        var isHoveredLink = _hoveredNodeId is not null &&
+                            (link.FromId == _hoveredNodeId.Value || link.ToId == _hoveredNodeId.Value);
+        var isSearchConstellationLink = _searchHighlightedConstellationId is not null &&
+                                        fromNode.ConstellationId == _searchHighlightedConstellationId.Value &&
+                                        toNode.ConstellationId == _searchHighlightedConstellationId.Value;
+        var isSearchRegionLink = _searchHighlightedRegionId is not null &&
+                                 (fromNode.RegionId == _searchHighlightedRegionId.Value ||
+                                  toNode.RegionId == _searchHighlightedRegionId.Value);
+        var activeRegionId = _selectedRegionId ?? _hoveredRegionId;
+        var isRegionLink = activeRegionId is not null &&
+                           (fromNode.RegionId == activeRegionId.Value || toNode.RegionId == activeRegionId.Value);
+        if (!isSelectedLink && !isHoveredLink && !isSearchConstellationLink && !isSearchRegionLink && !isRegionLink)
+        {
+            return null;
+        }
+
+        var basePen = GetLinkPen(LinksPen, SameConstellationPen, SameRegionPen, CrossRegionPen, link, _nodeById);
+        if (isSearchConstellationLink)
+        {
+            return HighlightedSearchConstellationPen;
+        }
+
+        if (isSelectedLink || isHoveredLink || isSearchRegionLink)
+        {
+            return GetHighlightedPen(basePen, LinksPen, SameConstellationPen, SameRegionPen, CrossRegionPen, HighlightedDefaultPen, HighlightedSameConstellationPen, HighlightedSameRegionPen, HighlightedCrossRegionPen);
+        }
+
+        return GetHighlightedPen(basePen, LinksPen, SameConstellationPen, SameRegionPen, CrossRegionPen, RegionEmphasisDefaultPen, RegionEmphasisSameConstellationPen, RegionEmphasisSameRegionPen, RegionEmphasisCrossRegionPen);
     }
 
     private void DrawAnimatedOverlays(DrawingContext context, Rect bounds)
@@ -2374,7 +3853,7 @@ public sealed class MapControl : Control
             {
                 SelectedNodeId = null;
                 ClearSearchHighlight();
-                InvalidateMap();
+                InvalidateInteractive();
                 return;
             }
 
@@ -2382,7 +3861,7 @@ public sealed class MapControl : Control
             {
                 _selectedRegionId = null;
                 ClearSearchHighlight();
-                InvalidateMap();
+                InvalidateInteractive();
                 return;
             }
 
@@ -2423,24 +3902,33 @@ public sealed class MapControl : Control
         _panOffset += delta;
         _lastPanPoint = point;
         UpdateAnimationTimerState();
-        InvalidateMap();
+        InvalidateCamera();
     }
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
         base.OnPointerReleased(e);
+        var dragged = _leftDragPanned;
         if (_pendingClearSelectionOnLeftRelease && !_leftDragPanned)
         {
             SelectedNodeId = null;
             _selectedRegionId = null;
             ClearSearchHighlight();
-            InvalidateMap();
+            InvalidateInteractive();
         }
 
         _pendingClearSelectionOnLeftRelease = false;
         _leftDragPanned = false;
         _leftPressPoint = null;
         _lastPanPoint = null;
+        if (dragged && UseUniverseFastPath() && Graph is not null)
+        {
+            var plot = GetPlotMetrics();
+            UpdateScreenPositions(plot, Bounds.Width / 2.0, Bounds.Height / 2.0);
+            _hitTestGrid.Rebuild(_screenPositions, Graph.Nodes.Count, Bounds.Size);
+            InvalidateVisual();
+        }
+
         e.Pointer.Capture(null);
     }
 
@@ -2474,8 +3962,9 @@ public sealed class MapControl : Control
             mouse.X - (((newBaseX - viewCenterX) * _zoom) + viewCenterX),
             mouse.Y - (((newBaseY - viewCenterY) * _zoom) + viewCenterY));
 
+        _universeWheelIdleUntil = DateTime.UtcNow.AddMilliseconds(120);
         UpdateAnimationTimerState();
-        InvalidateMap();
+        InvalidateCamera(zoomChanged: true);
     }
 
     private bool TrySelectNodeAt(Point point)
@@ -2554,7 +4043,7 @@ public sealed class MapControl : Control
         if (changed)
         {
             UpdateAnimationTimerState();
-            InvalidateMap();
+            InvalidateInteractive();
         }
     }
 
@@ -2792,6 +4281,7 @@ public sealed class MapControl : Control
 
     private void CenterOnWorld(double worldX, double worldY, double zoom)
     {
+        var previousZoom = _zoom;
         _zoom = Math.Clamp(zoom, GetMinZoom(), GetMaxZoom());
         var plot = GetPlotMetrics();
         var baseX = plot.OriginX + (worldX * plot.Width);
@@ -2801,7 +4291,7 @@ public sealed class MapControl : Control
         _panOffset = new Point(
             cx - (((baseX - cx) * _zoom) + cx),
             cy - (((baseY - cy) * _zoom) + cy));
-        InvalidateMap();
+        InvalidateCamera(Math.Abs(_zoom - previousZoom) > 1e-6);
     }
 
     private Point ToScreenPoint(MapNode node)
@@ -2971,20 +4461,22 @@ public sealed class MapControl : Control
         return Math.Sqrt((dx * dx) + (dy * dy));
     }
 
-    private static bool IsPointVisible(Point p, Rect bounds, double margin)
+    private bool IsPointVisible(Point p, Rect bounds, double margin)
     {
-        return p.X >= -margin &&
-               p.Y >= -margin &&
-               p.X <= bounds.Width + margin &&
-               p.Y <= bounds.Height + margin;
+        var pad = margin + (_universeBakeBaseOnly ? _bakeMargin : 0);
+        return p.X >= -pad &&
+               p.Y >= -pad &&
+               p.X <= bounds.Width + pad &&
+               p.Y <= bounds.Height + pad;
     }
 
-    private static bool IsSegmentPotentiallyVisible(Point a, Point b, Rect bounds, double margin)
+    private bool IsSegmentPotentiallyVisible(Point a, Point b, Rect bounds, double margin)
     {
-        if (a.X < -margin && b.X < -margin) return false;
-        if (a.Y < -margin && b.Y < -margin) return false;
-        if (a.X > bounds.Width + margin && b.X > bounds.Width + margin) return false;
-        if (a.Y > bounds.Height + margin && b.Y > bounds.Height + margin) return false;
+        var pad = margin + (_universeBakeBaseOnly ? _bakeMargin : 0);
+        if (a.X < -pad && b.X < -pad) return false;
+        if (a.Y < -pad && b.Y < -pad) return false;
+        if (a.X > bounds.Width + pad && b.X > bounds.Width + pad) return false;
+        if (a.Y > bounds.Height + pad && b.Y > bounds.Height + pad) return false;
         return true;
     }
 
@@ -3030,6 +4522,19 @@ public sealed class MapControl : Control
         _searchHighlightedRegionId = null;
     }
 
+    private void EnsureRegionCentroids()
+    {
+        if (ReferenceEquals(_regionCentroidGraph, Graph))
+        {
+            return;
+        }
+
+        _regionCentroidGraph = Graph;
+        _regionCentroids = Graph is null || Graph.Nodes.Count == 0
+            ? []
+            : UniverseSceneBatch.BuildRegionCentroids(Graph.Nodes);
+    }
+
     private IReadOnlyList<UniverseRegionLabelLayout> BuildUniverseRegionLabelLayouts()
     {
         if (Graph is null || Graph.Nodes.Count == 0)
@@ -3037,21 +4542,12 @@ public sealed class MapControl : Control
             return [];
         }
 
-        var result = new List<UniverseRegionLabelLayout>();
-        var regionGroups = Graph.Nodes
-            .Where(n => n.RegionId is not null && !string.IsNullOrWhiteSpace(n.RegionName))
-            .GroupBy(n => n.RegionId!.Value);
-
-        foreach (var group in regionGroups)
+        EnsureRegionCentroids();
+        var result = new List<UniverseRegionLabelLayout>(_regionCentroids.Count);
+        foreach (var centroid in _regionCentroids)
         {
-            var samples = group.Select(ToScreenPoint).ToList();
-            if (samples.Count == 0)
-            {
-                continue;
-            }
-
-            var center = new Point(samples.Average(p => p.X), samples.Average(p => p.Y));
-            var label = GetRegionLabel(group.Key, group.First().RegionName!);
+            var center = ToScreenPoint(centroid.X, centroid.Y);
+            var label = GetRegionLabel(centroid.RegionId, centroid.Name);
             var padX = 6.0;
             var padY = 3.0;
             var rect = new Rect(
@@ -3060,7 +4556,7 @@ public sealed class MapControl : Control
                 label.Width + (padX * 2),
                 label.Height + (padY * 2));
 
-            result.Add(new UniverseRegionLabelLayout(group.Key, group.First().RegionName!, center, rect, label));
+            result.Add(new UniverseRegionLabelLayout(centroid.RegionId, centroid.Name, center, rect, label));
         }
 
         return result;
@@ -7516,5 +9012,14 @@ public sealed class MapControl : Control
 
     private sealed record UniverseRegionLabelLayout(int RegionId, string RegionName, Point Center, Rect Rect, FormattedText Label);
     private readonly record struct PlotMetrics(double OriginX, double OriginY, double Width, double Height);
+
+    private sealed class UniverseAtlasTile(RenderTargetBitmap bitmap, double originX, double originY) : IDisposable
+    {
+        public RenderTargetBitmap Bitmap { get; } = bitmap;
+        public double OriginX { get; } = originX;
+        public double OriginY { get; } = originY;
+
+        public void Dispose() => Bitmap.Dispose();
+    }
 }
 
