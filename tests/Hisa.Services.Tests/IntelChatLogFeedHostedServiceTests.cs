@@ -225,6 +225,44 @@ public class IntelChatLogFeedHostedServiceTests
     }
 
     [Fact]
+    public void TryRegisterReport_WhenSameLineIsWithinCrossClientSkew_RejectsDuplicate()
+    {
+        var service = CreateServiceWithSystems();
+        var timestampUtc = DateTime.UtcNow;
+        var first = CreateReport("Old System", timestampUtc, "Reporter", "N3-JBX* 10+");
+        var skewedCopy = CreateReport("Old System", timestampUtc.AddSeconds(2), "Reporter", "N3-JBX* 10+");
+
+        Assert.True(TryRegisterReport(service, first));
+        Assert.False(TryRegisterReport(service, skewedCopy));
+    }
+
+    [Fact]
+    public void TryRegisterReport_WhenSameLineIsOutsideCrossClientSkew_AllowsRepeat()
+    {
+        var service = CreateServiceWithSystems();
+        var timestampUtc = DateTime.UtcNow;
+        var first = CreateReport("Old System", timestampUtc, "Reporter", "N3-JBX* 10+");
+        var later = CreateReport("Old System", timestampUtc.AddMinutes(2), "Reporter", "N3-JBX* 10+");
+
+        Assert.True(TryRegisterReport(service, first));
+        Assert.True(TryRegisterReport(service, later));
+    }
+
+    [Fact]
+    public void TryRegisterReport_WhenLateCopyArrivesAfterNewerAcceptance_StillRejectsCopy()
+    {
+        var service = CreateServiceWithSystems();
+        var timestampUtc = DateTime.UtcNow;
+        var first = CreateReport("Old System", timestampUtc, "Reporter", "N3-JBX* 10+");
+        var later = CreateReport("Old System", timestampUtc.AddMinutes(2), "Reporter", "N3-JBX* 10+");
+        var lateCopyOfFirst = CreateReport("Old System", timestampUtc.AddSeconds(2), "Reporter", "N3-JBX* 10+");
+
+        Assert.True(TryRegisterReport(service, first));
+        Assert.True(TryRegisterReport(service, later));
+        Assert.False(TryRegisterReport(service, lateCopyOfFirst));
+    }
+
+    [Fact]
     public void TryParseExternalIntelLinkData_DscanInfoHtml_ExtractsShipsClassesAndSystem()
     {
         const string html = """

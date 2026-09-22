@@ -110,6 +110,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
     private static readonly TimeSpan ZkillRateLimitDelay = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan ZkillAcceptedAgeWindow = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan ReportDedupeRetention = TimeSpan.FromHours(1);
+    private static readonly TimeSpan IntelCrossClientSkewWindow = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan CharacterNameResolutionCacheLifetime = TimeSpan.FromHours(12);
     private long? _nextZkillSequence;
     private DateTime _nextZkillPollAfterUtc = DateTime.MinValue;
@@ -117,6 +118,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
     private TimeSpan _systemExpiry = TimeSpan.FromMinutes(15);
     private readonly DateTime _startupHistoryCutoffUtc = DateTime.UtcNow - TimeSpan.FromMinutes(10);
     private readonly Dictionary<string, DateTime> _recentReportKeys = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, List<DateTime>> _recentIntelContentTimestamps = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, CharacterNameResolution> _characterNameResolutionCache = new(StringComparer.OrdinalIgnoreCase);
     private string? _chatLogsDirectory;
 
@@ -791,13 +793,15 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
                 continue;
             }
 
-            var report = await ParseIntelReportAsync(timestampUtc, channelName, reporter, message, filePath, cancellationToken);
-            if (report.Systems.Count == 0)
+            // Register before the ESI-backed parse so each extra character log skips that work.
+            // Copies written a few seconds apart by other clients share this identity.
+            if (!TryRegisterIntelLine(timestampUtc, channelName, reporter, message))
             {
                 continue;
             }
 
-            if (!TryRegisterReport(report))
+            var report = await ParseIntelReportAsync(timestampUtc, channelName, reporter, message, filePath, cancellationToken);
+            if (report.Systems.Count == 0)
             {
                 continue;
             }
@@ -1477,34 +1481,77 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             return true;
         }
 
+        return TryRegisterIntelLine(report.TimestampUtc, report.ChannelName, report.ReporterName, report.MessageText);
+    }
+
+    private bool TryRegisterIntelLine(DateTime timestampUtc, string channelName, string reporter, string message)
+    {
+        var dedupeKey = BuildIntelReportDedupeKey(timestampUtc, reporter, message);
+        var contentKey = BuildIntelContentDedupeKey(channelName, reporter, message);
         var nowUtc = DateTime.UtcNow;
         lock (_gate)
         {
             PruneRecentReportKeys(nowUtc);
-            if (_recentReportKeys.ContainsKey(report.DedupeKey))
+            if (_recentReportKeys.ContainsKey(dedupeKey))
             {
                 return false;
             }
 
-            _recentReportKeys[report.DedupeKey] = nowUtc;
+            if (_recentIntelContentTimestamps.TryGetValue(contentKey, out var seenTimestamps) &&
+                seenTimestamps.Any(seen => IsWithinIntelSkewWindow(timestampUtc, seen)))
+            {
+                return false;
+            }
+
+            _recentReportKeys[dedupeKey] = nowUtc;
+            if (seenTimestamps is null)
+            {
+                seenTimestamps = [];
+                _recentIntelContentTimestamps[contentKey] = seenTimestamps;
+            }
+
+            seenTimestamps.Add(timestampUtc);
             return true;
         }
     }
 
+    private static bool IsWithinIntelSkewWindow(DateTime left, DateTime right)
+    {
+        var delta = left >= right ? left - right : right - left;
+        return delta <= IntelCrossClientSkewWindow;
+    }
+
+    private static string BuildIntelContentDedupeKey(string channelName, string reporter, string message)
+    {
+        return $"intel-content:{NormalizeReportIdentityPart(channelName)}:{NormalizeReportIdentityPart(reporter)}:{NormalizeReportIdentityPart(message)}";
+    }
+
     private void PruneRecentReportKeys(DateTime nowUtc)
     {
-        if (_recentReportKeys.Count == 0)
+        if (_recentReportKeys.Count > 0)
+        {
+            var staleKeys = _recentReportKeys
+                .Where(x => nowUtc - x.Value > ReportDedupeRetention)
+                .Select(x => x.Key)
+                .ToList();
+            foreach (var staleKey in staleKeys)
+            {
+                _recentReportKeys.Remove(staleKey);
+            }
+        }
+
+        if (_recentIntelContentTimestamps.Count == 0)
         {
             return;
         }
 
-        var staleKeys = _recentReportKeys
-            .Where(x => nowUtc - x.Value > ReportDedupeRetention)
-            .Select(x => x.Key)
-            .ToList();
-        foreach (var staleKey in staleKeys)
+        foreach (var pair in _recentIntelContentTimestamps.ToList())
         {
-            _recentReportKeys.Remove(staleKey);
+            pair.Value.RemoveAll(timestamp => nowUtc - timestamp > ReportDedupeRetention);
+            if (pair.Value.Count == 0)
+            {
+                _recentIntelContentTimestamps.Remove(pair.Key);
+            }
         }
     }
 
