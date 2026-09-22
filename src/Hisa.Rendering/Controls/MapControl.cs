@@ -7,6 +7,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using Hisa.Core;
 using Hisa.Core.Models;
 using Hisa.Rendering;
 using System.Globalization;
@@ -121,6 +122,12 @@ public sealed class MapControl : Control
         new ImmutableSolidColorBrush(Color.Parse("#fcdc73")),
         3.1,
         dashStyle: new DashStyle([4.2, 2.8], 0));
+    private static readonly Pen[] AnsiblexZonePens = CreateAnsiblexZonePens(2.2, 0);
+    private static readonly Pen[] AnsiblexZoneHighlightPens = CreateAnsiblexZonePens(3.1, 0.35);
+    private static readonly Pen AnsiblexCapitalRingPen = new(
+        new ImmutableSolidColorBrush(Color.Parse("#F4F7FF")),
+        1.8,
+        dashStyle: new DashStyle([2.0, 1.6], 0));
     private static readonly Color AnimatedSameConstellationColor = Color.Parse("#A9CBFF");
     private static readonly Color AnimatedSameRegionColor = Color.Parse("#8DE5D7");
     private static readonly Color AnimatedCrossRegionColor = Color.Parse("#D9A9D4");
@@ -223,6 +230,18 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowAnsiblexNetwork), true);
     public static readonly StyledProperty<IEnumerable<MapLink>?> AnsiblexLinksProperty =
         AvaloniaProperty.Register<MapControl, IEnumerable<MapLink>?>(nameof(AnsiblexLinks));
+    public static readonly StyledProperty<IReadOnlyDictionary<long, AnsiblexSystemZone>?> AnsiblexZonesByNodeIdProperty =
+        AvaloniaProperty.Register<MapControl, IReadOnlyDictionary<long, AnsiblexSystemZone>?>(nameof(AnsiblexZonesByNodeId));
+    public static readonly StyledProperty<long?> AnsiblexCapitalSystemIdProperty =
+        AvaloniaProperty.Register<MapControl, long?>(nameof(AnsiblexCapitalSystemId));
+    public static readonly StyledProperty<string?> AnsiblexCapitalNameProperty =
+        AvaloniaProperty.Register<MapControl, string?>(nameof(AnsiblexCapitalName));
+    public static readonly StyledProperty<string?> AnsiblexShipClassNameProperty =
+        AvaloniaProperty.Register<MapControl, string?>(nameof(AnsiblexShipClassName));
+    public static readonly StyledProperty<double> AnsiblexShipBaseCostTjProperty =
+        AvaloniaProperty.Register<MapControl, double>(nameof(AnsiblexShipBaseCostTj), 13);
+    public static readonly StyledProperty<bool> ShowIndicatorAnsiblexZoneProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorAnsiblexZone), true);
     public static readonly StyledProperty<IEnumerable<string>?> IndicatorSovUpgradeFilterKeysProperty =
         AvaloniaProperty.Register<MapControl, IEnumerable<string>?>(nameof(IndicatorSovUpgradeFilterKeys));
     public static readonly StyledProperty<bool> InfoBoxShowRegionProperty =
@@ -257,6 +276,8 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowNpcKills), true);
     public static readonly StyledProperty<bool> InfoBoxShowJumpRangeLyProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowJumpRangeLy), true);
+    public static readonly StyledProperty<bool> InfoBoxShowAnsiblexZoneProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowAnsiblexZone), true);
     public static readonly StyledProperty<IEnumerable<string>?> OverlaySovUpgradeFilterKeysProperty =
         AvaloniaProperty.Register<MapControl, IEnumerable<string>?>(nameof(OverlaySovUpgradeFilterKeys));
     public static readonly StyledProperty<bool> AlwaysShowHubWormholesProperty =
@@ -365,6 +386,9 @@ public sealed class MapControl : Control
     private MapGraph? _activityRangeGraph;
     private int _activityRangeNodeCount;
     private readonly Dictionary<MapNodeColorMode, (int Min, int Max)> _activityRangesByMode = [];
+    private HashSet<long>? _ansiblexBadgeNodeIds;
+    private IEnumerable<MapLink>? _ansiblexBadgeSource;
+    private long? _ansiblexBadgeCapitalId;
     private Dictionary<long, int> _indicatorExplorationOverlapByNodeId = [];
     private HashSet<long> _indicatorExplorationSourceNodeIds = [];
     private Dictionary<long, int> _overlayExplorationOverlapByNodeId = [];
@@ -595,6 +619,42 @@ public sealed class MapControl : Control
         set => SetValue(AnsiblexLinksProperty, value);
     }
 
+    public IReadOnlyDictionary<long, AnsiblexSystemZone>? AnsiblexZonesByNodeId
+    {
+        get => GetValue(AnsiblexZonesByNodeIdProperty);
+        set => SetValue(AnsiblexZonesByNodeIdProperty, value);
+    }
+
+    public long? AnsiblexCapitalSystemId
+    {
+        get => GetValue(AnsiblexCapitalSystemIdProperty);
+        set => SetValue(AnsiblexCapitalSystemIdProperty, value);
+    }
+
+    public string? AnsiblexCapitalName
+    {
+        get => GetValue(AnsiblexCapitalNameProperty);
+        set => SetValue(AnsiblexCapitalNameProperty, value);
+    }
+
+    public string? AnsiblexShipClassName
+    {
+        get => GetValue(AnsiblexShipClassNameProperty);
+        set => SetValue(AnsiblexShipClassNameProperty, value);
+    }
+
+    public double AnsiblexShipBaseCostTj
+    {
+        get => GetValue(AnsiblexShipBaseCostTjProperty);
+        set => SetValue(AnsiblexShipBaseCostTjProperty, value);
+    }
+
+    public bool ShowIndicatorAnsiblexZone
+    {
+        get => GetValue(ShowIndicatorAnsiblexZoneProperty);
+        set => SetValue(ShowIndicatorAnsiblexZoneProperty, value);
+    }
+
     public IEnumerable<string>? IndicatorSovUpgradeFilterKeys
     {
         get => GetValue(IndicatorSovUpgradeFilterKeysProperty);
@@ -691,6 +751,12 @@ public sealed class MapControl : Control
     {
         get => GetValue(InfoBoxShowJumpRangeLyProperty);
         set => SetValue(InfoBoxShowJumpRangeLyProperty, value);
+    }
+
+    public bool InfoBoxShowAnsiblexZone
+    {
+        get => GetValue(InfoBoxShowAnsiblexZoneProperty);
+        set => SetValue(InfoBoxShowAnsiblexZoneProperty, value);
     }
 
     public IEnumerable<string>? OverlaySovUpgradeFilterKeys
@@ -941,6 +1007,12 @@ public sealed class MapControl : Control
             EnableLinkAnimationsProperty,
             ShowAnsiblexNetworkProperty,
             AnsiblexLinksProperty,
+            AnsiblexZonesByNodeIdProperty,
+            AnsiblexCapitalSystemIdProperty,
+            AnsiblexCapitalNameProperty,
+            AnsiblexShipClassNameProperty,
+            AnsiblexShipBaseCostTjProperty,
+            ShowIndicatorAnsiblexZoneProperty,
             IndicatorSovUpgradeFilterKeysProperty,
             InfoBoxShowRegionProperty,
             InfoBoxShowConstellationProperty,
@@ -958,6 +1030,7 @@ public sealed class MapControl : Control
             InfoBoxShowPodKillsProperty,
             InfoBoxShowNpcKillsProperty,
             InfoBoxShowJumpRangeLyProperty,
+            InfoBoxShowAnsiblexZoneProperty,
             OverlaySovUpgradeFilterKeysProperty,
             AlwaysShowHubWormholesProperty,
             AlwaysShowIncursionsProperty,
@@ -1757,8 +1830,7 @@ public sealed class MapControl : Control
                                      (link.FromId == SelectedNodeId.Value || link.ToId == SelectedNodeId.Value);
                 var isHoveredLink = _hoveredNodeId is not null &&
                                     (link.FromId == _hoveredNodeId.Value || link.ToId == _hoveredNodeId.Value);
-                var pen = (isSelectedLink || isHoveredLink) ? AnsiblexHighlightedLinkPen : AnsiblexLinkPen;
-                DrawCurvedAnsiblexLink(context, from, to, link, pen, animate: false);
+                DrawCurvedAnsiblexLink(context, from, to, link, highlighted: isSelectedLink || isHoveredLink, animate: false);
             }
         }
 
@@ -1878,6 +1950,12 @@ public sealed class MapControl : Control
             {
                 var originRadius = radius + 6.2;
                 context.DrawEllipse(null, JumpRangeOriginRingPen, p, originRadius, originRadius);
+            }
+            if (ShowAnsiblexNetwork &&
+                AnsiblexCapitalSystemId is long capitalId &&
+                node.Id == capitalId)
+            {
+                context.DrawEllipse(null, AnsiblexCapitalRingPen, p, radius + 5.4, radius + 5.4);
             }
             if (_lyCoveredSet.Contains(node.Id))
             {
@@ -2085,7 +2163,7 @@ public sealed class MapControl : Control
                             continue;
                         }
 
-                        DrawCurvedAnsiblexLink(context, from, to, link, AnsiblexHighlightedLinkPen, animate: true);
+                        DrawCurvedAnsiblexLink(context, from, to, link, highlighted: true, animate: true);
                     }
                 }
             }
@@ -3060,17 +3138,19 @@ public sealed class MapControl : Control
         return highlightedDefaultPen;
     }
 
-    private void DrawCurvedAnsiblexLink(DrawingContext context, Point from, Point to, MapLink link, Pen pen, bool animate)
+    private void DrawCurvedAnsiblexLink(DrawingContext context, Point from, Point to, MapLink link, bool highlighted, bool animate)
     {
         var dx = to.X - from.X;
         var dy = to.Y - from.Y;
         var length = Math.Sqrt((dx * dx) + (dy * dy));
+        var dashOffset = animate ? (_linkAnimationPhase * 22.0) + ((link.FromId + link.ToId) % 13) : 0;
+        var pen = CreateAnsiblexLinkPen(link, from, to, highlighted || animate, dashOffset);
         if (length < 2.0)
         {
             context.DrawLine(pen, from, to);
             if (animate)
             {
-                DrawAnimatedRegularLinkEffect(context, from, to, AnimatedAnsiblexColor, link);
+                DrawAnimatedRegularLinkEffect(context, from, to, GetAnsiblexLinkColor(link.FromId), link);
             }
             return;
         }
@@ -3121,19 +3201,362 @@ public sealed class MapControl : Control
             ctx.EndFigure(false);
         }
 
-        if (!animate)
+        context.DrawGeometry(null, pen, geometry);
+    }
+
+    private Pen CreateAnsiblexLinkPen(MapLink link, Point from, Point to, bool highlighted, double dashOffset)
+    {
+        var fromZone = TryGetAnsiblexZone(link.FromId);
+        var toZone = TryGetAnsiblexZone(link.ToId);
+        if (fromZone is null || toZone is null)
         {
-            context.DrawGeometry(null, pen, geometry);
+            return highlighted ? AnsiblexHighlightedLinkPen : AnsiblexLinkPen;
         }
-        else
+
+        if (fromZone.Value == toZone.Value && dashOffset == 0)
         {
-            var dashOffset = (_linkAnimationPhase * 22.0) + ((link.FromId + link.ToId) % 13);
-            var animatedPen = new Pen(
-                GetCachedBrush(Color.FromArgb(225, AnimatedAnsiblexColor.R, AnimatedAnsiblexColor.G, AnimatedAnsiblexColor.B)),
-                3.2,
-                dashStyle: new DashStyle([6.5, 7.5], dashOffset));
-            context.DrawGeometry(null, animatedPen, geometry);
+            return highlighted ? AnsiblexZoneHighlightPens[fromZone.Value] : AnsiblexZonePens[fromZone.Value];
         }
+
+        var start = Color.Parse(AnsiblexZones.ColorHex(fromZone.Value));
+        var end = Color.Parse(AnsiblexZones.ColorHex(toZone.Value));
+        if (highlighted)
+        {
+            start = BlendColors(start, Colors.White, 0.35);
+            end = BlendColors(end, Colors.White, 0.35);
+        }
+
+        var brush = new LinearGradientBrush
+        {
+            StartPoint = new RelativePoint(from, RelativeUnit.Absolute),
+            EndPoint = new RelativePoint(to, RelativeUnit.Absolute),
+            GradientStops =
+            {
+                new GradientStop(start, 0),
+                new GradientStop(end, 1)
+            }
+        };
+        return new Pen(brush, highlighted ? 3.2 : 2.2, dashStyle: new DashStyle([4.2, 2.8], dashOffset));
+    }
+
+    private static Pen[] CreateAnsiblexZonePens(double thickness, double brighten)
+    {
+        var pens = new Pen[6];
+        for (var zone = 1; zone <= 5; zone++)
+        {
+            var color = Color.Parse(AnsiblexZones.ColorHex(zone));
+            if (brighten > 0)
+            {
+                color = BlendColors(color, Colors.White, brighten);
+            }
+
+            pens[zone] = new Pen(
+                new ImmutableSolidColorBrush(color),
+                thickness,
+                dashStyle: new DashStyle([4.2, 2.8], 0));
+        }
+
+        return pens;
+    }
+
+    private Color GetAnsiblexZoneColor(MapNode node)
+    {
+        var zone = TryGetAnsiblexZone(node.Id);
+        return zone is null ? Color.Parse("#98A6B8") : Color.Parse(AnsiblexZones.ColorHex(zone.Value));
+    }
+
+    private Color GetAnsiblexLinkColor(long nodeId)
+    {
+        var zone = TryGetAnsiblexZone(nodeId);
+        return zone is null ? AnimatedAnsiblexColor : Color.Parse(AnsiblexZones.ColorHex(zone.Value));
+    }
+
+    private int? TryGetAnsiblexZone(long nodeId)
+    {
+        if (AnsiblexZonesByNodeId is not null &&
+            AnsiblexZonesByNodeId.TryGetValue(nodeId, out var zone))
+        {
+            return zone.Zone;
+        }
+
+        return null;
+    }
+
+    private bool TryGetAnsiblexZoneInfo(long nodeId, out AnsiblexSystemZone zone)
+    {
+        if (AnsiblexZonesByNodeId is not null &&
+            AnsiblexZonesByNodeId.TryGetValue(nodeId, out var found) &&
+            found is not null)
+        {
+            zone = found;
+            return true;
+        }
+
+        zone = null!;
+        return false;
+    }
+
+    private sealed class AnsiblexHoverLine
+    {
+        public required int Zone { get; init; }
+        public string SortName { get; init; } = string.Empty;
+        public required FormattedText Label { get; init; }
+        public FormattedText? Meta { get; init; }
+        public FormattedText? Ship { get; init; }
+        public bool ShowCapitalMark { get; init; }
+        public FormattedText? Outbound { get; init; }
+        public int OutboundZone { get; init; }
+        public FormattedText? Inbound { get; init; }
+        public int InboundZone { get; init; }
+    }
+
+    private List<AnsiblexHoverLine> BuildAnsiblexHoverLines(MapNode node)
+    {
+        if (!ShowAnsiblexNetwork ||
+            !InfoBoxShowAnsiblexZone ||
+            ViewMode == MapViewMode.UniverseRegions ||
+            !TryGetAnsiblexZoneInfo(node.Id, out var ownZone))
+        {
+            return [];
+        }
+
+        var ink = new ImmutableSolidColorBrush(Color.Parse("#0D131D"));
+        var partners = new List<AnsiblexHoverLine>();
+        if (AnsiblexLinks is not null)
+        {
+            foreach (var link in AnsiblexLinks)
+            {
+                long? otherId = link.FromId == node.Id
+                    ? link.ToId
+                    : link.ToId == node.Id
+                        ? link.FromId
+                        : null;
+                if (otherId is null ||
+                    !_nodeById.TryGetValue(otherId.Value, out var otherNode) ||
+                    !TryGetAnsiblexZoneInfo(otherNode.Id, out var otherZone))
+                {
+                    continue;
+                }
+
+                var toCost = AnsiblexZones.CostTj(AnsiblexShipBaseCostTj, otherZone.Zone);
+                var backCost = AnsiblexZones.CostTj(AnsiblexShipBaseCostTj, ownZone.Zone);
+                partners.Add(new AnsiblexHoverLine
+                {
+                    Zone = otherZone.Zone,
+                    SortName = otherNode.Name,
+                    Label = CreateHoverText(otherNode.Name, Brushes.White, 12),
+                    Outbound = CreateHoverText(CompactAnsiblexCost(toCost) + " TJ", ink, 11, FontWeight.SemiBold),
+                    OutboundZone = otherZone.Zone,
+                    Inbound = CreateHoverText(CompactAnsiblexCost(backCost) + " TJ", ink, 11, FontWeight.SemiBold),
+                    InboundZone = ownZone.Zone
+                });
+            }
+        }
+
+        partners.Sort((a, b) => string.Compare(a.SortName, b.SortName, StringComparison.OrdinalIgnoreCase));
+        var capitalName = string.IsNullOrWhiteSpace(AnsiblexCapitalName) ? "capital" : AnsiblexCapitalName;
+        var lines = new List<AnsiblexHoverLine>
+        {
+            new()
+            {
+                Zone = ownZone.Zone,
+                Label = CreateHoverText($"{ownZone.DistanceLy:0.#} ly", Brushes.White, 12),
+                Meta = CreateHoverText(capitalName, Brushes.White, 12),
+                Ship = partners.Count > 0 && !string.IsNullOrWhiteSpace(AnsiblexShipClassName)
+                    ? CreateHoverText(AnsiblexShipClassName, Brushes.White, 12)
+                    : null,
+                ShowCapitalMark = true
+            }
+        };
+        lines.AddRange(partners);
+        return lines;
+    }
+
+    private static FormattedText CreateHoverText(string text, IBrush brush, double size, FontWeight weight = FontWeight.Normal) =>
+        new(
+            text,
+            CultureInfo.InvariantCulture,
+            FlowDirection.LeftToRight,
+            new Typeface("Inter", FontStyle.Normal, weight),
+            size,
+            brush);
+
+    private static string CompactAnsiblexCost(double costTj) =>
+        costTj <= 0 ? "0" : costTj.ToString("0.#", CultureInfo.InvariantCulture);
+
+    private static FormattedText CreateZoneChipText(int zone) =>
+        new(
+            $"Z{zone}",
+            CultureInfo.InvariantCulture,
+            FlowDirection.LeftToRight,
+            NodeLabelTypeface,
+            9,
+            new ImmutableSolidColorBrush(Color.Parse("#0D131D")));
+
+    private static double MeasureAnsiblexHoverLine(AnsiblexHoverLine line)
+    {
+        var width = CreateZoneChipText(line.Zone).Width + 8 + 4 + line.Label.Width;
+        if (line.ShowCapitalMark)
+        {
+            width += 6 + 8;
+        }
+
+        if (line.Meta is not null)
+        {
+            width += 4 + line.Meta.Width;
+        }
+
+        if (line.Ship is not null)
+        {
+            width += 8 + line.Ship.Width;
+        }
+
+        if (line.Outbound is not null)
+        {
+            width += 8 + AnsiblexCostPillWidth(line.Outbound);
+        }
+
+        if (line.Inbound is not null)
+        {
+            width += 4 + AnsiblexCostPillWidth(line.Inbound);
+        }
+
+        return width;
+    }
+
+    private void DrawAnsiblexHoverLine(DrawingContext context, Point origin, AnsiblexHoverLine line, double height)
+    {
+        var chipText = CreateZoneChipText(line.Zone);
+        var chipWidth = chipText.Width + 8;
+        var chipRect = new Rect(origin.X, origin.Y, chipWidth, height);
+        context.FillRectangle(GetCachedBrush(Color.Parse(AnsiblexZones.ColorHex(line.Zone))), chipRect, 3);
+        context.DrawText(chipText, new Point(chipRect.X + 4, chipRect.Y + ((height - chipText.Height) / 2)));
+
+        var x = chipRect.Right + 4;
+        var labelY = origin.Y + ((height - line.Label.Height) / 2);
+        context.DrawText(line.Label, new Point(x, labelY));
+        x += line.Label.Width;
+        if (line.ShowCapitalMark)
+        {
+            x += 6;
+            context.DrawEllipse(null, AnsiblexCapitalRingPen, new Point(x + 4, origin.Y + (height / 2)), 3.5, 3.5);
+            x += 8;
+        }
+
+        if (line.Meta is not null)
+        {
+            x += 3;
+            context.DrawText(line.Meta, new Point(x, origin.Y + ((height - line.Meta.Height) / 2)));
+            x += line.Meta.Width;
+        }
+
+        if (line.Ship is not null)
+        {
+            x += 8;
+            context.DrawText(line.Ship, new Point(x, origin.Y + ((height - line.Ship.Height) / 2)));
+            x += line.Ship.Width;
+        }
+
+        if (line.Outbound is not null)
+        {
+            x += 8;
+            x += DrawAnsiblexCostPill(context, new Point(x, origin.Y), line.Outbound, line.OutboundZone, height, pointsRight: true);
+        }
+
+        if (line.Inbound is not null)
+        {
+            x += 4;
+            DrawAnsiblexCostPill(context, new Point(x, origin.Y), line.Inbound, line.InboundZone, height, pointsRight: false);
+        }
+    }
+
+    private const double AnsiblexDirectionArrowWidth = 12;
+    private const double AnsiblexDirectionArrowHeight = 10;
+    private static readonly StreamGeometry AnsiblexRightArrow = CreateAnsiblexDirectionArrow(pointsRight: true);
+    private static readonly StreamGeometry AnsiblexLeftArrow = CreateAnsiblexDirectionArrow(pointsRight: false);
+    private static readonly IBrush AnsiblexDirectionArrowBrush = new ImmutableSolidColorBrush(Color.Parse("#F7FAFF"));
+    private static readonly Pen AnsiblexDirectionArrowPen = new(new ImmutableSolidColorBrush(Color.Parse("#0D131D")), 1.15);
+
+    private static double AnsiblexCostPillWidth(FormattedText text) =>
+        5 + AnsiblexDirectionArrowWidth + 5 + text.Width + 6;
+
+    private double DrawAnsiblexCostPill(DrawingContext context, Point origin, FormattedText text, int zone, double height, bool pointsRight)
+    {
+        var width = AnsiblexCostPillWidth(text);
+        var rect = new Rect(origin.X, origin.Y, width, height);
+        context.FillRectangle(GetCachedBrush(Color.Parse(AnsiblexZones.ColorHex(zone))), rect, 3);
+        var arrowTop = origin.Y + ((height - AnsiblexDirectionArrowHeight) / 2);
+        using (context.PushTransform(Matrix.CreateTranslation(origin.X + 5, arrowTop)))
+        {
+            context.DrawGeometry(AnsiblexDirectionArrowBrush, AnsiblexDirectionArrowPen, pointsRight ? AnsiblexRightArrow : AnsiblexLeftArrow);
+        }
+
+        context.DrawText(text, new Point(origin.X + 5 + AnsiblexDirectionArrowWidth + 5, origin.Y + ((height - text.Height) / 2)));
+        return width;
+    }
+
+    private static StreamGeometry CreateAnsiblexDirectionArrow(bool pointsRight)
+    {
+        var geometry = new StreamGeometry();
+        using (var ctx = geometry.Open())
+        {
+            // Thick shaft with a full-height head, in a 12×10 box.
+            var figure = pointsRight
+                ? new Point[]
+                {
+                    new(0, 3),
+                    new(6, 3),
+                    new(6, 0),
+                    new(12, 5),
+                    new(6, 10),
+                    new(6, 7),
+                    new(0, 7)
+                }
+                : new Point[]
+                {
+                    new(12, 3),
+                    new(6, 3),
+                    new(6, 0),
+                    new(0, 5),
+                    new(6, 10),
+                    new(6, 7),
+                    new(12, 7)
+                };
+            ctx.BeginFigure(figure[0], true);
+            for (var i = 1; i < figure.Length; i++)
+            {
+                ctx.LineTo(figure[i]);
+            }
+
+            ctx.EndFigure(true);
+        }
+
+        return geometry;
+    }
+
+    private bool IsAnsiblexZoneBadgeNode(long nodeId)
+    {
+        if (!ReferenceEquals(_ansiblexBadgeSource, AnsiblexLinks) || _ansiblexBadgeCapitalId != AnsiblexCapitalSystemId)
+        {
+            _ansiblexBadgeSource = AnsiblexLinks;
+            _ansiblexBadgeCapitalId = AnsiblexCapitalSystemId;
+            _ansiblexBadgeNodeIds = [];
+            if (AnsiblexCapitalSystemId is long capitalId)
+            {
+                _ansiblexBadgeNodeIds.Add(capitalId);
+            }
+
+            if (AnsiblexLinks is not null)
+            {
+                foreach (var link in AnsiblexLinks)
+                {
+                    _ansiblexBadgeNodeIds.Add(link.FromId);
+                    _ansiblexBadgeNodeIds.Add(link.ToId);
+                }
+            }
+        }
+
+        return _ansiblexBadgeNodeIds!.Contains(nodeId);
     }
 
     private void DrawAnimatedRegularLinkEffect(DrawingContext context, Point from, Point to, Color baseColor, MapLink link)
@@ -3933,6 +4356,7 @@ public sealed class MapControl : Control
             MapNodeColorMode.ShipKills => GetActivityHeatColor(MapNodeColorMode.ShipKills, node.ShipKills),
             MapNodeColorMode.PodKills => GetActivityHeatColor(MapNodeColorMode.PodKills, node.PodKills),
             MapNodeColorMode.NpcKills => GetActivityHeatColor(MapNodeColorMode.NpcKills, node.NpcKills),
+            MapNodeColorMode.AnsiblexZone => GetAnsiblexZoneColor(node),
             _ => Color.Parse("#98A6B8")
         };
     }
@@ -4541,7 +4965,26 @@ public sealed class MapControl : Control
             starClassHalo = GetNodeSecondaryLabelHalo(node.Id, starClass);
         }
 
-        var firstLineWidth = name.Width + (sec is null ? 0 : gap + sec.Width);
+        FormattedText? zoneChipText = null;
+        Color zoneChipColor = default;
+        var zoneChipWidth = 0.0;
+        const double zoneChipGap = 6.0;
+        if (ShowIndicatorAnsiblexZone && IsAnsiblexZoneBadgeNode(node.Id) && TryGetAnsiblexZoneInfo(node.Id, out var ansiblexZone))
+        {
+            zoneChipText = new FormattedText(
+                $"Z{ansiblexZone.Zone}",
+                CultureInfo.InvariantCulture,
+                FlowDirection.LeftToRight,
+                NodeLabelTypeface,
+                Math.Max(9, labelFontSize - 1),
+                new ImmutableSolidColorBrush(Color.Parse("#0D131D")));
+            zoneChipColor = Color.Parse(AnsiblexZones.ColorHex(ansiblexZone.Zone));
+            zoneChipWidth = zoneChipText.Width + 8;
+        }
+
+        var firstLineWidth = name.Width
+            + (sec is null ? 0 : gap + sec.Width)
+            + (zoneChipText is null ? 0 : zoneChipGap + zoneChipWidth);
         var width = firstLineWidth;
         if (region is not null)
         {
@@ -4574,10 +5017,23 @@ public sealed class MapControl : Control
         context.FillRectangle(NodeLabelBackgroundBrush, rect, 3);
 
         DrawLabelWithHalo(context, name, nameHalo, origin);
+        var firstLineCursor = origin.X + name.Width;
         if (sec is not null && secHalo is not null)
         {
-            var secOrigin = new Point(origin.X + name.Width + gap, origin.Y);
+            firstLineCursor += gap;
+            var secOrigin = new Point(firstLineCursor, origin.Y);
             DrawLabelWithHalo(context, sec, secHalo, secOrigin);
+            firstLineCursor += sec.Width;
+        }
+
+        if (zoneChipText is not null)
+        {
+            firstLineCursor += zoneChipGap;
+            var chipRect = new Rect(firstLineCursor, origin.Y, zoneChipWidth, name.Height);
+            context.FillRectangle(GetCachedBrush(zoneChipColor), chipRect, 3);
+            context.DrawText(
+                zoneChipText,
+                new Point(chipRect.X + 4, chipRect.Y + ((name.Height - zoneChipText.Height) / 2)));
         }
 
         var y = origin.Y + name.Height + lineGap;
@@ -4912,6 +5368,7 @@ public sealed class MapControl : Control
         {
             detailLines.Add($"NPC Kills: {node.NpcKills}");
         }
+        var ansiblexHoverLines = BuildAnsiblexHoverLines(node);
         if (node.StormEffects.Count > 0)
         {
             foreach (var storm in node.StormEffects.OrderByDescending(e => e.Strength).ThenBy(e => e.Type))
@@ -5052,6 +5509,12 @@ public sealed class MapControl : Control
         {
             jumpLineHeight = Math.Max(jumpLineHeight, Math.Max(14, jumpLine.Text.Height));
             jumpMaxWidth = Math.Max(jumpMaxWidth, 14 + 4 + jumpLine.Text.Width);
+        }
+        var ansiblexHoverWidth = 0.0;
+        const double ansiblexHoverRowHeight = 18.0;
+        foreach (var line in ansiblexHoverLines)
+        {
+            ansiblexHoverWidth = Math.Max(ansiblexHoverWidth, MeasureAnsiblexHoverLine(line));
         }
         const double intelIdentityIconSize = 22.0;
         const double intelIdentityGap = 3.0;
@@ -5338,11 +5801,12 @@ public sealed class MapControl : Control
         var padX = 8.0;
         var padY = 6.0;
         var headerWidth = headerText.Width + (securityText is null ? 0 : (8 + securityText.Width));
-        var bodyWidth = Math.Max(Math.Max(Math.Max(Math.Max(Math.Max(Math.Max(Math.Max(regionConstellationText?.Width ?? 0, detailsText?.Width ?? 0), wormholeMaxWidth), sovMaxWidth), jumpMaxWidth), characterRowWidth), intelMaxWidth), zkillMaxWidth);
+        var bodyWidth = Math.Max(Math.Max(Math.Max(Math.Max(Math.Max(Math.Max(Math.Max(Math.Max(regionConstellationText?.Width ?? 0, detailsText?.Width ?? 0), wormholeMaxWidth), sovMaxWidth), jumpMaxWidth), ansiblexHoverWidth), characterRowWidth), intelMaxWidth), zkillMaxWidth);
         var contentWidth = Math.Max(headerWidth, bodyWidth);
         var contentHeight = headerText.Height
             + (regionConstellationText is null ? 0 : regionConstellationText.Height + 2)
             + (detailsText is null ? 0 : detailsText.Height + 2)
+            + (ansiblexHoverLines.Count == 0 ? 0 : (ansiblexHoverLines.Count * (ansiblexHoverRowHeight + 2)) + 2)
             + intelHeight
             + zkillHeight
             + overlaySectionsHeight
@@ -5375,6 +5839,15 @@ public sealed class MapControl : Control
         {
             context.DrawText(detailsText, new Point(headerOrigin.X, detailsStartY));
             detailsStartY += detailsText.Height;
+        }
+        if (ansiblexHoverLines.Count > 0)
+        {
+            detailsStartY += 2;
+            foreach (var line in ansiblexHoverLines)
+            {
+                DrawAnsiblexHoverLine(context, new Point(headerOrigin.X, detailsStartY), line, ansiblexHoverRowHeight);
+                detailsStartY += ansiblexHoverRowHeight + 2;
+            }
         }
         foreach (var jumpLine in jumpRangeLineTexts)
         {

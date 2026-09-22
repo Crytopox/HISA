@@ -33,7 +33,8 @@ public enum MapNodeColorMode
     SystemJumps = 12,
     ShipKills = 13,
     PodKills = 14,
-    NpcKills = 15
+    NpcKills = 15,
+    AnsiblexZone = 16
 }
 
 public sealed class HostileColorSettings
@@ -169,6 +170,39 @@ public sealed class AnsiblexLinkRecord
     public required string FromSolarSystemName { get; init; }
     public required int ToSolarSystemId { get; init; }
     public required string ToSolarSystemName { get; init; }
+}
+
+public sealed class AnsiblexCapitalState
+{
+    public required int SolarSystemId { get; init; }
+    public required string SolarSystemName { get; init; }
+    public double? PositionX { get; init; }
+    public double? PositionY { get; init; }
+    public double? PositionZ { get; init; }
+}
+
+public sealed class AnsiblexSystemZone
+{
+    public required int Zone { get; init; }
+    public required double DistanceLy { get; init; }
+}
+
+public sealed class AnsiblexPlanningSnapshot
+{
+    public string? CapitalSystemName { get; init; }
+    public required string ShipClassName { get; init; }
+    public required string Summary { get; init; }
+    public required IReadOnlyList<AnsiblexPlanningLink> Links { get; init; }
+}
+
+public sealed class AnsiblexPlanningLink
+{
+    public required string FromSystemName { get; init; }
+    public required string ToSystemName { get; init; }
+    public required string FromZoneText { get; init; }
+    public required string ToZoneText { get; init; }
+    public required string TowardToText { get; init; }
+    public required string TowardFromText { get; init; }
 }
 
 public enum MapSearchKind

@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Hisa.Core;
 using Hisa.Core.Models;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -10,6 +11,7 @@ public partial class AnsiblexNetworkWindow : Window
 {
     private readonly MainWindowViewModel _vm;
     private readonly ObservableCollection<AnsiblexLinkListRow> _rows = [];
+    private bool _suppressShipClassChange;
 
     public AnsiblexNetworkWindow()
     {
@@ -21,6 +23,7 @@ public partial class AnsiblexNetworkWindow : Window
     {
         _vm = vm;
         SavedLinksList.ItemsSource = _rows;
+        ShipClassCombo.ItemsSource = AnsiblexZones.ShipClasses.ToList();
         Opened += async (_, _) => await RefreshSavedListAsync();
     }
 
@@ -60,16 +63,49 @@ public partial class AnsiblexNetworkWindow : Window
         await RefreshSavedListAsync();
     }
 
+    private async void OnSetCapitalClicked(object? sender, RoutedEventArgs e)
+    {
+        var name = CapitalSystemBox.Text?.Trim() ?? string.Empty;
+        var saved = await _vm.SetAnsiblexCapitalAsync(name);
+        StatusText.Text = saved
+            ? $"Capital set to {name}."
+            : $"Unknown system: {name}.";
+        await RefreshSavedListAsync();
+    }
+
+    private async void OnShipClassChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressShipClassChange || _vm is null || ShipClassCombo.SelectedItem is not AnsiblexShipClass ship)
+        {
+            return;
+        }
+
+        await _vm.SetAnsiblexShipClassAsync(ship.Name);
+        await RefreshSavedListAsync();
+    }
+
     private async Task RefreshSavedListAsync()
     {
-        var snapshot = await _vm.GetAnsiblexSnapshotAsync();
+        var snapshot = await _vm.GetAnsiblexPlanningSnapshotAsync();
+        CapitalStatusText.Text = string.IsNullOrWhiteSpace(snapshot.CapitalSystemName)
+            ? "No capital set"
+            : $"Capital: {snapshot.CapitalSystemName}";
+        SummaryText.Text = snapshot.Summary;
+        _suppressShipClassChange = true;
+        ShipClassCombo.SelectedItem = AnsiblexZones.ShipClasses.FirstOrDefault(x =>
+            string.Equals(x.Name, snapshot.ShipClassName, StringComparison.OrdinalIgnoreCase));
+        _suppressShipClassChange = false;
         _rows.Clear();
-        foreach (var link in snapshot)
+        foreach (var link in snapshot.Links)
         {
             _rows.Add(new AnsiblexLinkListRow
             {
-                FromSystemName = link.FromSolarSystemName,
-                ToSystemName = link.ToSolarSystemName
+                FromSystemName = link.FromSystemName,
+                FromZoneText = link.FromZoneText,
+                ToSystemName = link.ToSystemName,
+                ToZoneText = link.ToZoneText,
+                TowardToText = link.TowardToText,
+                TowardFromText = link.TowardFromText
             });
         }
     }

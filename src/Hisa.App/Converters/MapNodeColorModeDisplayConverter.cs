@@ -30,6 +30,7 @@ public sealed class MapNodeColorModeDisplayConverter : IValueConverter
             MapNodeColorMode.ShipKills => "Ship Kills",
             MapNodeColorMode.PodKills => "Pod Kills",
             MapNodeColorMode.NpcKills => "NPC Kills",
+            MapNodeColorMode.AnsiblexZone => "Ansiblex Zone",
             _ => mode.ToString()
         };
     }

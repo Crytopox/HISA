@@ -291,6 +291,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _showIndicatorPodKills = true;
     private bool _showIndicatorNpcKills = true;
     private bool _showIndicatorJumpRangeLy = true;
+    private bool _showIndicatorAnsiblexZone = true;
     private bool _rememberJumpRangeOrigins;
     private bool _enableLinkAnimations = true;
     private bool _enableIntelReportAnimations = true;
@@ -311,6 +312,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _infoBoxShowPodKills = true;
     private bool _infoBoxShowNpcKills = true;
     private bool _infoBoxShowJumpRangeLy = true;
+    private bool _infoBoxShowAnsiblexZone = true;
     private bool _alwaysShowHubWormholes = true;
     private bool _alwaysShowIncursions = true;
     private bool _showMissingConnectionMarkers = true;
@@ -470,6 +472,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string ShowIndicatorPodKillsKey = "Map.ShowIndicatorPodKills";
     private const string ShowIndicatorNpcKillsKey = "Map.ShowIndicatorNpcKills";
     private const string ShowIndicatorJumpRangeLyKey = "Map.ShowIndicatorJumpRangeLy";
+    private const string ShowIndicatorAnsiblexZoneKey = "Map.ShowIndicatorAnsiblexZone";
     private const string RememberJumpRangeOriginsKey = "Map.RememberJumpRangeOrigins";
     private const string JumpRangeOriginsKey = "Map.JumpRangeOrigins";
     private const string ShowIndicatorCharacterPresenceKey = "Map.ShowIndicatorCharacterPresence";
@@ -494,6 +497,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string InfoBoxShowPodKillsKey = "Map.InfoBoxShowPodKills";
     private const string InfoBoxShowNpcKillsKey = "Map.InfoBoxShowNpcKills";
     private const string InfoBoxShowJumpRangeLyKey = "Map.InfoBoxShowJumpRangeLy";
+    private const string InfoBoxShowAnsiblexZoneKey = "Map.InfoBoxShowAnsiblexZone";
     private const string IndicatorSovFilterKeysKey = "Map.IndicatorSovFilter.Keys";
     private const string OverlaySovFilterKeysKey = "Map.OverlaySovFilter.Keys";
     private const string IndicatorSovFilterConfiguredKey = "Map.IndicatorSovFilter.Configured";
@@ -667,6 +671,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public IEnumerable<long> JumpRouteNodeIdsForView => _jumpRouteNodeIdsForView;
     public IEnumerable<long> JumpRouteSkippedNodeIdsForView => _jumpRouteSkippedNodeIdsForView;
     public IReadOnlyList<MapLink> AnsiblexLinksForView { get; private set; } = [];
+    public IReadOnlyDictionary<long, AnsiblexSystemZone> AnsiblexZonesByNodeId { get; private set; } =
+        new Dictionary<long, AnsiblexSystemZone>();
+    public long? AnsiblexCapitalSystemId => _ansiblexNetworkStateService.Capital?.SolarSystemId;
+    public string? AnsiblexCapitalName => _ansiblexNetworkStateService.Capital?.SolarSystemName;
+    public string AnsiblexShipClassName => _ansiblexNetworkStateService.SelectedShipClassName;
+    public double AnsiblexShipBaseCostTj =>
+        AnsiblexZones.GetShipClassOrDefault(_ansiblexNetworkStateService.SelectedShipClassName).BaseCostTj;
     public IReadOnlyList<WormholeOverlayCard> HubWormholeCardsForView => _hubWormholeCardsForView;
     public IReadOnlyList<IncursionOverlayCard> IncursionCardsForView => _incursionCardsForView;
     public IReadOnlyList<StormOverlayCard> StormCardsForView => _stormCardsForView;
@@ -1111,6 +1122,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             if (SetProperty(ref _showIndicatorJumpRangeLy, value) && !_isInitializing)
             {
                 _ = _settingsService.SetAsync(ShowIndicatorJumpRangeLyKey, value);
+            }
+        }
+    }
+
+    public bool ShowIndicatorAnsiblexZone
+    {
+        get => _showIndicatorAnsiblexZone;
+        set
+        {
+            if (SetProperty(ref _showIndicatorAnsiblexZone, value) && !_isInitializing)
+            {
+                _ = _settingsService.SetAsync(ShowIndicatorAnsiblexZoneKey, value);
             }
         }
     }
@@ -1574,6 +1597,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             if (SetProperty(ref _infoBoxShowJumpRangeLy, value) && !_isInitializing)
             {
                 _ = _settingsService.SetAsync(InfoBoxShowJumpRangeLyKey, value);
+            }
+        }
+    }
+
+    public bool InfoBoxShowAnsiblexZone
+    {
+        get => _infoBoxShowAnsiblexZone;
+        set
+        {
+            if (SetProperty(ref _infoBoxShowAnsiblexZone, value) && !_isInitializing)
+            {
+                _ = _settingsService.SetAsync(InfoBoxShowAnsiblexZoneKey, value);
             }
         }
     }
@@ -2546,6 +2581,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         ShowIndicatorPodKills = await _settingsService.GetAsync<bool?>(ShowIndicatorPodKillsKey) ?? true;
         ShowIndicatorNpcKills = await _settingsService.GetAsync<bool?>(ShowIndicatorNpcKillsKey) ?? true;
         ShowIndicatorJumpRangeLy = await _settingsService.GetAsync<bool?>(ShowIndicatorJumpRangeLyKey) ?? true;
+        ShowIndicatorAnsiblexZone = await _settingsService.GetAsync<bool?>(ShowIndicatorAnsiblexZoneKey) ?? true;
         RememberJumpRangeOrigins = await _settingsService.GetAsync<bool?>(RememberJumpRangeOriginsKey) ?? false;
         if (RememberJumpRangeOrigins)
         {
@@ -2609,6 +2645,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         InfoBoxShowPodKills = await _settingsService.GetAsync<bool?>(InfoBoxShowPodKillsKey) ?? true;
         InfoBoxShowNpcKills = await _settingsService.GetAsync<bool?>(InfoBoxShowNpcKillsKey) ?? true;
         InfoBoxShowJumpRangeLy = await _settingsService.GetAsync<bool?>(InfoBoxShowJumpRangeLyKey) ?? true;
+        InfoBoxShowAnsiblexZone = await _settingsService.GetAsync<bool?>(InfoBoxShowAnsiblexZoneKey) ?? true;
         await _sovUpgradeStateService.InitializeAsync();
         await _miningSiteTrackerService.InitializeAsync();
         await _ansiblexNetworkStateService.InitializeAsync();
@@ -2811,7 +2848,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             MissingConnectionNodeIdsForView = [];
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MissingConnectionNodeIdsForView)));
             AnsiblexLinksForView = [];
+            AnsiblexZonesByNodeId = new Dictionary<long, AnsiblexSystemZone>();
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AnsiblexLinksForView)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AnsiblexZonesByNodeId)));
             RebuildJumpRangeOverlay();
             RebuildCharacterPresenceForView();
             RebuildIntelPresenceForView();
@@ -5147,7 +5186,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         if (graph is null || graph.Nodes.Count == 0)
         {
             AnsiblexLinksForView = [];
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AnsiblexLinksForView)));
+            AnsiblexZonesByNodeId = new Dictionary<long, AnsiblexSystemZone>();
+            NotifyAnsiblexViewChanged();
             return;
         }
 
@@ -5156,7 +5196,41 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             .Where(x => nodeSet.Contains(x.FromSolarSystemId) && nodeSet.Contains(x.ToSolarSystemId))
             .Select(x => new MapLink { FromId = x.FromSolarSystemId, ToId = x.ToSolarSystemId })
             .ToList();
+
+        var zones = new Dictionary<long, AnsiblexSystemZone>();
+        var capital = _ansiblexNetworkStateService.Capital;
+        if (capital?.PositionX is double capitalX &&
+            capital.PositionY is double capitalY &&
+            capital.PositionZ is double capitalZ)
+        {
+            foreach (var node in graph.Nodes)
+            {
+                if (node.PositionX is not double x ||
+                    node.PositionY is not double y ||
+                    node.PositionZ is not double z ||
+                    !double.IsFinite(x) ||
+                    !double.IsFinite(y) ||
+                    !double.IsFinite(z))
+                {
+                    continue;
+                }
+
+                zones[node.Id] = AnsiblexZones.ZoneFor(capitalX, capitalY, capitalZ, x, y, z);
+            }
+        }
+
+        AnsiblexZonesByNodeId = zones;
+        NotifyAnsiblexViewChanged();
+    }
+
+    private void NotifyAnsiblexViewChanged()
+    {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AnsiblexLinksForView)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AnsiblexZonesByNodeId)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AnsiblexCapitalSystemId)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AnsiblexCapitalName)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AnsiblexShipClassName)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AnsiblexShipBaseCostTj)));
     }
 
     public Task<SovImportResult> ImportSovUpgradesAsync(string rawText, SovImportMode mode, CancellationToken cancellationToken = default)
@@ -5209,6 +5283,34 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public Task<IReadOnlyList<AnsiblexLinkRecord>> GetAnsiblexSnapshotAsync(CancellationToken cancellationToken = default)
     {
         return _ansiblexNetworkStateService.GetSnapshotAsync(cancellationToken);
+    }
+
+    public Task<AnsiblexPlanningSnapshot> GetAnsiblexPlanningSnapshotAsync(CancellationToken cancellationToken = default)
+    {
+        return _ansiblexNetworkStateService.GetPlanningSnapshotAsync(cancellationToken);
+    }
+
+    public async Task<bool> SetAnsiblexCapitalAsync(string systemName, CancellationToken cancellationToken = default)
+    {
+        var saved = await _ansiblexNetworkStateService.SetCapitalSystemAsync(systemName, cancellationToken);
+        StatusText = saved
+            ? $"Ansiblex capital set to {_ansiblexNetworkStateService.Capital?.SolarSystemName}."
+            : $"Could not set Ansiblex capital: '{systemName?.Trim()}' was not found.";
+        return saved;
+    }
+
+    public async Task<bool> SetAnsiblexCapitalByIdAsync(long solarSystemId, CancellationToken cancellationToken = default)
+    {
+        var saved = await _ansiblexNetworkStateService.SetCapitalSystemByIdAsync((int)solarSystemId, cancellationToken);
+        StatusText = saved
+            ? $"Ansiblex capital set to {_ansiblexNetworkStateService.Capital?.SolarSystemName}."
+            : "Could not set Ansiblex capital for that system.";
+        return saved;
+    }
+
+    public Task SetAnsiblexShipClassAsync(string shipClassName, CancellationToken cancellationToken = default)
+    {
+        return _ansiblexNetworkStateService.SetSelectedShipClassAsync(shipClassName, cancellationToken);
     }
 
     public async Task SaveIndicatorSovFilterAsync()

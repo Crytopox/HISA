@@ -456,9 +456,16 @@
                               EnableLinkAnimations="{Binding EnableLinkAnimations}"
                               EnableIntelRingAnimations="{Binding EnableIntelReportAnimations}"
                               AnsiblexLinks="{Binding AnsiblexLinksForView}"
+                              AnsiblexZonesByNodeId="{Binding AnsiblexZonesByNodeId}"
+                              AnsiblexCapitalSystemId="{Binding AnsiblexCapitalSystemId}"
+                              AnsiblexCapitalName="{Binding AnsiblexCapitalName}"
+                              AnsiblexShipClassName="{Binding AnsiblexShipClassName}"
+                              AnsiblexShipBaseCostTj="{Binding AnsiblexShipBaseCostTj}"
+                              ShowIndicatorAnsiblexZone="{Binding ShowIndicatorAnsiblexZone}"
                               ShowAnsiblexNetwork="{Binding ShowAnsiblexNetwork}"
                               ShowIndicatorJumpRangeLy="{Binding ShowIndicatorJumpRangeLy}"
                               InfoBoxShowJumpRangeLy="{Binding InfoBoxShowJumpRangeLy}"
+                              InfoBoxShowAnsiblexZone="{Binding InfoBoxShowAnsiblexZone}"
                               SelectedNodeId="{Binding SelectedNodeId, Mode=TwoWay}" />
         <Border HorizontalAlignment="Left"
                 VerticalAlignment="Bottom"
@@ -581,14 +588,44 @@
                                TextWrapping="Wrap"
                                VerticalAlignment="Center" />
                   </StackPanel>
-                  <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsAnsiblexLegendVisible}">
-                    <Canvas Width="18" Height="8" VerticalAlignment="Center">
-                      <Line StartPoint="0,4" EndPoint="18,4" Stroke="#E7C85A" StrokeThickness="2" StrokeDashArray="4.2,2.8" />
-                    </Canvas>
-                    <TextBlock Text="Ansiblex link"
-                               Foreground="#C7D6EA"
-                               TextWrapping="Wrap"
-                               VerticalAlignment="Center" />
+                  <StackPanel Spacing="4" IsVisible="{Binding IsAnsiblexLegendVisible}">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <Border Width="18" Height="10" CornerRadius="2" Background="#3DDC97" VerticalAlignment="Center" />
+                      <TextBlock Text="Ansiblex zone 1 · 0–5 LY · free" Foreground="#C7D6EA" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <Border Width="18" Height="10" CornerRadius="2" Background="#4C9AFF" VerticalAlignment="Center" />
+                      <TextBlock Text="Ansiblex zone 2 · 5–10 LY · 2x" Foreground="#C7D6EA" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <Border Width="18" Height="10" CornerRadius="2" Background="#F5C06A" VerticalAlignment="Center" />
+                      <TextBlock Text="Ansiblex zone 3 · 10–15 LY · 6x" Foreground="#C7D6EA" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <Border Width="18" Height="10" CornerRadius="2" Background="#F08A3C" VerticalAlignment="Center" />
+                      <TextBlock Text="Ansiblex zone 4 · 15–20 LY · 9x" Foreground="#C7D6EA" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <Border Width="18" Height="10" CornerRadius="2" Background="#E85D5D" VerticalAlignment="Center" />
+                      <TextBlock Text="Ansiblex zone 5 · 20 LY+ · 15x" Foreground="#C7D6EA" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <Canvas Width="16" Height="16" VerticalAlignment="Center">
+                        <Ellipse Width="14" Height="14" Stroke="#F4F7FF" StrokeThickness="1.6" StrokeDashArray="2,1.6" Canvas.Left="1" Canvas.Top="1" />
+                      </Canvas>
+                      <TextBlock Text="Ansiblex capital" Foreground="#C7D6EA" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <Border Width="18" Height="3" VerticalAlignment="Center" CornerRadius="1">
+                        <Border.Background>
+                          <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                            <GradientStop Color="#4C9AFF" Offset="0" />
+                            <GradientStop Color="#F08A3C" Offset="1" />
+                          </LinearGradientBrush>
+                        </Border.Background>
+                      </Border>
+                      <TextBlock Text="Ansiblex link across zones" Foreground="#C7D6EA" TextWrapping="Wrap" VerticalAlignment="Center" />
+                    </StackPanel>
                   </StackPanel>
                   <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsRegionMode}">
                     <Canvas Width="16" Height="16">
@@ -1436,6 +1473,7 @@
             <CheckBox IsChecked="{Binding ShowIndicatorNpcKills}" Content="NPC Kills" />
             <CheckBox IsChecked="{Binding ShowIndicatorCharacterPresence}" Content="Characters" />
             <CheckBox IsChecked="{Binding ShowIndicatorJumpRangeLy}" Content="Jump Range LY" />
+            <CheckBox IsChecked="{Binding ShowIndicatorAnsiblexZone}" Content="Ansiblex Zone" />
             <CheckBox IsChecked="{Binding ShowUserSystemMarks}" Content="System Marks" />
             <CheckBox IsChecked="{Binding ShowAnsiblexNetwork}" Content="Ansiblex Network" />
             <StackPanel Orientation="Horizontal" Spacing="6">
@@ -1503,6 +1541,7 @@
               </ComboBox>
             </StackPanel>
             <CheckBox IsChecked="{Binding InfoBoxShowJumpRangeLy}" Content="Jump Range LY" />
+            <CheckBox IsChecked="{Binding InfoBoxShowAnsiblexZone}" Content="Ansiblex Zone" />
             <StackPanel Orientation="Horizontal" Spacing="6">
               <CheckBox IsChecked="{Binding InfoBoxShowSovUpgradeIcon}" Content="SOV Upgrades" />
               <Button Width="24" Height="24" Padding="0">
