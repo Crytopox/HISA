@@ -36,7 +36,7 @@
         </StackPanel>
         <TextBlock Text="Paste Input" Foreground="#8A96A8" />
         <TextBox x:Name="ImportTextBox"
-                 Watermark="Supported: full Goonwiki page/table paste, SYSTEM &lt;-&gt; SYSTEM, SYSTEM -&gt; SYSTEM, SYSTEM,SYSTEM"
+                 Watermark="Supported: full Goonwiki page/table paste, Dotlan universe link (system::system,system::system), SYSTEM &lt;-&gt; SYSTEM, SYSTEM -&gt; SYSTEM, SYSTEM,SYSTEM"
                  AcceptsReturn="True"
                  TextWrapping="Wrap"
                  VerticalAlignment="Stretch"

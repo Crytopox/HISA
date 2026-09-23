@@ -368,10 +368,21 @@ public sealed class AnsiblexNetworkStateService : IAnsiblexNetworkStateService
         return new AnsiblexLinkEntry { FromSolarSystemId = a, ToSolarSystemId = b };
     }
 
-    private static IReadOnlyList<(string From, string To)> ParseInput(string rawText)
+    private const string DotlanSystemToken = @"(?:%[0-9A-Fa-f]{2}|[A-Za-z0-9-]){1,36}";
+
+    private static readonly Regex DecodedSystemNameRegex = new(
+        @"^[A-Za-z0-9][A-Za-z0-9-]{0,11}$",
+        RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    private static readonly Regex DotlanLinkListRegex = new(
+        $@"(?:https?://[^\s]*?dotlan\.net/universe/)?(?<list>(?:{DotlanSystemToken}::{DotlanSystemToken})(?:\s*,\s*{DotlanSystemToken}::{DotlanSystemToken})*)",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    internal static IReadOnlyList<(string From, string To)> ParseInput(string rawText)
     {
-        var lines = rawText.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var result = new List<(string From, string To)>();
+        var remainder = CollectDotlanPairs(rawText, result);
+        var lines = remainder.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
         foreach (var line in lines)
         {
@@ -388,6 +399,69 @@ public sealed class AnsiblexNetworkStateService : IAnsiblexNetworkStateService
         }
 
         return result;
+    }
+
+    private static string CollectDotlanPairs(string rawText, List<(string From, string To)> result)
+    {
+        if (string.IsNullOrEmpty(rawText))
+        {
+            return rawText;
+        }
+
+        var matches = DotlanLinkListRegex.Matches(rawText);
+        if (matches.Count == 0)
+        {
+            return rawText;
+        }
+
+        var scrubbed = new System.Text.StringBuilder(rawText);
+        foreach (Match match in matches)
+        {
+            foreach (var segment in match.Groups["list"].Value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+            {
+                var parts = segment.Split("::", 2, StringSplitOptions.TrimEntries);
+                if (parts.Length != 2)
+                {
+                    continue;
+                }
+
+                if (!TryDecodeSystemToken(parts[0], out var from) || !TryDecodeSystemToken(parts[1], out var to))
+                {
+                    continue;
+                }
+
+                result.Add((from, to));
+            }
+
+            for (var i = match.Index; i < match.Index + match.Length; i++)
+            {
+                scrubbed[i] = '\n';
+            }
+        }
+
+        return scrubbed.ToString();
+    }
+
+    private static bool TryDecodeSystemToken(string token, out string name)
+    {
+        name = string.Empty;
+        string decoded;
+        try
+        {
+            decoded = Uri.UnescapeDataString(token).Trim();
+        }
+        catch (UriFormatException)
+        {
+            return false;
+        }
+
+        if (!DecodedSystemNameRegex.IsMatch(decoded))
+        {
+            return false;
+        }
+
+        name = decoded;
+        return true;
     }
 
     private static bool TryParseGoonwikiLine(string line, out (string From, string To) pair)

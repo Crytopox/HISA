@@ -1,6 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Hisa.Services.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Hisa.Core\Hisa.Core.csproj" />
     <ProjectReference Include="..\Hisa.Data\Hisa.Data.csproj" />
     <ProjectReference Include="..\Hisa.Logs\Hisa.Logs.csproj" />
