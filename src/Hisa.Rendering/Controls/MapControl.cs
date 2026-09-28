@@ -2106,7 +2106,7 @@ public sealed class MapControl : Control
 
             using (context.PushTransform(new Matrix(zoomRatio, 0, 0, zoomRatio, offsetX, offsetY)))
             {
-                context.DrawImage(tile.Bitmap, new Rect(bitmapSize));
+                DrawRenderTarget(context, tile.Bitmap, new Rect(bitmapSize));
             }
         }
     }
@@ -2118,8 +2118,19 @@ public sealed class MapControl : Control
             return false;
         }
 
-        context.DrawImage(_staticLayer, new Rect(bounds.Size));
+        DrawRenderTarget(context, _staticLayer, new Rect(bounds.Size));
         return true;
+    }
+
+    private static void DrawRenderTarget(DrawingContext context, RenderTargetBitmap bitmap, Rect destination)
+    {
+        // DrawImage's source rect is in device pixels. Bitmap.Size is DIPs, so on a scaled
+        // display that samples only the top-left of the texture and shifts the painted map
+        // away from hit-testing and the live overlays.
+        context.DrawImage(
+            bitmap,
+            new Rect(0, 0, bitmap.PixelSize.Width, bitmap.PixelSize.Height),
+            destination);
     }
 
     private bool EnsureStaticLayer(Rect bounds)
