@@ -1957,6 +1957,17 @@ public partial class MainWindow : Window
         return string.IsNullOrWhiteSpace(node?.RegionName) ? null : node.RegionName;
     }
 
+    private void OnRemoveJumpRangeOriginClicked(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { DataContext: JumpRangeOriginDisplay origin } ||
+            DataContext is not MainWindowViewModel vm)
+        {
+            return;
+        }
+
+        vm.RemoveJumpRangeOrigin(origin.NodeId);
+    }
+
     private async void OnSetJumpRangeClicked(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not MainWindowViewModel vm || sender is not MenuItem menuItem || _contextSystemId is null)

@@ -473,7 +473,7 @@
                 VerticalAlignment="Bottom"
                 Margin="12"
                 Padding="8"
-                Background="#C0101724"
+                Background="#F2101724"
                 BorderBrush="#5A7AA5D6"
                 BorderThickness="1"
                 CornerRadius="6"
@@ -493,6 +493,23 @@
                                Text="{Binding SystemName}" />
                     <TextBlock Foreground="#9EB5D8"
                                Text="{Binding RangeLy, StringFormat='({0:0.0} LY)'}" />
+                    <Button Content="×"
+                            Width="16"
+                            Height="16"
+                            Padding="0"
+                            Margin="2,0,0,0"
+                            FontSize="11"
+                            FontWeight="SemiBold"
+                            Background="#243247"
+                            BorderBrush="#5D83B5"
+                            BorderThickness="1"
+                            Foreground="#EAF2FF"
+                            CornerRadius="3"
+                            VerticalAlignment="Center"
+                            HorizontalContentAlignment="Center"
+                            VerticalContentAlignment="Center"
+                            Click="OnRemoveJumpRangeOriginClicked"
+                            ToolTip.Tip="Remove this jump-range source" />
                   </StackPanel>
                 </DataTemplate>
               </ItemsControl.ItemTemplate>

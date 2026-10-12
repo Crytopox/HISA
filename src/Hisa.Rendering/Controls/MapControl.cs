@@ -2469,8 +2469,7 @@ public sealed class MapControl : Control
             }
             if (_jumpRangeOriginNodeIds.Contains(node.Id))
             {
-                var originRadius = radius + 6.2;
-                context.DrawEllipse(null, JumpRangeOriginRingPen, p, originRadius, originRadius);
+                context.DrawEllipse(null, JumpRangeOriginRingPen, p, radius + 6.2, radius + 6.2);
             }
             if (ShowAnsiblexNetwork &&
                 ShowAnsiblexCapitalRing &&
