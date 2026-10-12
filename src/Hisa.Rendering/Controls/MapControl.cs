@@ -5043,7 +5043,9 @@ public sealed class MapControl : Control
 
     private bool IsAnsiblexZoneBadgeNode(long nodeId)
     {
-        if (!ReferenceEquals(_ansiblexBadgeSource, AnsiblexLinks) || _ansiblexBadgeCapitalId != AnsiblexCapitalSystemId)
+        if (_ansiblexBadgeNodeIds is null
+            || !ReferenceEquals(_ansiblexBadgeSource, AnsiblexLinks)
+            || _ansiblexBadgeCapitalId != AnsiblexCapitalSystemId)
         {
             _ansiblexBadgeSource = AnsiblexLinks;
             _ansiblexBadgeCapitalId = AnsiblexCapitalSystemId;
