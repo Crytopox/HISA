@@ -463,6 +463,8 @@
                               AnsiblexShipBaseCostTj="{Binding AnsiblexShipBaseCostTj}"
                               ShowIndicatorAnsiblexZone="{Binding ShowIndicatorAnsiblexZone}"
                               ShowAnsiblexNetwork="{Binding ShowAnsiblexNetwork}"
+                              ShowAnsiblexCapitalRing="{Binding ShowAnsiblexCapitalRing}"
+                              ShowAnsiblexCapitalHoverLine="{Binding ShowAnsiblexCapitalHoverLine}"
                               ShowIndicatorJumpRangeLy="{Binding ShowIndicatorJumpRangeLy}"
                               InfoBoxShowJumpRangeLy="{Binding InfoBoxShowJumpRangeLy}"
                               InfoBoxShowAnsiblexZone="{Binding InfoBoxShowAnsiblexZone}"

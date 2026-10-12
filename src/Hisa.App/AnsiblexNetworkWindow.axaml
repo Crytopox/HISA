@@ -5,6 +5,7 @@
         xmlns:app="clr-namespace:Hisa.App"
         mc:Ignorable="d"
         x:Class="Hisa.App.AnsiblexNetworkWindow"
+        x:DataType="app:MainWindowViewModel"
         Width="1180"
         Height="860"
         Title="Ansiblex Network"
@@ -21,6 +22,8 @@
         </Grid>
         <TextBlock x:Name="CapitalStatusText" Foreground="#D8E5F8" Text="No capital set" />
         <TextBlock x:Name="SummaryText" Foreground="#8A96A8" TextWrapping="Wrap" />
+        <CheckBox IsChecked="{Binding ShowAnsiblexCapitalRing}" Content="Show capital circle on map" Foreground="#D8E5F8" />
+        <CheckBox IsChecked="{Binding ShowAnsiblexCapitalHoverLine}" Content="Show capital, distance, and ship on hover" Foreground="#D8E5F8" />
       </StackPanel>
     </Border>
     <Border Grid.Row="2" Background="#101826" BorderBrush="#243247" BorderThickness="1" CornerRadius="4" Padding="10" Margin="0,8,0,0">

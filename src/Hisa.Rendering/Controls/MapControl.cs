@@ -231,6 +231,10 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, bool>(nameof(SuspendAnimations));
     public static readonly StyledProperty<bool> ShowAnsiblexNetworkProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowAnsiblexNetwork), true);
+    public static readonly StyledProperty<bool> ShowAnsiblexCapitalRingProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(ShowAnsiblexCapitalRing), true);
+    public static readonly StyledProperty<bool> ShowAnsiblexCapitalHoverLineProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(ShowAnsiblexCapitalHoverLine), true);
     public static readonly StyledProperty<IEnumerable<MapLink>?> AnsiblexLinksProperty =
         AvaloniaProperty.Register<MapControl, IEnumerable<MapLink>?>(nameof(AnsiblexLinks));
     public static readonly StyledProperty<IReadOnlyDictionary<long, AnsiblexSystemZone>?> AnsiblexZonesByNodeIdProperty =
@@ -656,6 +660,18 @@ public sealed class MapControl : Control
         set => SetValue(ShowAnsiblexNetworkProperty, value);
     }
 
+    public bool ShowAnsiblexCapitalRing
+    {
+        get => GetValue(ShowAnsiblexCapitalRingProperty);
+        set => SetValue(ShowAnsiblexCapitalRingProperty, value);
+    }
+
+    public bool ShowAnsiblexCapitalHoverLine
+    {
+        get => GetValue(ShowAnsiblexCapitalHoverLineProperty);
+        set => SetValue(ShowAnsiblexCapitalHoverLineProperty, value);
+    }
+
     public IEnumerable<MapLink>? AnsiblexLinks
     {
         get => GetValue(AnsiblexLinksProperty);
@@ -1049,6 +1065,8 @@ public sealed class MapControl : Control
             ShowIndicatorJumpRangeLyProperty,
             EnableLinkAnimationsProperty,
             ShowAnsiblexNetworkProperty,
+            ShowAnsiblexCapitalRingProperty,
+            ShowAnsiblexCapitalHoverLineProperty,
             AnsiblexLinksProperty,
             AnsiblexZonesByNodeIdProperty,
             AnsiblexCapitalSystemIdProperty,
@@ -2455,6 +2473,7 @@ public sealed class MapControl : Control
                 context.DrawEllipse(null, JumpRangeOriginRingPen, p, originRadius, originRadius);
             }
             if (ShowAnsiblexNetwork &&
+                ShowAnsiblexCapitalRing &&
                 AnsiblexCapitalSystemId is long capitalId &&
                 node.Id == capitalId)
             {
@@ -3259,6 +3278,7 @@ public sealed class MapControl : Control
             }
 
             if (ShowAnsiblexNetwork &&
+                ShowAnsiblexCapitalRing &&
                 AnsiblexCapitalSystemId is long capitalId &&
                 node.Id == capitalId)
             {
@@ -4861,6 +4881,11 @@ public sealed class MapControl : Control
         }
 
         partners.Sort((a, b) => string.Compare(a.SortName, b.SortName, StringComparison.OrdinalIgnoreCase));
+        if (!ShowAnsiblexCapitalHoverLine)
+        {
+            return partners;
+        }
+
         var capitalName = string.IsNullOrWhiteSpace(AnsiblexCapitalName) ? "capital" : AnsiblexCapitalName;
         var lines = new List<AnsiblexHoverLine>
         {

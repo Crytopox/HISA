@@ -22,6 +22,7 @@ public partial class AnsiblexNetworkWindow : Window
     public AnsiblexNetworkWindow(MainWindowViewModel vm) : this()
     {
         _vm = vm;
+        DataContext = vm;
         SavedLinksList.ItemsSource = _rows;
         ShipClassCombo.ItemsSource = AnsiblexZones.ShipClasses.ToList();
         Opened += async (_, _) => await RefreshSavedListAsync();

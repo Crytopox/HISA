@@ -296,6 +296,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _enableLinkAnimations = true;
     private bool _enableIntelReportAnimations = true;
     private bool _showAnsiblexNetwork = true;
+    private bool _showAnsiblexCapitalRing = true;
+    private bool _showAnsiblexCapitalHoverLine = true;
     private bool _infoBoxShowRegion = true;
     private bool _infoBoxShowConstellation = true;
     private bool _infoBoxShowSecurityStatus = true;
@@ -481,6 +483,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string EnableLinkAnimationsKey = "Map.EnableLinkAnimations";
     private const string EnableIntelReportAnimationsKey = "Map.EnableIntelReportAnimations";
     private const string ShowAnsiblexNetworkKey = "Map.ShowAnsiblexNetwork";
+    private const string ShowAnsiblexCapitalRingKey = "Map.ShowAnsiblexCapitalRing";
+    private const string ShowAnsiblexCapitalHoverLineKey = "Map.ShowAnsiblexCapitalHoverLine";
     private const string InfoBoxShowRegionKey = "Map.InfoBoxShowRegion";
     private const string InfoBoxShowConstellationKey = "Map.InfoBoxShowConstellation";
     private const string InfoBoxShowSecurityStatusKey = "Map.InfoBoxShowSecurityStatus";
@@ -1452,6 +1456,30 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 _ = _settingsService.SetAsync(ShowAnsiblexNetworkKey, value);
             }
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsAnsiblexLegendVisible)));
+        }
+    }
+
+    public bool ShowAnsiblexCapitalRing
+    {
+        get => _showAnsiblexCapitalRing;
+        set
+        {
+            if (SetProperty(ref _showAnsiblexCapitalRing, value) && !_isInitializing)
+            {
+                _ = _settingsService.SetAsync(ShowAnsiblexCapitalRingKey, value);
+            }
+        }
+    }
+
+    public bool ShowAnsiblexCapitalHoverLine
+    {
+        get => _showAnsiblexCapitalHoverLine;
+        set
+        {
+            if (SetProperty(ref _showAnsiblexCapitalHoverLine, value) && !_isInitializing)
+            {
+                _ = _settingsService.SetAsync(ShowAnsiblexCapitalHoverLineKey, value);
+            }
         }
     }
 
@@ -2628,6 +2656,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         EnableLinkAnimations = await _settingsService.GetAsync<bool?>(EnableLinkAnimationsKey) ?? true;
         EnableIntelReportAnimations = await _settingsService.GetAsync<bool?>(EnableIntelReportAnimationsKey) ?? true;
         ShowAnsiblexNetwork = await _settingsService.GetAsync<bool?>(ShowAnsiblexNetworkKey) ?? true;
+        ShowAnsiblexCapitalRing = await _settingsService.GetAsync<bool?>(ShowAnsiblexCapitalRingKey) ?? true;
+        ShowAnsiblexCapitalHoverLine = await _settingsService.GetAsync<bool?>(ShowAnsiblexCapitalHoverLineKey) ?? true;
         LogsRootPath = (await _settingsService.GetAsync<string>(TrackingLogsRootPathKey)) ?? GetDefaultEveLogsRootPath();
         InfoBoxShowRegion = await _settingsService.GetAsync<bool?>(InfoBoxShowRegionKey) ?? true;
         InfoBoxShowConstellation = await _settingsService.GetAsync<bool?>(InfoBoxShowConstellationKey) ?? true;
