@@ -256,7 +256,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private List<RegionOption> _allRegions = [];
     private readonly HashSet<string> _favoriteRegionKeys = new(StringComparer.OrdinalIgnoreCase);
     private bool _suppressSelectedRegionReload;
-    private bool _isBusy;
+    private readonly LatestMapRequestGate _graphLoadGate = new();
     private MapViewMode _selectedViewMode;
     private MapCoordinateMode _selectedCoordinateMode;
     private RegionOption? _selectedRegion;
@@ -2837,42 +2837,66 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     private async Task ReloadGraphAsync(bool resetSelection = true)
     {
-        if (_isBusy)
-        {
-            return;
-        }
-
-        _isBusy = true;
+        var request = _graphLoadGate.Begin();
+        var viewMode = SelectedViewMode;
+        var coordinateMode = SelectedCoordinateMode;
+        var region = SelectedRegion;
+        bool IsCurrent() => _graphLoadGate.IsCurrent(request) &&
+                            viewMode == SelectedViewMode &&
+                            coordinateMode == SelectedCoordinateMode &&
+                            (viewMode != MapViewMode.Region || ReferenceEquals(region, SelectedRegion));
         try
         {
-            MapGraph graph = SelectedViewMode switch
+            MapGraph graph = viewMode switch
             {
-                MapViewMode.Universe => await _mapDataService.GetUniverseGraphAsync(SelectedCoordinateMode),
-                MapViewMode.UniverseRegions => await _mapDataService.GetUniverseRegionsGraphAsync(SelectedCoordinateMode),
-                MapViewMode.Region when SelectedRegion is not null => await _mapDataService.GetRegionGraphAsync(SelectedRegion.RegionId, SelectedCoordinateMode),
+                MapViewMode.Universe => await _mapDataService.GetUniverseGraphAsync(coordinateMode, request.Token),
+                MapViewMode.UniverseRegions => await _mapDataService.GetUniverseRegionsGraphAsync(coordinateMode, request.Token),
+                MapViewMode.Region when region is not null => await _mapDataService.GetRegionGraphAsync(region.RegionId, coordinateMode, request.Token),
                 MapViewMode.Region => new MapGraph { Nodes = [], Links = [] },
                 _ => new MapGraph { Nodes = [], Links = [] }
             };
 
+            if (!IsCurrent())
+            {
+                return;
+            }
+
             CurrentGraph = graph;
             RebuildAnsiblexLinksForView(graph);
-            await RefreshRegionMissingConnectionMarkersAsync(graph);
+            await RefreshRegionMissingConnectionMarkersAsync(graph, request.Token);
+            if (!IsCurrent())
+            {
+                return;
+            }
             RebuildJumpRangeOverlay();
             RebuildCharacterPresenceForView();
             RebuildIntelPresenceForView();
             RebuildUserSystemMarkCards();
-            await RebuildActivityCardsAsync(graph);
+            await RebuildActivityCardsAsync(graph, request.Token);
+            if (!IsCurrent())
+            {
+                return;
+            }
             if (resetSelection)
             {
                 SelectedNodeId = null;
             }
-            StatusText = $"Mode: {SelectedViewMode} | Coordinates: {SelectedCoordinateMode} | Nodes: {graph.Nodes.Count} | Links: {graph.Links.Count}";
-            _ = _settingsService.SetAsync(ViewModeKey, SelectedViewMode);
-            _ = _settingsService.SetAsync(RegionIdKey, SelectedRegion?.RegionId);
-            _ = SaveSelectedRegionTokenAsync(SelectedRegion);
+            StatusText = $"Mode: {viewMode} | Coordinates: {coordinateMode} | Nodes: {graph.Nodes.Count} | Links: {graph.Links.Count}";
+            _ = _settingsService.SetAsync(ViewModeKey, viewMode);
+            _ = _settingsService.SetAsync(RegionIdKey, region?.RegionId);
+            _ = SaveSelectedRegionTokenAsync(region);
+        }
+        catch (OperationCanceledException) when (request.Token.IsCancellationRequested)
+        {
+            // A newer request owns the graph and its associated view state.
         }
         catch (Exception ex)
         {
+            if (!IsCurrent())
+            {
+                return;
+            }
+
             StatusText = $"Map load error: {ex.Message}";
             CurrentGraph = new MapGraph { Nodes = [], Links = [] };
             MissingConnectionNodeIdsForView = [];
@@ -2885,7 +2909,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             RebuildCharacterPresenceForView();
             RebuildIntelPresenceForView();
             RebuildUserSystemMarkCards();
-            await RebuildActivityCardsAsync(CurrentGraph);
+            try
+            {
+                await RebuildActivityCardsAsync(CurrentGraph, request.Token);
+            }
+            catch (OperationCanceledException) when (request.Token.IsCancellationRequested)
+            {
+                return;
+            }
             if (resetSelection)
             {
                 SelectedNodeId = null;
@@ -2893,7 +2924,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
         finally
         {
-            _isBusy = false;
+            _graphLoadGate.Complete(request);
         }
     }
 
@@ -5854,8 +5885,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasJumpRangeOverlay)));
     }
 
-    private async Task RebuildActivityCardsAsync(MapGraph? graph)
+    private async Task RebuildActivityCardsAsync(MapGraph? graph, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var wormholeBySystem = _hubWormholeStateService.Current.ConnectionsBySystemId;
         var incursions = _incursionStateService.Current.Incursions;
         var storms = _stormStateService.Current;
@@ -5921,7 +5953,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
 
         var now = DateTimeOffset.UtcNow;
-        var metadataById = await _mapDataService.GetSystemMetadataByIdsAsync(allSystemIds);
+        var metadataById = await _mapDataService.GetSystemMetadataByIdsAsync(allSystemIds, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
         lock (_systemLocationGate)
         {
             foreach (var kvp in metadataById)
@@ -6172,6 +6205,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             return (nextIntelCards, nextZkillCards);
         });
 
+        cancellationToken.ThrowIfCancellationRequested();
         _intelCardsForView = intelCards;
         _zkillmailCardsForView = zkillCards;
 
@@ -8501,7 +8535,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
-    private async Task RefreshRegionMissingConnectionMarkersAsync(MapGraph graph)
+    private async Task RefreshRegionMissingConnectionMarkersAsync(MapGraph graph, CancellationToken cancellationToken = default)
     {
         if (SelectedViewMode != MapViewMode.Region)
         {
@@ -8523,7 +8557,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             return;
         }
 
-        var neighborCounts = await _mapDataService.GetSystemNeighborCountsAsync(presentSystemIds);
+        var neighborCounts = await _mapDataService.GetSystemNeighborCountsAsync(presentSystemIds, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
         var presentNeighborCounts = presentSystemIds.ToDictionary(id => id, _ => 0);
         foreach (var link in graph.Links)
         {

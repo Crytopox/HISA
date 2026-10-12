@@ -6,4 +6,9 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="HISA" />
+    <InternalsVisibleTo Include="Hisa.Core.Tests" />
+  </ItemGroup>
+
 </Project>
