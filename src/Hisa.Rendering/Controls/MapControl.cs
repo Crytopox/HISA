@@ -55,7 +55,7 @@ public sealed class MapControl : Control
     private const double EditorNodeLabelFontSize = 9;
     private const double NodeRegionConstellationFontSize = 9.5;
     private const double EditorRegionConstellationFontSize = 9.0;
-    private const double UniverseMinNodeScale = 0.55;
+    private const double RegionMinNodeScale = 0.55;
     private const double UniverseTileSize = 512.0;
     private const double UniverseTileGutter = 4.0;
     private const double IconSize = 18.0;
@@ -2504,8 +2504,7 @@ public sealed class MapControl : Control
             var activeRegionId = _selectedRegionId ?? _hoveredRegionId;
             var isInActiveRegion = activeRegionId is not null && node.RegionId == activeRegionId.Value;
             var isSelectedRegionNode = _selectedRegionId is not null && node.RegionId == _selectedRegionId.Value;
-            var universeNodeScale = GetUniverseNodeZoomScale();
-            var radius = (isSelected ? 9.3 : isHovered ? 8.4 : isSearchHighlighted ? 7.8 : 6.75) * universeNodeScale;
+            var radius = GetMapNodeRadius(isSelected, isHovered, isSearchHighlighted);
             var brush = isSelected
                 ? SelectedBrush
                 : isHovered
@@ -2664,8 +2663,7 @@ public sealed class MapControl : Control
 
             var isSelected = drawInteractive && (SelectedNodeId == node.Id || _additionalSelectedSet.Contains(node.Id));
             var isHovered = drawInteractive && _hoveredNodeId == node.Id;
-            var universeNodeScale = GetUniverseNodeZoomScale();
-            var radius = (isSelected ? 9.3 : isHovered ? 8.4 : 6.75) * universeNodeScale;
+            var radius = GetMapNodeRadius(isSelected, isHovered);
             var badgeY = p.Y - radius - 9.0;
             if (AlwaysShowHubWormholes && node.HubWormholeConnections.Count > 0)
             {
@@ -2713,7 +2711,7 @@ public sealed class MapControl : Control
             var suppressInlineLabel =
                 (SelectedNodeId is not null && node.Id == SelectedNodeId.Value) ||
                 (_hoveredNodeId is not null && node.Id == _hoveredNodeId.Value);
-            if (drawInteractive &&
+            if (ViewMode != MapViewMode.Universe && drawInteractive &&
                 !suppressInlineLabel &&
                 (shouldShowInlineLabels || isSelected || isHovered) &&
                 labelsDrawn < labelBudget &&
@@ -2723,6 +2721,11 @@ public sealed class MapControl : Control
                 DrawIndicatorLabel(context, node, labelOrigin);
                 labelsDrawn++;
             }
+        }
+
+        if (ViewMode == MapViewMode.Universe && drawInteractive)
+        {
+            DrawUniverseSystemLabels(context, bounds, shouldShowInlineLabels, labelBudget);
         }
 
         if (!drawInteractive)
@@ -3234,8 +3237,7 @@ public sealed class MapControl : Control
             var isSearchHighlighted = _searchHighlightedNodeId == node.Id ||
                                       (_searchHighlightedConstellationId is not null && node.ConstellationId == _searchHighlightedConstellationId.Value) ||
                                       (_searchHighlightedRegionId is not null && node.RegionId == _searchHighlightedRegionId.Value);
-            var universeNodeScale = GetUniverseNodeZoomScale();
-            var radius = (isSelected ? 9.3 : isHovered ? 8.4 : isSearchHighlighted ? 7.8 : 6.75) * universeNodeScale;
+            var radius = GetMapNodeRadius(isSelected, isHovered, isSearchHighlighted);
             DrawIntelOrbitIcons(context, p, radius, intelRingIcons);
         }
     }
@@ -3287,17 +3289,170 @@ public sealed class MapControl : Control
         };
     }
 
+    private void DrawUniverseSystemLabels(DrawingContext context, Rect bounds, bool showOrdinaryLabels, int budget)
+    {
+        if (Graph is null)
+        {
+            return;
+        }
+
+        var candidates = new List<UniverseLabelCandidate>();
+        var obstacles = new List<UniverseNodeObstacle>();
+        for (var i = 0; i < Graph.Nodes.Count; i++)
+        {
+            var node = Graph.Nodes[i];
+            var point = _screenPositions[i];
+            if (!IsPointVisible(point, bounds, 24))
+            {
+                continue;
+            }
+
+            var isSelected = SelectedNodeId == node.Id || _additionalSelectedSet.Contains(node.Id);
+            var isHovered = _hoveredNodeId == node.Id;
+            var isSearchHighlighted = _searchHighlightedNodeId == node.Id ||
+                                      (_searchHighlightedConstellationId is not null && node.ConstellationId == _searchHighlightedConstellationId) ||
+                                      (_searchHighlightedRegionId is not null && node.RegionId == _searchHighlightedRegionId);
+            var radius = GetMapNodeRadius(isSelected, isHovered, isSearchHighlighted);
+            obstacles.Add(new UniverseNodeObstacle(point, radius));
+            if (SelectedNodeId == node.Id || isHovered ||
+                (!showOrdinaryLabels && !isSelected && _searchHighlightedNodeId != node.Id))
+            {
+                continue;
+            }
+
+            var hasImportantIndicator =
+                (ShowUserSystemMarks && UserSystemMarksByNodeId?.ContainsKey(node.Id) == true) ||
+                (IntelHostileScoresByNodeId?.TryGetValue(node.Id, out var hostileScore) == true && hostileScore > 0) ||
+                _jumpRouteOrderByNodeId.ContainsKey(node.Id);
+            var priority = isSelected || isSearchHighlighted ? 0 : hasImportantIndicator ? 1 : 2;
+            candidates.Add(new UniverseLabelCandidate(node.Id, point,
+                MeasureIndicatorLabelSize(node), radius, priority));
+        }
+
+        var reservedRects = new List<Rect>(_systemMarkClusterHits.Count + _regionCentroids.Count);
+        reservedRects.AddRange(_systemMarkClusterHits.Select(hit => hit.Bounds));
+        if (ShouldShowUniverseRegionLabels())
+        {
+            reservedRects.AddRange(BuildUniverseRegionLabelLayouts().Select(layout => layout.Rect));
+        }
+
+        foreach (var placement in UniverseLabelPlacement.Place(candidates, obstacles, bounds, budget, reservedRects))
+        {
+            if (_nodeById.TryGetValue(placement.NodeId, out var node))
+            {
+                DrawIndicatorLabel(context, node, placement.Origin);
+            }
+        }
+    }
+
+    private Size MeasureIndicatorLabelSize(MapNode node)
+    {
+        const double lineGap = 1.0;
+        var name = GetNodeLabel(node.Id, BuildIndicatorLabel(node));
+        var fontSize = ShowEditorGrid ? EditorNodeLabelFontSize : NodeLabelFontSize;
+        var secondaryFontSize = ShowEditorGrid ? EditorRegionConstellationFontSize : NodeRegionConstellationFontSize - 1;
+        double TextWidth(string value, double size) => new FormattedText(value, CultureInfo.InvariantCulture,
+            FlowDirection.LeftToRight, NodeLabelTypeface, size, Brushes.White).Width;
+        double TextHeight(string value, double size) => new FormattedText(value, CultureInfo.InvariantCulture,
+            FlowDirection.LeftToRight, NodeLabelTypeface, size, Brushes.White).Height;
+
+        var width = name.Width;
+        var height = name.Height;
+        if (ShowIndicatorSecurityStatus && node.Security is not null)
+        {
+            width += 7 + TextWidth(RoundSecurityForDisplay(node.Security.Value).ToString("0.0", CultureInfo.InvariantCulture), fontSize);
+        }
+        if (ShowIndicatorAnsiblexZone && IsAnsiblexZoneBadgeNode(node.Id) && TryGetAnsiblexZoneInfo(node.Id, out var zone))
+        {
+            width += 6 + TextWidth($"Z{zone.Zone}", Math.Max(9, fontSize - 1)) + 8;
+        }
+        if ((ShowIndicatorRegion || (ShowEditorGrid && ShowEditorRegionLabel)) && !string.IsNullOrWhiteSpace(node.RegionName))
+        {
+            width = Math.Max(width, TextWidth(node.RegionName, secondaryFontSize));
+            height += lineGap + TextHeight(node.RegionName, secondaryFontSize);
+        }
+        if (ShowIndicatorConstellation && !string.IsNullOrWhiteSpace(node.ConstellationName))
+        {
+            width = Math.Max(width, TextWidth(node.ConstellationName, secondaryFontSize));
+            height += lineGap + TextHeight(node.ConstellationName, secondaryFontSize);
+        }
+        var starClass = GetStarClassDisplayValue(node);
+        if (ShowIndicatorStarClass && !string.IsNullOrWhiteSpace(starClass))
+        {
+            var star = GetNodeSecondaryLabel(node.Id, starClass);
+            width = Math.Max(width, star.Width);
+            height += lineGap + star.Height;
+        }
+
+        var labelHeight = height + 4;
+        width += 6;
+        var iconCount = 0;
+        if (ShowIndicatorA0StarIcon && IsA0BlueSmall(node)) iconCount++;
+        if (ShowIndicatorJoveObservatoryIcon && node.HasJoveObservatory) iconCount++;
+        if (ShowIndicatorIceBeltsIcon && node.IceFieldCount > 0) iconCount++;
+        if (ShowIndicatorStormIcon && node.StormEffects.Count > 0) iconCount++;
+        if (ShowIndicatorWormholeIcon && node.HubWormholeConnections.Count > 0) iconCount++;
+        if (ShowIndicatorIncursionIcon && node.HasActiveIncursion) iconCount++;
+        var iconRowWidth = iconCount * (IconSize + IndicatorIconSlotGap);
+        foreach (var count in new[]
+                 {
+                     ShowIndicatorSystemJumps ? node.SystemJumps : 0,
+                     ShowIndicatorShipKills ? node.ShipKills : 0,
+                     ShowIndicatorPodKills ? node.PodKills : 0,
+                     ShowIndicatorNpcKills ? node.NpcKills : 0
+                 })
+        {
+            if (count > 0) iconRowWidth += IconSize + 1.5 + TextWidth(count.ToString(CultureInfo.InvariantCulture), 9.5) + IndicatorIconSlotGap;
+        }
+        var primaryRowHasIcons = iconRowWidth > 0;
+        if (primaryRowHasIcons)
+        {
+            width = Math.Max(width, iconRowWidth + IndicatorIconLeftPadding);
+            height = labelHeight + IconSize + 2;
+        }
+        else
+        {
+            height = labelHeight;
+        }
+
+        var sovSlots = ShowIndicatorSovUpgradeIcon
+            ? GetVisibleSovUpgrades(node.SovUpgrades, IndicatorSovUpgradeFilterKeys).Count()
+            : 0;
+        if (ShowIndicatorSovUpgradeIcon && _indicatorExplorationOverlapByNodeId.TryGetValue(node.Id, out var overlap) && overlap > 0)
+        {
+            sovSlots += 2;
+        }
+        if (sovSlots > 0)
+        {
+            width = Math.Max(width, IndicatorIconLeftPadding + (sovSlots * (IconSize + IndicatorIconSlotGap)));
+            height = labelHeight + (primaryRowHasIcons ? SovIconSize + 2 : 0) + SovIconSize;
+        }
+
+        if (ShowIndicatorJumpRangeLy && JumpRangeDistancesByNodeId?.TryGetValue(node.Id, out var distances) == true && distances.Count > 0)
+        {
+            var best = distances.OrderByDescending(x => x.IsInRange).ThenBy(x => x.DistanceLy).First();
+            var suffix = distances.Count > 1 ? $" (+{distances.Count - 1})" : string.Empty;
+            width = Math.Max(width, IndicatorIconLeftPadding + 16.5 + TextWidth($"{best.DistanceLy:0.0} LY{suffix}", 10.5));
+            height += 17;
+        }
+
+        return new Size(width, height);
+    }
+
     private double GetUniverseNodeZoomScale()
     {
-        if (ViewMode != MapViewMode.Universe && ViewMode != MapViewMode.Region)
+        if (ViewMode == MapViewMode.Universe)
+        {
+            return GetUniverseNodeZoomScaleAt(_zoom);
+        }
+
+        if (ViewMode != MapViewMode.Region)
         {
             return 1.0;
         }
 
         var threshold = GetLabelZoomThreshold();
-        var effectiveThreshold = ViewMode == MapViewMode.Region
-            ? Math.Min(GetMaxZoom(), threshold * 1.45)
-            : threshold;
+        var effectiveThreshold = Math.Min(GetMaxZoom(), threshold * 1.45);
         if (_zoom >= effectiveThreshold)
         {
             return 1.0;
@@ -3306,7 +3461,25 @@ public sealed class MapControl : Control
         const double minZoom = 0.4;
         var progress = (_zoom - minZoom) / (effectiveThreshold - minZoom);
         progress = Math.Clamp(progress, 0.0, 1.0);
-        return UniverseMinNodeScale + ((1.0 - UniverseMinNodeScale) * progress);
+        return RegionMinNodeScale + ((1.0 - RegionMinNodeScale) * progress);
+    }
+
+    internal static double GetUniverseNodeZoomScaleAt(double zoom)
+    {
+        if (zoom <= 1.0) return 0.38;
+        if (zoom <= 2.0) return 0.38 + ((zoom - 1.0) * 0.12);
+        if (zoom <= 5.4) return 0.50 + (((zoom - 2.0) / 3.4) * 0.28);
+        if (zoom <= 12.0) return 0.78 + (((zoom - 5.4) / 6.6) * 0.22);
+        return 1.0;
+    }
+
+    private double GetMapNodeRadius(bool isSelected, bool isHovered, bool isSearchHighlighted = false)
+    {
+        var radius = (isSelected ? 9.3 : isHovered ? 8.4 : isSearchHighlighted ? 7.8 : 6.75)
+            * GetUniverseNodeZoomScale();
+        return ViewMode == MapViewMode.Universe && (isSelected || isHovered || isSearchHighlighted)
+            ? Math.Max(5.0, radius)
+            : radius;
     }
 
     private double GetVoronoiZoomThreshold()
@@ -7750,7 +7923,7 @@ public sealed class MapControl : Control
     {
         var isSelected = SelectedNodeId == node.Id;
         var isHovered = _hoveredNodeId == node.Id;
-        var radius = (isSelected ? 9.3 : isHovered ? 8.4 : 6.75) * GetUniverseNodeZoomScale();
+        var radius = GetMapNodeRadius(isSelected, isHovered);
         var x = nodePoint.X + radius + NodeBadgeGap;
         var y = nodePoint.Y - radius - 9.0;
         if (TryGetCharacterPresenceCount(node.Id, out var characterCount))

@@ -113,7 +113,8 @@ public sealed class MapDataService : IMapDataService
     {
         var systems = await QuerySystemsAsync(null, coordinateMode, cancellationToken);
         var links = await QuerySystemLinksAsync(null, cancellationToken);
-        return BuildNormalizedGraph(systems, links, applyLightDeoverlap: coordinateMode == MapCoordinateMode.ThreeDProjectedXZ);
+        return BuildNormalizedGraph(systems, links, preserveAspect: true,
+            applyFlattenedUniverseDeoverlap: coordinateMode == MapCoordinateMode.ThreeDProjectedXZ);
     }
 
     public Task<MapGraph> GetSystemJumpGraphAsync(CancellationToken cancellationToken = default)
@@ -784,7 +785,12 @@ public sealed class MapDataService : IMapDataService
         return links;
     }
 
-    private static MapGraph BuildNormalizedGraph(IReadOnlyList<MapNode> rawNodes, IReadOnlyList<MapLink> rawLinks, bool applyLightDeoverlap = false)
+    internal static MapGraph BuildNormalizedGraph(
+        IReadOnlyList<MapNode> rawNodes,
+        IReadOnlyList<MapLink> rawLinks,
+        bool applyLightDeoverlap = false,
+        bool preserveAspect = false,
+        bool applyFlattenedUniverseDeoverlap = false)
     {
         if (rawNodes.Count == 0)
         {
@@ -798,18 +804,27 @@ public sealed class MapDataService : IMapDataService
 
         var width = Math.Max(1e-9, maxX - minX);
         var height = Math.Max(1e-9, maxY - minY);
+        var scaleX = preserveAspect ? Math.Max(width, height) : width;
+        var scaleY = preserveAspect ? Math.Max(width, height) : height;
+        var insetX = preserveAspect ? (scaleX - width) * 0.5 : 0.0;
+        var insetY = preserveAspect ? (scaleY - height) * 0.5 : 0.0;
 
         var normalizedX = new double[rawNodes.Count];
         var normalizedY = new double[rawNodes.Count];
         for (var i = 0; i < rawNodes.Count; i++)
         {
-            normalizedX[i] = (rawNodes[i].X - minX) / width;
-            normalizedY[i] = 1.0 - ((rawNodes[i].Y - minY) / height);
+            normalizedX[i] = (rawNodes[i].X - minX + insetX) / scaleX;
+            normalizedY[i] = 1.0 - ((rawNodes[i].Y - minY + insetY) / scaleY);
         }
 
         if (applyLightDeoverlap)
         {
             ApplyLightDeoverlap(rawNodes, normalizedX, normalizedY);
+        }
+
+        if (applyFlattenedUniverseDeoverlap)
+        {
+            ApplyFlattenedUniverseDeoverlap(rawNodes, normalizedX, normalizedY);
         }
 
         var nodes = new List<MapNode>(rawNodes.Count);
@@ -856,6 +871,131 @@ public sealed class MapDataService : IMapDataService
             Nodes = nodes,
             Links = links
         };
+    }
+
+    private static void ApplyFlattenedUniverseDeoverlap(IReadOnlyList<MapNode> rawNodes, double[] x, double[] y)
+    {
+        if (rawNodes.Count < 2)
+        {
+            return;
+        }
+
+        const double targetSeparation = 0.0028;
+        const double maxStep = 0.0005;
+        const double maxDisplacement = 0.0015;
+        const double anchorStrength = 0.08;
+        const int maxIterations = 24;
+        var originalX = x.ToArray();
+        var originalY = y.ToArray();
+        var sortedIndexes = Enumerable.Range(0, rawNodes.Count)
+            .OrderBy(index => rawNodes[index].Id)
+            .ToArray();
+        var rank = new int[rawNodes.Count];
+        for (var position = 0; position < sortedIndexes.Length; position++)
+        {
+            rank[sortedIndexes[position]] = position;
+        }
+
+        for (var iteration = 0; iteration < maxIterations; iteration++)
+        {
+            var buckets = new Dictionary<(int X, int Y), List<int>>();
+            foreach (var index in sortedIndexes)
+            {
+                var key = ((int)Math.Floor(x[index] / targetSeparation),
+                    (int)Math.Floor(y[index] / targetSeparation));
+                if (!buckets.TryGetValue(key, out var indices))
+                {
+                    indices = [];
+                    buckets[key] = indices;
+                }
+                indices.Add(index);
+            }
+
+            var deltaX = new double[rawNodes.Count];
+            var deltaY = new double[rawNodes.Count];
+            var overlapCount = 0;
+            foreach (var index in sortedIndexes)
+            {
+                var cellX = (int)Math.Floor(x[index] / targetSeparation);
+                var cellY = (int)Math.Floor(y[index] / targetSeparation);
+                for (var offsetX = -1; offsetX <= 1; offsetX++)
+                for (var offsetY = -1; offsetY <= 1; offsetY++)
+                {
+                    if (!buckets.TryGetValue((cellX + offsetX, cellY + offsetY), out var neighbors))
+                    {
+                        continue;
+                    }
+
+                    foreach (var neighbor in neighbors)
+                    {
+                        if (rank[neighbor] <= rank[index])
+                        {
+                            continue;
+                        }
+
+                        var dx = x[neighbor] - x[index];
+                        var dy = y[neighbor] - y[index];
+                        var distance = Math.Sqrt((dx * dx) + (dy * dy));
+                        if (distance >= targetSeparation)
+                        {
+                            continue;
+                        }
+
+                        overlapCount++;
+                        if (distance <= 1e-12)
+                        {
+                            (dx, dy) = StablePairDirection(rawNodes[index].Id, rawNodes[neighbor].Id);
+                            distance = 0;
+                        }
+                        else
+                        {
+                            dx /= distance;
+                            dy /= distance;
+                        }
+
+                        var push = (targetSeparation - distance) * 0.5;
+                        deltaX[index] -= dx * push;
+                        deltaY[index] -= dy * push;
+                        deltaX[neighbor] += dx * push;
+                        deltaY[neighbor] += dy * push;
+                    }
+                }
+            }
+
+            if (overlapCount == 0)
+            {
+                break;
+            }
+
+            foreach (var index in sortedIndexes)
+            {
+                var stepLength = Math.Sqrt((deltaX[index] * deltaX[index]) + (deltaY[index] * deltaY[index]));
+                var stepScale = stepLength > maxStep ? maxStep / stepLength : 1.0;
+                x[index] += deltaX[index] * stepScale;
+                y[index] += deltaY[index] * stepScale;
+
+                x[index] += (originalX[index] - x[index]) * anchorStrength;
+                y[index] += (originalY[index] - y[index]) * anchorStrength;
+
+                var displacementX = x[index] - originalX[index];
+                var displacementY = y[index] - originalY[index];
+                var displacement = Math.Sqrt((displacementX * displacementX) + (displacementY * displacementY));
+                if (displacement > maxDisplacement)
+                {
+                    var scale = maxDisplacement / displacement;
+                    x[index] = originalX[index] + (displacementX * scale);
+                    y[index] = originalY[index] + (displacementY * scale);
+                }
+            }
+        }
+    }
+
+    private static (double X, double Y) StablePairDirection(long firstId, long secondId)
+    {
+        var hash = unchecked(((ulong)firstId * 11400714819323198485UL) ^
+                             ((ulong)secondId * 14029467366897019727UL));
+        var angle = (hash & 0xffffUL) * (2.0 * Math.PI / 65536.0);
+        return (Math.Cos(angle), Math.Sin(angle));
     }
 
     private static void ApplyLightDeoverlap(IReadOnlyList<MapNode> rawNodes, double[] x, double[] y)
