@@ -51,15 +51,17 @@ public sealed class MapControl : Control
     private static readonly Point NodeLabelOffset = new(14, 8);
     private static readonly Typeface NodeLabelTypeface = new("Inter", FontStyle.Normal, FontWeight.SemiBold);
     private static readonly Typeface RegionCardTypeface = new("Inter", FontStyle.Normal, FontWeight.SemiBold);
-    private const double NodeLabelFontSize = 11;
+    private const double NodeLabelFontSize = 10;
+    private const double RegionNodeLabelFontSize = 10;
     private const double EditorNodeLabelFontSize = 9;
     private const double NodeRegionConstellationFontSize = 9.5;
     private const double EditorRegionConstellationFontSize = 9.0;
     private const double RegionMinNodeScale = 0.55;
+    private const double RegionFullNodeSizeZoom = 2.4;
     private const double UniverseTileSize = 512.0;
     private const double UniverseTileGutter = 4.0;
     private const double IconSize = 18.0;
-    private const double SovIconSize = 22.0;
+    private const double SovIconSize = 21.0;
     private const double IndicatorIconLeftPadding = 2.0;
     private const double IndicatorIconSlotGap = 3.0;
     private const string A0BlueSmallName = "Sun A0 (Blue Small)";
@@ -3284,7 +3286,7 @@ public sealed class MapControl : Control
         {
             MapViewMode.Universe => 620,
             MapViewMode.UniverseRegions => 180,
-            MapViewMode.Region => 1240,
+            MapViewMode.Region => int.MaxValue,
             _ => 300
         };
     }
@@ -3349,7 +3351,7 @@ public sealed class MapControl : Control
     {
         const double lineGap = 1.0;
         var name = GetNodeLabel(node.Id, BuildIndicatorLabel(node));
-        var fontSize = ShowEditorGrid ? EditorNodeLabelFontSize : NodeLabelFontSize;
+        var fontSize = GetIndicatorLabelFontSize();
         var secondaryFontSize = ShowEditorGrid ? EditorRegionConstellationFontSize : NodeRegionConstellationFontSize - 1;
         double TextWidth(string value, double size) => new FormattedText(value, CultureInfo.InvariantCulture,
             FlowDirection.LeftToRight, NodeLabelTypeface, size, Brushes.White).Width;
@@ -3451,17 +3453,17 @@ public sealed class MapControl : Control
             return 1.0;
         }
 
-        var threshold = GetLabelZoomThreshold();
-        var effectiveThreshold = Math.Min(GetMaxZoom(), threshold * 1.45);
-        if (_zoom >= effectiveThreshold)
-        {
-            return 1.0;
-        }
+        return GetRegionNodeZoomScaleAt(_zoom, GetRegionDensity01(),
+            Math.Min(GetMaxZoom(), RegionFullNodeSizeZoom));
+    }
 
+    internal static double GetRegionNodeZoomScaleAt(double zoom, double density01, double fullSizeZoom)
+    {
         const double minZoom = 0.4;
-        var progress = (_zoom - minZoom) / (effectiveThreshold - minZoom);
+        var minScale = RegionMinNodeScale - (0.13 * Math.Clamp(density01, 0.0, 1.0));
+        var progress = (zoom - minZoom) / Math.Max(1e-9, fullSizeZoom - minZoom);
         progress = Math.Clamp(progress, 0.0, 1.0);
-        return RegionMinNodeScale + ((1.0 - RegionMinNodeScale) * progress);
+        return minScale + ((1.0 - minScale) * progress);
     }
 
     internal static double GetUniverseNodeZoomScaleAt(double zoom)
@@ -3477,7 +3479,8 @@ public sealed class MapControl : Control
     {
         var radius = (isSelected ? 9.3 : isHovered ? 8.4 : isSearchHighlighted ? 7.8 : 6.75)
             * GetUniverseNodeZoomScale();
-        return ViewMode == MapViewMode.Universe && (isSelected || isHovered || isSearchHighlighted)
+        return (ViewMode == MapViewMode.Universe || ViewMode == MapViewMode.Region) &&
+               (isSelected || isHovered || isSearchHighlighted)
             ? Math.Max(5.0, radius)
             : radius;
     }
@@ -4912,9 +4915,13 @@ public sealed class MapControl : Control
         return false;
     }
 
+    private double GetIndicatorLabelFontSize() => ShowEditorGrid
+        ? EditorNodeLabelFontSize
+        : ViewMode == MapViewMode.Region ? RegionNodeLabelFontSize : NodeLabelFontSize;
+
     private FormattedText GetNodeLabel(long nodeId, string name)
     {
-        var fontSize = ShowEditorGrid ? EditorNodeLabelFontSize : NodeLabelFontSize;
+        var fontSize = GetIndicatorLabelFontSize();
         var key = $"{nodeId}:{name}:{fontSize:F1}";
         if (_nodeLabelCache.TryGetValue(key, out var text))
         {
@@ -4934,7 +4941,7 @@ public sealed class MapControl : Control
 
     private FormattedText GetNodeLabelHalo(long nodeId, string name)
     {
-        var fontSize = ShowEditorGrid ? EditorNodeLabelFontSize : NodeLabelFontSize;
+        var fontSize = GetIndicatorLabelFontSize();
         var key = $"{nodeId}:{name}:{fontSize:F1}";
         if (_nodeLabelHaloCache.TryGetValue(key, out var text))
         {
@@ -4954,7 +4961,7 @@ public sealed class MapControl : Control
 
     private FormattedText GetNodeSecondaryLabel(long nodeId, string name)
     {
-        var fontSize = ShowEditorGrid ? EditorNodeLabelFontSize : NodeLabelFontSize;
+        var fontSize = GetIndicatorLabelFontSize();
         var key = $"{nodeId}:{name}:{fontSize:F1}";
         if (_nodeSecondaryLabelCache.TryGetValue(key, out var text))
         {
@@ -4974,7 +4981,7 @@ public sealed class MapControl : Control
 
     private FormattedText GetNodeSecondaryLabelHalo(long nodeId, string name)
     {
-        var fontSize = ShowEditorGrid ? EditorNodeLabelFontSize : NodeLabelFontSize;
+        var fontSize = GetIndicatorLabelFontSize();
         var key = $"{nodeId}:{name}:{fontSize:F1}";
         if (_nodeSecondaryLabelHaloCache.TryGetValue(key, out var text))
         {
@@ -6126,7 +6133,7 @@ public sealed class MapControl : Control
     {
         const double gap = 7.0;
         const double lineGap = 1.0;
-        var labelFontSize = ShowEditorGrid ? EditorNodeLabelFontSize : NodeLabelFontSize;
+        var labelFontSize = GetIndicatorLabelFontSize();
         var regionLabelFontSize = ShowEditorGrid ? EditorRegionConstellationFontSize : (NodeRegionConstellationFontSize - 1);
         var nameText = BuildIndicatorLabel(node);
         var name = GetNodeLabel(node.Id, nameText);
