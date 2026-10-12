@@ -60,7 +60,6 @@ public partial class MainWindow : Window
     private readonly MenuItem _openInZkillboardMenuItem;
     private readonly MenuItem _openInKillmailAppMenuItem;
     private readonly MenuItem _jumpRangeMenuItem;
-    private readonly MenuItem _setAnsiblexCapitalMenuItem;
     private readonly MenuItem _markSystemMenuItem;
     private readonly MenuItem _markSystemPresetsMenuItem;
     private readonly MenuItem _editMarkMenuItem;
@@ -135,15 +134,6 @@ public partial class MainWindow : Window
         _openInKillmailAppMenuItem.Classes.Add("map-node-menu-item");
         _openInKillmailAppMenuItem.Click += OnOpenInKillmailAppClicked;
         _jumpRangeMenuItem = BuildJumpRangeMenu(subMenufontSize);
-        _setAnsiblexCapitalMenuItem = new MenuItem
-        {
-            Header = "Set as Ansiblex Capital",
-            FontSize = subMenufontSize,
-            FontWeight = Avalonia.Media.FontWeight.SemiBold,
-            Padding = new Thickness(8, 3)
-        };
-        _setAnsiblexCapitalMenuItem.Classes.Add("map-node-menu-item");
-        _setAnsiblexCapitalMenuItem.Click += OnSetAnsiblexCapitalClicked;
         _markSystemMenuItem = new MenuItem
         {
             Header = "Mark System…",
@@ -184,7 +174,6 @@ public partial class MainWindow : Window
                 _copySystemNameMenuItem,
                 _openInViewMenuItem,
                 _jumpRangeMenuItem,
-                _setAnsiblexCapitalMenuItem,
                 _markSystemMenuItem,
                 _markSystemPresetsMenuItem,
                 _editMarkMenuItem,
@@ -1966,16 +1955,6 @@ public partial class MainWindow : Window
     {
         var node = vm.CurrentGraph?.Nodes.FirstOrDefault(n => n.Id == _contextSystemId);
         return string.IsNullOrWhiteSpace(node?.RegionName) ? null : node.RegionName;
-    }
-
-    private async void OnSetAnsiblexCapitalClicked(object? sender, RoutedEventArgs e)
-    {
-        if (DataContext is not MainWindowViewModel vm || _contextSystemId is null)
-        {
-            return;
-        }
-
-        await vm.SetAnsiblexCapitalByIdAsync(_contextSystemId.Value);
     }
 
     private async void OnSetJumpRangeClicked(object? sender, RoutedEventArgs e)

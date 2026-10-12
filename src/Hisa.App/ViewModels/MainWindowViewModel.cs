@@ -5329,15 +5329,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         return saved;
     }
 
-    public async Task<bool> SetAnsiblexCapitalByIdAsync(long solarSystemId, CancellationToken cancellationToken = default)
-    {
-        var saved = await _ansiblexNetworkStateService.SetCapitalSystemByIdAsync((int)solarSystemId, cancellationToken);
-        StatusText = saved
-            ? $"Ansiblex capital set to {_ansiblexNetworkStateService.Capital?.SolarSystemName}."
-            : "Could not set Ansiblex capital for that system.";
-        return saved;
-    }
-
     public Task SetAnsiblexShipClassAsync(string shipClassName, CancellationToken cancellationToken = default)
     {
         return _ansiblexNetworkStateService.SetSelectedShipClassAsync(shipClassName, cancellationToken);
