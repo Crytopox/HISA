@@ -69,6 +69,7 @@ public sealed class MapNode
     public string? SpectralClass { get; init; }
     public bool HasJoveObservatory { get; init; }
     public int IceFieldCount { get; init; }
+    public IReadOnlyList<int> PlanetTypeIds { get; init; } = [];
     public int? RegionId { get; init; }
     public string? RegionName { get; init; }
     public int? ConstellationId { get; init; }
@@ -81,6 +82,12 @@ public sealed class MapNode
     public int ShipKills { get; init; }
     public int PodKills { get; init; }
     public int NpcKills { get; init; }
+}
+
+public sealed class PlanetTypeInfo
+{
+    public required int TypeId { get; init; }
+    public required string Name { get; init; }
 }
 
 public sealed class SovUpgradeEntry

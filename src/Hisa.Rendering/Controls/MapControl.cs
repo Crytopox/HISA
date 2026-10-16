@@ -51,19 +51,28 @@ public sealed class MapControl : Control
     private static readonly Point NodeLabelOffset = new(14, 8);
     private static readonly Typeface NodeLabelTypeface = new("Inter", FontStyle.Normal, FontWeight.SemiBold);
     private static readonly Typeface RegionCardTypeface = new("Inter", FontStyle.Normal, FontWeight.SemiBold);
-    private const double NodeLabelFontSize = 10;
-    private const double RegionNodeLabelFontSize = 10;
+    private const double NodeLabelFontSize = 9;
+    private const double RegionNodeLabelFontSize = 9;
     private const double EditorNodeLabelFontSize = 9;
     private const double NodeRegionConstellationFontSize = 9.5;
+    private const double IndicatorRegionFontSize = 8;
     private const double EditorRegionConstellationFontSize = 9.0;
     private const double RegionMinNodeScale = 0.55;
     private const double RegionFullNodeSizeZoom = 2.4;
     private const double UniverseTileSize = 512.0;
     private const double UniverseTileGutter = 4.0;
     private const double IconSize = 18.0;
+    private const double IndicatorIconSize = 16.0;
     private const double SovIconSize = 21.0;
     private const double IndicatorIconLeftPadding = 2.0;
     private const double IndicatorIconSlotGap = 3.0;
+    private const double SovIconSlotStride = IconSize + IndicatorIconSlotGap;
+    private const int PlanetIconsPerRow = 5;
+    private const double IndicatorPlanetIconRowStride = IndicatorIconSize + 2.0;
+    private const double OverlayPlanetIconRowStride = IconSize + 2.0;
+    private const double IndicatorCountFontSize = 8.5;
+    private const double IndicatorJumpRangeFontSize = 9.5;
+    private const double IndicatorJumpRangeIconSize = 12.0;
     private const string A0BlueSmallName = "Sun A0 (Blue Small)";
     private const int A0BlueSmallTypeId = 3801;
 
@@ -205,6 +214,8 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorJoveObservatoryIcon), true);
     public static readonly StyledProperty<bool> ShowIndicatorIceBeltsIconProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorIceBeltsIcon), true);
+    public static readonly StyledProperty<bool> ShowIndicatorPlanetsProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorPlanets), false);
     public static readonly StyledProperty<bool> ShowIndicatorStormIconProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorStormIcon), true);
     public static readonly StyledProperty<bool> ShowIndicatorWormholeIconProperty =
@@ -253,6 +264,8 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowIndicatorAnsiblexZone), true);
     public static readonly StyledProperty<IEnumerable<string>?> IndicatorSovUpgradeFilterKeysProperty =
         AvaloniaProperty.Register<MapControl, IEnumerable<string>?>(nameof(IndicatorSovUpgradeFilterKeys));
+    public static readonly StyledProperty<IEnumerable<int>?> IndicatorPlanetFilterTypeIdsProperty =
+        AvaloniaProperty.Register<MapControl, IEnumerable<int>?>(nameof(IndicatorPlanetFilterTypeIds));
     public static readonly StyledProperty<bool> InfoBoxShowRegionProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowRegion), true);
     public static readonly StyledProperty<bool> InfoBoxShowConstellationProperty =
@@ -267,6 +280,8 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowJoveObservatoryIcon), true);
     public static readonly StyledProperty<bool> InfoBoxShowIceBeltsIconProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowIceBeltsIcon), true);
+    public static readonly StyledProperty<bool> InfoBoxShowPlanetsProperty =
+        AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowPlanets), false);
     public static readonly StyledProperty<bool> InfoBoxShowStormIconProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowStormIcon), true);
     public static readonly StyledProperty<bool> InfoBoxShowWormholeIconProperty =
@@ -289,6 +304,8 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, bool>(nameof(InfoBoxShowAnsiblexZone), true);
     public static readonly StyledProperty<IEnumerable<string>?> OverlaySovUpgradeFilterKeysProperty =
         AvaloniaProperty.Register<MapControl, IEnumerable<string>?>(nameof(OverlaySovUpgradeFilterKeys));
+    public static readonly StyledProperty<IEnumerable<int>?> OverlayPlanetFilterTypeIdsProperty =
+        AvaloniaProperty.Register<MapControl, IEnumerable<int>?>(nameof(OverlayPlanetFilterTypeIds));
     public static readonly StyledProperty<bool> AlwaysShowHubWormholesProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(AlwaysShowHubWormholes), false);
     public static readonly StyledProperty<bool> AlwaysShowIncursionsProperty =
@@ -412,6 +429,14 @@ public sealed class MapControl : Control
     private static readonly ConcurrentDictionary<int, Bitmap?> ShipTypeIconCache = new();
     private static readonly ConcurrentDictionary<int, byte> ShipTypeIconLoading = new();
     private static readonly ConcurrentDictionary<int, DateTime> ShipTypeIconRetryAfterUtc = new();
+    private static readonly string PlanetTypeIconCacheDirectory = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "HISA",
+        "IntelImageCache",
+        "planets");
+    private static readonly ConcurrentDictionary<int, Bitmap?> PlanetTypeIconCache = new();
+    private static readonly ConcurrentDictionary<int, byte> PlanetTypeIconLoading = new();
+    private static readonly ConcurrentDictionary<int, DateTime> PlanetTypeIconRetryAfterUtc = new();
     private static readonly ConcurrentDictionary<string, Bitmap?> OrganizationLogoCache = new(StringComparer.OrdinalIgnoreCase);
     private static readonly ConcurrentDictionary<string, byte> OrganizationLogoLoading = new(StringComparer.OrdinalIgnoreCase);
     private static readonly ConcurrentDictionary<string, DateTime> OrganizationLogoRetryAfterUtc = new(StringComparer.OrdinalIgnoreCase);
@@ -584,6 +609,12 @@ public sealed class MapControl : Control
         set => SetValue(ShowIndicatorIceBeltsIconProperty, value);
     }
 
+    public bool ShowIndicatorPlanets
+    {
+        get => GetValue(ShowIndicatorPlanetsProperty);
+        set => SetValue(ShowIndicatorPlanetsProperty, value);
+    }
+
     public bool ShowIndicatorStormIcon
     {
         get => GetValue(ShowIndicatorStormIconProperty);
@@ -724,6 +755,12 @@ public sealed class MapControl : Control
         set => SetValue(IndicatorSovUpgradeFilterKeysProperty, value);
     }
 
+    public IEnumerable<int>? IndicatorPlanetFilterTypeIds
+    {
+        get => GetValue(IndicatorPlanetFilterTypeIdsProperty);
+        set => SetValue(IndicatorPlanetFilterTypeIdsProperty, value);
+    }
+
     public bool InfoBoxShowRegion
     {
         get => GetValue(InfoBoxShowRegionProperty);
@@ -764,6 +801,12 @@ public sealed class MapControl : Control
     {
         get => GetValue(InfoBoxShowIceBeltsIconProperty);
         set => SetValue(InfoBoxShowIceBeltsIconProperty, value);
+    }
+
+    public bool InfoBoxShowPlanets
+    {
+        get => GetValue(InfoBoxShowPlanetsProperty);
+        set => SetValue(InfoBoxShowPlanetsProperty, value);
     }
 
     public bool InfoBoxShowStormIcon
@@ -826,6 +869,12 @@ public sealed class MapControl : Control
     {
         get => GetValue(OverlaySovUpgradeFilterKeysProperty);
         set => SetValue(OverlaySovUpgradeFilterKeysProperty, value);
+    }
+
+    public IEnumerable<int>? OverlayPlanetFilterTypeIds
+    {
+        get => GetValue(OverlayPlanetFilterTypeIdsProperty);
+        set => SetValue(OverlayPlanetFilterTypeIdsProperty, value);
     }
 
     public bool AlwaysShowHubWormholes
@@ -1057,6 +1106,7 @@ public sealed class MapControl : Control
             ShowIndicatorA0StarIconProperty,
             ShowIndicatorJoveObservatoryIconProperty,
             ShowIndicatorIceBeltsIconProperty,
+            ShowIndicatorPlanetsProperty,
             ShowIndicatorStormIconProperty,
             ShowIndicatorWormholeIconProperty,
             ShowIndicatorSovUpgradeIconProperty,
@@ -1079,6 +1129,7 @@ public sealed class MapControl : Control
             AnsiblexShipBaseCostTjProperty,
             ShowIndicatorAnsiblexZoneProperty,
             IndicatorSovUpgradeFilterKeysProperty,
+            IndicatorPlanetFilterTypeIdsProperty,
             InfoBoxShowRegionProperty,
             InfoBoxShowConstellationProperty,
             InfoBoxShowSecurityStatusProperty,
@@ -1086,6 +1137,7 @@ public sealed class MapControl : Control
             InfoBoxShowA0StarIconProperty,
             InfoBoxShowJoveObservatoryIconProperty,
             InfoBoxShowIceBeltsIconProperty,
+            InfoBoxShowPlanetsProperty,
             InfoBoxShowStormIconProperty,
             InfoBoxShowWormholeIconProperty,
             InfoBoxShowSovUpgradeIconProperty,
@@ -1097,6 +1149,7 @@ public sealed class MapControl : Control
             InfoBoxShowJumpRangeLyProperty,
             InfoBoxShowAnsiblexZoneProperty,
             OverlaySovUpgradeFilterKeysProperty,
+            OverlayPlanetFilterTypeIdsProperty,
             AlwaysShowHubWormholesProperty,
             AlwaysShowIncursionsProperty,
             ShowUserSystemMarksProperty,
@@ -3352,7 +3405,7 @@ public sealed class MapControl : Control
         const double lineGap = 1.0;
         var name = GetNodeLabel(node.Id, BuildIndicatorLabel(node));
         var fontSize = GetIndicatorLabelFontSize();
-        var secondaryFontSize = ShowEditorGrid ? EditorRegionConstellationFontSize : NodeRegionConstellationFontSize - 1;
+        var secondaryFontSize = ShowEditorGrid ? EditorRegionConstellationFontSize : IndicatorRegionFontSize;
         double TextWidth(string value, double size) => new FormattedText(value, CultureInfo.InvariantCulture,
             FlowDirection.LeftToRight, NodeLabelTypeface, size, Brushes.White).Width;
         double TextHeight(string value, double size) => new FormattedText(value, CultureInfo.InvariantCulture,
@@ -3395,7 +3448,7 @@ public sealed class MapControl : Control
         if (ShowIndicatorStormIcon && node.StormEffects.Count > 0) iconCount++;
         if (ShowIndicatorWormholeIcon && node.HubWormholeConnections.Count > 0) iconCount++;
         if (ShowIndicatorIncursionIcon && node.HasActiveIncursion) iconCount++;
-        var iconRowWidth = iconCount * (IconSize + IndicatorIconSlotGap);
+        var iconRowWidth = iconCount * (IndicatorIconSize + IndicatorIconSlotGap);
         foreach (var count in new[]
                  {
                      ShowIndicatorSystemJumps ? node.SystemJumps : 0,
@@ -3404,17 +3457,27 @@ public sealed class MapControl : Control
                      ShowIndicatorNpcKills ? node.NpcKills : 0
                  })
         {
-            if (count > 0) iconRowWidth += IconSize + 1.5 + TextWidth(count.ToString(CultureInfo.InvariantCulture), 9.5) + IndicatorIconSlotGap;
+            if (count > 0) iconRowWidth += IndicatorIconSize + 1.5 + TextWidth(count.ToString(CultureInfo.InvariantCulture), IndicatorCountFontSize) + IndicatorIconSlotGap;
         }
         var primaryRowHasIcons = iconRowWidth > 0;
         if (primaryRowHasIcons)
         {
             width = Math.Max(width, iconRowWidth + IndicatorIconLeftPadding);
-            height = labelHeight + IconSize + 2;
+            height = labelHeight + IndicatorIconSize + 2;
         }
         else
         {
             height = labelHeight;
+        }
+
+        var visiblePlanets = ShowIndicatorPlanets
+            ? GetVisiblePlanetTypeIds(node.PlanetTypeIds, IndicatorPlanetFilterTypeIds)
+            : [];
+        var planetRows = GetPlanetIconRowCount(visiblePlanets.Count);
+        if (planetRows > 0)
+        {
+            width = Math.Max(width, MeasurePlanetIconRowWidth(visiblePlanets.Count, IndicatorIconSize));
+            height += planetRows * IndicatorPlanetIconRowStride;
         }
 
         var sovSlots = ShowIndicatorSovUpgradeIcon
@@ -3426,15 +3489,22 @@ public sealed class MapControl : Control
         }
         if (sovSlots > 0)
         {
-            width = Math.Max(width, IndicatorIconLeftPadding + (sovSlots * (IconSize + IndicatorIconSlotGap)));
-            height = labelHeight + (primaryRowHasIcons ? SovIconSize + 2 : 0) + SovIconSize;
+            width = Math.Max(width, IndicatorIconLeftPadding + (sovSlots * SovIconSlotStride));
+            if (planetRows > 0)
+            {
+                height += SovIconSize;
+            }
+            else
+            {
+                height = labelHeight + (primaryRowHasIcons ? SovIconSize + 2 : 0) + SovIconSize;
+            }
         }
 
         if (ShowIndicatorJumpRangeLy && JumpRangeDistancesByNodeId?.TryGetValue(node.Id, out var distances) == true && distances.Count > 0)
         {
             var best = distances.OrderByDescending(x => x.IsInRange).ThenBy(x => x.DistanceLy).First();
             var suffix = distances.Count > 1 ? $" (+{distances.Count - 1})" : string.Empty;
-            width = Math.Max(width, IndicatorIconLeftPadding + 16.5 + TextWidth($"{best.DistanceLy:0.0} LY{suffix}", 10.5));
+            width = Math.Max(width, IndicatorIconLeftPadding + IndicatorJumpRangeIconSize + 3 + TextWidth($"{best.DistanceLy:0.0} LY{suffix}", IndicatorJumpRangeFontSize));
             height += 17;
         }
 
@@ -6134,7 +6204,7 @@ public sealed class MapControl : Control
         const double gap = 7.0;
         const double lineGap = 1.0;
         var labelFontSize = GetIndicatorLabelFontSize();
-        var regionLabelFontSize = ShowEditorGrid ? EditorRegionConstellationFontSize : (NodeRegionConstellationFontSize - 1);
+        var regionLabelFontSize = ShowEditorGrid ? EditorRegionConstellationFontSize : IndicatorRegionFontSize;
         var nameText = BuildIndicatorLabel(node);
         var name = GetNodeLabel(node.Id, nameText);
         var nameHalo = GetNodeLabelHalo(node.Id, nameText);
@@ -6302,49 +6372,49 @@ public sealed class MapControl : Control
         var indicatorIconCursorX = rect.X + IndicatorIconLeftPadding;
         if (ShowIndicatorA0StarIcon && IsA0BlueSmall(node))
         {
-            DrawA0Icon(context, new Point(indicatorIconCursorX, rect.Bottom), IconSize);
-            indicatorIconCursorX += IconSize + IndicatorIconSlotGap;
+            DrawA0Icon(context, new Point(indicatorIconCursorX, rect.Bottom), IndicatorIconSize);
+            indicatorIconCursorX += IndicatorIconSize + IndicatorIconSlotGap;
         }
         if (ShowIndicatorJoveObservatoryIcon && node.HasJoveObservatory)
         {
-            DrawJoveObservatoryIcon(context, new Point(indicatorIconCursorX, rect.Bottom), IconSize);
-            indicatorIconCursorX += IconSize + IndicatorIconSlotGap;
+            DrawJoveObservatoryIcon(context, new Point(indicatorIconCursorX, rect.Bottom), IndicatorIconSize);
+            indicatorIconCursorX += IndicatorIconSize + IndicatorIconSlotGap;
         }
         if (ShowIndicatorIceBeltsIcon && node.IceFieldCount > 0)
         {
-            DrawIceFieldIcon(context, new Point(indicatorIconCursorX, rect.Bottom), IconSize);
-            indicatorIconCursorX += IconSize + IndicatorIconSlotGap;
+            DrawIceFieldIcon(context, new Point(indicatorIconCursorX, rect.Bottom), IndicatorIconSize);
+            indicatorIconCursorX += IndicatorIconSize + IndicatorIconSlotGap;
         }
         if (ShowIndicatorStormIcon && node.StormEffects.Count > 0)
         {
-            DrawStormIcon(context, node, new Point(indicatorIconCursorX, rect.Bottom), IconSize);
-            indicatorIconCursorX += IconSize + IndicatorIconSlotGap;
+            DrawStormIcon(context, node, new Point(indicatorIconCursorX, rect.Bottom), IndicatorIconSize);
+            indicatorIconCursorX += IndicatorIconSize + IndicatorIconSlotGap;
         }
         if (ShowIndicatorWormholeIcon && node.HubWormholeConnections.Count > 0)
         {
-            DrawHubWormholeIcon(context, node, new Point(indicatorIconCursorX, rect.Bottom), IconSize);
-            indicatorIconCursorX += IconSize + IndicatorIconSlotGap;
+            DrawHubWormholeIcon(context, node, new Point(indicatorIconCursorX, rect.Bottom), IndicatorIconSize);
+            indicatorIconCursorX += IndicatorIconSize + IndicatorIconSlotGap;
         }
         if (ShowIndicatorIncursionIcon && node.HasActiveIncursion)
         {
-            DrawIncursionIcon(context, new Point(indicatorIconCursorX, rect.Bottom), IconSize);
-            indicatorIconCursorX += IconSize + IndicatorIconSlotGap;
+            DrawIncursionIcon(context, new Point(indicatorIconCursorX, rect.Bottom), IndicatorIconSize);
+            indicatorIconCursorX += IndicatorIconSize + IndicatorIconSlotGap;
         }
         if (ShowIndicatorSystemJumps && node.SystemJumps > 0)
         {
-            indicatorIconCursorX += DrawCountIconBadge(context, SystemJumpsIcon.Value, node.SystemJumps, new Point(indicatorIconCursorX, rect.Bottom), IconSize);
+            indicatorIconCursorX += DrawCountIconBadge(context, SystemJumpsIcon.Value, node.SystemJumps, new Point(indicatorIconCursorX, rect.Bottom), IndicatorIconSize, IndicatorCountFontSize);
         }
         if (ShowIndicatorShipKills && node.ShipKills > 0)
         {
-            indicatorIconCursorX += DrawCountIconBadge(context, ShipKillsIcon.Value, node.ShipKills, new Point(indicatorIconCursorX, rect.Bottom), IconSize);
+            indicatorIconCursorX += DrawCountIconBadge(context, ShipKillsIcon.Value, node.ShipKills, new Point(indicatorIconCursorX, rect.Bottom), IndicatorIconSize, IndicatorCountFontSize);
         }
         if (ShowIndicatorPodKills && node.PodKills > 0)
         {
-            indicatorIconCursorX += DrawCountIconBadge(context, PodKillsIcon.Value, node.PodKills, new Point(indicatorIconCursorX, rect.Bottom), IconSize);
+            indicatorIconCursorX += DrawCountIconBadge(context, PodKillsIcon.Value, node.PodKills, new Point(indicatorIconCursorX, rect.Bottom), IndicatorIconSize, IndicatorCountFontSize);
         }
         if (ShowIndicatorNpcKills && node.NpcKills > 0)
         {
-            indicatorIconCursorX += DrawCountIconBadge(context, NpcKillsIcon.Value, node.NpcKills, new Point(indicatorIconCursorX, rect.Bottom), IconSize);
+            indicatorIconCursorX += DrawCountIconBadge(context, NpcKillsIcon.Value, node.NpcKills, new Point(indicatorIconCursorX, rect.Bottom), IndicatorIconSize, IndicatorCountFontSize);
         }
         FormattedText? jumpRangeIndicatorText = null;
         Bitmap? jumpRangeIndicatorIcon = null;
@@ -6363,22 +6433,34 @@ public sealed class MapControl : Control
                 CultureInfo.InvariantCulture,
                 FlowDirection.LeftToRight,
                 NodeLabelTypeface,
-                10.5,
+                IndicatorJumpRangeFontSize,
                 Brushes.White);
             jumpRangeIndicatorIcon = best.IsInRange ? JumpRangeInRangeIcon.Value : JumpRangeOutRangeIcon.Value;
         }
 
-        // Keep SOV icons on a dedicated second row, but collapse up if first row is empty.
+        // Planet icons sit under the primary row. SOV stays on the next row and collapses upward when a row is empty.
         var primaryRowHasIcons = indicatorIconCursorX > (rect.X + IndicatorIconLeftPadding);
-        var sovIndicatorRowY = primaryRowHasIcons
-            ? rect.Bottom + SovIconSize + 2
-            : rect.Bottom;
+        var visiblePlanets = ShowIndicatorPlanets
+            ? GetVisiblePlanetTypeIds(node.PlanetTypeIds, IndicatorPlanetFilterTypeIds)
+            : [];
+        var planetRows = GetPlanetIconRowCount(visiblePlanets.Count);
+        var planetRowY = primaryRowHasIcons ? rect.Bottom + IndicatorPlanetIconRowStride : rect.Bottom;
+        if (planetRows > 0)
+        {
+            DrawPlanetTypeIcons(context, visiblePlanets, rect.X + IndicatorIconLeftPadding, planetRowY, IndicatorIconSize, IndicatorPlanetIconRowStride);
+        }
+
+        var sovIndicatorRowY = planetRows > 0
+            ? planetRowY + (planetRows * IndicatorPlanetIconRowStride)
+            : primaryRowHasIcons
+                ? rect.Bottom + IndicatorIconSize + 2
+                : rect.Bottom;
         var sovIconSlot = 0;
         if (ShowIndicatorSovUpgradeIcon && node.SovUpgrades.Count > 0)
         {
             foreach (var sov in GetVisibleSovUpgrades(node.SovUpgrades, IndicatorSovUpgradeFilterKeys))
             {
-                var iconX = rect.X + IndicatorIconLeftPadding + (sovIconSlot * (IconSize + IndicatorIconSlotGap));
+                var iconX = rect.X + IndicatorIconLeftPadding + (sovIconSlot * SovIconSlotStride);
                 var iconY = sovIndicatorRowY;
                 DrawSovUpgradeIcon(context, sov, new Point(iconX, iconY), SovIconSize, sov.MiningSiteStatus == MiningSiteStatus.Available ? 1.0 : 0.32);
                 if (sov.UpgradeName.EndsWith(" Prospecting Array", StringComparison.OrdinalIgnoreCase))
@@ -6397,7 +6479,7 @@ public sealed class MapControl : Control
             _indicatorExplorationOverlapByNodeId.TryGetValue(node.Id, out var overlapCount) &&
             overlapCount > 0)
         {
-            var iconX = rect.X + IndicatorIconLeftPadding + (sovIconSlot * (IconSize + IndicatorIconSlotGap));
+            var iconX = rect.X + IndicatorIconLeftPadding + (sovIconSlot * SovIconSlotStride);
             var iconY = sovIndicatorRowY;
             var sourceUpgrade = GetNodeExplorationDetector(node, IndicatorSovUpgradeFilterKeys)
                 ?? new SovUpgradeEntry { UpgradeName = "Exploration Detector", Tier = 1 };
@@ -6419,13 +6501,16 @@ public sealed class MapControl : Control
         {
             var indicatorY = sovIconSlot > 0
                 ? sovIndicatorRowY + SovIconSize + 2
-                : (primaryRowHasIcons ? rect.Bottom + IconSize + 2 : rect.Bottom + 2);
+                : planetRows > 0
+                    ? planetRowY + (planetRows * IndicatorPlanetIconRowStride)
+                    : primaryRowHasIcons
+                        ? rect.Bottom + IndicatorIconSize + 2
+                        : rect.Bottom + 2;
             var textX = rect.X + IndicatorIconLeftPadding;
             if (jumpRangeIndicatorIcon is not null)
             {
-                var iconSize = 13.5;
-                DrawBitmap(context, jumpRangeIndicatorIcon, new Point(textX, indicatorY - 1), iconSize);
-                textX += iconSize + 3;
+                DrawBitmap(context, jumpRangeIndicatorIcon, new Point(textX, indicatorY - 1), IndicatorJumpRangeIconSize);
+                textX += IndicatorJumpRangeIconSize + 3;
             }
 
             context.DrawText(jumpRangeIndicatorText, new Point(textX, indicatorY));
@@ -7048,6 +7133,28 @@ public sealed class MapControl : Control
         var headerWidth = headerText.Width + (securityText is null ? 0 : (8 + securityText.Width));
         var bodyWidth = Math.Max(Math.Max(Math.Max(Math.Max(Math.Max(Math.Max(Math.Max(Math.Max(regionConstellationText?.Width ?? 0, detailsText?.Width ?? 0), wormholeMaxWidth), sovMaxWidth), jumpMaxWidth), ansiblexHoverWidth), characterRowWidth), intelMaxWidth), zkillMaxWidth);
         var contentWidth = Math.Max(headerWidth, bodyWidth);
+        var overlayPlanets = InfoBoxShowPlanets
+            ? GetVisiblePlanetTypeIds(node.PlanetTypeIds, OverlayPlanetFilterTypeIds)
+            : [];
+        var overlayPlanetRows = GetPlanetIconRowCount(overlayPlanets.Count);
+        var overlayIconStrip = MeasureOverlayIconStrip(node);
+        var overlayPlanetWidth = overlayPlanetRows > 0
+            ? MeasurePlanetIconRowWidth(overlayPlanets.Count, IconSize)
+            : 0.0;
+        var overlayIconBlockHeight = 0.0;
+        if (overlayIconStrip.HasIcons && overlayPlanetRows > 0)
+        {
+            overlayIconBlockHeight = 1 + OverlayPlanetIconRowStride + (overlayPlanetRows * OverlayPlanetIconRowStride);
+        }
+        else if (overlayIconStrip.HasIcons)
+        {
+            overlayIconBlockHeight = 3 + IconSize;
+        }
+        else if (overlayPlanetRows > 0)
+        {
+            overlayIconBlockHeight = 1 + (overlayPlanetRows * OverlayPlanetIconRowStride);
+        }
+
         var contentHeight = headerText.Height
             + (regionConstellationText is null ? 0 : regionConstellationText.Height + 2)
             + (detailsText is null ? 0 : detailsText.Height + 2)
@@ -7058,7 +7165,9 @@ public sealed class MapControl : Control
             + (jumpRangeLineTexts.Count == 0 ? 0 : (jumpRangeLineTexts.Count * (jumpLineHeight + 1)))
             + (sovLineTexts.Count == 0 ? 0 : (sovLineTexts.Count * (sovLineHeight + 1)))
             + (wormholes.Count == 0 ? 0 : (wormholes.Count * (wormholeLineHeight + 1)))
-            + (presentCharacterIds is null ? 0 : characterRowHeight + 2);
+            + (presentCharacterIds is null ? 0 : characterRowHeight + 2)
+            + overlayIconBlockHeight;
+        contentWidth = Math.Max(contentWidth, OverlayIconBlockContentWidth(Math.Max(overlayIconStrip.Width, overlayPlanetWidth), padX));
         var rect = new Rect(
             start.X - 2,
             start.Y - 2,
@@ -7415,52 +7524,63 @@ public sealed class MapControl : Control
             }
         }
 
-        var overlayIconCursorX = rect.X + IndicatorIconLeftPadding;
-        if (InfoBoxShowA0StarIcon && IsA0BlueSmall(node))
+        if (overlayIconBlockHeight > 0)
         {
-            DrawA0Icon(context, new Point(overlayIconCursorX, rect.Bottom + 3), IconSize);
-            overlayIconCursorX += IconSize + IndicatorIconSlotGap;
-        }
-        if (InfoBoxShowJoveObservatoryIcon && node.HasJoveObservatory)
-        {
-            DrawJoveObservatoryIcon(context, new Point(overlayIconCursorX, rect.Bottom + 3), IconSize);
-            overlayIconCursorX += IconSize + IndicatorIconSlotGap;
-        }
-        if (InfoBoxShowIceBeltsIcon && node.IceFieldCount > 0)
-        {
-            DrawIceFieldIcon(context, new Point(overlayIconCursorX, rect.Bottom + 3), IconSize);
-            overlayIconCursorX += IconSize + IndicatorIconSlotGap;
-        }
-        if (InfoBoxShowStormIcon && node.StormEffects.Count > 0)
-        {
-            DrawStormIcon(context, node, new Point(overlayIconCursorX, rect.Bottom + 3), IconSize);
-            overlayIconCursorX += IconSize + IndicatorIconSlotGap;
-        }
-        if (InfoBoxShowWormholeIcon && node.HubWormholeConnections.Count > 0)
-        {
-            DrawHubWormholeIcon(context, node, new Point(overlayIconCursorX, rect.Bottom + 3), IconSize);
-            overlayIconCursorX += IconSize + IndicatorIconSlotGap;
-        }
-        if (InfoBoxShowIncursionIcon && node.HasActiveIncursion)
-        {
-            DrawIncursionIcon(context, new Point(overlayIconCursorX, rect.Bottom + 3), IconSize);
-            overlayIconCursorX += IconSize + IndicatorIconSlotGap;
-        }
-        if (InfoBoxShowSystemJumps && node.SystemJumps > 0)
-        {
-            overlayIconCursorX += DrawCountIconBadge(context, SystemJumpsIcon.Value, node.SystemJumps, new Point(overlayIconCursorX, rect.Bottom + 3), IconSize);
-        }
-        if (InfoBoxShowShipKills && node.ShipKills > 0)
-        {
-            overlayIconCursorX += DrawCountIconBadge(context, ShipKillsIcon.Value, node.ShipKills, new Point(overlayIconCursorX, rect.Bottom + 3), IconSize);
-        }
-        if (InfoBoxShowPodKills && node.PodKills > 0)
-        {
-            overlayIconCursorX += DrawCountIconBadge(context, PodKillsIcon.Value, node.PodKills, new Point(overlayIconCursorX, rect.Bottom + 3), IconSize);
-        }
-        if (InfoBoxShowNpcKills && node.NpcKills > 0)
-        {
-            overlayIconCursorX += DrawCountIconBadge(context, NpcKillsIcon.Value, node.NpcKills, new Point(overlayIconCursorX, rect.Bottom + 3), IconSize);
+            var overlayIconY = rect.Bottom - padY - overlayIconBlockHeight + 3;
+            var overlayIconCursorX = rect.X + IndicatorIconLeftPadding;
+            if (InfoBoxShowA0StarIcon && IsA0BlueSmall(node))
+            {
+                DrawA0Icon(context, new Point(overlayIconCursorX, overlayIconY), IconSize);
+                overlayIconCursorX += IconSize + IndicatorIconSlotGap;
+            }
+            if (InfoBoxShowJoveObservatoryIcon && node.HasJoveObservatory)
+            {
+                DrawJoveObservatoryIcon(context, new Point(overlayIconCursorX, overlayIconY), IconSize);
+                overlayIconCursorX += IconSize + IndicatorIconSlotGap;
+            }
+            if (InfoBoxShowIceBeltsIcon && node.IceFieldCount > 0)
+            {
+                DrawIceFieldIcon(context, new Point(overlayIconCursorX, overlayIconY), IconSize);
+                overlayIconCursorX += IconSize + IndicatorIconSlotGap;
+            }
+            if (InfoBoxShowStormIcon && node.StormEffects.Count > 0)
+            {
+                DrawStormIcon(context, node, new Point(overlayIconCursorX, overlayIconY), IconSize);
+                overlayIconCursorX += IconSize + IndicatorIconSlotGap;
+            }
+            if (InfoBoxShowWormholeIcon && node.HubWormholeConnections.Count > 0)
+            {
+                DrawHubWormholeIcon(context, node, new Point(overlayIconCursorX, overlayIconY), IconSize);
+                overlayIconCursorX += IconSize + IndicatorIconSlotGap;
+            }
+            if (InfoBoxShowIncursionIcon && node.HasActiveIncursion)
+            {
+                DrawIncursionIcon(context, new Point(overlayIconCursorX, overlayIconY), IconSize);
+                overlayIconCursorX += IconSize + IndicatorIconSlotGap;
+            }
+            if (InfoBoxShowSystemJumps && node.SystemJumps > 0)
+            {
+                overlayIconCursorX += DrawCountIconBadge(context, SystemJumpsIcon.Value, node.SystemJumps, new Point(overlayIconCursorX, overlayIconY), IconSize);
+            }
+            if (InfoBoxShowShipKills && node.ShipKills > 0)
+            {
+                overlayIconCursorX += DrawCountIconBadge(context, ShipKillsIcon.Value, node.ShipKills, new Point(overlayIconCursorX, overlayIconY), IconSize);
+            }
+            if (InfoBoxShowPodKills && node.PodKills > 0)
+            {
+                overlayIconCursorX += DrawCountIconBadge(context, PodKillsIcon.Value, node.PodKills, new Point(overlayIconCursorX, overlayIconY), IconSize);
+            }
+            if (InfoBoxShowNpcKills && node.NpcKills > 0)
+            {
+                overlayIconCursorX += DrawCountIconBadge(context, NpcKillsIcon.Value, node.NpcKills, new Point(overlayIconCursorX, overlayIconY), IconSize);
+            }
+            if (overlayPlanetRows > 0)
+            {
+                var planetRowY = overlayIconStrip.HasIcons
+                    ? overlayIconY + OverlayPlanetIconRowStride
+                    : overlayIconY;
+                DrawPlanetTypeIcons(context, overlayPlanets, rect.X + IndicatorIconLeftPadding, planetRowY, IconSize, OverlayPlanetIconRowStride);
+            }
         }
         // SOV upgrades are rendered inline in the overlay body with icon + label rows.
     }
@@ -7903,7 +8023,7 @@ public sealed class MapControl : Control
         context.DrawImage(icon, src, dst);
     }
 
-    private static double DrawCountIconBadge(DrawingContext context, Bitmap? icon, int value, Point topLeft, double size)
+    private static double DrawCountIconBadge(DrawingContext context, Bitmap? icon, int value, Point topLeft, double size, double labelFontSize = 9.5)
     {
         if (icon is null)
         {
@@ -7917,7 +8037,7 @@ public sealed class MapControl : Control
             CultureInfo.InvariantCulture,
             FlowDirection.LeftToRight,
             NodeLabelTypeface,
-            9.5,
+            labelFontSize,
             Brushes.White);
         context.DrawText(text, new Point(topLeft.X + size + 1.5, topLeft.Y + ((size - text.Height) / 2) - 0.5));
         return size + 1.5 + text.Width + IndicatorIconSlotGap;
@@ -8445,6 +8565,124 @@ public sealed class MapControl : Control
         return null;
     }
 
+    private static int GetPlanetIconRowCount(int count)
+    {
+        if (count <= 0)
+        {
+            return 0;
+        }
+
+        return ((count - 1) / PlanetIconsPerRow) + 1;
+    }
+
+    private static double MeasurePlanetIconRowWidth(int count, double iconSize)
+    {
+        var slots = Math.Min(count, PlanetIconsPerRow);
+        return IndicatorIconLeftPadding + (slots * (iconSize + IndicatorIconSlotGap));
+    }
+
+    private static double OverlayIconBlockContentWidth(double rowWidth, double padX)
+    {
+        if (rowWidth <= 0)
+        {
+            return 0;
+        }
+
+        return Math.Max(0, rowWidth - IndicatorIconSlotGap - padX + 4);
+    }
+
+    private static IReadOnlyList<int> GetVisiblePlanetTypeIds(IReadOnlyList<int> typeIds, IEnumerable<int>? selectedTypeIds)
+    {
+        if (selectedTypeIds is null)
+        {
+            return typeIds;
+        }
+
+        var selected = selectedTypeIds as IReadOnlySet<int> ?? selectedTypeIds.ToHashSet();
+        if (selected.Count == 0)
+        {
+            return [];
+        }
+
+        var visible = new List<int>(typeIds.Count);
+        foreach (var typeId in typeIds)
+        {
+            if (selected.Contains(typeId))
+            {
+                visible.Add(typeId);
+            }
+        }
+
+        return visible;
+    }
+
+    private (bool HasIcons, double Width) MeasureOverlayIconStrip(MapNode node)
+    {
+        double width = 0;
+        var hasIcons = false;
+        void AddFixed()
+        {
+            hasIcons = true;
+            width += IconSize + IndicatorIconSlotGap;
+        }
+
+        void AddCount(int value)
+        {
+            if (value <= 0)
+            {
+                return;
+            }
+
+            hasIcons = true;
+            var textWidth = new FormattedText(
+                value.ToString(CultureInfo.InvariantCulture),
+                CultureInfo.InvariantCulture,
+                FlowDirection.LeftToRight,
+                NodeLabelTypeface,
+                9.5,
+                Brushes.White).Width;
+            width += IconSize + 1.5 + textWidth + IndicatorIconSlotGap;
+        }
+
+        if (InfoBoxShowA0StarIcon && IsA0BlueSmall(node)) AddFixed();
+        if (InfoBoxShowJoveObservatoryIcon && node.HasJoveObservatory) AddFixed();
+        if (InfoBoxShowIceBeltsIcon && node.IceFieldCount > 0) AddFixed();
+        if (InfoBoxShowStormIcon && node.StormEffects.Count > 0) AddFixed();
+        if (InfoBoxShowWormholeIcon && node.HubWormholeConnections.Count > 0) AddFixed();
+        if (InfoBoxShowIncursionIcon && node.HasActiveIncursion) AddFixed();
+        if (InfoBoxShowSystemJumps) AddCount(node.SystemJumps);
+        if (InfoBoxShowShipKills) AddCount(node.ShipKills);
+        if (InfoBoxShowPodKills) AddCount(node.PodKills);
+        if (InfoBoxShowNpcKills) AddCount(node.NpcKills);
+        return (hasIcons, hasIcons ? IndicatorIconLeftPadding + width : 0);
+    }
+
+    private void DrawPlanetTypeIcons(
+        DrawingContext context,
+        IReadOnlyList<int> typeIds,
+        double originX,
+        double originY,
+        double iconSize,
+        double rowStride)
+    {
+        for (var i = 0; i < typeIds.Count; i++)
+        {
+            var icon = GetPlanetTypeIcon(typeIds[i]);
+            if (icon is null)
+            {
+                continue;
+            }
+
+            var column = i % PlanetIconsPerRow;
+            var row = i / PlanetIconsPerRow;
+            DrawBitmap(
+                context,
+                icon,
+                new Point(originX + (column * (iconSize + IndicatorIconSlotGap)), originY + (row * rowStride)),
+                iconSize);
+        }
+    }
+
     private Bitmap? GetShipTypeIcon(int typeId)
     {
         if (typeId <= 0)
@@ -8505,6 +8743,138 @@ public sealed class MapControl : Control
         });
 
         return null;
+    }
+
+    private Bitmap? GetPlanetTypeIcon(int typeId)
+    {
+        if (typeId <= 0)
+        {
+            return null;
+        }
+
+        if (PlanetTypeIconCache.TryGetValue(typeId, out var cached))
+        {
+            return cached;
+        }
+
+        if (PlanetTypeIconRetryAfterUtc.TryGetValue(typeId, out var retryAfterUtc) &&
+            DateTime.UtcNow < retryAfterUtc)
+        {
+            return null;
+        }
+
+        if (!PlanetTypeIconLoading.TryAdd(typeId, 0))
+        {
+            return null;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            Bitmap? icon = null;
+            try
+            {
+                var filePath = Path.Combine(PlanetTypeIconCacheDirectory, $"{typeId}.png");
+                icon = TryLoadPlanetTypeIconFromFile(filePath);
+                if (icon is null && File.Exists(filePath))
+                {
+                    try
+                    {
+                        File.Delete(filePath);
+                    }
+                    catch (IOException)
+                    {
+                        // Leave an unreadable file in place and retry the load later.
+                    }
+                }
+
+                if (icon is null && !File.Exists(filePath))
+                {
+                    icon = await DownloadPlanetTypeIconAsync(typeId, filePath).ConfigureAwait(false);
+                }
+            }
+            catch
+            {
+                icon = null;
+            }
+            finally
+            {
+                if (icon is not null)
+                {
+                    PlanetTypeIconCache[typeId] = icon;
+                    PlanetTypeIconRetryAfterUtc.TryRemove(typeId, out _);
+                }
+                else
+                {
+                    PlanetTypeIconRetryAfterUtc[typeId] = DateTime.UtcNow + CharacterPortraitRetryDelay;
+                }
+
+                PlanetTypeIconLoading.TryRemove(typeId, out _);
+                Dispatcher.UIThread.Post(InvalidateMap);
+            }
+        });
+
+        return null;
+    }
+
+    private static async Task<Bitmap?> DownloadPlanetTypeIconAsync(int typeId, string filePath)
+    {
+        var url = $"https://images.evetech.net/types/{typeId}/icon?tenant=tranquility&size=64";
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.UserAgent.ParseAdd("HISA/1.0");
+        using var response = await CharacterPortraitHttpClient.SendAsync(request).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        var bytes = await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+        if (bytes.Length == 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(PlanetTypeIconCacheDirectory);
+            await File.WriteAllBytesAsync(filePath, bytes).ConfigureAwait(false);
+        }
+        catch (IOException)
+        {
+            // Another instance may be writing this icon. Fall back to the bytes already downloaded.
+        }
+
+        return TryLoadPlanetTypeIconFromFile(filePath) ?? TryCreateBitmap(bytes);
+    }
+
+    private static Bitmap? TryLoadPlanetTypeIconFromFile(string filePath)
+    {
+        try
+        {
+            if (!File.Exists(filePath))
+            {
+                return null;
+            }
+
+            using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            return new Bitmap(stream);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static Bitmap? TryCreateBitmap(byte[] bytes)
+    {
+        try
+        {
+            using var stream = new MemoryStream(bytes, writable: false);
+            return new Bitmap(stream);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static void DrawCompactTooltip(DrawingContext context, Point anchor, string text)

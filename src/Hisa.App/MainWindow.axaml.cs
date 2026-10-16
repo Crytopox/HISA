@@ -1109,6 +1109,46 @@ public partial class MainWindow : Window
         await _boundVm.UnselectAllOverlaySovFilterAsync();
     }
 
+    private async void OnSelectAllIndicatorPlanetFilterClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_boundVm is null)
+        {
+            return;
+        }
+
+        await _boundVm.SelectAllIndicatorPlanetFilterAsync();
+    }
+
+    private async void OnUnselectAllIndicatorPlanetFilterClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_boundVm is null)
+        {
+            return;
+        }
+
+        await _boundVm.UnselectAllIndicatorPlanetFilterAsync();
+    }
+
+    private async void OnSelectAllOverlayPlanetFilterClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_boundVm is null)
+        {
+            return;
+        }
+
+        await _boundVm.SelectAllOverlayPlanetFilterAsync();
+    }
+
+    private async void OnUnselectAllOverlayPlanetFilterClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_boundVm is null)
+        {
+            return;
+        }
+
+        await _boundVm.UnselectAllOverlayPlanetFilterAsync();
+    }
+
     private async void OnSearchKeyDown(object? sender, KeyEventArgs e)
     {
         if (e.Key == Key.Enter)

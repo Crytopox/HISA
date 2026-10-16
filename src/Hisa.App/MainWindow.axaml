@@ -400,6 +400,7 @@
                               ShowIndicatorA0StarIcon="{Binding ShowIndicatorA0StarIcon}"
                               ShowIndicatorJoveObservatoryIcon="{Binding ShowIndicatorJoveObservatoryIcon}"
                               ShowIndicatorIceBeltsIcon="{Binding ShowIndicatorIceBeltsIcon}"
+                              ShowIndicatorPlanets="{Binding ShowIndicatorPlanets}"
                               ShowIndicatorStormIcon="{Binding ShowIndicatorStormIcon}"
                               ShowIndicatorWormholeIcon="{Binding ShowIndicatorWormholeIcon}"
                               ShowIndicatorSovUpgradeIcon="{Binding ShowIndicatorSovUpgradeIcon}"
@@ -412,6 +413,7 @@
                               ShowInfoBoxCharacterPresence="{Binding ShowInfoBoxCharacterPresence}"
                               CharacterPresenceHoverMaxNames="{Binding CharacterPresenceHoverMaxNames}"
                               IndicatorSovUpgradeFilterKeys="{Binding SelectedIndicatorSovUpgradeKeys}"
+                              IndicatorPlanetFilterTypeIds="{Binding SelectedIndicatorPlanetTypeIds}"
                               InfoBoxShowRegion="{Binding InfoBoxShowRegion}"
                               InfoBoxShowConstellation="{Binding InfoBoxShowConstellation}"
                               InfoBoxShowSecurityStatus="{Binding InfoBoxShowSecurityStatus}"
@@ -419,6 +421,7 @@
                               InfoBoxShowA0StarIcon="{Binding InfoBoxShowA0StarIcon}"
                               InfoBoxShowJoveObservatoryIcon="{Binding InfoBoxShowJoveObservatoryIcon}"
                               InfoBoxShowIceBeltsIcon="{Binding InfoBoxShowIceBeltsIcon}"
+                              InfoBoxShowPlanets="{Binding InfoBoxShowPlanets}"
                               InfoBoxShowStormIcon="{Binding InfoBoxShowStormIcon}"
                               InfoBoxShowWormholeIcon="{Binding InfoBoxShowWormholeIcon}"
                               InfoBoxShowSovUpgradeIcon="{Binding InfoBoxShowSovUpgradeIcon}"
@@ -437,6 +440,7 @@
                               IntelHostileScoresByNodeId="{Binding IntelHostileScoresByNodeIdForView}"
                               HostileColorSettings="{Binding HostileColorSettings}"
                               OverlaySovUpgradeFilterKeys="{Binding SelectedOverlaySovUpgradeKeys}"
+                              OverlayPlanetFilterTypeIds="{Binding SelectedOverlayPlanetTypeIds}"
                               AlwaysShowHubWormholes="{Binding AlwaysShowHubWormholes}"
                               AlwaysShowIncursions="{Binding AlwaysShowIncursions}"
                               ShowUserSystemMarks="{Binding ShowUserSystemMarks}"
@@ -1483,6 +1487,41 @@
             <CheckBox IsChecked="{Binding ShowIndicatorA0StarIcon}" Content="A0 Stars" />
             <CheckBox IsChecked="{Binding ShowIndicatorJoveObservatoryIcon}" Content="Jove Observatory" />
             <CheckBox IsChecked="{Binding ShowIndicatorIceBeltsIcon}" Content="Ice Belts" />
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <CheckBox IsChecked="{Binding ShowIndicatorPlanets}" Content="Planets" />
+              <Button Width="24" Height="24" Padding="0">
+                <Image Source="avares://HISA/Assets/Icons/settings.png" Width="14" Height="14" />
+                <Button.Flyout>
+                  <Flyout Placement="BottomEdgeAlignedRight">
+                    <Border Width="360" Padding="8" Background="#101826" BorderBrush="#243247" BorderThickness="1" CornerRadius="4">
+                      <StackPanel Spacing="8">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                          <Button Content="Select All" Click="OnSelectAllIndicatorPlanetFilterClicked" />
+                          <Button Content="Unselect All" Click="OnUnselectAllIndicatorPlanetFilterClicked" />
+                        </StackPanel>
+                        <ItemsControl ItemsSource="{Binding IndicatorPlanetTypeOptions}">
+                          <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                              <WrapPanel />
+                            </ItemsPanelTemplate>
+                          </ItemsControl.ItemsPanel>
+                          <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:PlanetTypeDisplayOption">
+                              <ToggleButton IsChecked="{Binding IsSelected, Mode=TwoWay}" Padding="6,4" Margin="2" BorderThickness="1" BorderBrush="#2B3C55">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                  <Image Source="{Binding Icon}" Width="16" Height="16" />
+                                  <TextBlock Text="{Binding DisplayName}" />
+                                </StackPanel>
+                              </ToggleButton>
+                            </DataTemplate>
+                          </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                      </StackPanel>
+                    </Border>
+                  </Flyout>
+                </Button.Flyout>
+              </Button>
+            </StackPanel>
             <CheckBox IsChecked="{Binding ShowIndicatorStormIcon}" Content="Metaliminal Storms" />
             <CheckBox IsChecked="{Binding ShowIndicatorWormholeIcon}" Content="Thera/Turnur Wormholes" />
             <CheckBox IsChecked="{Binding ShowIndicatorIncursionIcon}" Content="Incursions" />
@@ -1541,6 +1580,41 @@
             <CheckBox IsChecked="{Binding InfoBoxShowA0StarIcon}" Content="A0 Stars" />
             <CheckBox IsChecked="{Binding InfoBoxShowJoveObservatoryIcon}" Content="Jove Observatory" />
             <CheckBox IsChecked="{Binding InfoBoxShowIceBeltsIcon}" Content="Ice Belts" />
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <CheckBox IsChecked="{Binding InfoBoxShowPlanets}" Content="Planets" />
+              <Button Width="24" Height="24" Padding="0">
+                <Image Source="avares://HISA/Assets/Icons/settings.png" Width="14" Height="14" />
+                <Button.Flyout>
+                  <Flyout Placement="BottomEdgeAlignedRight">
+                    <Border Width="360" Padding="8" Background="#101826" BorderBrush="#243247" BorderThickness="1" CornerRadius="4">
+                      <StackPanel Spacing="8">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                          <Button Content="Select All" Click="OnSelectAllOverlayPlanetFilterClicked" />
+                          <Button Content="Unselect All" Click="OnUnselectAllOverlayPlanetFilterClicked" />
+                        </StackPanel>
+                        <ItemsControl ItemsSource="{Binding OverlayPlanetTypeOptions}">
+                          <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                              <WrapPanel />
+                            </ItemsPanelTemplate>
+                          </ItemsControl.ItemsPanel>
+                          <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:PlanetTypeDisplayOption">
+                              <ToggleButton IsChecked="{Binding IsSelected, Mode=TwoWay}" Padding="6,4" Margin="2" BorderThickness="1" BorderBrush="#2B3C55">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                  <Image Source="{Binding Icon}" Width="16" Height="16" />
+                                  <TextBlock Text="{Binding DisplayName}" />
+                                </StackPanel>
+                              </ToggleButton>
+                            </DataTemplate>
+                          </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                      </StackPanel>
+                    </Border>
+                  </Flyout>
+                </Button.Flyout>
+              </Button>
+            </StackPanel>
             <CheckBox IsChecked="{Binding InfoBoxShowStormIcon}" Content="Metaliminal Storms" />
             <CheckBox IsChecked="{Binding InfoBoxShowWormholeIcon}" Content="Thera/Turnur Wormholes" />
             <CheckBox IsChecked="{Binding InfoBoxShowIncursionIcon}" Content="Incursions" />

@@ -282,6 +282,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _showIndicatorA0StarIcon = true;
     private bool _showIndicatorJoveObservatoryIcon = true;
     private bool _showIndicatorIceBeltsIcon = true;
+    private bool _showIndicatorPlanets;
     private bool _showIndicatorStormIcon = true;
     private bool _showIndicatorWormholeIcon = true;
     private bool _showIndicatorSovUpgradeIcon = true;
@@ -305,6 +306,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _infoBoxShowA0StarIcon = true;
     private bool _infoBoxShowJoveObservatoryIcon = true;
     private bool _infoBoxShowIceBeltsIcon = true;
+    private bool _infoBoxShowPlanets;
     private bool _infoBoxShowStormIcon = true;
     private bool _infoBoxShowWormholeIcon = true;
     private bool _infoBoxShowSovUpgradeIcon = true;
@@ -446,6 +448,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private MapCoordinateMode _savedUniverseCoordinateMode = MapCoordinateMode.SdePlanarXY;
     private MapCoordinateMode _savedRegionCoordinateMode = MapCoordinateMode.SdePlanarXY;
     private bool _isInitializing = true;
+    private bool _suppressPlanetFilterSave;
     private const string ViewModeKey = "Map.SelectedViewMode";
     private const string RegionIdKey = "Map.SelectedRegionId";
     private const string RegionTokenKey = "Map.SelectedRegionToken";
@@ -465,6 +468,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string ShowIndicatorA0StarIconKey = "Map.ShowIndicatorA0StarIcon";
     private const string ShowIndicatorJoveObservatoryIconKey = "Map.ShowIndicatorJoveObservatoryIcon";
     private const string ShowIndicatorIceBeltsIconKey = "Map.ShowIndicatorIceBeltsIcon";
+    private const string ShowIndicatorPlanetsKey = "Map.ShowIndicatorPlanets";
     private const string ShowIndicatorStormIconKey = "Map.ShowIndicatorStormIcon";
     private const string ShowIndicatorWormholeIconKey = "Map.ShowIndicatorWormholeIcon";
     private const string ShowIndicatorSovUpgradeIconKey = "Map.ShowIndicatorSovUpgradeIcon";
@@ -492,6 +496,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string InfoBoxShowA0StarIconKey = "Map.InfoBoxShowA0StarIcon";
     private const string InfoBoxShowJoveObservatoryIconKey = "Map.InfoBoxShowJoveObservatoryIcon";
     private const string InfoBoxShowIceBeltsIconKey = "Map.InfoBoxShowIceBeltsIcon";
+    private const string InfoBoxShowPlanetsKey = "Map.InfoBoxShowPlanets";
     private const string InfoBoxShowStormIconKey = "Map.InfoBoxShowStormIcon";
     private const string InfoBoxShowWormholeIconKey = "Map.InfoBoxShowWormholeIcon";
     private const string InfoBoxShowSovUpgradeIconKey = "Map.InfoBoxShowSovUpgradeIcon";
@@ -506,6 +511,20 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string OverlaySovFilterKeysKey = "Map.OverlaySovFilter.Keys";
     private const string IndicatorSovFilterConfiguredKey = "Map.IndicatorSovFilter.Configured";
     private const string OverlaySovFilterConfiguredKey = "Map.OverlaySovFilter.Configured";
+    private const string IndicatorPlanetFilterTypeIdsKey = "Map.IndicatorPlanetFilter.TypeIds";
+    private const string OverlayPlanetFilterTypeIdsKey = "Map.OverlayPlanetFilter.TypeIds";
+    private const string IndicatorPlanetFilterConfiguredKey = "Map.IndicatorPlanetFilter.Configured";
+    private const string OverlayPlanetFilterConfiguredKey = "Map.OverlayPlanetFilter.Configured";
+    private static readonly HttpClient PlanetTypeIconHttpClient = new();
+    private static readonly string PlanetTypeIconCacheDirectory = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "HISA",
+        "IntelImageCache",
+        "planets");
+    private static readonly string[] PreferredPlanetTypeNames =
+    [
+        "Barren", "Temperate", "Oceanic", "Ice", "Gas", "Lava", "Storm", "Plasma"
+    ];
     private const string AlwaysShowHubWormholesKey = "Map.AlwaysShowHubWormholes";
     private const string AlwaysShowIncursionsKey = "Map.AlwaysShowIncursions";
     private const string UserSystemMarksKey = "Map.UserSystemMarks";
@@ -666,6 +685,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public ObservableCollection<MapSearchCandidate> SearchSuggestions { get; } = [];
     public ObservableCollection<SovUpgradeDisplayOption> IndicatorSovUpgradeOptions { get; } = [];
     public ObservableCollection<SovUpgradeDisplayOption> OverlaySovUpgradeOptions { get; } = [];
+    public ObservableCollection<PlanetTypeDisplayOption> IndicatorPlanetTypeOptions { get; } = [];
+    public ObservableCollection<PlanetTypeDisplayOption> OverlayPlanetTypeOptions { get; } = [];
     public IEnumerable<long> MissingConnectionNodeIdsForView { get; private set; } = [];
     public IEnumerable<long> JumpRangeOriginNodeIdsForView => _jumpRangeOriginsLyByNodeId.Keys;
     public IEnumerable<long> JumpRangeInRangeNodeIdsForView => _jumpRangeInRangeNodeIdsForView;
@@ -1066,6 +1087,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             if (SetProperty(ref _showIndicatorIceBeltsIcon, value) && !_isInitializing)
             {
                 _ = _settingsService.SetAsync(ShowIndicatorIceBeltsIconKey, value);
+            }
+        }
+    }
+
+    public bool ShowIndicatorPlanets
+    {
+        get => _showIndicatorPlanets;
+        set
+        {
+            if (SetProperty(ref _showIndicatorPlanets, value) && !_isInitializing)
+            {
+                _ = _settingsService.SetAsync(ShowIndicatorPlanetsKey, value);
             }
         }
     }
@@ -1569,6 +1602,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
+    public bool InfoBoxShowPlanets
+    {
+        get => _infoBoxShowPlanets;
+        set
+        {
+            if (SetProperty(ref _infoBoxShowPlanets, value) && !_isInitializing)
+            {
+                _ = _settingsService.SetAsync(InfoBoxShowPlanetsKey, value);
+            }
+        }
+    }
+
     public bool InfoBoxShowStormIcon
     {
         get => _infoBoxShowStormIcon;
@@ -1714,6 +1759,16 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public IEnumerable<string> SelectedOverlaySovUpgradeKeys =>
         OverlaySovUpgradeOptions.Where(x => x.IsSelected).Select(x => x.Key).ToList();
+
+    public IEnumerable<int>? SelectedIndicatorPlanetTypeIds =>
+        IndicatorPlanetTypeOptions.Count == 0
+            ? null
+            : IndicatorPlanetTypeOptions.Where(x => x.IsSelected).Select(x => x.TypeId).ToList();
+
+    public IEnumerable<int>? SelectedOverlayPlanetTypeIds =>
+        OverlayPlanetTypeOptions.Count == 0
+            ? null
+            : OverlayPlanetTypeOptions.Where(x => x.IsSelected).Select(x => x.TypeId).ToList();
 
     public RegionOption? SelectedRegion
     {
@@ -2600,6 +2655,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         ShowIndicatorA0StarIcon = await _settingsService.GetAsync<bool?>(ShowIndicatorA0StarIconKey) ?? true;
         ShowIndicatorJoveObservatoryIcon = await _settingsService.GetAsync<bool?>(ShowIndicatorJoveObservatoryIconKey) ?? true;
         ShowIndicatorIceBeltsIcon = await _settingsService.GetAsync<bool?>(ShowIndicatorIceBeltsIconKey) ?? true;
+        ShowIndicatorPlanets = await _settingsService.GetAsync<bool?>(ShowIndicatorPlanetsKey) ?? false;
         ShowIndicatorStormIcon = await _settingsService.GetAsync<bool?>(ShowIndicatorStormIconKey) ?? true;
         ShowIndicatorWormholeIcon = await _settingsService.GetAsync<bool?>(ShowIndicatorWormholeIconKey) ?? true;
         ShowIndicatorSovUpgradeIcon = await _settingsService.GetAsync<bool?>(ShowIndicatorSovUpgradeIconKey) ?? true;
@@ -2666,6 +2722,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         InfoBoxShowA0StarIcon = await _settingsService.GetAsync<bool?>(InfoBoxShowA0StarIconKey) ?? true;
         InfoBoxShowJoveObservatoryIcon = await _settingsService.GetAsync<bool?>(InfoBoxShowJoveObservatoryIconKey) ?? true;
         InfoBoxShowIceBeltsIcon = await _settingsService.GetAsync<bool?>(InfoBoxShowIceBeltsIconKey) ?? true;
+        InfoBoxShowPlanets = await _settingsService.GetAsync<bool?>(InfoBoxShowPlanetsKey) ?? false;
         InfoBoxShowStormIcon = await _settingsService.GetAsync<bool?>(InfoBoxShowStormIconKey) ?? true;
         InfoBoxShowWormholeIcon = await _settingsService.GetAsync<bool?>(InfoBoxShowWormholeIconKey) ?? true;
         InfoBoxShowSovUpgradeIcon = await _settingsService.GetAsync<bool?>(InfoBoxShowSovUpgradeIconKey) ?? true;
@@ -2686,6 +2743,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         var overlayConfigured = await _settingsService.GetAsync<bool?>(OverlaySovFilterConfiguredKey) ?? false;
         ApplySelectedSovKeys(IndicatorSovUpgradeOptions, indicatorKeys, indicatorConfigured);
         ApplySelectedSovKeys(OverlaySovUpgradeOptions, overlayKeys, overlayConfigured);
+        await InitializePlanetTypeFiltersAsync();
         AlwaysShowHubWormholes = await _settingsService.GetAsync<bool?>(AlwaysShowHubWormholesKey) ?? true;
         AlwaysShowIncursions = await _settingsService.GetAsync<bool?>(AlwaysShowIncursionsKey) ?? true;
         ShowUserSystemMarks = await _settingsService.GetAsync<bool?>(ShowUserSystemMarksKey) ?? true;
@@ -5479,6 +5537,226 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
 
         await SaveOverlaySovFilterAsync();
+    }
+
+    public async Task SelectAllIndicatorPlanetFilterAsync()
+    {
+        SetPlanetFilterSelection(IndicatorPlanetTypeOptions, true);
+        await SaveIndicatorPlanetFilterAsync();
+    }
+
+    public async Task UnselectAllIndicatorPlanetFilterAsync()
+    {
+        SetPlanetFilterSelection(IndicatorPlanetTypeOptions, false);
+        await SaveIndicatorPlanetFilterAsync();
+    }
+
+    public async Task SelectAllOverlayPlanetFilterAsync()
+    {
+        SetPlanetFilterSelection(OverlayPlanetTypeOptions, true);
+        await SaveOverlayPlanetFilterAsync();
+    }
+
+    public async Task UnselectAllOverlayPlanetFilterAsync()
+    {
+        SetPlanetFilterSelection(OverlayPlanetTypeOptions, false);
+        await SaveOverlayPlanetFilterAsync();
+    }
+
+    private void SetPlanetFilterSelection(IEnumerable<PlanetTypeDisplayOption> options, bool isSelected)
+    {
+        _suppressPlanetFilterSave = true;
+        try
+        {
+            foreach (var option in options)
+            {
+                option.IsSelected = isSelected;
+            }
+        }
+        finally
+        {
+            _suppressPlanetFilterSave = false;
+        }
+    }
+
+    private async Task InitializePlanetTypeFiltersAsync()
+    {
+        if (IndicatorPlanetTypeOptions.Count > 0 || OverlayPlanetTypeOptions.Count > 0)
+        {
+            return;
+        }
+
+        var indicatorTypeIds = await _settingsService.GetAsync<List<int>>(IndicatorPlanetFilterTypeIdsKey) ?? [];
+        var overlayTypeIds = await _settingsService.GetAsync<List<int>>(OverlayPlanetFilterTypeIdsKey) ?? [];
+        var indicatorConfigured = await _settingsService.GetAsync<bool?>(IndicatorPlanetFilterConfiguredKey) ?? false;
+        var overlayConfigured = await _settingsService.GetAsync<bool?>(OverlayPlanetFilterConfiguredKey) ?? false;
+        var indicatorSelected = indicatorTypeIds.ToHashSet();
+        var overlaySelected = overlayTypeIds.ToHashSet();
+        var types = (await _mapDataService.GetPlanetTypesAsync())
+            .Select(type => (type.TypeId, DisplayName: FormatPlanetTypeDisplayName(type.Name)))
+            .OrderBy(type => PlanetTypeSortRank(type.DisplayName))
+            .ThenBy(type => type.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var type in types)
+        {
+            var indicatorOption = new PlanetTypeDisplayOption
+            {
+                TypeId = type.TypeId,
+                DisplayName = type.DisplayName,
+                IsSelected = !indicatorConfigured || indicatorSelected.Contains(type.TypeId)
+            };
+            indicatorOption.PropertyChanged += async (_, e) =>
+            {
+                if (e.PropertyName == nameof(PlanetTypeDisplayOption.IsSelected) && !_isInitializing && !_suppressPlanetFilterSave)
+                {
+                    await SaveIndicatorPlanetFilterAsync();
+                }
+            };
+            IndicatorPlanetTypeOptions.Add(indicatorOption);
+
+            var overlayOption = new PlanetTypeDisplayOption
+            {
+                TypeId = type.TypeId,
+                DisplayName = type.DisplayName,
+                IsSelected = !overlayConfigured || overlaySelected.Contains(type.TypeId)
+            };
+            overlayOption.PropertyChanged += async (_, e) =>
+            {
+                if (e.PropertyName == nameof(PlanetTypeDisplayOption.IsSelected) && !_isInitializing && !_suppressPlanetFilterSave)
+                {
+                    await SaveOverlayPlanetFilterAsync();
+                }
+            };
+            OverlayPlanetTypeOptions.Add(overlayOption);
+            _ = LoadPlanetTypeIconAsync(type.TypeId, indicatorOption, overlayOption);
+        }
+
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedIndicatorPlanetTypeIds)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedOverlayPlanetTypeIds)));
+    }
+
+    private async Task SaveIndicatorPlanetFilterAsync()
+    {
+        await _settingsService.SetAsync(IndicatorPlanetFilterTypeIdsKey, SelectedIndicatorPlanetTypeIds?.ToList() ?? []);
+        await _settingsService.SetAsync(IndicatorPlanetFilterConfiguredKey, true);
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedIndicatorPlanetTypeIds)));
+    }
+
+    private async Task SaveOverlayPlanetFilterAsync()
+    {
+        await _settingsService.SetAsync(OverlayPlanetFilterTypeIdsKey, SelectedOverlayPlanetTypeIds?.ToList() ?? []);
+        await _settingsService.SetAsync(OverlayPlanetFilterConfiguredKey, true);
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedOverlayPlanetTypeIds)));
+    }
+
+    private static string FormatPlanetTypeDisplayName(string typeName)
+    {
+        const string prefix = "Planet (";
+        if (typeName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
+            typeName.EndsWith(')'))
+        {
+            return typeName[prefix.Length..^1];
+        }
+
+        return typeName;
+    }
+
+    private static int PlanetTypeSortRank(string displayName)
+    {
+        for (var i = 0; i < PreferredPlanetTypeNames.Length; i++)
+        {
+            if (PreferredPlanetTypeNames[i].Equals(displayName, StringComparison.OrdinalIgnoreCase))
+            {
+                return i;
+            }
+        }
+
+        return PreferredPlanetTypeNames.Length;
+    }
+
+    private static async Task LoadPlanetTypeIconAsync(
+        int typeId,
+        PlanetTypeDisplayOption indicatorOption,
+        PlanetTypeDisplayOption overlayOption)
+    {
+        Bitmap? icon = null;
+        try
+        {
+            var filePath = Path.Combine(PlanetTypeIconCacheDirectory, $"{typeId}.png");
+            icon = TryLoadPlanetTypeIcon(filePath);
+            if (icon is null && !File.Exists(filePath))
+            {
+                var url = $"https://images.evetech.net/types/{typeId}/icon?tenant=tranquility&size=64";
+                using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                request.Headers.UserAgent.ParseAdd("HISA/1.0");
+                using var response = await PlanetTypeIconHttpClient.SendAsync(request).ConfigureAwait(false);
+                if (response.IsSuccessStatusCode)
+                {
+                    var bytes = await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+                    if (bytes.Length > 0)
+                    {
+                        try
+                        {
+                            Directory.CreateDirectory(PlanetTypeIconCacheDirectory);
+                            await File.WriteAllBytesAsync(filePath, bytes).ConfigureAwait(false);
+                        }
+                        catch (IOException)
+                        {
+                            // Another load may be writing the same icon.
+                        }
+
+                        icon = TryLoadPlanetTypeIcon(filePath) ?? TryCreatePlanetTypeIcon(bytes);
+                    }
+                }
+            }
+        }
+        catch
+        {
+            icon = null;
+        }
+
+        if (icon is null)
+        {
+            return;
+        }
+
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            indicatorOption.Icon = icon;
+            overlayOption.Icon = icon;
+        });
+    }
+
+    private static Bitmap? TryLoadPlanetTypeIcon(string filePath)
+    {
+        try
+        {
+            if (!File.Exists(filePath))
+            {
+                return null;
+            }
+
+            using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            return new Bitmap(stream);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static Bitmap? TryCreatePlanetTypeIcon(byte[] bytes)
+    {
+        try
+        {
+            using var stream = new MemoryStream(bytes);
+            return new Bitmap(stream);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static Bitmap? LoadSovIcon(string upgradeName, int tier)

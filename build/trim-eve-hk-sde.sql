@@ -96,8 +96,10 @@ DROP TABLE IF EXISTS staServices;
 DROP TABLE IF EXISTS staStations;
 DROP TABLE IF EXISTS trnTranslationLanguages;
 
--- Preserve the star records used by map overlays and the category-6 ship records
--- used by intel parsing before deleting unrelated retained-table rows.
+-- Preserve star and planet mapDenormalize rows (groupID 6 and 7) and their
+-- invTypes/invGroups for map overlays, plus the category-6 ship records used by
+-- intel parsing, before deleting unrelated retained-table rows. Celestial
+-- statistics stay limited to stars. Moons, belts, and stations are removed.
 DROP TABLE IF EXISTS temp.hisa_keep_star_item_ids;
 DROP TABLE IF EXISTS temp.hisa_keep_inv_type_ids;
 DROP TABLE IF EXISTS temp.hisa_keep_inv_group_ids;
@@ -119,7 +121,7 @@ CREATE TEMP TABLE hisa_keep_inv_type_ids (
 INSERT OR IGNORE INTO hisa_keep_inv_type_ids(typeID)
 SELECT DISTINCT typeID
 FROM mapDenormalize
-WHERE groupID = 6
+WHERE groupID IN (6, 7)
   AND typeID IS NOT NULL;
 
 INSERT OR IGNORE INTO hisa_keep_inv_type_ids(typeID)
@@ -145,7 +147,7 @@ WHERE NOT EXISTS (
 );
 
 DELETE FROM mapDenormalize
-WHERE groupID <> 6;
+WHERE groupID NOT IN (6, 7);
 
 DELETE FROM invTypes
 WHERE NOT EXISTS (

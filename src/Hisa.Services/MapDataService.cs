@@ -10,6 +10,7 @@ public sealed class MapDataService : IMapDataService
 {
     private const int LayoutRegionSyntheticBase = 2_000_000_000;
     private static readonly Lazy<IReadOnlyDictionary<int, StaticSolarSystemData>> StaticSolarSystemDataById = new(LoadStaticSolarSystemDataById);
+    private readonly Lazy<IReadOnlyDictionary<int, IReadOnlyList<int>>> _planetTypeIdsBySolarSystemId;
     private readonly ISdeDatabase _sdeDatabase;
     private readonly IMapLayoutDataService _mapLayoutDataService;
     private readonly IStormStateService _stormStateService;
@@ -53,7 +54,13 @@ public sealed class MapDataService : IMapDataService
         _miningSiteTrackerService = miningSiteTrackerService;
         _incursionStateService = incursionStateService;
         _systemActivityStateService = systemActivityStateService;
+        _planetTypeIdsBySolarSystemId = new(LoadPlanetTypeIdsBySolarSystemId);
     }
+
+    private IReadOnlyList<int> PlanetTypeIdsFor(int solarSystemId) =>
+        _planetTypeIdsBySolarSystemId.Value.TryGetValue(solarSystemId, out var planetTypeIds)
+            ? planetTypeIds
+            : [];
 
     public async Task<IReadOnlyList<RegionOption>> GetRegionsAsync(CancellationToken cancellationToken = default)
     {
@@ -138,7 +145,14 @@ public sealed class MapDataService : IMapDataService
 
         var nodes = nodeIds
             .OrderBy(id => id)
-            .Select(id => new MapNode { Id = id, Name = string.Empty, X = 0, Y = 0 })
+            .Select(id => new MapNode
+            {
+                Id = id,
+                Name = string.Empty,
+                X = 0,
+                Y = 0,
+                PlanetTypeIds = PlanetTypeIdsFor((int)id)
+            })
             .ToList();
         return new MapGraph { Nodes = nodes, Links = links };
     }
@@ -275,6 +289,7 @@ public sealed class MapDataService : IMapDataService
                 SpectralClass = m.SpectralClass,
                 HasJoveObservatory = staticData?.HasJoveObservatory ?? false,
                 IceFieldCount = staticData?.IceFieldCount ?? 0,
+                PlanetTypeIds = PlanetTypeIdsFor((int)n.Id),
                 RegionId = m.RegionId,
                 RegionName = m.RegionName,
                 ConstellationId = m.ConstellationId,
@@ -381,6 +396,7 @@ public sealed class MapDataService : IMapDataService
                 SpectralClass = n.SpectralClass,
                 HasJoveObservatory = n.HasJoveObservatory,
                 IceFieldCount = n.IceFieldCount,
+                PlanetTypeIds = n.PlanetTypeIds,
                 RegionId = n.RegionId,
                 RegionName = n.RegionName,
                 ConstellationId = n.ConstellationId,
@@ -701,6 +717,7 @@ public sealed class MapDataService : IMapDataService
                 SpectralClass = reader.IsDBNull(7) ? null : reader.GetString(7),
                 HasJoveObservatory = staticData?.HasJoveObservatory ?? false,
                 IceFieldCount = staticData?.IceFieldCount ?? 0,
+                PlanetTypeIds = PlanetTypeIdsFor(solarSystemId),
                 RegionId = reader.IsDBNull(8) ? null : reader.GetInt32(8),
                 RegionName = reader.IsDBNull(9) ? null : reader.GetString(9),
                 ConstellationId = reader.IsDBNull(10) ? null : reader.GetInt32(10),
@@ -846,6 +863,7 @@ public sealed class MapDataService : IMapDataService
                 SpectralClass = n.SpectralClass,
                 HasJoveObservatory = n.HasJoveObservatory,
                 IceFieldCount = n.IceFieldCount,
+                PlanetTypeIds = n.PlanetTypeIds,
                 RegionId = n.RegionId,
                 RegionName = n.RegionName,
                 ConstellationId = n.ConstellationId,
@@ -1144,6 +1162,69 @@ public sealed class MapDataService : IMapDataService
         }
 
         return result;
+    }
+
+    public async Task<IReadOnlyList<PlanetTypeInfo>> GetPlanetTypesAsync(CancellationToken cancellationToken = default)
+    {
+        await using var connection = _sdeDatabase.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT DISTINCT d.typeID, t.typeName
+            FROM mapDenormalize d
+            LEFT JOIN invTypes t ON t.typeID = d.typeID
+            WHERE d.groupID = 7 AND d.typeID IS NOT NULL
+            ORDER BY t.typeName;
+            """;
+
+        var result = new List<PlanetTypeInfo>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var typeId = reader.GetInt32(0);
+            var name = reader.IsDBNull(1) ? $"Type {typeId}" : reader.GetString(1);
+            result.Add(new PlanetTypeInfo { TypeId = typeId, Name = name });
+        }
+
+        return result;
+    }
+
+    private IReadOnlyDictionary<int, IReadOnlyList<int>> LoadPlanetTypeIdsBySolarSystemId()
+    {
+        using var connection = _sdeDatabase.CreateConnection();
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT solarSystemID, typeID
+            FROM mapDenormalize
+            WHERE groupID = 7
+            ORDER BY solarSystemID, celestialIndex, itemID;
+            """;
+
+        var grouped = new Dictionary<int, List<int>>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            if (reader.IsDBNull(0) || reader.IsDBNull(1))
+            {
+                continue;
+            }
+
+            var solarSystemId = reader.GetInt32(0);
+            var typeId = reader.GetInt32(1);
+            if (!grouped.TryGetValue(solarSystemId, out var typeIds))
+            {
+                typeIds = [];
+                grouped[solarSystemId] = typeIds;
+            }
+
+            typeIds.Add(typeId);
+        }
+
+        return grouped.ToDictionary(
+            pair => pair.Key,
+            pair => (IReadOnlyList<int>)pair.Value.ToArray());
     }
 }
 
