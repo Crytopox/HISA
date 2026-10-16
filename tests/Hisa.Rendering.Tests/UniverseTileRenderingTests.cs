@@ -113,6 +113,34 @@ public sealed class UniverseTileRenderingTests
         Assert.Equal(fallbacks, map.UniverseBaseFallbackCount);
     }
 
+    [AvaloniaFact]
+    public void ResizeKeepsNodeOnWorldTransform()
+    {
+        foreach (var mode in new[] { MapViewMode.Region, MapViewMode.Universe })
+        {
+            var map = new MapControl
+            {
+                Graph = CreateGraph(0.5),
+                ViewMode = mode,
+                NodeBackgroundColorMode = MapNodeColorMode.None,
+                StretchToWindow = true
+            };
+            Arrange(map, 400, 300);
+            map.ZoomBy(6);
+            Render(map, 400, 300);
+
+            var before = map.WorldToScreen(new Point(0.5, 0.5));
+            Arrange(map, 800, 300);
+            var after = map.WorldToScreen(new Point(0.5, 0.5));
+            using var bitmap = RenderBitmap(map, 800, 300, 1);
+            using var decoded = Decode(bitmap);
+
+            Assert.True(Math.Abs(after.X - before.X) > 20, $"{mode} resize did not move the world transform.");
+            Assert.True(HasNodePixel(decoded, after), $"{mode} node is missing at {after}.");
+            Assert.False(HasNodePixel(decoded, before), $"{mode} node stayed at pre-resize {before}.");
+        }
+    }
+
     [Fact]
     public void TileResolutionTracksDisplayScale()
     {
@@ -200,9 +228,56 @@ public sealed class UniverseTileRenderingTests
         Links = []
     };
 
+    private static void Arrange(MapControl map, int width, int height)
+    {
+        map.Measure(new Size(width, height));
+        map.Arrange(new Rect(0, 0, width, height));
+    }
+
     private static void Render(MapControl map)
     {
-        using var bitmap = RenderBitmap(map, 300, 200, 1);
+        Render(map, 300, 200);
+    }
+
+    private static void Render(MapControl map, int width, int height)
+    {
+        using var bitmap = RenderBitmap(map, width, height, 1);
+    }
+
+    private static SKBitmap Decode(RenderTargetBitmap bitmap)
+    {
+        using var stream = new MemoryStream();
+        bitmap.Save(stream);
+        stream.Position = 0;
+        return SKBitmap.Decode(stream);
+    }
+
+    private static bool HasNodePixel(SKBitmap bitmap, Point screen)
+    {
+        var node = new SKColor(0x98, 0xA6, 0xB8);
+        var cx = (int)Math.Round(screen.X);
+        var cy = (int)Math.Round(screen.Y);
+        for (var y = cy - 2; y <= cy + 2; y++)
+        {
+            for (var x = cx - 2; x <= cx + 2; x++)
+            {
+                if (x < 0 || y < 0 || x >= bitmap.Width || y >= bitmap.Height)
+                {
+                    continue;
+                }
+
+                var pixel = bitmap.GetPixel(x, y);
+                var distance = Math.Abs(pixel.Red - node.Red) +
+                               Math.Abs(pixel.Green - node.Green) +
+                               Math.Abs(pixel.Blue - node.Blue);
+                if (distance < 48)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private static RenderTargetBitmap RenderBitmap(MapControl map, int width, int height, double scaling)

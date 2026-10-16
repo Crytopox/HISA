@@ -448,6 +448,7 @@ public sealed class MapControl : Control
     private Point[] _screenPositions = [];
     private Point _screenCameraPan;
     private double _screenCameraZoom = double.NaN;
+    private Size _screenCameraViewport;
     private double _graphMinX;
     private double _graphMaxX;
     private double _graphMinY;
@@ -1549,6 +1550,7 @@ public sealed class MapControl : Control
 
         _screenCameraPan = _panOffset;
         _screenCameraZoom = _zoom;
+        _screenCameraViewport = Bounds.Size;
     }
 
     private bool ScreenCameraMatches()
@@ -1557,7 +1559,9 @@ public sealed class MapControl : Control
                _screenPositions.Length == Graph.Nodes.Count &&
                Math.Abs(_screenCameraZoom - _zoom) < 1e-6 &&
                Math.Abs(_screenCameraPan.X - _panOffset.X) < 0.5 &&
-               Math.Abs(_screenCameraPan.Y - _panOffset.Y) < 0.5;
+               Math.Abs(_screenCameraPan.Y - _panOffset.Y) < 0.5 &&
+               Math.Abs(_screenCameraViewport.Width - Bounds.Width) < 0.5 &&
+               Math.Abs(_screenCameraViewport.Height - Bounds.Height) < 0.5;
     }
 
     private long? FindClosestNodeAt(Point point, double threshold)
