@@ -1,4 +1,4 @@
-# HISA — New Eden. At a Glance.
+# HISA - New Eden. At a Glance.
 
 **Haakario Interstellar Survey Authority**
 
@@ -10,7 +10,7 @@ New Eden is a big place. Keeping track of what's happening around you shouldn't 
 
 **HISA** brings interactive maps, local intel reports, system activity, character tracking, wormhole connections, jump networks, alerts, and mining tools together in one clean, responsive desktop app.
 
-Whether you're watching for hostiles, planning a route, checking what's happening nearby, or managing mining operations, HISA puts useful information where you need it — without getting in your way.
+Whether you're watching for hostiles, planning a route, checking what's happening nearby, or managing mining operations, HISA puts useful information where you need it - without getting in your way.
 
 ### Built to be useful. Not in your way.
 
