@@ -83,17 +83,31 @@ Pair the tracker with **Alert Settings** and the **Mining site ready** event typ
 
 ## Screenshots
 
-![Preview 1](https://i.imgur.com/XDrbQEh.png)
+![Preview 1](https://i.imgur.com/LUIK7QL.png)
 
-![Preview 2](https://i.imgur.com/mfQaxLM.png)
+![Preview 2](https://i.imgur.com/rn0hbyG.png)
 
-![Preview 3](https://i.imgur.com/uksm640.png)
+![Preview 3](https://i.imgur.com/XHqVRdr.png)
 
-![Preview 4](https://i.imgur.com/AjQowco.png)
+![Preview 4](https://i.imgur.com/IjNrxJX.png)
 
-![Preview 5](https://i.imgur.com/lYkn0p2.png)
+![Preview 5](https://i.imgur.com/huirzHI.png)
 
-![Preview 6](https://i.imgur.com/vXS1MVo.png)
+![Preview 6](https://i.imgur.com/4VCX2im.png)
+
+![Preview 7](https://i.imgur.com/oP3uutk.png)
+
+![Preview 8](https://i.imgur.com/DjzUZLH.png)
+
+![Preview 9](https://i.imgur.com/MGrLQHN.png)
+
+![Preview 10](https://i.imgur.com/Tk73R5g.png)
+
+![Preview 11](https://i.imgur.com/Bha3n8Y.png)
+
+![Preview 12](https://i.imgur.com/qEe3QHl.png)
+
+![Preview 13](https://i.imgur.com/LQ59mDc.png)
 
 ## Linux support
 
