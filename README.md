@@ -101,13 +101,9 @@ Pair the tracker with **Alert Settings** and the **Mining site ready** event typ
 
 ![Preview 9](https://i.imgur.com/MGrLQHN.png)
 
-![Preview 10](https://i.imgur.com/Tk73R5g.png)
+![Preview 10](https://i.imgur.com/3QSFQS6.png)
 
-![Preview 11](https://i.imgur.com/Bha3n8Y.png)
-
-![Preview 12](https://i.imgur.com/qEe3QHl.png)
-
-![Preview 13](https://i.imgur.com/LQ59mDc.png)
+![Preview 11](https://i.imgur.com/EG5zIFK.png)
 
 ## Linux support
 
