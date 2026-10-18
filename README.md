@@ -1,21 +1,109 @@
-# HISA - Haakario Interstellar Survey Authority - A fast, Lightweight Intel Map for New Eden
+# HISA - New Eden. At a Glance.
 
-An open source EVE Online intel map tool I’ve been working on, maybe you will find it useful.
+**Haakario Interstellar Survey Authority**
 
-The goal was to make something **practical**: a map that helps you quickly see what is going on, track useful intel, check activity, follow wormholes/incursions/storms, plan jumps, and keep an eye on characters without the app getting in your way.
+### EVE Online Intel, Maps & Alerts
 
-But most importantly, all of that while staying as lightweight and fast as possible, because a 2D map should not be trying to mine Bitcoin with your GPU.
+**A fast, lightweight, open-source intelligence and mapping companion for EVE Online.**
 
-This is the first full release, so most of the core features and important pieces are already in place buuut, **expect a few issues here and there** (hopefully only minor ones xP)
+New Eden is a big place. Keeping track of what's happening around you shouldn't mean juggling a dozen windows or sacrificing your system's performance.
 
-I’m daily driving HISA myself, so anything I run into will be fixed as quickly as I can. If you find bugs, weird behavior, edge cases, or have suggestions, feel free to share them and I’ll be happy to look into them. 
+**HISA** brings interactive maps, local intel reports, system activity, character tracking, wormhole connections, jump networks, alerts, and mining tools together in one clean, responsive desktop app.
 
-**Available for Windows, Linux, and macOS**, with compatibility depending a little on your setup.
+Whether you're watching for hostiles, planning a route, checking what's happening nearby, or managing mining operations, HISA puts useful information where you need it - without getting in your way.
 
-Go to releases to download the latest version.
+### Built to be useful. Not in your way.
 
-Join the Official Discord for updates, feedback, and bug reports:  
-https://discord.gg/ByVCvC6UY9
+The goal has always been simple: **make something practical, fast, and lightweight.** Clean map rendering, configurable overlays, and efficient refreshes help you keep an eye on New Eden without needless clutter or overhead. Because a 2D map really shouldn't be trying to mine Bitcoin with your GPU. :P
+
+HISA is actively used and developed. Bug reports, weird edge cases, and suggestions are welcome!
+
+**Available for Windows, Linux, and macOS**, with compatibility depending on your setup.
+
+**[Download the latest release](https://github.com/Crytopox/HISA/releases/latest)** · **[Join the Discord](https://discord.gg/ByVCvC6UY9)** · **[Other EVE tools](https://haakario.com/)**
+
+## Features
+
+### Interactive EVE Maps
+- Universe, region overview, and individual region map views
+- Custom, combined, and editable map layouts
+- Built-in map editor for layout creation and adjustments
+
+### Fast and Lightweight
+- Responsive large maps, overlays, and live data
+- Cached refreshes to avoid unnecessary requests
+- Clean map rendering focused on readability and speed
+- Debug telemetry to track ESI usage and refresh behavior
+
+### Map Visuals and Overlays
+- Map color modes and indicators for security, regions, constellations, star classes, nullsec true-sec, A0 stars, system activity, intel hostiles, character presence, jump range, wormholes, incursions, storms, ice belts, Jove Observatories, SOV upgrades, and more
+- Activity badges for jumps, ship kills, pod kills, and NPC kills
+- Configurable hover information with fields and icons
+
+### Intel and Killmail Tools
+- Local intel chat log parsing
+- Hostile scoring and icons directly on the map
+- Intel overlay cards with report details
+- zKillmail integration for recent killmail overlays
+
+### Character Tracking
+- Local character location tracking
+- Character names, counts, and markers displayed on the map
+
+### Live Data Integrations
+- Live Thera / Turnur wormhole data
+- Live incursion and Metaliminal storm data
+- ESI public data for system kills and jumps
+
+### SOV, Network, and Jump Tools
+- SOV upgrade import, filtering, and map display
+- Ansiblex network links and overlays
+- Jump range overlays and light-year coverage
+- Route planning with route leg summaries
+- Jump range calculator
+
+### Mining Stats / Dashboard
+*Optional: enable in Settings > Preferences > Mining Logs.*
+
+Read local game logs to display live mining session information:
+- Regular yield and critical bonus yield
+- Waste
+- Mining rate
+- Estimated value and ISK rate
+
+Review current-session or recent-range stats, aggregate totals, and a compact live overlay.
+
+### Mining Sites Tracker
+Track SOV prospecting array sites and mark them as **Cleared** or **Missing**.
+
+- **Cleared:** reminders based on the upgrade's respawn timer
+- **Missing:** a configurable reminder to check whether the site has respawned
+
+Pair the tracker with **Alert Settings** and the **Mining site ready** event type.
+
+## Screenshots
+
+![Preview 1](https://i.imgur.com/LUIK7QL.png)
+
+![Preview 2](https://i.imgur.com/rn0hbyG.png)
+
+![Preview 3](https://i.imgur.com/XHqVRdr.png)
+
+![Preview 4](https://i.imgur.com/IjNrxJX.png)
+
+![Preview 5](https://i.imgur.com/huirzHI.png)
+
+![Preview 6](https://i.imgur.com/4VCX2im.png)
+
+![Preview 7](https://i.imgur.com/oP3uutk.png)
+
+![Preview 8](https://i.imgur.com/DjzUZLH.png)
+
+![Preview 9](https://i.imgur.com/MGrLQHN.png)
+
+![Preview 10](https://i.imgur.com/3QSFQS6.png)
+
+![Preview 11](https://i.imgur.com/EG5zIFK.png)
 
 ## Linux support
 
@@ -41,7 +129,6 @@ Silicon Macs (`osx-arm64`). No separate .NET installation is required.
 The release archives contain an unsigned standalone executable, rather than a
 signed `.app` bundle. macOS may therefore require you to explicitly allow the
 app the first time you open it.
-
 
 ## Publishing a release
 
@@ -97,77 +184,3 @@ The Windows script produces the `win-x64` ZIP archive. The Linux script produces
 `linux-x64`, `linux-arm64`, and `linux-musl-x64` tar archives. The macOS script
 produces `osx-x64` and `osx-arm64` tar archives. Output is written under
 `build/releases/`.
-
-## Main Features
-### Interactive EVE Maps
-- Universe, region overview, and individual region map views
-- Custom, combined, and editable map layouts
-- Built in map editor for layout creation and adjustments
-
-### Fast and Lightweight
-- Built to stay as responsive as possible while handling large maps, overlays, and live data
-- Cached refreshes to avoid unnecessary requests
-- Clean map rendering focused on readability and speed
-- Debug telemetry to help track ESI usage and refresh behavior
-
-### Map Visuals and Overlays
-- Multiple map color modes and indicators for security, region, constellation, star class, nullsec true-sec, A0 stars, system activity, intel hostiles, character presence, jump range, wormholes, incursions, storms, ice belts, Jove Observatories, SOV upgrades, and more
-- Activity badges for jumps, ship kills, pod kills, and NPC kills
-- Hover info box with configurable fields and icons, so you can quickly check what matters without opening extra windows
-
-### Intel and Killmail Tools
-- Local intel chat log parsing
-- Hostile scoring and hostile icons shown directly on the map
-- Intel overlay cards with report details
-- zKillmail integration for recent killmail overlays
-
-### Character Tracking
-- Local character location tracking
-- Character names, counts, and markers shown on the map
-
-### Live Data Integrations
-- Live Thera / Turnur wormhole data
-- Live incursion and Metaliminal storm data
-- ESI public data for system kills and jumps
-
-### SOV, Network, and Jump Tools
-- SOV upgrades import, filtering, and map display
-- Ansiblex network links and overlays
-- Jump range overlays and light-year coverage
-- Route planning with route leg summaries
-- Jump range calculator
-- A few more in the plans....
-
-### Mining Stats / Dashboard
-Optional feature. Enable it in Settings > Preferences > Mining Logs.
-
-It reads your local game logs and turns mining events into a live session overview, including:
-- Regular yield
-- Critical bonus yield
-- Waste
-- Mining rate
-- Estimated value / ISK rate
-
-You can also review current-session or recent-range stats, see aggregate totals, and open a compact overlay for live monitoring.
-
-### Mining Sites Tracker
-New tool that allows you to keep track of all the SOV prospecting arrays, mark them as cleared or missing.
-
-**Cleared** will remind you when the site respawns using the upgrades respawn timer.
-
-**Missing** will let you choose a time to be reminded to check if it potentially respawned.
-
-You can pair this with the newly improved **Alert Settings** and choosing the new Event type "Mining site ready"
-
-## Image previews
-![Preview1](https://i.imgur.com/XDrbQEh.png)
----
-![Preview2](https://i.imgur.com/mfQaxLM.png)
----
-![Preview3](https://i.imgur.com/uksm640.png)
----
-![Preview4](https://i.imgur.com/AjQowco.png)
----
-![Preview5](https://i.imgur.com/lYkn0p2.png)
----
-![Preview6](https://i.imgur.com/vXS1MVo.png)
