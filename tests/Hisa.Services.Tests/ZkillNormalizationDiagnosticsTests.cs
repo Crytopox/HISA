@@ -46,6 +46,22 @@ public class ZkillNormalizationDiagnosticsTests
         Assert.Equal(2, logger.Messages.Count);
     }
 
+    [Fact]
+    public void RecordDataGap_CountsSkippedSequencesWithoutPayload()
+    {
+        var logger = new ListLogger();
+        var diagnostics = new ZkillNormalizationDiagnostics(logger, () => 0);
+
+        diagnostics.RecordDataGap(44, 3);
+
+        Assert.Equal(1, diagnostics.DataGapCount);
+        var message = Assert.Single(logger.Messages);
+        Assert.Contains("sequence 44", message, StringComparison.Ordinal);
+        Assert.Contains("DataGapCount: 1", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("{", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("killmail_id", message, StringComparison.Ordinal);
+    }
+
     private sealed class ListLogger : ILogger
     {
         public List<string> Messages { get; } = [];

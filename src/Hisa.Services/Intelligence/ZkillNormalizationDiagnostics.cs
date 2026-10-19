@@ -10,6 +10,7 @@ public sealed class ZkillNormalizationDiagnostics
     private readonly Func<long> _utcNowMilliseconds;
     private readonly long[] _counts;
     private readonly long[] _lastLoggedAtMilliseconds;
+    private long _dataGaps;
 
     public ZkillNormalizationDiagnostics(ILogger logger, Func<long>? utcNowMilliseconds = null)
     {
@@ -24,6 +25,18 @@ public sealed class ZkillNormalizationDiagnostics
     public long RejectionCount(KillmailNormalizationRejection reason)
     {
         return Volatile.Read(ref _counts[(int)reason]);
+    }
+
+    public long DataGapCount => Volatile.Read(ref _dataGaps);
+
+    public void RecordDataGap(long sequence, int attempts)
+    {
+        var count = Interlocked.Increment(ref _dataGaps);
+        _logger.LogWarning(
+            "Skipping malformed R2Z2 sequence {Sequence} after {Attempts} attempts. DataGapCount: {DataGapCount}.",
+            sequence,
+            attempts,
+            count);
     }
 
     public void RecordRejection(long sequence, KillmailNormalizationRejection reason)

@@ -113,11 +113,16 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
     private static readonly TimeSpan ZkillNotFoundDelay = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan ZkillRateLimitDelay = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan ZkillAcceptedAgeWindow = TimeSpan.FromMinutes(5);
+    internal const int ZkillMalformedMaxAttempts = 3;
+    internal static readonly TimeSpan ZkillMalformedBaseDelay = TimeSpan.FromSeconds(2);
+    internal static readonly TimeSpan ZkillMalformedMaxDelay = TimeSpan.FromSeconds(8);
     private static readonly TimeSpan ReportDedupeRetention = TimeSpan.FromHours(1);
     private static readonly TimeSpan IntelCrossClientSkewWindow = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan CharacterNameResolutionCacheLifetime = TimeSpan.FromHours(12);
     private long? _nextZkillSequence;
     private DateTime _nextZkillPollAfterUtc = DateTime.MinValue;
+    private long? _malformedSequence;
+    private int _malformedAttempts;
     private HashSet<string> _includeChannels = new(StringComparer.OrdinalIgnoreCase);
     private TimeSpan _systemExpiry = TimeSpan.FromMinutes(15);
     private readonly DateTime _startupHistoryCutoffUtc = DateTime.UtcNow - TimeSpan.FromMinutes(10);
@@ -2037,13 +2042,22 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             {
                 await using var responseStream = await response.Content.ReadAsStreamAsync(cancellationToken);
                 using var document = await JsonDocument.ParseAsync(responseStream, cancellationToken: cancellationToken);
+                _malformedSequence = null;
+                _malformedAttempts = 0;
                 var receivedAtUtc = DateTimeOffset.UtcNow;
                 ProcessZkillPayload(document.RootElement, sequence, receivedAtUtc, receivedAtUtc);
             }
             catch (JsonException)
             {
-                _normalizationDiagnostics.RecordRejection(sequence, KillmailNormalizationRejection.MalformedJson);
-                throw;
+                if (ScheduleMalformedRetry(sequence))
+                {
+                    _nextZkillSequence = sequence;
+                    return;
+                }
+
+                sequence++;
+                processed++;
+                continue;
             }
 
             sequence++;
@@ -2053,6 +2067,37 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
 
         _nextZkillSequence = sequence;
         _nextZkillPollAfterUtc = DateTime.UtcNow + ZkillSuccessDelay;
+    }
+
+    private bool ScheduleMalformedRetry(long sequence)
+    {
+        if (_malformedSequence != sequence)
+        {
+            _malformedSequence = sequence;
+            _malformedAttempts = 0;
+        }
+
+        _malformedAttempts++;
+        _normalizationDiagnostics.RecordRejection(sequence, KillmailNormalizationRejection.MalformedJson);
+        if (_malformedAttempts < ZkillMalformedMaxAttempts)
+        {
+            var multiplier = 1 << (_malformedAttempts - 1);
+            var delayTicks = Math.Min(ZkillMalformedBaseDelay.Ticks * multiplier, ZkillMalformedMaxDelay.Ticks);
+            var delay = TimeSpan.FromTicks(delayTicks);
+            _nextZkillPollAfterUtc = DateTime.UtcNow + delay;
+            _logger.LogWarning(
+                "Malformed R2Z2 response at sequence {Sequence}. Attempt {Attempt} of {MaxAttempts}. Retrying after {DelaySeconds} seconds.",
+                sequence,
+                _malformedAttempts,
+                ZkillMalformedMaxAttempts,
+                delay.TotalSeconds);
+            return true;
+        }
+
+        _normalizationDiagnostics.RecordDataGap(sequence, _malformedAttempts);
+        _malformedSequence = null;
+        _malformedAttempts = 0;
+        return false;
     }
 
     private HttpClient CreateZkillHttpClient()

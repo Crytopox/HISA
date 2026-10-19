@@ -74,7 +74,10 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<LocalCharacterLocationLogFeedHostedService>();
         services.AddSingleton<ILocalCharacterLocationFeed>(sp => sp.GetRequiredService<LocalCharacterLocationLogFeedHostedService>());
         services.AddHostedService(sp => sp.GetRequiredService<LocalCharacterLocationLogFeedHostedService>());
-        services.AddSingleton<IIntelligenceObservationFeed, IntelligenceObservationFeed>();
+        services.Configure<IntelligenceObservationFeedOptions>(configuration.GetSection("Hisa:Intelligence:Observations"));
+        services.AddSingleton<IntelligenceObservationFeed>();
+        services.AddSingleton<IIntelligenceObservationFeed>(sp => sp.GetRequiredService<IntelligenceObservationFeed>());
+        services.AddHostedService(sp => sp.GetRequiredService<IntelligenceObservationFeed>());
         services.AddSingleton<IntelChatLogFeedHostedService>();
         services.AddSingleton<IIntelFeed>(sp => sp.GetRequiredService<IntelChatLogFeedHostedService>());
         services.AddHostedService(sp => sp.GetRequiredService<IntelChatLogFeedHostedService>());
