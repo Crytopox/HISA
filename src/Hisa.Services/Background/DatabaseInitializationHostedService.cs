@@ -12,6 +12,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Hisa.Services.Background;
 
@@ -75,6 +76,24 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ILocalCharacterLocationFeed>(sp => sp.GetRequiredService<LocalCharacterLocationLogFeedHostedService>());
         services.AddHostedService(sp => sp.GetRequiredService<LocalCharacterLocationLogFeedHostedService>());
         services.Configure<IntelligenceObservationFeedOptions>(configuration.GetSection("Hisa:Intelligence:Observations"));
+        services.Configure<IntelligencePersistenceOptions>(configuration.GetSection("Hisa:Intelligence:History"));
+        services.AddSingleton<IIntelligenceHistoryRepository>(sp =>
+        {
+            var options = sp.GetRequiredService<IOptions<IntelligencePersistenceOptions>>().Value;
+            var path = IntelligencePersistenceOptions.ResolveDatabasePath(options);
+            var directory = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            return new SqliteIntelligenceHistoryRepository(path, options.BusyTimeout, options.MaxQueryLimit);
+        });
+        // Start persistence before the observation feed, and the feed before R2Z2 ingestion.
+        // Shutdown then runs in reverse: ingestion stops, the feed drains, then persistence flushes.
+        services.AddSingleton<IntelligencePersistenceHostedService>();
+        services.AddSingleton<IIntelligenceCoverageRecorder>(sp => sp.GetRequiredService<IntelligencePersistenceHostedService>());
+        services.AddHostedService(sp => sp.GetRequiredService<IntelligencePersistenceHostedService>());
         services.AddSingleton<IntelligenceObservationFeed>();
         services.AddSingleton<IIntelligenceObservationFeed>(sp => sp.GetRequiredService<IntelligenceObservationFeed>());
         services.AddHostedService(sp => sp.GetRequiredService<IntelligenceObservationFeed>());

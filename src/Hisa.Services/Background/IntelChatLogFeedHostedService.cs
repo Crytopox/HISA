@@ -136,14 +136,15 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         ISdeDatabase sdeDatabase,
         IHttpClientFactory httpClientFactory,
         ILogger<IntelChatLogFeedHostedService> logger,
-        IIntelligenceObservationFeed observationFeed)
+        IIntelligenceObservationFeed observationFeed,
+        IIntelligenceCoverageRecorder? coverageRecorder = null)
     {
         _settingsService = settingsService;
         _sdeDatabase = sdeDatabase;
         _httpClientFactory = httpClientFactory;
         _logger = logger;
         _observationFeed = observationFeed;
-        _normalizationDiagnostics = new ZkillNormalizationDiagnostics(logger);
+        _normalizationDiagnostics = new ZkillNormalizationDiagnostics(logger, coverageRecorder: coverageRecorder);
     }
 
     internal ZkillNormalizationDiagnostics NormalizationDiagnostics => _normalizationDiagnostics;

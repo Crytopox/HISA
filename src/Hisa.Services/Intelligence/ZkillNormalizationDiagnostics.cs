@@ -1,3 +1,5 @@
+using Hisa.Core.Abstractions;
+using Hisa.Core.Models.Intelligence;
 using Microsoft.Extensions.Logging;
 
 namespace Hisa.Services.Intelligence;
@@ -7,14 +9,19 @@ public sealed class ZkillNormalizationDiagnostics
     internal static readonly TimeSpan LogInterval = TimeSpan.FromMinutes(1);
 
     private readonly ILogger _logger;
+    private readonly IIntelligenceCoverageRecorder? _coverageRecorder;
     private readonly Func<long> _utcNowMilliseconds;
     private readonly long[] _counts;
     private readonly long[] _lastLoggedAtMilliseconds;
     private long _dataGaps;
 
-    public ZkillNormalizationDiagnostics(ILogger logger, Func<long>? utcNowMilliseconds = null)
+    public ZkillNormalizationDiagnostics(
+        ILogger logger,
+        Func<long>? utcNowMilliseconds = null,
+        IIntelligenceCoverageRecorder? coverageRecorder = null)
     {
         _logger = logger;
+        _coverageRecorder = coverageRecorder;
         _utcNowMilliseconds = utcNowMilliseconds ?? (() => Environment.TickCount64);
         var reasons = Enum.GetValues<KillmailNormalizationRejection>().Length;
         _counts = new long[reasons];
@@ -37,6 +44,14 @@ public sealed class ZkillNormalizationDiagnostics
             sequence,
             attempts,
             count);
+        _coverageRecorder?.Record(new IntelligenceCollectionGap
+        {
+            Kind = IntelligenceCollectionGapKind.SkippedSequence,
+            RecordedAtUtc = DateTimeOffset.UtcNow,
+            Source = KillmailObservation.R2Z2SourceId,
+            SourceSequence = sequence,
+            Detail = $"Skipped malformed sequence after {attempts} attempts."
+        });
     }
 
     public void RecordRejection(long sequence, KillmailNormalizationRejection reason)
