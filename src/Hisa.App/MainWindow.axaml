@@ -5,6 +5,7 @@
         xmlns:vm="clr-namespace:Hisa.App"
         xmlns:converters="clr-namespace:Hisa.App.Converters"
         xmlns:rendering="clr-namespace:Hisa.Rendering.Controls;assembly=Hisa.Rendering"
+        xmlns:history="clr-namespace:Hisa.App.Controls"
         mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="760"
         x:Class="Hisa.App.MainWindow"
         x:DataType="vm:MainWindowViewModel"
@@ -188,7 +189,7 @@
     </Style>
   </Window.Styles>
   <Grid RowDefinitions="Auto,*,Auto">
-    <Grid Grid.Row="0" RowDefinitions="Auto,Auto">
+    <Grid Grid.Row="0" RowDefinitions="Auto,Auto,Auto">
     <Border Grid.Row="0" Padding="6,3" Background="#121A26" BorderBrush="#263244" BorderThickness="0,0,0,1" IsVisible="{Binding IsTopNavigationVisible}">
       <Grid x:Name="TopToolbarRootGrid"
             ColumnDefinitions="Auto,*,Auto"
@@ -203,6 +204,7 @@
             <ToggleButton Classes="view-mode" Content="Universe" IsChecked="{Binding IsUniverseMode, Mode=TwoWay}" />
             <ToggleButton Classes="view-mode" Content="Regions" IsChecked="{Binding IsUniverseRegionsMode, Mode=TwoWay}" />
             <ToggleButton Classes="view-mode" Content="Region" IsChecked="{Binding IsRegionMode, Mode=TwoWay}" />
+            <ToggleButton Classes="view-mode" Content="Historical Activity" IsChecked="{Binding History.IsEnabled, Mode=TwoWay}" />
         </StackPanel>
         <Grid x:Name="TopToolbarInputsPanel"
               Grid.Column="1"
@@ -379,6 +381,7 @@
     <Button Grid.Row="1" Classes="chrome-handle" Content="&#x25BC; Show" Click="OnToggleTopNavigationClicked"
             IsVisible="{Binding IsTopNavigationHandleVisible}"
             Foreground="#AFC6E2" ToolTip.Tip="Show top navigation" />
+    <history:HistoricalActivityPanel Grid.Row="2" DataContext="{Binding History}" IsVisible="{Binding IsEnabled}" />
     </Grid>
 
     <Grid Grid.Row="1" ColumnDefinitions="*,Auto">
@@ -386,6 +389,7 @@
         <rendering:MapControl x:Name="MainMapControl"
                               Focusable="True"
                               Graph="{Binding CurrentGraph}"
+                              HistoricalActivity="{Binding History.Snapshot}"
                               ViewMode="{Binding SelectedViewMode}"
                               PointerPressed="OnMainMapPointerPressed"
                               PointerMoved="OnMainMapPointerMoved"
@@ -473,6 +477,9 @@
                               InfoBoxShowJumpRangeLy="{Binding InfoBoxShowJumpRangeLy}"
                               InfoBoxShowAnsiblexZone="{Binding InfoBoxShowAnsiblexZone}"
                               SelectedNodeId="{Binding SelectedNodeId, Mode=TwoWay}" />
+        <history:HistoricalSystemDetails HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12"
+                                         Width="310" MaxHeight="460" DataContext="{Binding History}"
+                                         IsVisible="{Binding IsEnabled}" />
         <Border HorizontalAlignment="Left"
                 VerticalAlignment="Bottom"
                 Margin="12"

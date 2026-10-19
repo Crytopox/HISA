@@ -29,7 +29,7 @@ using NtsUnaryUnionOp = NetTopologySuite.Operation.Union.UnaryUnionOp;
 
 namespace Hisa.Rendering.Controls;
 
-public sealed class MapControl : Control
+public sealed partial class MapControl : Control
 {
     private sealed class VoronoiCacheModel
     {
@@ -1096,7 +1096,7 @@ public sealed class MapControl : Control
 
     public MapControl()
     {
-        AffectsRender<MapControl>(GraphProperty, SelectedNodeIdProperty, ViewModeProperty, StretchToWindowProperty);
+        AffectsRender<MapControl>(GraphProperty, SelectedNodeIdProperty, ViewModeProperty, StretchToWindowProperty, HistoricalActivityProperty);
         AffectsRender<MapControl>(
             NodeColorModeProperty,
             NodeBackgroundColorModeProperty,
@@ -1340,6 +1340,7 @@ public sealed class MapControl : Control
     }
 
     private bool AffectsUniverseBase(AvaloniaProperty property) =>
+        property == HistoricalActivityProperty ||
         property == GraphProperty ||
         property == ViewModeProperty ||
         property == StretchToWindowProperty ||
@@ -2400,7 +2401,7 @@ public sealed class MapControl : Control
             DrawEditorGrid(context, plot, viewCenterX, viewCenterY);
         }
 
-        var renderVoronoiBackground = NodeBackgroundColorMode != MapNodeColorMode.None && _zoom >= GetVoronoiZoomThreshold();
+        var renderVoronoiBackground = HistoricalActivity is null && NodeBackgroundColorMode != MapNodeColorMode.None && _zoom >= GetVoronoiZoomThreshold();
         if (renderVoronoiBackground && _voronoiWorldGeometriesByNodeId.Count == 0)
         {
             EnsureVoronoiWorldPolygons();
@@ -2564,20 +2565,6 @@ public sealed class MapControl : Control
             var isInActiveRegion = activeRegionId is not null && node.RegionId == activeRegionId.Value;
             var isSelectedRegionNode = _selectedRegionId is not null && node.RegionId == _selectedRegionId.Value;
             var radius = GetMapNodeRadius(isSelected, isHovered, isSearchHighlighted);
-            var brush = isSelected
-                ? SelectedBrush
-                : isHovered
-                    ? HoveredBrush
-                    : isSearchHighlighted
-                        ? SelectedBrush
-                            : isSelectedRegionNode
-                                ? SelectedBrush
-                                : isInActiveRegion
-                                    ? RegionSelectedBrush
-                                : ShowEditorGrid && _crossRegionConnectorSet.Contains(node.Id)
-                                        ? EditorCrossRegionConnectorBrush
-                                        : GetCachedBrush(GetNodeBaseColor(node, NodeColorMode));
-
             if (ViewMode == MapViewMode.UniverseRegions)
             {
                 var text = new FormattedText(
@@ -2612,6 +2599,19 @@ public sealed class MapControl : Control
             if (!_universeOverlayOnly || isSelected || isHovered ||
                 isSearchHighlighted || isInActiveRegion || isSelectedRegionNode)
             {
+                var brush = isSelected
+                    ? SelectedBrush
+                    : isHovered
+                        ? HoveredBrush
+                        : isSearchHighlighted
+                            ? SelectedBrush
+                                : isSelectedRegionNode
+                                    ? SelectedBrush
+                                    : isInActiveRegion
+                                        ? RegionSelectedBrush
+                                    : ShowEditorGrid && _crossRegionConnectorSet.Contains(node.Id)
+                                            ? EditorCrossRegionConnectorBrush
+                                            : GetCachedBrush(GetDisplayedNodeColor(node));
                 context.DrawEllipse(brush, NodeOutlinePen, p, radius, radius);
             }
 
@@ -2914,7 +2914,7 @@ public sealed class MapControl : Control
         var plot = GetPlotMetrics();
         var worldScale = Math.Max(1e-9, ((plot.Width + plot.Height) * 0.5) * _zoom);
         var polygonBounds = GetUniverseTileWorldBounds(plot, originX, originY, clearRect, 2);
-        if (NodeBackgroundColorMode != MapNodeColorMode.None &&
+        if (HistoricalActivity is null && NodeBackgroundColorMode != MapNodeColorMode.None &&
             _universeVoronoiIndex is not null)
         {
             var borderPen = ScaleWorldPen(
@@ -2936,7 +2936,7 @@ public sealed class MapControl : Control
 
         var nodeBounds = GetUniverseTileWorldBounds(plot, originX, originY, clearRect, 32);
         var nodeIndexes = _universeNodeIndex!.Query(nodeBounds).OrderBy(index => index).ToList();
-        if (NodeBackgroundColorMode != MapNodeColorMode.None &&
+        if (HistoricalActivity is null && NodeBackgroundColorMode != MapNodeColorMode.None &&
             _voronoiWorldPolygonsByNodeId.Count > 0)
         {
             var holeRadius = 10.8 * GetUniverseNodeZoomScale();
@@ -2981,7 +2981,7 @@ public sealed class MapControl : Control
             var point = TileLocalPoint(node, plot, viewCenterX, viewCenterY, originX, originY);
             if (IsPointVisible(point, clearRect, 24))
             {
-                context.DrawEllipse(GetCachedBrush(GetNodeBaseColor(node, NodeColorMode)),
+                context.DrawEllipse(GetCachedBrush(GetDisplayedNodeColor(node)),
                     NodeOutlinePen, point, nodeRadius, nodeRadius);
             }
         }

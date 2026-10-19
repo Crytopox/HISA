@@ -22,6 +22,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Hisa.App\Hisa.App.csproj" />
     <ProjectReference Include="..\..\src\Hisa.Core\Hisa.Core.csproj" />
     <ProjectReference Include="..\..\src\Hisa.Rendering\Hisa.Rendering.csproj" />
   </ItemGroup>

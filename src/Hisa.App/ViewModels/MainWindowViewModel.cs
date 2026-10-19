@@ -21,7 +21,7 @@ using Hisa.Rendering;
 
 namespace Hisa.App;
 
-public sealed class MainWindowViewModel : INotifyPropertyChanged
+public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 {
     private sealed class CharacterTrackingPreference
     {
@@ -583,7 +583,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         ILocalCharacterLocationFeed localCharacterLocationFeed,
         IIntelFeed intelFeed,
         IMiningSessionFeed miningSessionFeed,
-        IAlertRuleEngine alertRuleEngine)
+        IAlertRuleEngine alertRuleEngine,
+        IIntelligenceActivityRepository historicalActivity,
+        Hisa.Data.Database.ISdeDatabase sdeDatabase,
+        Microsoft.Extensions.Options.IOptions<Hisa.Services.Intelligence.IntelligencePersistenceOptions> historicalOptions)
     {
         _mapDataService = mapDataService;
         _settingsService = settingsService;
@@ -598,6 +601,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _intelFeed = intelFeed;
         _miningSessionFeed = miningSessionFeed;
         _alertRuleEngine = alertRuleEngine;
+        InitializeHistoricalActivity(historicalActivity, sdeDatabase, historicalOptions.Value.AggregateRetentionPeriod);
         ViewModes = new ObservableCollection<MapViewMode>(Enum.GetValues<MapViewMode>());
         CoordinateModes = new ObservableCollection<MapCoordinateMode>(Enum.GetValues<MapCoordinateMode>());
         MiningRangeModes = new ObservableCollection<MiningStatsRangeMode>(Enum.GetValues<MiningStatsRangeMode>());
@@ -1397,6 +1401,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public void BeginApplicationShutdown()
     {
         IsApplicationShuttingDown = true;
+        StopHistoricalActivity();
     }
 
     public void SetMiningOverlayVisibility(bool value, bool persistPreference)
@@ -2633,6 +2638,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     private async Task LoadAsync()
     {
+        await History.InitializeAsync();
         _allRegions = (await _mapDataService.GetRegionsAsync()).ToList();
         await LoadFavoriteRegionTokensAsync();
         ApplyRegionFilter();

@@ -1,0 +1,49 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:core="clr-namespace:Hisa.Core;assembly=Hisa.Core"
+             xmlns:intel="clr-namespace:Hisa.Core.Models.Intelligence;assembly=Hisa.Core"
+             x:Class="Hisa.App.Controls.HistoricalActivityPanel" x:DataType="core:HistoricalActivityFeature">
+  <Border Background="#151E2B" BorderBrush="#506080" BorderThickness="0,0,0,1" Padding="10,6">
+    <StackPanel Spacing="3">
+      <WrapPanel>
+        <ComboBox ItemsSource="{x:Static core:HistoricalActivityFeature.Windows}" SelectedIndex="{Binding PresetIndex, Mode=TwoWay}"
+                  MinWidth="150" Height="28" Margin="0,0,6,3" FontSize="11" ToolTip.Tip="Analysis window">
+          <ComboBox.ItemTemplate><DataTemplate x:DataType="intel:HistoricalOption"><TextBlock Text="{Binding Label}" /></DataTemplate></ComboBox.ItemTemplate>
+        </ComboBox>
+        <ComboBox ItemsSource="{x:Static core:HistoricalActivityFeature.Metrics}" SelectedIndex="{Binding MetricIndex, Mode=TwoWay}"
+                  MinWidth="190" Height="28" Margin="0,0,8,3" FontSize="11" ToolTip.Tip="Historical metric">
+          <ComboBox.ItemTemplate><DataTemplate x:DataType="intel:HistoricalOption"><TextBlock Text="{Binding Label}" /></DataTemplate></ComboBox.ItemTemplate>
+        </ComboBox>
+        <Button Content="← 5m" Command="{Binding PreviousCommand}" Padding="8,3" Margin="0,0,3,3" ToolTip.Tip="Move the analysis window five minutes earlier" />
+        <Button Content="5m →" Command="{Binding NextCommand}" Padding="8,3" Margin="0,0,3,3" ToolTip.Tip="Move the analysis window five minutes later" />
+        <Button Content="Latest / refresh" Command="{Binding LatestCommand}" Padding="8,3" Margin="0,0,8,3" />
+        <Button Content="Live map" Command="{Binding LiveCommand}" Padding="8,3" Margin="0,0,3,3" />
+      </WrapPanel>
+      <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+        <TextBlock Text="Latest" Foreground="#ACB8CA" FontSize="11" VerticalAlignment="Center" />
+        <Slider Grid.Column="1" Minimum="0" Maximum="{Binding MaxOffsetBuckets}" Value="{Binding OffsetBuckets, Mode=TwoWay}"
+                TickFrequency="1" IsSnapToTickEnabled="True" Height="22" ToolTip.Tip="Move back through retained history in five-minute steps" />
+        <TextBlock Grid.Column="2" Text="Older →" Foreground="#ACB8CA" FontSize="11" VerticalAlignment="Center" />
+      </Grid>
+      <WrapPanel><TextBlock Text="{Binding RangeText}" Foreground="#F3DBA8" FontSize="12" Margin="0,0,16,0" />
+        <TextBlock Text="{Binding LocalRangeText}" Foreground="#ACB8CA" FontSize="11" /></WrapPanel>
+      <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsLoading}" Height="2" />
+      <WrapPanel>
+        <TextBlock Text="{Binding CoverageText}" Foreground="#E3C48A" FontSize="11" Margin="0,0,16,0" />
+        <TextBlock Text="{Binding Status}" Foreground="#ACB8CA" FontSize="11" />
+      </WrapPanel>
+      <TextBlock Text="{Binding DisplayedRangeText}" Foreground="#C5D5EA" FontSize="10" TextWrapping="Wrap" />
+      <TextBlock Text="{Binding ContextNote}" IsVisible="{Binding IsRegionsOverview}" Foreground="#E3C48A" FontSize="11" TextWrapping="Wrap" />
+      <StackPanel Orientation="Horizontal" Spacing="10">
+        <Button Content="Legend &amp; collection evidence" FontSize="10" Padding="6,2" Height="22">
+          <Button.Flyout><Flyout><StackPanel Spacing="6" MaxWidth="520">
+            <TextBlock Text="{Binding Legend}" Foreground="#C5D5EA" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding MetricNote}" Foreground="#C5D5EA" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding ContextNote}" Foreground="#C5D5EA" TextWrapping="Wrap" />
+            <TextBlock Text="{x:Static core:HistoricalActivityFeature.CollectionNote}" Foreground="#ACB8CA" TextWrapping="Wrap" />
+          </StackPanel></Flyout></Button.Flyout>
+        </Button>
+        <TextBlock Text="{Binding WindowNote}" Foreground="#ACB8CA" FontSize="10" VerticalAlignment="Center" />
+      </StackPanel>
+    </StackPanel>
+  </Border>
+</UserControl>
