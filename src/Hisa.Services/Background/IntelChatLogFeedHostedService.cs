@@ -8,9 +8,11 @@ using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Hisa.Core.Abstractions;
 using Hisa.Core.Models;
+using Hisa.Core.Models.Intelligence;
 using Hisa.Data.Database;
 using Hisa.Logs.IntelChatLogs;
 using Hisa.Logs.LocalChatLogs;
+using Hisa.Services.Intelligence;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -66,6 +68,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
     private readonly ISdeDatabase _sdeDatabase;
     private readonly ILogger<IntelChatLogFeedHostedService> _logger;
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IIntelligenceObservationFeed _observationFeed;
     private readonly ConcurrentDictionary<string, byte> _dirtyFiles = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _dirtySignal = new(0, int.MaxValue);
     private readonly Dictionary<string, long> _readOffsetsByPath = new(StringComparer.OrdinalIgnoreCase);
@@ -126,12 +129,14 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         ISettingsService settingsService,
         ISdeDatabase sdeDatabase,
         IHttpClientFactory httpClientFactory,
-        ILogger<IntelChatLogFeedHostedService> logger)
+        ILogger<IntelChatLogFeedHostedService> logger,
+        IIntelligenceObservationFeed observationFeed)
     {
         _settingsService = settingsService;
         _sdeDatabase = sdeDatabase;
         _httpClientFactory = httpClientFactory;
         _logger = logger;
+        _observationFeed = observationFeed;
     }
 
     public event EventHandler<IntelChatReport>? ReportReceived;
@@ -2026,14 +2031,8 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
 
             await using var responseStream = await response.Content.ReadAsStreamAsync(cancellationToken);
             using var document = await JsonDocument.ParseAsync(responseStream, cancellationToken: cancellationToken);
-            if (TryBuildZkillIntelReport(document.RootElement, out var report))
-            {
-                ReportReceived?.Invoke(this, report);
-                if (ApplyToSystemSnapshot(report))
-                {
-                    SnapshotUpdated?.Invoke(this, Snapshot);
-                }
-            }
+            var receivedAtUtc = DateTimeOffset.UtcNow;
+            ProcessZkillPayload(document.RootElement, sequence, receivedAtUtc, receivedAtUtc);
 
             sequence++;
             processed++;
@@ -2056,78 +2055,66 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         return client;
     }
 
-    private bool TryBuildZkillIntelReport(JsonElement root, out IntelChatReport report)
+    internal void ProcessZkillPayload(JsonElement root, long sequence, DateTimeOffset receivedAtUtc, DateTimeOffset utcNow)
+    {
+        if (!ZkillKillmailNormalizer.TryNormalize(root, sequence, receivedAtUtc, out var observation) || observation is null)
+        {
+            return;
+        }
+
+        _observationFeed.Publish(observation);
+        if (observation.OccurredAtUtc < utcNow - ZkillAcceptedAgeWindow)
+        {
+            return;
+        }
+
+        if (!TryBuildLiveZkillReport(observation, out var report))
+        {
+            return;
+        }
+
+        ReportReceived?.Invoke(this, report);
+        if (ApplyToSystemSnapshot(report))
+        {
+            SnapshotUpdated?.Invoke(this, Snapshot);
+        }
+    }
+
+    private bool TryBuildLiveZkillReport(KillmailObservation observation, out IntelChatReport report)
     {
         report = default!;
-
-        var killmail = root.TryGetProperty("esi", out var esiKillmail)
-            ? esiKillmail
-            : (root.TryGetProperty("killmail", out var nestedKillmail) ? nestedKillmail : root);
-        if (killmail.ValueKind != JsonValueKind.Object)
+        if (!_systemNameById.TryGetValue(observation.SolarSystemId, out var systemName) || string.IsNullOrWhiteSpace(systemName))
         {
             return false;
         }
 
-        var systemId = ReadInt64(killmail, "solar_system_id");
-        var victim = killmail.TryGetProperty("victim", out var victimNode) ? victimNode : default;
-        var victimShipTypeId = victim.ValueKind == JsonValueKind.Object ? ReadInt32(victim, "ship_type_id") : null;
-        if (systemId is null || victimShipTypeId is null)
-        {
-            return false;
-        }
-
-        if (!_systemNameById.TryGetValue(systemId.Value, out var systemName) || string.IsNullOrWhiteSpace(systemName))
-        {
-            return false;
-        }
-
-        var timestampUtc = ReadDateTime(killmail, "killmail_time") ?? DateTime.UtcNow;
-        if (timestampUtc < DateTime.UtcNow - ZkillAcceptedAgeWindow)
-        {
-            return false;
-        }
-        var victimShipClass = _shipClassByTypeId.TryGetValue(victimShipTypeId.Value, out var cls) ? cls : IntelShipClass.Unknown;
-        var victimShipName = _shipNameByTypeId.TryGetValue(victimShipTypeId.Value, out var shipName) ? shipName : $"Type {victimShipTypeId.Value}";
-        var attackerCount = killmail.TryGetProperty("attackers", out var attackersNode) && attackersNode.ValueKind == JsonValueKind.Array
-            ? attackersNode.GetArrayLength()
-            : 0;
-        var zkb = root.TryGetProperty("zkb", out var zkbNode) ? zkbNode : default;
-        var value = zkb.ValueKind == JsonValueKind.Object ? ReadDecimal(zkb, "totalValue") ?? 0m : 0m;
+        var victimShipTypeId = observation.Victim.ShipTypeId;
+        var victimShipClass = _shipClassByTypeId.TryGetValue(victimShipTypeId, out var shipClass) ? shipClass : IntelShipClass.Unknown;
+        var victimShipName = _shipNameByTypeId.TryGetValue(victimShipTypeId, out var shipName) ? shipName : $"Type {victimShipTypeId}";
+        var attackerCount = observation.Attackers.Count;
+        var value = observation.TotalValue ?? 0m;
         var message = $"Killmail: {victimShipName} destroyed ({attackerCount} attacker{(attackerCount == 1 ? string.Empty : "s")}, {value:N0} ISK).";
-        var killmailId = ReadInt64(root, "killmail_id") ?? 0;
-        var hash = ReadString(root, "hash");
-        var killmailUrl = killmailId > 0 && !string.IsNullOrWhiteSpace(hash)
-            ? $"https://zkillboard.com/kill/{killmailId}/"
+        var hash = observation.Hash;
+        var killmailUrl = !string.IsNullOrWhiteSpace(hash)
+            ? $"https://zkillboard.com/kill/{observation.KillmailId}/"
             : string.Empty;
-        var victimCharacterId = victim.ValueKind == JsonValueKind.Object ? ReadInt32(victim, "character_id") : null;
-        var victimCorporationId = victim.ValueKind == JsonValueKind.Object ? (ReadInt32(victim, "corporation_id") ?? 0) : 0;
-        var victimAllianceId = victim.ValueKind == JsonValueKind.Object ? ReadInt32(victim, "alliance_id") : null;
-
-        var attackers = new List<IntelKillmailAttacker>();
-        if (attackersNode.ValueKind == JsonValueKind.Array)
+        var attackers = new List<IntelKillmailAttacker>(attackerCount);
+        foreach (var attacker in observation.Attackers)
         {
-            foreach (var attacker in attackersNode.EnumerateArray())
+            attackers.Add(new IntelKillmailAttacker
             {
-                if (attacker.ValueKind != JsonValueKind.Object)
-                {
-                    continue;
-                }
-
-                attackers.Add(new IntelKillmailAttacker
-                {
-                    Name = ReadString(attacker, "character_name") ?? string.Empty,
-                    CharacterId = ReadInt32(attacker, "character_id"),
-                    CorporationId = ReadInt32(attacker, "corporation_id") ?? 0,
-                    AllianceId = ReadInt32(attacker, "alliance_id"),
-                    ShipTypeId = ReadInt32(attacker, "ship_type_id")
-                });
-            }
+                Name = attacker.CharacterName ?? string.Empty,
+                CharacterId = attacker.CharacterId,
+                CorporationId = attacker.CorporationId ?? 0,
+                AllianceId = attacker.AllianceId,
+                ShipTypeId = attacker.ShipTypeId
+            });
         }
 
         report = new IntelChatReport
         {
-            DedupeKey = BuildZkillReportDedupeKey(killmailId, timestampUtc, systemName, message),
-            TimestampUtc = timestampUtc,
+            DedupeKey = observation.DeduplicationKey,
+            TimestampUtc = observation.OccurredAtUtc.UtcDateTime,
             ChannelName = ZkillChannelName,
             ReporterName = ZkillReporterName,
             MessageText = message,
@@ -2135,26 +2122,25 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             Systems = [systemName],
             ShipClasses = victimShipClass == IntelShipClass.Unknown ? [] : [victimShipClass],
             ReportedShipNames = [victimShipName],
-            ReportedShipTypeIds = [victimShipTypeId.Value],
+            ReportedShipTypeIds = [victimShipTypeId],
             Alerts = [IntelAlertType.Fight],
             ReportedHostileNames = [],
             IsClear = false,
             ReportedHostileCount = Math.Max(1, attackerCount),
             Killmail = new IntelKillmailDetails
             {
-                KillmailId = killmailId,
+                KillmailId = observation.KillmailId,
                 Hash = hash ?? string.Empty,
                 Url = killmailUrl,
-                VictimCharacterId = victimCharacterId,
-                VictimCorporationId = victimCorporationId,
-                VictimAllianceId = victimAllianceId,
+                VictimCharacterId = observation.Victim.CharacterId,
+                VictimCorporationId = observation.Victim.CorporationId ?? 0,
+                VictimAllianceId = observation.Victim.AllianceId,
                 VictimShipTypeId = victimShipTypeId,
-                VictimName = ReadString(victim, "character_name") ?? string.Empty,
+                VictimName = observation.Victim.CharacterName ?? string.Empty,
                 TotalValue = value,
                 Attackers = attackers
             }
         };
-
         return true;
     }
 
@@ -2163,95 +2149,9 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         return $"intel:{timestampUtc:O}:{NormalizeReportIdentityPart(reporter)}:{NormalizeReportIdentityPart(message)}";
     }
 
-    private static string BuildZkillReportDedupeKey(long killmailId, DateTime timestampUtc, string systemName, string message)
-    {
-        if (killmailId > 0)
-        {
-            return $"killmail:{killmailId}";
-        }
-
-        return $"killmail:{timestampUtc:O}:{NormalizeReportIdentityPart(systemName)}:{NormalizeReportIdentityPart(message)}";
-    }
-
     private static string NormalizeReportIdentityPart(string? value)
     {
         return (value ?? string.Empty).Trim().ToUpperInvariant();
-    }
-
-    private static long? ReadInt64(JsonElement obj, string name)
-    {
-        if (!obj.TryGetProperty(name, out var node))
-        {
-            return null;
-        }
-
-        return node.ValueKind switch
-        {
-            JsonValueKind.Number when node.TryGetInt64(out var n) => n,
-            JsonValueKind.String when long.TryParse(node.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) => n,
-            _ => null
-        };
-    }
-
-    private static int? ReadInt32(JsonElement obj, string name)
-    {
-        if (!obj.TryGetProperty(name, out var node))
-        {
-            return null;
-        }
-
-        return node.ValueKind switch
-        {
-            JsonValueKind.Number when node.TryGetInt32(out var n) => n,
-            JsonValueKind.String when int.TryParse(node.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) => n,
-            _ => null
-        };
-    }
-
-    private static decimal? ReadDecimal(JsonElement obj, string name)
-    {
-        if (!obj.TryGetProperty(name, out var node))
-        {
-            return null;
-        }
-
-        return node.ValueKind switch
-        {
-            JsonValueKind.Number when node.TryGetDecimal(out var n) => n,
-            JsonValueKind.String when decimal.TryParse(node.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var n) => n,
-            _ => null
-        };
-    }
-
-    private static DateTime? ReadDateTime(JsonElement obj, string name)
-    {
-        if (!obj.TryGetProperty(name, out var node) || node.ValueKind != JsonValueKind.String)
-        {
-            return null;
-        }
-
-        var raw = node.GetString();
-        if (string.IsNullOrWhiteSpace(raw))
-        {
-            return null;
-        }
-
-        if (!DateTime.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out var parsed))
-        {
-            return null;
-        }
-
-        return DateTime.SpecifyKind(parsed, DateTimeKind.Utc);
-    }
-
-    private static string? ReadString(JsonElement obj, string name)
-    {
-        if (!obj.TryGetProperty(name, out var node) || node.ValueKind != JsonValueKind.String)
-        {
-            return null;
-        }
-
-        return node.GetString();
     }
 
     public override void Dispose()

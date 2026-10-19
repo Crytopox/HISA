@@ -3,6 +3,7 @@ using Hisa.Core.Abstractions;
 using Hisa.Esi;
 using Hisa.Services.Incursions;
 using Hisa.Services.Alerts;
+using Hisa.Services.Intelligence;
 using Hisa.Services.Routing;
 using Hisa.Services.Storm;
 using Hisa.Services.SystemActivity;
@@ -73,6 +74,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<LocalCharacterLocationLogFeedHostedService>();
         services.AddSingleton<ILocalCharacterLocationFeed>(sp => sp.GetRequiredService<LocalCharacterLocationLogFeedHostedService>());
         services.AddHostedService(sp => sp.GetRequiredService<LocalCharacterLocationLogFeedHostedService>());
+        services.AddSingleton<IIntelligenceObservationFeed, IntelligenceObservationFeed>();
         services.AddSingleton<IntelChatLogFeedHostedService>();
         services.AddSingleton<IIntelFeed>(sp => sp.GetRequiredService<IntelChatLogFeedHostedService>());
         services.AddHostedService(sp => sp.GetRequiredService<IntelChatLogFeedHostedService>());

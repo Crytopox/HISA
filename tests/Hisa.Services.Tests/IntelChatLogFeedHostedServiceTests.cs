@@ -2,8 +2,10 @@ using System.Reflection;
 using System.Net;
 using Hisa.Core.Abstractions;
 using Hisa.Core.Models;
+using Hisa.Core.Models.Intelligence;
 using Hisa.Data.Database;
 using Hisa.Services.Background;
+using Hisa.Services.Intelligence;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -28,7 +30,8 @@ public class IntelChatLogFeedHostedServiceTests
                 }),
                 new NoopSdeDatabase(),
                 new NoopHttpClientFactory(),
-                NullLogger<IntelChatLogFeedHostedService>.Instance);
+                NullLogger<IntelChatLogFeedHostedService>.Instance,
+                CreateObservationFeed());
 
             var method = typeof(IntelChatLogFeedHostedService).GetMethod(
                 "ResolveChatLogsDirectoryAsync",
@@ -101,7 +104,8 @@ public class IntelChatLogFeedHostedServiceTests
             new NoopSettingsService(),
             new NoopSdeDatabase(),
             new NoopHttpClientFactory(),
-            NullLogger<IntelChatLogFeedHostedService>.Instance);
+            NullLogger<IntelChatLogFeedHostedService>.Instance,
+            CreateObservationFeed());
 
         var method = typeof(IntelChatLogFeedHostedService).GetMethod(
             "ShouldReadChannel",
@@ -125,7 +129,8 @@ public class IntelChatLogFeedHostedServiceTests
             settings,
             new NoopSdeDatabase(),
             new NoopHttpClientFactory(),
-            NullLogger<IntelChatLogFeedHostedService>.Instance);
+            NullLogger<IntelChatLogFeedHostedService>.Instance,
+            CreateObservationFeed());
 
         await service.ApplySettingsAsync();
 
@@ -371,7 +376,8 @@ public class IntelChatLogFeedHostedServiceTests
             new StubHttpClientFactory("""
                 {"characters":[{"id":123,"name":"Askulen Akasa Soikutsu"},{"id":124,"name":"Askulen"},{"id":125,"name":"Akasa"},{"id":126,"name":"Soikutsu"},{"id":456,"name":"0314227"}]}
                 """),
-            NullLogger<IntelChatLogFeedHostedService>.Instance);
+            NullLogger<IntelChatLogFeedHostedService>.Instance,
+            CreateObservationFeed());
         var method = typeof(IntelChatLogFeedHostedService).GetMethod(
             "ResolveReportedCharacterNamesAsync",
             BindingFlags.Instance | BindingFlags.NonPublic);
@@ -393,7 +399,8 @@ public class IntelChatLogFeedHostedServiceTests
             new StubHttpClientFactory("""
                 {"characters":[{"id":123,"name":"Askulen Akasa Soikutsu"},{"id":124,"name":"Astero"},{"id":125,"name":"Nyx"}]}
                 """),
-            NullLogger<IntelChatLogFeedHostedService>.Instance);
+            NullLogger<IntelChatLogFeedHostedService>.Instance,
+            CreateObservationFeed());
         ApplyShipMaps(service);
 
         var method = typeof(IntelChatLogFeedHostedService).GetMethod(
@@ -408,13 +415,35 @@ public class IntelChatLogFeedHostedServiceTests
         Assert.Equal(["Askulen Akasa Soikutsu"], names);
     }
 
-    private static IntelChatLogFeedHostedService CreateServiceWithSystems(NoopSettingsService? settings = null)
+    [Fact]
+    public void ChatReport_UpdatesSnapshotWithoutPublishingKillmailObservation()
+    {
+        var observations = new List<KillmailObservation>();
+        var feed = CreateObservationFeed();
+        feed.ObservationReceived += (_, observation) => observations.Add(observation);
+        var service = CreateServiceWithSystems(observationFeed: feed);
+
+        ApplyReport(service, CreateReport("Old System", "Pilot One"));
+
+        Assert.Equal(["Pilot One"], service.Snapshot[1].HostilePilotNames);
+        Assert.Empty(observations);
+    }
+
+    private static IntelligenceObservationFeed CreateObservationFeed()
+    {
+        return new IntelligenceObservationFeed(NullLogger<IntelligenceObservationFeed>.Instance);
+    }
+
+    private static IntelChatLogFeedHostedService CreateServiceWithSystems(
+        NoopSettingsService? settings = null,
+        IIntelligenceObservationFeed? observationFeed = null)
     {
         var service = new IntelChatLogFeedHostedService(
             settings ?? new NoopSettingsService(),
             new NoopSdeDatabase(),
             new NoopHttpClientFactory(),
-            NullLogger<IntelChatLogFeedHostedService>.Instance);
+            NullLogger<IntelChatLogFeedHostedService>.Instance,
+            observationFeed ?? CreateObservationFeed());
         var systemsField = typeof(IntelChatLogFeedHostedService).GetField(
             "_systemIdByName",
             BindingFlags.Instance | BindingFlags.NonPublic);
