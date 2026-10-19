@@ -299,6 +299,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _showAnsiblexNetwork = true;
     private bool _showAnsiblexCapitalRing = true;
     private bool _showAnsiblexCapitalHoverLine = true;
+    private int _ansiblexLinkOpacityPercent = 70;
     private bool _infoBoxShowRegion = true;
     private bool _infoBoxShowConstellation = true;
     private bool _infoBoxShowSecurityStatus = true;
@@ -489,6 +490,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string ShowAnsiblexNetworkKey = "Map.ShowAnsiblexNetwork";
     private const string ShowAnsiblexCapitalRingKey = "Map.ShowAnsiblexCapitalRing";
     private const string ShowAnsiblexCapitalHoverLineKey = "Map.ShowAnsiblexCapitalHoverLine";
+    private const string AnsiblexLinkOpacityPercentKey = "Map.AnsiblexLinkOpacityPercent";
     private const string InfoBoxShowRegionKey = "Map.InfoBoxShowRegion";
     private const string InfoBoxShowConstellationKey = "Map.InfoBoxShowConstellation";
     private const string InfoBoxShowSecurityStatusKey = "Map.InfoBoxShowSecurityStatus";
@@ -1475,6 +1477,19 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             if (SetProperty(ref _enableIntelReportAnimations, value) && !_isInitializing)
             {
                 _ = _settingsService.SetAsync(EnableIntelReportAnimationsKey, value);
+            }
+        }
+    }
+
+    public int AnsiblexLinkOpacityPercent
+    {
+        get => _ansiblexLinkOpacityPercent;
+        set
+        {
+            var clamped = Math.Clamp(value, 10, 100);
+            if (SetProperty(ref _ansiblexLinkOpacityPercent, clamped) && !_isInitializing)
+            {
+                _ = _settingsService.SetAsync(AnsiblexLinkOpacityPercentKey, clamped);
             }
         }
     }
@@ -2710,6 +2725,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             StatusText = "Intel feed paused: configure included channels in Intel Settings.";
         }
         EnableLinkAnimations = await _settingsService.GetAsync<bool?>(EnableLinkAnimationsKey) ?? true;
+        AnsiblexLinkOpacityPercent = await _settingsService.GetAsync<int?>(AnsiblexLinkOpacityPercentKey) ?? 70;
         EnableIntelReportAnimations = await _settingsService.GetAsync<bool?>(EnableIntelReportAnimationsKey) ?? true;
         ShowAnsiblexNetwork = await _settingsService.GetAsync<bool?>(ShowAnsiblexNetworkKey) ?? true;
         ShowAnsiblexCapitalRing = await _settingsService.GetAsync<bool?>(ShowAnsiblexCapitalRingKey) ?? true;

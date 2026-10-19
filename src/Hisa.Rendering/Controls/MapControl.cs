@@ -248,6 +248,8 @@ public sealed class MapControl : Control
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowAnsiblexCapitalRing), true);
     public static readonly StyledProperty<bool> ShowAnsiblexCapitalHoverLineProperty =
         AvaloniaProperty.Register<MapControl, bool>(nameof(ShowAnsiblexCapitalHoverLine), true);
+    public static readonly StyledProperty<int> AnsiblexLinkOpacityPercentProperty =
+        AvaloniaProperty.Register<MapControl, int>(nameof(AnsiblexLinkOpacityPercent), 70);
     public static readonly StyledProperty<IEnumerable<MapLink>?> AnsiblexLinksProperty =
         AvaloniaProperty.Register<MapControl, IEnumerable<MapLink>?>(nameof(AnsiblexLinks));
     public static readonly StyledProperty<IReadOnlyDictionary<long, AnsiblexSystemZone>?> AnsiblexZonesByNodeIdProperty =
@@ -708,6 +710,12 @@ public sealed class MapControl : Control
         set => SetValue(ShowAnsiblexCapitalHoverLineProperty, value);
     }
 
+    public int AnsiblexLinkOpacityPercent
+    {
+        get => GetValue(AnsiblexLinkOpacityPercentProperty);
+        set => SetValue(AnsiblexLinkOpacityPercentProperty, value);
+    }
+
     public IEnumerable<MapLink>? AnsiblexLinks
     {
         get => GetValue(AnsiblexLinksProperty);
@@ -1122,6 +1130,7 @@ public sealed class MapControl : Control
             ShowAnsiblexNetworkProperty,
             ShowAnsiblexCapitalRingProperty,
             ShowAnsiblexCapitalHoverLineProperty,
+            AnsiblexLinkOpacityPercentProperty,
             AnsiblexLinksProperty,
             AnsiblexZonesByNodeIdProperty,
             AnsiblexCapitalSystemIdProperty,
@@ -1350,7 +1359,8 @@ public sealed class MapControl : Control
         (property == IndicatorSovUpgradeFilterKeysProperty &&
          (NodeColorMode == MapNodeColorMode.SovUpgrades || NodeBackgroundColorMode == MapNodeColorMode.SovUpgrades)) ||
         (property == AnsiblexZonesByNodeIdProperty &&
-         (NodeColorMode == MapNodeColorMode.AnsiblexZone || NodeBackgroundColorMode == MapNodeColorMode.AnsiblexZone));
+         (NodeColorMode == MapNodeColorMode.AnsiblexZone || NodeBackgroundColorMode == MapNodeColorMode.AnsiblexZone)) ||
+        property == AnsiblexLinkOpacityPercentProperty;
 
     private void DisposeStaticLayer()
     {
@@ -4444,6 +4454,8 @@ public sealed class MapControl : Control
 
     private void DrawCurvedAnsiblexLink(DrawingContext context, Point from, Point to, MapLink link, bool highlighted, bool animate)
     {
+        var opacity = Math.Clamp(AnsiblexLinkOpacityPercent, 10, 100) / 100.0;
+        using var opacityState = opacity < 0.999 ? context.PushOpacity(opacity) : default;
         var dx = to.X - from.X;
         var dy = to.Y - from.Y;
         var length = Math.Sqrt((dx * dx) + (dy * dy));
