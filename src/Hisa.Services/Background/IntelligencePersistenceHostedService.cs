@@ -724,8 +724,26 @@ public sealed class IntelligencePersistenceHostedService : BackgroundService, II
             try
             {
                 if (_catchUpPending)
-                    _catchUpPending = await activity.CatchUpActivityAsync(Math.Min(1000, _options.BatchSize), cancellationToken).ConfigureAwait(false)
-                        == Math.Min(1000, _options.BatchSize);
+                {
+                    try
+                    {
+                        _catchUpPending = await activity.CatchUpActivityAsync(Math.Min(1000, _options.BatchSize), cancellationToken).ConfigureAwait(false)
+                            == Math.Min(1000, _options.BatchSize);
+                    }
+                    catch (Exception ex) when (Classify(ex) == PersistenceFailure.Permanent)
+                    {
+                        // The batch rolled back and pending rows remain protected from retention.
+                        // Retrying unchanged arithmetic cannot repair it. Keep ingestion running;
+                        // a repaired database or updated application can resume on the next start.
+                        _catchUpPending = false;
+                        _logger.LogError(ex, "Historical aggregation catch-up stopped after a deterministic failure. Pending raw records were preserved.");
+                        await TryRecordGapsAsync([new IntelligenceCollectionGap
+                        {
+                            Kind = IntelligenceCollectionGapKind.WriteFailure,
+                            Detail = "Historical aggregation catch-up stopped; pending raw records preserved. " + ex.Message
+                        }], cancellationToken).ConfigureAwait(false);
+                    }
+                }
                 var ticks = Interlocked.Read(ref _sourceHeartbeatTicks);
                 var interrupted = Interlocked.Read(ref _sourceInterruptedTicks);
                 if (interrupted > _processedInterruptedTicks)
@@ -945,7 +963,7 @@ public sealed class IntelligencePersistenceHostedService : BackgroundService, II
             return PersistenceFailure.Storage;
         }
 
-        if (exception is JsonException or FormatException or ArgumentException)
+        if (exception is JsonException or FormatException or ArgumentException or OverflowException)
         {
             return PersistenceFailure.Permanent;
         }

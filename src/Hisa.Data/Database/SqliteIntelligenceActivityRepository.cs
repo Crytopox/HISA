@@ -36,7 +36,7 @@ public sealed partial class SqliteIntelligenceHistoryRepository
                 ("$s", system), ("$b", bucket)))
             {
                 var stored = await read.ExecuteScalarAsync(token);
-                if (stored is string text) previous = decimal.Parse(text, CultureInfo.InvariantCulture);
+                if (stored is string text) previous = ParseIsk(text);
             }
             using var update = ActivityCommand(connection, transaction, """
                 INSERT INTO SystemActivity VALUES($s,$b,1,$pvp,$isk,$known,$unknown,$attackers,$time,$time)
@@ -149,80 +149,6 @@ public sealed partial class SqliteIntelligenceHistoryRepository
         finally { _gate.Release(); }
     }
 
-    public Task<ActivityResult> GetActivityAsync(ActivityRange range, IReadOnlyCollection<long>? systems = null,
-        bool includeBuckets = false, CancellationToken cancellationToken = default)
-        => Task.Run(() => QueryActivityAsync(range, systems, includeBuckets, cancellationToken), cancellationToken);
-
-    private async Task<ActivityResult> QueryActivityAsync(ActivityRange range, IReadOnlyCollection<long>? systems,
-        bool includeBuckets, CancellationToken cancellationToken)
-    {
-        var effective = range.Effective();
-        if (systems?.Count > 10000) throw new ArgumentOutOfRangeException(nameof(systems));
-        await _gate.WaitAsync(cancellationToken);
-        try
-        {
-            var connection = RequireConnection();
-            using var transaction = connection.BeginTransaction(deferred: true);
-            using var command = ActivityCommand(connection, transaction, "", ("$from", effective.FromUtc.UtcTicks), ("$to", effective.ToUtc.UtcTicks));
-            var filter = "";
-            if (systems is not null)
-            {
-                var names = new List<string>();
-                foreach (var id in systems.Distinct())
-                {
-                    var name = "$s" + names.Count;
-                    names.Add(name);
-                    command.Parameters.AddWithValue(name, id);
-                }
-                filter = names.Count == 0 ? " AND 0" : $" AND SolarSystemId IN ({string.Join(',', names)})";
-            }
-            command.CommandText = """
-                SELECT SolarSystemId,BucketStartUtcTicks,KillmailCount,ConfirmedPvpKills,KnownIsk,
-                    KnownValues,UnknownValues,AttackerEntries,FirstUtcTicks,LastUtcTicks
-                FROM SystemActivity WHERE BucketStartUtcTicks >= $from AND BucketStartUtcTicks < $to
-                """ + filter + " ORDER BY SolarSystemId,BucketStartUtcTicks;";
-            var summaries = new Dictionary<long, ActivityMetrics>();
-            if (systems is not null) foreach (var id in systems) summaries[id] = ActivityMetrics.Zero;
-            var buckets = new List<ActivityBucket>();
-            var total = ActivityMetrics.Zero;
-            await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
-                while (await reader.ReadAsync(cancellationToken))
-                {
-                    var id = reader.GetInt64(0);
-                    var metrics = new ActivityMetrics(reader.GetInt64(2), reader.GetInt64(3), reader.GetInt64(2)-reader.GetInt64(3),
-                        decimal.Parse(reader.GetString(4), CultureInfo.InvariantCulture), reader.GetInt64(5), reader.GetInt64(6),
-                        reader.GetInt64(7), FromTicks(reader.GetInt64(8)), FromTicks(reader.GetInt64(9)));
-                    summaries[id] = Add(summaries.GetValueOrDefault(id, ActivityMetrics.Zero), metrics);
-                    total = Add(total, metrics);
-                    if (includeBuckets) buckets.Add(new(id, FromTicks(reader.GetInt64(1)), metrics));
-                }
-            command.CommandText = """
-                SELECT SolarSystemId,VictimShipTypeId,SUM(LossCount) FROM SystemActivity
-                JOIN ShipLossActivity USING(SolarSystemId,BucketStartUtcTicks)
-                WHERE BucketStartUtcTicks >= $from AND BucketStartUtcTicks < $to
-                """ + filter + " GROUP BY SolarSystemId,VictimShipTypeId;";
-            var ships = new List<ShipLossActivity>();
-            await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
-                while (await reader.ReadAsync(cancellationToken)) ships.Add(new(reader.GetInt64(0), reader.GetInt32(1), reader.GetInt64(2)));
-            var coverage = await ReadCoverageAsync(connection, transaction, effective, cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-            return new(range, effective, summaries.Select(p => new SystemActivity(p.Key, p.Value)).ToArray(), buckets, ships, total, coverage);
-        }
-        finally { _gate.Release(); }
-    }
-
-    public async Task<RankedActivityResult> GetTopSystemsAsync(ActivityRange range, ActivityRanking ranking,
-        int limit, CancellationToken cancellationToken = default)
-    {
-        if (limit is < 1 or > 1000) throw new ArgumentOutOfRangeException(nameof(limit));
-        var result = await GetActivityAsync(range, cancellationToken: cancellationToken);
-        var ranked = (ranking == ActivityRanking.KillmailCount
-            ? result.Systems.OrderByDescending(s => s.Metrics.KillmailCount)
-            : result.Systems.OrderByDescending(s => s.Metrics.KnownIskDestroyed))
-            .ThenBy(s => s.SolarSystemId).Take(limit).ToArray();
-        return new(range, result.EffectiveRange, ranked, result.Coverage);
-    }
-
     private static ActivityMetrics Add(ActivityMetrics a, ActivityMetrics b) => new(
         checked(a.KillmailCount+b.KillmailCount), checked(a.ConfirmedPvpKills+b.ConfirmedPvpKills), checked(a.OtherKills+b.OtherKills),
         AddExact(a.KnownIskDestroyed,b.KnownIskDestroyed), a.KnownValueCount+b.KnownValueCount,
@@ -234,16 +160,28 @@ public sealed partial class SqliteIntelligenceHistoryRepository
     // Reject that case as well as overflow, so neither persisted nor returned money is rounded.
     private static decimal AddExact(decimal left, decimal right)
     {
+        if (left == 0) return right;
+        if (right == 0) return left;
+        var sum = checked(left + right);
+        Span<int> bits = stackalloc int[4];
+        decimal.GetBits(left, bits);
+        var leftScale = (bits[3] >> 16) & 255;
+        decimal.GetBits(right, bits);
+        var rightScale = (bits[3] >> 16) & 255;
+        decimal.GetBits(sum, bits);
+        // Addition is exact if the result retained both operands' scale. Only the
+        // rare scale-reduction case needs the arbitrary-precision comparison.
+        if (((bits[3] >> 16) & 255) >= Math.Max(leftScale, rightScale)) return sum;
         static (BigInteger Units, int Scale) Parts(decimal value)
         {
-            var bits = decimal.GetBits(value);
+            Span<int> bits = stackalloc int[4];
+            decimal.GetBits(value, bits);
             var units = (BigInteger)(uint)bits[0] | ((BigInteger)(uint)bits[1] << 32) | ((BigInteger)(uint)bits[2] << 64);
             return ((bits[3] & int.MinValue) != 0 ? -units : units, (bits[3] >> 16) & 255);
         }
         var a = Parts(left); var b = Parts(right);
         var scale = Math.Max(a.Scale, b.Scale);
         var exact = a.Units * BigInteger.Pow(10, scale-a.Scale) + b.Units * BigInteger.Pow(10, scale-b.Scale);
-        var sum = checked(left+right);
         var actual = Parts(sum);
         var compareScale = Math.Max(scale, actual.Scale);
         if (exact * BigInteger.Pow(10, compareScale-scale) != actual.Units * BigInteger.Pow(10, compareScale-actual.Scale))

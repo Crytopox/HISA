@@ -16,6 +16,10 @@ public sealed partial class SqliteIntelligenceHistoryRepository : IIntelligenceH
 
     private readonly int _busyTimeoutMilliseconds;
     private readonly int _maxQueryLimit;
+    private readonly TimeSpan _activityQueryTimeout;
+    private readonly SemaphoreSlim _activityReaderSlots = new(MaxActivityReaders, MaxActivityReaders);
+    private readonly CancellationTokenSource _activityReaderShutdown = new();
+    private bool _activityReadsReady;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly SqliteIntelligenceDatabaseInitializer _initializer = new();
     private SqliteConnection? _connection;
@@ -24,7 +28,8 @@ public sealed partial class SqliteIntelligenceHistoryRepository : IIntelligenceH
     private SqliteCommand? _insertGap;
     private bool _disposed;
 
-    public SqliteIntelligenceHistoryRepository(string databasePath, TimeSpan busyTimeout, int maxQueryLimit = 1000)
+    public SqliteIntelligenceHistoryRepository(string databasePath, TimeSpan busyTimeout, int maxQueryLimit = 1000,
+        TimeSpan? activityQueryTimeout = null)
     {
         if (string.IsNullOrWhiteSpace(databasePath))
         {
@@ -39,6 +44,9 @@ public sealed partial class SqliteIntelligenceHistoryRepository : IIntelligenceH
         DatabasePath = Path.GetFullPath(databasePath);
         _busyTimeoutMilliseconds = (int)Math.Clamp(busyTimeout.TotalMilliseconds, 0, int.MaxValue);
         _maxQueryLimit = maxQueryLimit;
+        _activityQueryTimeout = activityQueryTimeout ?? TimeSpan.FromSeconds(10);
+        if (_activityQueryTimeout <= TimeSpan.Zero || _activityQueryTimeout > TimeSpan.FromMinutes(1))
+            throw new ArgumentOutOfRangeException(nameof(activityQueryTimeout));
     }
 
     public string DatabasePath { get; }
@@ -77,8 +85,9 @@ public sealed partial class SqliteIntelligenceHistoryRepository : IIntelligenceH
             try
             {
                 await _initializer.InitializeAsync(connection, _busyTimeoutMilliseconds, cancellationToken);
-                _connection = connection;
                 PrepareWrites(connection);
+                _connection = connection;
+                Volatile.Write(ref _activityReadsReady, true);
             }
             catch
             {
@@ -577,6 +586,10 @@ public sealed partial class SqliteIntelligenceHistoryRepository : IIntelligenceH
         }
 
         _disposed = true;
+        await _activityReaderShutdown.CancelAsync();
+        // Active readers own their connections. Cancel and drain them before completing disposal.
+        for (var reader = 0; reader < MaxActivityReaders; reader++) await _activityReaderSlots.WaitAsync();
+        _activityReaderSlots.Release(MaxActivityReaders);
         await _gate.WaitAsync();
         try
         {

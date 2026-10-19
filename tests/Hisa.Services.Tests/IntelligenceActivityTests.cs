@@ -10,7 +10,8 @@ using Xunit.Abstractions;
 
 namespace Hisa.Services.Tests;
 
-public sealed class IntelligenceActivityTests(ITestOutputHelper output)
+[Collection("Historical activity")]
+public sealed partial class IntelligenceActivityTests(ITestOutputHelper output)
 {
     private static readonly DateTimeOffset Epoch = new(2026, 6, 1, 12, 0, 0, TimeSpan.Zero);
     private static ActivityRange Range => new(Epoch, Epoch.AddHours(1));
@@ -21,8 +22,8 @@ public sealed class IntelligenceActivityTests(ITestOutputHelper output)
         Assert.Equal(Epoch, ActivityRange.BucketStart(Epoch.AddMinutes(4).AddSeconds(59)));
         Assert.Equal(Epoch.AddMinutes(5), ActivityRange.BucketStart(Epoch.AddMinutes(5)));
         Assert.Equal(Epoch, ActivityRange.BucketStart(Epoch.ToOffset(TimeSpan.FromHours(-6))));
-        var left = new ActivityRange(Epoch, Epoch.AddMinutes(7)).Effective();
-        var right = new ActivityRange(Epoch.AddMinutes(7), Epoch.AddMinutes(15)).Effective();
+        var left = new ActivityRange(Epoch, Epoch.AddMinutes(5)).Effective();
+        var right = new ActivityRange(Epoch.AddMinutes(5), Epoch.AddMinutes(15)).Effective();
         Assert.Equal(left.ToUtc, right.FromUtc);
         Assert.Equal(Epoch, ActivityRange.Last(TimeSpan.FromMinutes(15), Epoch.AddMinutes(2)).ToUtc);
         foreach (var window in ActivityRange.CommonWindows)
@@ -39,20 +40,23 @@ public sealed class IntelligenceActivityTests(ITestOutputHelper output)
             Observation(4, system: 2, value: 10), Observation(5, occurred: Epoch.AddMinutes(5), value: 1)]);
         var duplicate = await db.Repository.InsertBatchAsync([a]);
         Assert.Equal(1, duplicate.Duplicates);
-        var result = await db.Repository.GetActivityAsync(Range, [1, 2, 3], true);
+        var result = await db.Repository.GetActivityAsync(Range, [1, 2, 3]);
         Assert.Equal(5, result.Total.KillmailCount);
         Assert.Equal(1234567890134.4568m, result.Total.KnownIskDestroyed);
         Assert.Equal(4, result.Total.KnownValueCount);
         Assert.Equal(1, result.Total.UnknownValueCount);
         Assert.Equal(5, result.Total.ConfirmedPvpKills);
         Assert.Equal(0, result.Total.OtherKills);
-        Assert.Equal(3, result.Buckets.Count);
-        Assert.Equal(3, result.Buckets.Single(b => b.SolarSystemId == 1 && b.BucketStartUtc == Epoch).Metrics.KillmailCount);
+        Assert.Empty(result.Buckets);
+        var series = await db.Repository.GetTimeSeriesAsync(1, Range);
+        Assert.Equal(2, series.Buckets.Count);
+        Assert.Equal(3, series.Buckets.Single(b => b.BucketStartUtc == Epoch).Metrics.KillmailCount);
         Assert.Equal(0, result.Systems.Single(s => s.SolarSystemId == 3).Metrics.KillmailCount);
         Assert.Equal(ActivityCoverageState.Unknown, result.Coverage.State);
         Assert.Equal(1, (await db.Repository.GetTopSystemsAsync(Range, ActivityRanking.KillmailCount, 1)).Systems[0].SolarSystemId);
         Assert.Equal(1, (await db.Repository.GetTopSystemsAsync(Range, ActivityRanking.KnownIskDestroyed, 1)).Systems[0].SolarSystemId);
-        Assert.Equal(5, result.ShipLosses.Sum(s => s.LossCount));
+        Assert.Empty(result.ShipLosses);
+        Assert.Equal(5, (await db.Repository.GetShipLossesAsync(Range)).ShipLosses.Sum(s => s.LossCount));
 
         await db.Repository.InsertBatchAsync([
             Observation(6) with { Attackers = [new KillmailAttacker { CorporationId = 99 }] },
@@ -96,7 +100,7 @@ public sealed class IntelligenceActivityTests(ITestOutputHelper output)
         await using var db = await Database.Create();
         var kill = Observation(1) with { ReceivedAtUtc = Epoch.AddDays(2) };
         await db.Repository.InsertBatchAsync([kill]);
-        Assert.Equal(Epoch, (await db.Repository.GetActivityAsync(Range, includeBuckets: true)).Buckets[0].BucketStartUtc);
+        Assert.Equal(Epoch, (await db.Repository.GetTimeSeriesAsync(1, Range)).Buckets[0].BucketStartUtc);
         Assert.Equal(1, await db.Repository.DeleteOccurredBeforeAsync(Epoch.AddDays(1), 10));
         Assert.Equal(1, (await db.Repository.GetActivityAsync(Range)).Total.KillmailCount);
         var spool = new IntelligenceRecoverySpool(Path.Combine(db.Directory, "spool"), 10);
