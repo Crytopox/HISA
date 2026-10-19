@@ -5,7 +5,7 @@ using Microsoft.Data.Sqlite;
 
 namespace Hisa.Data.Database;
 
-public sealed class SqliteIntelligenceHistoryRepository : IIntelligenceHistoryRepository
+public sealed partial class SqliteIntelligenceHistoryRepository : IIntelligenceHistoryRepository, IIntelligenceActivityRepository
 {
     private const string KillmailColumns = """
         KillmailId, Source, SourceSequence, SolarSystemId,
@@ -119,6 +119,10 @@ public sealed class SqliteIntelligenceHistoryRepository : IIntelligenceHistoryRe
 
                 AfterKillmailInsert?.Invoke(observation.KillmailId);
                 await InsertParticipantsAsync(insertParticipant, observation, cancellationToken);
+                await AggregateAsync(connection, transaction, observation.KillmailId, observation.SolarSystemId,
+                    observation.OccurredAtUtc, observation.Victim.ShipTypeId, observation.TotalValue,
+                    observation.Attackers.Count, observation.Victim.CharacterId > 0 &&
+                    observation.Attackers.Any(a => a.CharacterId > 0 && a.CharacterId != observation.Victim.CharacterId), cancellationToken);
                 inserted++;
             }
 
@@ -183,7 +187,7 @@ public sealed class SqliteIntelligenceHistoryRepository : IIntelligenceHistoryRe
                 DELETE FROM Killmail
                 WHERE KillmailId IN (
                     SELECT KillmailId FROM Killmail
-                    WHERE OccurredAtUtcTicks < $cutoff
+                    WHERE OccurredAtUtcTicks < $cutoff AND ActivityAggregated = 1
                     ORDER BY OccurredAtUtcTicks ASC, KillmailId ASC
                     LIMIT $limit
                 );
@@ -214,7 +218,14 @@ public sealed class SqliteIntelligenceHistoryRepository : IIntelligenceHistoryRe
         try
         {
             var connection = RequireConnection();
+            using var transaction = connection.BeginTransaction();
+            using var checkpoint = ActivityCommand(connection, transaction, """
+                INSERT INTO CoverageCheckpoint(Name,Value,SessionId) VALUES('GapRetentionFloor',$floor,'')
+                ON CONFLICT(Name) DO UPDATE SET Value=MAX(Value,excluded.Value);
+                """, ("$floor", cutoffUtc.UtcTicks));
+            await checkpoint.ExecuteNonQueryAsync(cancellationToken);
             var deleteGaps = connection.CreateCommand();
+            deleteGaps.Transaction = transaction;
             deleteGaps.CommandText = """
                 DELETE FROM CollectionGap
                 WHERE Id IN (
@@ -226,7 +237,9 @@ public sealed class SqliteIntelligenceHistoryRepository : IIntelligenceHistoryRe
                 """;
             deleteGaps.Parameters.AddWithValue("$cutoff", ToTicks(cutoffUtc));
             deleteGaps.Parameters.AddWithValue("$limit", maxRows);
-            return await deleteGaps.ExecuteNonQueryAsync(cancellationToken);
+            var deleted = await deleteGaps.ExecuteNonQueryAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return deleted;
         }
         finally
         {

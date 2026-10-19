@@ -95,15 +95,14 @@ public sealed class IntelligenceRecoverySpool
 
         try
         {
-            if (!Directory.Exists(_directory))
-            {
-                Volatile.Write(ref _pending, 0);
-                Volatile.Write(ref _scanSucceeded, 1);
-                return true;
-            }
-
             var count = Directory.EnumerateFiles(_directory, "*.json").Take(_maxEntries + 1).Count();
             Volatile.Write(ref _pending, count);
+            Volatile.Write(ref _scanSucceeded, 1);
+            return true;
+        }
+        catch (DirectoryNotFoundException) when (MissingDirectoryHasAccessibleParent(_directory))
+        {
+            Volatile.Write(ref _pending, 0);
             Volatile.Write(ref _scanSucceeded, 1);
             return true;
         }
@@ -154,7 +153,7 @@ public sealed class IntelligenceRecoverySpool
             return new SpoolBatch { AccessFailed = true };
         }
 
-        if (max < 1 || !Directory.Exists(_directory))
+        if (max < 1)
         {
             return new SpoolBatch();
         }
@@ -164,6 +163,10 @@ public sealed class IntelligenceRecoverySpool
         try
         {
             files = Directory.EnumerateFiles(_directory, "*.json").Take(max + _abandoned.Count).ToArray();
+        }
+        catch (DirectoryNotFoundException) when (MissingDirectoryHasAccessibleParent(_directory))
+        {
+            return new SpoolBatch();
         }
         catch (Exception ex) when (IsFilesystem(ex))
         {
@@ -271,7 +274,7 @@ public sealed class IntelligenceRecoverySpool
             var document = JsonSerializer.Deserialize<SpoolDocument>(File.ReadAllText(path), _json);
             KillmailObservation? observation = null;
             string? error = "Spool record is structurally invalid.";
-            if (document is not null && document.TryToObservation(out observation, out error))
+            if (document is not null && document.KillmailId == killmailId && document.TryToObservation(out observation, out error))
             {
                 return new SpoolEntry(killmailId, observation, path, SpoolEntryStatus.Valid, null);
             }
@@ -302,6 +305,22 @@ public sealed class IntelligenceRecoverySpool
 
     private static bool IsFilesystem(Exception exception)
         => exception is IOException or UnauthorizedAccessException;
+
+    private static bool MissingDirectoryHasAccessibleParent(string directory)
+    {
+        // Directory.Exists suppresses access errors, and a missing child below a file also
+        // throws DirectoryNotFoundException. Verify an accessible directory ancestor.
+        var current = Path.GetFullPath(directory);
+        while (current is not null)
+        {
+            try { return (File.GetAttributes(current) & FileAttributes.Directory) != 0; }
+            catch (FileNotFoundException) { }
+            catch (DirectoryNotFoundException) { }
+            catch (Exception ex) when (IsFilesystem(ex)) { return false; }
+            current = Path.GetDirectoryName(current);
+        }
+        return false;
+    }
 
     private sealed class SpoolDocument
     {
@@ -379,6 +398,12 @@ public sealed class IntelligenceRecoverySpool
             if (Victim is null || Victim.ShipTypeId <= 0)
             {
                 error = "Victim ship is missing.";
+                return false;
+            }
+
+            if (Attackers is null || Attackers.Any(attacker => attacker is null))
+            {
+                error = "Attacker list is missing or contains null entries.";
                 return false;
             }
 

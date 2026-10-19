@@ -26,6 +26,8 @@ public sealed class IntelligencePersistenceOptions
     public TimeSpan WriteRetryMaxDelay { get; set; } = TimeSpan.FromSeconds(2);
 
     public TimeSpan RetentionPeriod { get; set; } = TimeSpan.FromHours(48);
+    public TimeSpan AggregateRetentionPeriod { get; set; } = TimeSpan.FromDays(30);
+    public TimeSpan CollectionHeartbeatMaxGap { get; set; } = TimeSpan.FromSeconds(90);
 
     public TimeSpan RetentionInterval { get; set; } = TimeSpan.FromMinutes(15);
 

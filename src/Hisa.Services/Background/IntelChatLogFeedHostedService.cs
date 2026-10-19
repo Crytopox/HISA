@@ -145,6 +145,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         _logger = logger;
         _observationFeed = observationFeed;
         _normalizationDiagnostics = new ZkillNormalizationDiagnostics(logger, coverageRecorder: coverageRecorder);
+        _activityCoverageRecorder = coverageRecorder;
     }
 
     internal ZkillNormalizationDiagnostics NormalizationDiagnostics => _normalizationDiagnostics;
@@ -361,6 +362,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             }
             catch (Exception ex)
             {
+                _activityCoverageRecorder?.CollectionInterrupted(DateTimeOffset.UtcNow);
                 _logger.LogWarning(ex, "zKill poll loop iteration failed; continuing.");
             }
 
@@ -372,6 +374,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
     {
         _enabled = await _settingsService.GetAsync<bool?>(IntelEnabledSettingsKey, cancellationToken) ?? true;
         _zkillEnabled = await _settingsService.GetAsync<bool?>(IntelZkillEnabledSettingsKey, cancellationToken) ?? true;
+        if (!_enabled || !_zkillEnabled) _activityCoverageRecorder?.CollectionInterrupted(DateTimeOffset.UtcNow);
         var zkillPollSeconds = Math.Clamp(await _settingsService.GetAsync<int?>(IntelZkillPollSecondsSettingsKey, cancellationToken) ?? 2, 2, 60);
         _zkillPollDelay = TimeSpan.FromSeconds(zkillPollSeconds);
         var include = await _settingsService.GetAsync<List<string>>(IntelIncludeChannelsSettingsKey, cancellationToken) ?? [];
@@ -1979,6 +1982,8 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         return null;
     }
 
+    private readonly IIntelligenceCoverageRecorder? _activityCoverageRecorder;
+
     private async Task InitializeZkillSequenceAsync(CancellationToken cancellationToken)
     {
         try
@@ -1992,10 +1997,12 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
 
             // Start from the next sequence to avoid historical backfill on startup.
             _nextZkillSequence = seq.Sequence.Value + 1;
+            _activityCoverageRecorder?.CollectionHeartbeat(DateTimeOffset.UtcNow);
             _nextZkillPollAfterUtc = DateTime.UtcNow;
         }
         catch (Exception ex)
         {
+            _activityCoverageRecorder?.CollectionInterrupted(DateTimeOffset.UtcNow);
             _logger.LogWarning(ex, "Failed to initialize zKillboard sequence.");
             _nextZkillPollAfterUtc = DateTime.UtcNow + _zkillPollDelay;
         }
@@ -2018,6 +2025,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             using var response = await client.GetAsync(uri, cancellationToken);
             if (response.StatusCode == HttpStatusCode.NotFound)
             {
+                _activityCoverageRecorder?.CollectionHeartbeat(DateTimeOffset.UtcNow);
                 _nextZkillSequence = sequence;
                 _nextZkillPollAfterUtc = DateTime.UtcNow + ZkillNotFoundDelay;
                 return;
@@ -2025,6 +2033,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
 
             if ((int)response.StatusCode == 429)
             {
+                _activityCoverageRecorder?.CollectionInterrupted(DateTimeOffset.UtcNow);
                 var retryAfter = response.Headers.RetryAfter?.Delta ?? TimeSpan.Zero;
                 _nextZkillSequence = sequence;
                 _nextZkillPollAfterUtc = DateTime.UtcNow + (retryAfter > ZkillRateLimitDelay ? retryAfter : ZkillRateLimitDelay);
@@ -2033,6 +2042,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
 
             if (!response.IsSuccessStatusCode)
             {
+                _activityCoverageRecorder?.CollectionInterrupted(DateTimeOffset.UtcNow);
                 _logger.LogDebug("zKillboard sequence {Sequence} returned {StatusCode}", sequence, (int)response.StatusCode);
                 _nextZkillSequence = sequence;
                 _nextZkillPollAfterUtc = DateTime.UtcNow + TimeSpan.FromSeconds(Math.Max(_zkillPollDelay.TotalSeconds, 10));
@@ -2043,6 +2053,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             {
                 await using var responseStream = await response.Content.ReadAsStreamAsync(cancellationToken);
                 using var document = await JsonDocument.ParseAsync(responseStream, cancellationToken: cancellationToken);
+                _activityCoverageRecorder?.CollectionHeartbeat(DateTimeOffset.UtcNow);
                 _malformedSequence = null;
                 _malformedAttempts = 0;
                 var receivedAtUtc = DateTimeOffset.UtcNow;
@@ -2050,6 +2061,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             }
             catch (JsonException)
             {
+                _activityCoverageRecorder?.CollectionInterrupted(DateTimeOffset.UtcNow);
                 if (ScheduleMalformedRetry(sequence))
                 {
                     _nextZkillSequence = sequence;

@@ -90,6 +90,8 @@ public static class ServiceCollectionExtensions
             return new SqliteIntelligenceHistoryRepository(path, options.BusyTimeout, options.MaxQueryLimit);
         });
         // Start persistence before the observation feed, and the feed before R2Z2 ingestion.
+        services.AddSingleton<IIntelligenceActivityRepository>(sp =>
+            (IIntelligenceActivityRepository)sp.GetRequiredService<IIntelligenceHistoryRepository>());
         // Shutdown then runs in reverse: ingestion stops, the feed drains, then persistence flushes.
         services.AddSingleton<IntelligencePersistenceHostedService>();
         services.AddSingleton<IIntelligenceCoverageRecorder>(sp => sp.GetRequiredService<IntelligencePersistenceHostedService>());

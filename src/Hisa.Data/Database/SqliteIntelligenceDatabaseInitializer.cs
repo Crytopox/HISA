@@ -11,7 +11,7 @@ namespace Hisa.Data.Database;
 /// </summary>
 public sealed class SqliteIntelligenceDatabaseInitializer
 {
-    public const int CurrentSchemaVersion = 2;
+    public const int CurrentSchemaVersion = 3;
 
     public async Task InitializeAsync(
         SqliteConnection connection,
@@ -130,6 +130,41 @@ public sealed class SqliteIntelligenceDatabaseInitializer
         if (fromVersion < 2)
         {
             await EnsureCoverageCheckpointSessionAsync(connection, cancellationToken);
+        }
+        if (fromVersion < 3)
+        {
+            // One transactional DDL step: a crash cannot leave a column without its schema version.
+            using var transaction = connection.BeginTransaction();
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                ALTER TABLE Killmail ADD COLUMN ActivityAggregated INTEGER NOT NULL DEFAULT 0;
+                CREATE INDEX IX_Killmail_ActivityPending ON Killmail(KillmailId) WHERE ActivityAggregated = 0;
+                CREATE TABLE SystemActivity (
+                    SolarSystemId INTEGER NOT NULL, BucketStartUtcTicks INTEGER NOT NULL,
+                    KillmailCount INTEGER NOT NULL, ConfirmedPvpKills INTEGER NOT NULL,
+                    KnownIsk TEXT NOT NULL, KnownValues INTEGER NOT NULL, UnknownValues INTEGER NOT NULL,
+                    AttackerEntries INTEGER NOT NULL, FirstUtcTicks INTEGER NOT NULL, LastUtcTicks INTEGER NOT NULL,
+                    PRIMARY KEY(SolarSystemId, BucketStartUtcTicks));
+                CREATE INDEX IX_SystemActivity_Time ON SystemActivity(BucketStartUtcTicks);
+                CREATE TABLE ShipLossActivity (
+                    SolarSystemId INTEGER NOT NULL, BucketStartUtcTicks INTEGER NOT NULL,
+                    VictimShipTypeId INTEGER NOT NULL, LossCount INTEGER NOT NULL,
+                    PRIMARY KEY(SolarSystemId, BucketStartUtcTicks, VictimShipTypeId),
+                    FOREIGN KEY(SolarSystemId, BucketStartUtcTicks)
+                        REFERENCES SystemActivity(SolarSystemId, BucketStartUtcTicks) ON DELETE CASCADE);
+                CREATE TABLE CollectionSession (
+                    SessionId TEXT NOT NULL PRIMARY KEY, StartUtcTicks INTEGER NOT NULL,
+                    LastHeartbeatUtcTicks INTEGER NOT NULL, EndUtcTicks INTEGER NULL, Interrupted INTEGER NOT NULL DEFAULT 0);
+                CREATE INDEX IX_CollectionSession_Time ON CollectionSession(LastHeartbeatUtcTicks);
+                CREATE TABLE ActivityDedup (
+                    KillmailId INTEGER NOT NULL PRIMARY KEY, BucketStartUtcTicks INTEGER NOT NULL);
+                CREATE INDEX IX_ActivityDedup_Time ON ActivityDedup(BucketStartUtcTicks);
+                INSERT INTO SchemaVersion(Id, Version) VALUES(1, 3)
+                    ON CONFLICT(Id) DO UPDATE SET Version = 3;
+                """;
+            await command.ExecuteNonQueryAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
         }
     }
 

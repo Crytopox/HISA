@@ -24,6 +24,15 @@ public sealed class IntelligencePersistenceHostedService : BackgroundService, II
     private DateTime _nextRetentionUtc;
     private DateTime _nextCoverageCheckpointUtc;
     private DateTime _nextSpoolRetryUtc = DateTime.MinValue;
+    private bool _catchUpPending = true;
+    private string? _collectionSession;
+    private DateTimeOffset _lastSourceHeartbeat;
+    private long _sourceHeartbeatTicks;
+    private long _sourceInterruptedTicks;
+    private long _processedInterruptedTicks;
+
+    public void CollectionHeartbeat(DateTimeOffset now) => Interlocked.Exchange(ref _sourceHeartbeatTicks, now.UtcTicks);
+    public void CollectionInterrupted(DateTimeOffset now) => Interlocked.Exchange(ref _sourceInterruptedTicks, now.UtcTicks);
 
     public IntelligencePersistenceHostedService(
         IIntelligenceHistoryRepository repository,
@@ -57,6 +66,8 @@ public sealed class IntelligencePersistenceHostedService : BackgroundService, II
             options.ShutdownFlushTimeout <= TimeSpan.Zero ||
             options.ShutdownGapReportTimeout <= TimeSpan.Zero ||
             options.RetentionPeriod <= TimeSpan.Zero ||
+            options.AggregateRetentionPeriod <= TimeSpan.Zero ||
+            options.CollectionHeartbeatMaxGap <= TimeSpan.Zero ||
             options.GapRetentionPeriod <= TimeSpan.Zero ||
             options.RetentionInterval <= TimeSpan.Zero ||
             options.SpoolRetryDelay <= TimeSpan.Zero ||
@@ -113,7 +124,7 @@ public sealed class IntelligencePersistenceHostedService : BackgroundService, II
 
     public override async Task StartAsync(CancellationToken cancellationToken)
     {
-        await _repository.InitializeAsync(cancellationToken).ConfigureAwait(false);
+        await Task.Run(() => _repository.InitializeAsync(cancellationToken), cancellationToken).ConfigureAwait(false);
         _spool.TryRefresh();
         if (Interlocked.Exchange(ref _subscribed, 1) == 0)
         {
@@ -171,6 +182,12 @@ public sealed class IntelligencePersistenceHostedService : BackgroundService, II
         finally
         {
             await ShutdownFlushAsync(observations, gaps).ConfigureAwait(false);
+            if (_collectionSession is not null && _repository is IIntelligenceActivityRepository activity)
+            {
+                using var timeout = new CancellationTokenSource(_options.ShutdownGapReportTimeout);
+                try { await activity.EndCollectionSessionAsync(_collectionSession, DateTimeOffset.UtcNow, timeout.Token).ConfigureAwait(false); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Could not mark collection shutdown; last heartbeat remains the evidence boundary."); }
+            }
         }
     }
 
@@ -472,6 +489,28 @@ public sealed class IntelligencePersistenceHostedService : BackgroundService, II
         CancellationToken cancellationToken,
         string? detail = null)
     {
+        // Persist before moving/abandoning the only durable retry evidence. Stable identity makes
+        // report -> crash -> replay idempotent even if the file cannot ever be moved.
+        try
+        {
+            var identity = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes(Path.GetFullPath(entry.Path))));
+            await _repository.RecordCoverageDeltaAsync("RecoveryUnusable:" + identity, "recovery-v1", 1,
+                new IntelligenceCollectionGap
+                {
+                    Kind = IntelligenceCollectionGapKind.RecoveryUnusable,
+                    Source = entry.Observation?.Source,
+                    KillmailId = entry.KillmailId > 0 ? entry.KillmailId : null,
+                    Detail = detail ?? entry.Detail ?? "Recovery spool entry could not be read."
+                }, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception ex)
+        {
+            _nextSpoolRetryUtc = DateTime.UtcNow + _options.SpoolRetryDelay;
+            _logger.LogWarning(ex, "Recovery gap report remains pending in {Path}.", entry.Path);
+            return true;
+        }
         var result = _spool.TryQuarantine(entry.Path);
         if (result == SpoolQuarantineResult.Retry)
         {
@@ -485,17 +524,6 @@ public sealed class IntelligencePersistenceHostedService : BackgroundService, II
             "Recovery spool entry {Path} is permanently unusable. Quarantine result: {Result}.",
             entry.Path,
             result);
-        await TryRecordGapsAsync(
-        [
-            new IntelligenceCollectionGap
-            {
-                Kind = IntelligenceCollectionGapKind.RecoveryUnusable,
-                RecordedAtUtc = DateTimeOffset.UtcNow,
-                Source = entry.Observation?.Source,
-                KillmailId = entry.KillmailId > 0 ? entry.KillmailId : null,
-                Detail = detail ?? entry.Detail ?? "Recovery spool entry could not be read."
-            }
-        ], cancellationToken).ConfigureAwait(false);
         return false;
     }
 
@@ -526,6 +554,12 @@ public sealed class IntelligencePersistenceHostedService : BackgroundService, II
         _nextRetentionUtc = DateTime.UtcNow + _options.RetentionInterval;
         try
         {
+            if (_repository is IIntelligenceActivityRepository activity)
+            {
+                for (var batch = 0; batch < _options.MaxRetentionBatchesPerCycle; batch++)
+                    if (await activity.DeleteActivityBeforeAsync(DateTimeOffset.UtcNow - _options.AggregateRetentionPeriod,
+                        Math.Min(1000, _options.RetentionBatchSize), cancellationToken).ConfigureAwait(false) < Math.Min(1000, _options.RetentionBatchSize)) break;
+            }
             var cutoff = DateTimeOffset.UtcNow - _options.RetentionPeriod;
             var deleted = 0;
             for (var batch = 0; batch < _options.MaxRetentionBatchesPerCycle; batch++)
@@ -685,8 +719,43 @@ public sealed class IntelligencePersistenceHostedService : BackgroundService, II
 
     private async Task CheckpointFeedAsync(CancellationToken cancellationToken)
     {
+        if (_repository is IIntelligenceActivityRepository activity)
+        {
+            try
+            {
+                if (_catchUpPending)
+                    _catchUpPending = await activity.CatchUpActivityAsync(Math.Min(1000, _options.BatchSize), cancellationToken).ConfigureAwait(false)
+                        == Math.Min(1000, _options.BatchSize);
+                var ticks = Interlocked.Read(ref _sourceHeartbeatTicks);
+                var interrupted = Interlocked.Read(ref _sourceInterruptedTicks);
+                if (interrupted > _processedInterruptedTicks)
+                {
+                    if (_collectionSession is not null)
+                        await activity.EndCollectionSessionAsync(_collectionSession, _lastSourceHeartbeat, cancellationToken).ConfigureAwait(false);
+                    _collectionSession = null;
+                    _processedInterruptedTicks = interrupted;
+                }
+                if (ticks > _lastSourceHeartbeat.UtcTicks && ticks > interrupted)
+                {
+                    var now = new DateTimeOffset(ticks, TimeSpan.Zero);
+                    if (_collectionSession is null || now - _lastSourceHeartbeat > _options.CollectionHeartbeatMaxGap)
+                    {
+                        if (_collectionSession is not null)
+                            await activity.EndCollectionSessionAsync(_collectionSession, _lastSourceHeartbeat, cancellationToken).ConfigureAwait(false);
+                        var session = Guid.NewGuid().ToString("N");
+                        await activity.StartCollectionSessionAsync(session, now, cancellationToken).ConfigureAwait(false);
+                        _collectionSession = session;
+                    }
+                    await activity.HeartbeatCollectionAsync(_collectionSession, now, cancellationToken).ConfigureAwait(false);
+                    _lastSourceHeartbeat = now;
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch (Exception ex) { _logger.LogWarning(ex, "Activity maintenance will retry."); }
+        }
         if (_feed is not IntelligenceObservationFeed feed)
         {
+            _nextCoverageCheckpointUtc = DateTime.UtcNow + _options.CoverageCheckpointInterval;
             return;
         }
 
@@ -827,9 +896,10 @@ public sealed class IntelligencePersistenceHostedService : BackgroundService, II
     {
         var now = DateTime.UtcNow;
         return _channel.Reader.Count > 0
+            || _catchUpPending && _repository is IIntelligenceActivityRepository
             || now >= _nextRetentionUtc
             || now >= _nextCoverageCheckpointUtc
-            || (_spool.ActionableCount > 0 && now >= _nextSpoolRetryUtc)
+            || ((_spool.ActionableCount > 0 || !_spool.ScanSucceeded) && now >= _nextSpoolRetryUtc)
             || _diagnostics.HasPendingSummaries;
     }
 
@@ -841,7 +911,7 @@ public sealed class IntelligencePersistenceHostedService : BackgroundService, II
             next = _nextCoverageCheckpointUtc;
         }
 
-        if (_spool.ActionableCount > 0 && _nextSpoolRetryUtc < next)
+        if ((_spool.ActionableCount > 0 || !_spool.ScanSucceeded) && _nextSpoolRetryUtc < next)
         {
             next = _nextSpoolRetryUtc;
         }

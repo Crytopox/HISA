@@ -279,7 +279,7 @@ public sealed class IntelligencePersistenceReliabilityTests
 
         await database.Repository.InitializeAsync();
         var health = await database.Repository.GetHealthAsync();
-        Assert.Equal(2, health.SchemaVersion);
+        Assert.Equal(SqliteIntelligenceDatabaseInitializer.CurrentSchemaVersion, health.SchemaVersion);
 
         var gap = new IntelligenceCollectionGap
         {
@@ -369,6 +369,46 @@ public sealed class IntelligencePersistenceReliabilityTests
         Assert.Contains(durable, gap => gap.Kind == IntelligenceCollectionGapKind.RecoveryUnusable && gap.KillmailId == 3);
         Assert.False(File.Exists(Path.Combine(database.SpoolDirectory, "3.json")));
         Assert.True(Directory.EnumerateFiles(Path.Combine(database.SpoolDirectory, "quarantine"), "3.json*").Any());
+    }
+
+    [Fact]
+    public async Task UnusableSpool_RetainsGapEvidenceDuringDatabaseOutage_AndReportsOnceAcrossRestarts()
+    {
+        await using var database = new TempDatabase();
+        await database.Repository.InitializeAsync();
+        Directory.CreateDirectory(database.SpoolDirectory);
+        var path = Path.Combine(database.SpoolDirectory, "123.json");
+        await File.WriteAllTextAsync(path, "{corrupt");
+        // Make quarantine permanently unavailable using an actual filesystem failure.
+        await File.WriteAllTextAsync(Path.Combine(database.SpoolDirectory, "quarantine"), "blocked");
+        var feed = new IntelligenceObservationFeed(NullLogger<IntelligenceObservationFeed>.Instance);
+        var options = new IntelligencePersistenceOptions
+        {
+            RecoverySpoolPath = database.SpoolDirectory,
+            SpoolRetryDelay = TimeSpan.FromMilliseconds(10),
+            MaxBatchWait = TimeSpan.FromMilliseconds(10),
+            CoverageCheckpointInterval = TimeSpan.FromMilliseconds(20)
+        };
+        var unavailable = CreateService(new UnavailableHistoryRepository(database.Repository.DatabasePath), feed, options);
+        await unavailable.StartAsync(CancellationToken.None);
+        await Task.Delay(100);
+        await unavailable.StopAsync(CancellationToken.None);
+        Assert.True(File.Exists(path));
+        Assert.Equal(1, unavailable.RecoverySpool.ActionableCount);
+        Assert.Empty(await database.Repository.GetCollectionGapsAsync(10));
+
+        for (var restart = 0; restart < 2; restart++)
+        {
+            var service = CreateService(database.Repository, feed, options);
+            await service.StartAsync(CancellationToken.None);
+            try
+            {
+                Assert.True(await WaitForAsync(() => service.RecoverySpool.ActionableCount == 0, TimeSpan.FromSeconds(3)));
+            }
+            finally { await service.StopAsync(CancellationToken.None); }
+            Assert.True(File.Exists(path));
+            Assert.Single(await database.Repository.GetCollectionGapsAsync(10), gap => gap.Kind == IntelligenceCollectionGapKind.RecoveryUnusable);
+        }
     }
 
     [Fact]
