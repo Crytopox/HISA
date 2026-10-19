@@ -7,6 +7,7 @@ namespace Hisa.Services.Intelligence;
 public sealed class IntelligenceObservationFeed : IIntelligenceObservationFeed
 {
     private readonly ILogger<IntelligenceObservationFeed> _logger;
+    private int _pendingDeliveries;
 
     public IntelligenceObservationFeed(ILogger<IntelligenceObservationFeed> logger)
     {
@@ -23,19 +24,68 @@ public sealed class IntelligenceObservationFeed : IIntelligenceObservationFeed
             return;
         }
 
-        foreach (var subscriber in handler.GetInvocationList())
+        var subscribers = handler.GetInvocationList();
+        Interlocked.Increment(ref _pendingDeliveries);
+        try
         {
-            try
+            ThreadPool.QueueUserWorkItem(static state =>
             {
-                ((EventHandler<KillmailObservation>)subscriber).Invoke(this, observation);
+                var delivery = (Delivery)state!;
+                delivery.Feed.Deliver(delivery.Subscribers, delivery.Observation);
+            }, new Delivery(this, subscribers, observation));
+        }
+        catch
+        {
+            Interlocked.Decrement(ref _pendingDeliveries);
+            throw;
+        }
+    }
+
+    internal bool WaitForIdle(TimeSpan timeout)
+    {
+        var until = Environment.TickCount64 + (long)timeout.TotalMilliseconds;
+        while (Volatile.Read(ref _pendingDeliveries) > 0)
+        {
+            if (Environment.TickCount64 >= until)
+            {
+                return false;
             }
-            catch (Exception ex)
+
+            Thread.Sleep(1);
+        }
+
+        return true;
+    }
+
+    private void Deliver(Delegate[] subscribers, KillmailObservation observation)
+    {
+        try
+        {
+            foreach (var subscriber in subscribers)
             {
-                _logger.LogWarning(
-                    ex,
-                    "Intelligence observation subscriber failed for killmail {KillmailId}.",
-                    observation.KillmailId);
+                try
+                {
+                    ((EventHandler<KillmailObservation>)subscriber).Invoke(this, observation);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "Intelligence observation subscriber failed for killmail {KillmailId}.",
+                        observation.KillmailId);
+                }
             }
         }
+        finally
+        {
+            Interlocked.Decrement(ref _pendingDeliveries);
+        }
+    }
+
+    private sealed class Delivery(IntelligenceObservationFeed feed, Delegate[] subscribers, KillmailObservation observation)
+    {
+        public IntelligenceObservationFeed Feed { get; } = feed;
+        public Delegate[] Subscribers { get; } = subscribers;
+        public KillmailObservation Observation { get; } = observation;
     }
 }

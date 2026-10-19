@@ -6,6 +6,7 @@ public sealed record KillmailVictim
     public int? CorporationId { get; init; }
     public int? AllianceId { get; init; }
     public required int ShipTypeId { get; init; }
+    public long? DamageTaken { get; init; }
     public string? CharacterName { get; init; }
 }
 
@@ -15,6 +16,7 @@ public sealed record KillmailAttacker
     public int? CorporationId { get; init; }
     public int? AllianceId { get; init; }
     public int? ShipTypeId { get; init; }
+    public int? WeaponTypeId { get; init; }
     public bool? FinalBlow { get; init; }
     public long? DamageDone { get; init; }
     public string? CharacterName { get; init; }

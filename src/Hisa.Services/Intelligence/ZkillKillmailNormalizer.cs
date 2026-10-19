@@ -10,21 +10,24 @@ public static class ZkillKillmailNormalizer
         string json,
         long? sourceSequence,
         DateTimeOffset receivedAtUtc,
-        out KillmailObservation? observation)
+        out KillmailObservation? observation,
+        out KillmailNormalizationRejection? rejection)
     {
         observation = null;
         if (string.IsNullOrWhiteSpace(json))
         {
+            rejection = KillmailNormalizationRejection.MalformedJson;
             return false;
         }
 
         try
         {
             using var document = JsonDocument.Parse(json);
-            return TryNormalize(document.RootElement, sourceSequence, receivedAtUtc, out observation);
+            return TryNormalize(document.RootElement, sourceSequence, receivedAtUtc, out observation, out rejection);
         }
         catch (JsonException)
         {
+            rejection = KillmailNormalizationRejection.MalformedJson;
             return false;
         }
     }
@@ -33,11 +36,14 @@ public static class ZkillKillmailNormalizer
         JsonElement root,
         long? sourceSequence,
         DateTimeOffset receivedAtUtc,
-        out KillmailObservation? observation)
+        out KillmailObservation? observation,
+        out KillmailNormalizationRejection? rejection)
     {
         observation = null;
+        rejection = null;
         if (root.ValueKind != JsonValueKind.Object)
         {
+            rejection = KillmailNormalizationRejection.InvalidEnvelope;
             return false;
         }
 
@@ -46,25 +52,41 @@ public static class ZkillKillmailNormalizer
             : (root.TryGetProperty("killmail", out var nestedKillmail) ? nestedKillmail : root);
         if (killmail.ValueKind != JsonValueKind.Object)
         {
+            rejection = KillmailNormalizationRejection.InvalidEnvelope;
             return false;
         }
 
         var killmailId = ReadInt64(root, "killmail_id") ?? ReadInt64(killmail, "killmail_id");
-        var solarSystemId = ReadInt64(killmail, "solar_system_id");
-        var occurredAtUtc = ReadDateTimeOffset(killmail, "killmail_time");
-        if (killmailId is null or <= 0 || solarSystemId is null or <= 0 || occurredAtUtc is null)
+        if (killmailId is null or <= 0)
         {
+            rejection = KillmailNormalizationRejection.MissingKillmailId;
+            return false;
+        }
+
+        var solarSystemId = ReadInt64(killmail, "solar_system_id");
+        if (solarSystemId is null or <= 0)
+        {
+            rejection = KillmailNormalizationRejection.MissingSolarSystem;
+            return false;
+        }
+
+        var occurredAtUtc = ReadDateTimeOffset(killmail, "killmail_time");
+        if (occurredAtUtc is null)
+        {
+            rejection = KillmailNormalizationRejection.MissingTimestamp;
             return false;
         }
 
         if (!killmail.TryGetProperty("victim", out var victimNode) || victimNode.ValueKind != JsonValueKind.Object)
         {
+            rejection = KillmailNormalizationRejection.MissingVictim;
             return false;
         }
 
         var victimShipTypeId = ReadInt32(victimNode, "ship_type_id");
         if (victimShipTypeId is null or <= 0)
         {
+            rejection = KillmailNormalizationRejection.MissingVictimShip;
             return false;
         }
 
@@ -84,6 +106,7 @@ public static class ZkillKillmailNormalizer
                 CorporationId = ReadInt32(victimNode, "corporation_id"),
                 AllianceId = ReadInt32(victimNode, "alliance_id"),
                 ShipTypeId = victimShipTypeId.Value,
+                DamageTaken = ReadInt64(victimNode, "damage_taken"),
                 CharacterName = ReadOptionalName(victimNode, "character_name")
             },
             Attackers = attackers,
@@ -114,6 +137,7 @@ public static class ZkillKillmailNormalizer
                 CorporationId = ReadInt32(attacker, "corporation_id"),
                 AllianceId = ReadInt32(attacker, "alliance_id"),
                 ShipTypeId = ReadInt32(attacker, "ship_type_id"),
+                WeaponTypeId = ReadInt32(attacker, "weapon_type_id"),
                 FinalBlow = ReadBoolean(attacker, "final_blow"),
                 DamageDone = ReadInt64(attacker, "damage_done"),
                 CharacterName = ReadOptionalName(attacker, "character_name")

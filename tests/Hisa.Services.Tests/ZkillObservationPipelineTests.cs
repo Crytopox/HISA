@@ -25,8 +25,9 @@ public class ZkillObservationPipelineTests
         harness.Service.SnapshotUpdated += (_, _) => snapshotUpdates++;
 
         Process(harness, CreatePayload(1001, utcNow.AddMinutes(-2), 2500m), sequence: 8, utcNow);
+        WaitForDelivery(harness);
 
-        var observation = Assert.Single(harness.Observations);
+        var observation = Assert.Single(harness.CopyObservations());
         Assert.Equal(8, observation.SourceSequence);
         Assert.Equal(utcNow.AddMinutes(-2), observation.OccurredAtUtc);
         Assert.Equal(2500m, observation.TotalValue);
@@ -72,8 +73,9 @@ public class ZkillObservationPipelineTests
         harness.Service.SnapshotUpdated += (_, _) => snapshotUpdates++;
 
         Process(harness, CreatePayload(1002, utcNow.AddMinutes(-ageMinutes), null), sequence: 9, utcNow);
+        WaitForDelivery(harness);
 
-        var observation = Assert.Single(harness.Observations);
+        var observation = Assert.Single(harness.CopyObservations());
         Assert.Equal(1002, observation.KillmailId);
         Assert.Null(observation.TotalValue);
         Assert.Equal(0, reports);
@@ -91,8 +93,9 @@ public class ZkillObservationPipelineTests
         var liveMessage = Assert.Single(harness.Reports).MessageText;
 
         Process(harness, CreatePayload(1002, utcNow.AddHours(-6), 99m), sequence: 2, utcNow);
+        WaitForDelivery(harness);
 
-        Assert.Equal(2, harness.Observations.Count);
+        Assert.Equal(2, harness.CopyObservations().Length);
         Assert.Single(harness.Reports);
         Assert.Equal(liveMessage, harness.Service.Snapshot[JitaSystemId].LastMessageText);
         Assert.Equal([IntelAlertType.Fight], harness.Service.Snapshot[JitaSystemId].Alerts);
@@ -106,8 +109,9 @@ public class ZkillObservationPipelineTests
         var json = CreatePayload(1003, utcNow.AddMinutes(-1), 10m).Replace("30000142", "30009999", StringComparison.Ordinal);
 
         Process(harness, json, sequence: 3, utcNow);
+        WaitForDelivery(harness);
 
-        Assert.Equal(30009999, Assert.Single(harness.Observations).SolarSystemId);
+        Assert.Equal(30009999, Assert.Single(harness.CopyObservations()).SolarSystemId);
         Assert.Empty(harness.Reports);
         Assert.Empty(harness.Service.Snapshot);
     }
@@ -120,8 +124,9 @@ public class ZkillObservationPipelineTests
 
         Process(harness, CreatePayload(1004, utcNow.AddMinutes(-5), 10m), sequence: 4, utcNow);
         Process(harness, CreatePayload(1005, utcNow.AddMinutes(-5).AddTicks(-1), 10m), sequence: 5, utcNow);
+        WaitForDelivery(harness);
 
-        Assert.Equal([1004L, 1005L], harness.Observations.Select(x => x.KillmailId));
+        Assert.Equal([1004L, 1005L], harness.CopyObservations().Select(x => x.KillmailId).OrderBy(x => x));
         Assert.Equal(1004, Assert.Single(harness.Reports).Killmail!.KillmailId);
     }
 
@@ -134,9 +139,10 @@ public class ZkillObservationPipelineTests
 
         Process(harness, CreatePayload(1006, utcNow.AddMinutes(-1), 10m), sequence: 6, utcNow);
 
-        Assert.Equal(1006, Assert.Single(harness.Observations).KillmailId);
         Assert.Equal(1006, Assert.Single(harness.Reports).Killmail!.KillmailId);
         Assert.True(harness.Service.Snapshot.ContainsKey(JitaSystemId));
+        WaitForDelivery(harness);
+        Assert.Equal(1006, Assert.Single(harness.CopyObservations()).KillmailId);
     }
 
     [Fact]
@@ -153,6 +159,45 @@ public class ZkillObservationPipelineTests
     }
 
     [Fact]
+    public void SlowObservationSubscriber_DoesNotDelayLiveReport()
+    {
+        var utcNow = new DateTimeOffset(2026, 10, 18, 12, 5, 0, TimeSpan.Zero);
+        var harness = CreateHarness();
+        using var started = new ManualResetEventSlim(false);
+        using var release = new ManualResetEventSlim(false);
+        harness.Feed.ObservationReceived += (_, _) =>
+        {
+            started.Set();
+            release.Wait(TimeSpan.FromSeconds(5));
+        };
+
+        var startedAt = Environment.TickCount64;
+        Process(harness, CreatePayload(1008, utcNow.AddMinutes(-1), 10m), sequence: 8, utcNow);
+        var elapsed = Environment.TickCount64 - startedAt;
+
+        Assert.Equal(1008, Assert.Single(harness.Reports).Killmail!.KillmailId);
+        Assert.True(harness.Service.Snapshot.ContainsKey(JitaSystemId));
+        Assert.True(elapsed < 500);
+        Assert.True(started.Wait(TimeSpan.FromSeconds(2)));
+        release.Set();
+        WaitForDelivery(harness);
+    }
+
+    [Fact]
+    public void RejectedPayload_IncrementsNormalizationCounter()
+    {
+        var utcNow = new DateTimeOffset(2026, 10, 18, 12, 5, 0, TimeSpan.Zero);
+        var harness = CreateHarness();
+
+        Process(harness, "{}", sequence: 15, utcNow);
+        WaitForDelivery(harness);
+
+        Assert.Empty(harness.CopyObservations());
+        Assert.Empty(harness.Reports);
+        Assert.Equal(1, harness.Service.NormalizationDiagnostics.RejectionCount(KillmailNormalizationRejection.MissingKillmailId));
+    }
+
+    [Fact]
     public void Publish_IsolatesSubscriberFailures()
     {
         var feed = new IntelligenceObservationFeed(NullLogger<IntelligenceObservationFeed>.Instance);
@@ -161,7 +206,9 @@ public class ZkillObservationPipelineTests
         feed.ObservationReceived += (_, observation) => received.Add(observation.KillmailId);
 
         feed.Publish(CreateObservation(42));
+        Assert.True(feed.WaitForIdle(TimeSpan.FromSeconds(2)));
         feed.Publish(CreateObservation(43));
+        Assert.True(feed.WaitForIdle(TimeSpan.FromSeconds(2)));
 
         Assert.Equal([42L, 43L], received);
     }
@@ -173,8 +220,9 @@ public class ZkillObservationPipelineTests
         var harness = CreateHarness();
 
         Process(harness, "{}", sequence: 1, utcNow);
+        WaitForDelivery(harness);
 
-        Assert.Empty(harness.Observations);
+        Assert.Empty(harness.CopyObservations());
         Assert.Empty(harness.Reports);
         Assert.Empty(harness.Service.Snapshot);
     }
@@ -206,6 +254,11 @@ public class ZkillObservationPipelineTests
         Assert.Equal(10L, GetField<long>(service, "_nextZkillSequence"));
     }
 
+    private static void WaitForDelivery(TestHarness harness)
+    {
+        Assert.True(harness.Feed.WaitForIdle(TimeSpan.FromSeconds(2)));
+    }
+
     private static void Process(TestHarness harness, string json, long sequence, DateTimeOffset utcNow)
     {
         using var document = JsonDocument.Parse(json);
@@ -217,7 +270,7 @@ public class ZkillObservationPipelineTests
         var feed = new IntelligenceObservationFeed(NullLogger<IntelligenceObservationFeed>.Instance);
         var service = CreateService(feed);
         var harness = new TestHarness(service, feed);
-        feed.ObservationReceived += (_, observation) => harness.Observations.Add(observation);
+        feed.ObservationReceived += (_, observation) => harness.AddObservation(observation);
         service.ReportReceived += (_, report) => harness.Reports.Add(report);
         return harness;
     }
@@ -331,8 +384,25 @@ public class ZkillObservationPipelineTests
     {
         public IntelChatLogFeedHostedService Service { get; } = service;
         public IntelligenceObservationFeed Feed { get; } = feed;
-        public List<KillmailObservation> Observations { get; } = [];
         public List<IntelChatReport> Reports { get; } = [];
+        private readonly object _observationsGate = new();
+        private readonly List<KillmailObservation> _observations = [];
+
+        public void AddObservation(KillmailObservation observation)
+        {
+            lock (_observationsGate)
+            {
+                _observations.Add(observation);
+            }
+        }
+
+        public KillmailObservation[] CopyObservations()
+        {
+            lock (_observationsGate)
+            {
+                return _observations.ToArray();
+            }
+        }
     }
 
     private sealed class NoopSettingsService : ISettingsService

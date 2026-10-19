@@ -38,6 +38,7 @@ public class ZkillKillmailNormalizerTests
         Assert.Equal(8001, normalized.Victim.CorporationId);
         Assert.Equal(7001, normalized.Victim.AllianceId);
         Assert.Equal(670, normalized.Victim.ShipTypeId);
+        Assert.Equal(900, normalized.Victim.DamageTaken);
         Assert.Equal("Victim Pilot", normalized.Victim.CharacterName);
 
         Assert.Equal(2, normalized.Attackers.Count);
@@ -45,6 +46,7 @@ public class ZkillKillmailNormalizerTests
         Assert.Equal(8002, normalized.Attackers[0].CorporationId);
         Assert.Equal(7002, normalized.Attackers[0].AllianceId);
         Assert.Equal(587, normalized.Attackers[0].ShipTypeId);
+        Assert.Equal(2456, normalized.Attackers[0].WeaponTypeId);
         Assert.True(normalized.Attackers[0].FinalBlow);
         Assert.Equal(120, normalized.Attackers[0].DamageDone);
         Assert.Equal("Attacker Pilot", normalized.Attackers[0].CharacterName);
@@ -53,6 +55,7 @@ public class ZkillKillmailNormalizerTests
         Assert.Null(normalized.Attackers[1].CharacterName);
         Assert.Equal(1000125, normalized.Attackers[1].CorporationId);
         Assert.Equal(3514, normalized.Attackers[1].ShipTypeId);
+        Assert.Equal(2486, normalized.Attackers[1].WeaponTypeId);
         Assert.False(normalized.Attackers[1].FinalBlow);
         Assert.Equal(40, normalized.Attackers[1].DamageDone);
     }
@@ -78,11 +81,13 @@ public class ZkillKillmailNormalizerTests
         Assert.Null(normalized.Victim.CorporationId);
         Assert.Null(normalized.Victim.AllianceId);
         Assert.Null(normalized.Victim.CharacterName);
+        Assert.Null(normalized.Victim.DamageTaken);
         Assert.Null(normalized.Attackers[0].CharacterId);
         Assert.Null(normalized.Attackers[0].CorporationId);
         Assert.Null(normalized.Attackers[0].AllianceId);
         Assert.Null(normalized.Attackers[0].FinalBlow);
         Assert.Null(normalized.Attackers[0].CharacterName);
+        Assert.Null(normalized.Attackers[0].WeaponTypeId);
         Assert.Equal(587, normalized.Attackers[0].ShipTypeId);
     }
 
@@ -136,24 +141,45 @@ public class ZkillKillmailNormalizerTests
         Assert.Equal(received.ToUniversalTime(), normalized.ReceivedAtUtc);
     }
 
-    [Theory]
-    [InlineData("")]
-    [InlineData("{")]
-    [InlineData("null")]
-    [InlineData("[]")]
-    [InlineData("{}")]
-    [InlineData("""{"esi":[]}""")]
-    [InlineData("""{"killmail_id":0,"killmail_time":"2026-10-18T12:00:00Z","solar_system_id":30000142,"victim":{"ship_type_id":670}}""")]
-    [InlineData("""{"killmail_id":1001,"solar_system_id":30000142,"victim":{"ship_type_id":670}}""")]
-    [InlineData("""{"killmail_id":1001,"killmail_time":"2026-10-18T12:00:00Z","victim":{"ship_type_id":670}}""")]
-    [InlineData("""{"killmail_id":1001,"killmail_time":"2026-10-18T12:00:00Z","solar_system_id":30000142}""")]
-    [InlineData("""{"killmail_id":1001,"killmail_time":"2026-10-18T12:00:00Z","solar_system_id":30000142,"victim":{}}""")]
-    public void TryNormalize_MalformedOrIncompletePayload_ReturnsFalse(string json)
+    [Fact]
+    public void TryNormalize_ZeroCombatValues_ArePreserved()
     {
-        var normalized = ZkillKillmailNormalizer.TryNormalize(json, 1, ReceivedAtUtc, out var observation);
+        const string json = """
+            {
+              "killmail_id": 1001,
+              "killmail_time": "2026-10-18T12:00:00Z",
+              "solar_system_id": 30000142,
+              "victim": { "ship_type_id": 670, "damage_taken": 0 },
+              "attackers": [ { "weapon_type_id": 0, "damage_done": 0 } ]
+            }
+            """;
+
+        var normalized = Normalize(json);
+
+        Assert.Equal(0, normalized.Victim.DamageTaken);
+        Assert.Equal(0, normalized.Attackers[0].WeaponTypeId);
+        Assert.Equal(0, normalized.Attackers[0].DamageDone);
+    }
+
+    [Theory]
+    [InlineData("", KillmailNormalizationRejection.MalformedJson)]
+    [InlineData("{", KillmailNormalizationRejection.MalformedJson)]
+    [InlineData("null", KillmailNormalizationRejection.InvalidEnvelope)]
+    [InlineData("[]", KillmailNormalizationRejection.InvalidEnvelope)]
+    [InlineData("{}", KillmailNormalizationRejection.MissingKillmailId)]
+    [InlineData("""{"esi":[]}""", KillmailNormalizationRejection.InvalidEnvelope)]
+    [InlineData("""{"killmail_id":0,"killmail_time":"2026-10-18T12:00:00Z","solar_system_id":30000142,"victim":{"ship_type_id":670}}""", KillmailNormalizationRejection.MissingKillmailId)]
+    [InlineData("""{"killmail_id":1001,"solar_system_id":30000142,"victim":{"ship_type_id":670}}""", KillmailNormalizationRejection.MissingTimestamp)]
+    [InlineData("""{"killmail_id":1001,"killmail_time":"2026-10-18T12:00:00Z","victim":{"ship_type_id":670}}""", KillmailNormalizationRejection.MissingSolarSystem)]
+    [InlineData("""{"killmail_id":1001,"killmail_time":"2026-10-18T12:00:00Z","solar_system_id":30000142}""", KillmailNormalizationRejection.MissingVictim)]
+    [InlineData("""{"killmail_id":1001,"killmail_time":"2026-10-18T12:00:00Z","solar_system_id":30000142,"victim":{}}""", KillmailNormalizationRejection.MissingVictimShip)]
+    public void TryNormalize_MalformedOrIncompletePayload_ReturnsFalse(string json, KillmailNormalizationRejection expected)
+    {
+        var normalized = ZkillKillmailNormalizer.TryNormalize(json, 1, ReceivedAtUtc, out var observation, out var rejection);
 
         Assert.False(normalized);
         Assert.Null(observation);
+        Assert.Equal(expected, rejection);
     }
 
     [Fact]
@@ -161,10 +187,11 @@ public class ZkillKillmailNormalizerTests
     {
         using var document = JsonDocument.Parse("[]");
 
-        var normalized = ZkillKillmailNormalizer.TryNormalize(document.RootElement, 1, ReceivedAtUtc, out var observation);
+        var normalized = ZkillKillmailNormalizer.TryNormalize(document.RootElement, 1, ReceivedAtUtc, out var observation, out var rejection);
 
         Assert.False(normalized);
         Assert.Null(observation);
+        Assert.Equal(KillmailNormalizationRejection.InvalidEnvelope, rejection);
     }
 
     private static KillmailObservation Normalize(
@@ -176,10 +203,12 @@ public class ZkillKillmailNormalizerTests
             json,
             sourceSequence,
             receivedAtUtc ?? ReceivedAtUtc,
-            out var observation);
+            out var observation,
+            out var rejection);
 
         Assert.True(normalized);
         Assert.NotNull(observation);
+        Assert.Null(rejection);
         return observation;
     }
 
@@ -197,6 +226,7 @@ public class ZkillKillmailNormalizerTests
                 "corporation_id": 8001,
                 "alliance_id": 7001,
                 "ship_type_id": 670,
+                "damage_taken": 900,
                 "character_name": "Victim Pilot"
               },
               "attackers": [
@@ -205,6 +235,7 @@ public class ZkillKillmailNormalizerTests
                   "corporation_id": 8002,
                   "alliance_id": 7002,
                   "ship_type_id": 587,
+                  "weapon_type_id": 2456,
                   "final_blow": true,
                   "damage_done": 120,
                   "character_name": "Attacker Pilot"
@@ -212,6 +243,7 @@ public class ZkillKillmailNormalizerTests
                 {
                   "corporation_id": 1000125,
                   "ship_type_id": 3514,
+                  "weapon_type_id": 2486,
                   "final_blow": false,
                   "damage_done": 40
                 }
@@ -232,6 +264,7 @@ public class ZkillKillmailNormalizerTests
                     "corporation_id": 8001,
                     "alliance_id": 7001,
                     "ship_type_id": 670,
+                    "damage_taken": 900,
                     "character_name": "Victim Pilot"
                   },
                   "attackers": [
@@ -240,6 +273,7 @@ public class ZkillKillmailNormalizerTests
                       "corporation_id": 8002,
                       "alliance_id": 7002,
                       "ship_type_id": 587,
+                      "weapon_type_id": 2456,
                       "final_blow": true,
                       "damage_done": 120,
                       "character_name": "Attacker Pilot"
@@ -247,6 +281,7 @@ public class ZkillKillmailNormalizerTests
                     {
                       "corporation_id": 1000125,
                       "ship_type_id": 3514,
+                      "weapon_type_id": 2486,
                       "final_blow": false,
                       "damage_done": 40
                     }

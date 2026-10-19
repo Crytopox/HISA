@@ -69,6 +69,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
     private readonly ILogger<IntelChatLogFeedHostedService> _logger;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IIntelligenceObservationFeed _observationFeed;
+    private readonly ZkillNormalizationDiagnostics _normalizationDiagnostics;
     private readonly ConcurrentDictionary<string, byte> _dirtyFiles = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _dirtySignal = new(0, int.MaxValue);
     private readonly Dictionary<string, long> _readOffsetsByPath = new(StringComparer.OrdinalIgnoreCase);
@@ -137,7 +138,10 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         _httpClientFactory = httpClientFactory;
         _logger = logger;
         _observationFeed = observationFeed;
+        _normalizationDiagnostics = new ZkillNormalizationDiagnostics(logger);
     }
+
+    internal ZkillNormalizationDiagnostics NormalizationDiagnostics => _normalizationDiagnostics;
 
     public event EventHandler<IntelChatReport>? ReportReceived;
     public event EventHandler<IReadOnlyDictionary<long, IntelSystemSnapshot>>? SnapshotUpdated;
@@ -2029,10 +2033,18 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
                 return;
             }
 
-            await using var responseStream = await response.Content.ReadAsStreamAsync(cancellationToken);
-            using var document = await JsonDocument.ParseAsync(responseStream, cancellationToken: cancellationToken);
-            var receivedAtUtc = DateTimeOffset.UtcNow;
-            ProcessZkillPayload(document.RootElement, sequence, receivedAtUtc, receivedAtUtc);
+            try
+            {
+                await using var responseStream = await response.Content.ReadAsStreamAsync(cancellationToken);
+                using var document = await JsonDocument.ParseAsync(responseStream, cancellationToken: cancellationToken);
+                var receivedAtUtc = DateTimeOffset.UtcNow;
+                ProcessZkillPayload(document.RootElement, sequence, receivedAtUtc, receivedAtUtc);
+            }
+            catch (JsonException)
+            {
+                _normalizationDiagnostics.RecordRejection(sequence, KillmailNormalizationRejection.MalformedJson);
+                throw;
+            }
 
             sequence++;
             processed++;
@@ -2057,27 +2069,24 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
 
     internal void ProcessZkillPayload(JsonElement root, long sequence, DateTimeOffset receivedAtUtc, DateTimeOffset utcNow)
     {
-        if (!ZkillKillmailNormalizer.TryNormalize(root, sequence, receivedAtUtc, out var observation) || observation is null)
+        if (!ZkillKillmailNormalizer.TryNormalize(root, sequence, receivedAtUtc, out var observation, out var rejection) ||
+            observation is null)
         {
+            _normalizationDiagnostics.RecordRejection(sequence, rejection ?? KillmailNormalizationRejection.InvalidEnvelope);
             return;
+        }
+
+        if (observation.OccurredAtUtc >= utcNow - ZkillAcceptedAgeWindow &&
+            TryBuildLiveZkillReport(observation, out var report))
+        {
+            ReportReceived?.Invoke(this, report);
+            if (ApplyToSystemSnapshot(report))
+            {
+                SnapshotUpdated?.Invoke(this, Snapshot);
+            }
         }
 
         _observationFeed.Publish(observation);
-        if (observation.OccurredAtUtc < utcNow - ZkillAcceptedAgeWindow)
-        {
-            return;
-        }
-
-        if (!TryBuildLiveZkillReport(observation, out var report))
-        {
-            return;
-        }
-
-        ReportReceived?.Invoke(this, report);
-        if (ApplyToSystemSnapshot(report))
-        {
-            SnapshotUpdated?.Invoke(this, Snapshot);
-        }
     }
 
     private bool TryBuildLiveZkillReport(KillmailObservation observation, out IntelChatReport report)
