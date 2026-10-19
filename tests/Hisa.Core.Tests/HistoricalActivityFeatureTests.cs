@@ -114,6 +114,25 @@ public sealed class HistoricalActivityFeatureTests
     }
 
     [Fact]
+    public async Task FailedMapRangeNeverPublishesNewerSystemDetailsOrShipLosses()
+    {
+        var repo = new Repo(); await using var feature = Feature(repo);
+        feature.SetMapContext(Graph(), MapViewMode.Region, 1); feature.IsEnabled = true;
+        await feature.PendingMapTask; await feature.PendingDetailTask;
+        Assert.NotEmpty(feature.Timeline);
+        var oldMap = feature.Snapshot; var seriesCalls = repo.SeriesRequests;
+        repo.Map = (_, _) => throw new InvalidOperationException("failed range");
+        feature.OffsetBuckets = 1;
+        await feature.PendingMapTask; await feature.PendingDetailTask;
+        Assert.Same(oldMap, feature.Snapshot); Assert.Empty(feature.Timeline);
+        Assert.Contains("waiting for the map", feature.DetailText); Assert.False(feature.CanLoadShips);
+        Assert.Equal(seriesCalls, repo.SeriesRequests);
+        repo.Map = (range, _) => Task.FromResult(Result(range));
+        feature.LatestCommand.Execute(null); await feature.PendingMapTask; await feature.PendingDetailTask;
+        Assert.Contains("One", feature.DetailText); Assert.NotEmpty(feature.Timeline); Assert.True(feature.CanLoadShips);
+    }
+
+    [Fact]
     public async Task SelectionChanges_CancelOldDetails_ShipBreakdownIsOnDemand_AndNamesResolveLocally()
     {
         var repo = new Repo(); await using var feature = Feature(repo);

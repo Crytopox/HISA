@@ -31,6 +31,7 @@ public sealed partial class MainWindowViewModel
                 return (IReadOnlyDictionary<int, string>)names;
             }, token));
         PropertyChanged += OnHistoricalMapContextChanged;
+        History.Combat.FocusRequested += OnCombatFocusRequested;
     }
 
     private void OnHistoricalMapContextChanged(object? sender, PropertyChangedEventArgs args)
@@ -39,9 +40,16 @@ public sealed partial class MainWindowViewModel
             History.SetMapContext(CurrentGraph, SelectedViewMode, SelectedNodeId);
     }
 
-    private void StopHistoricalActivity()
+    private Task? _historicalShutdown;
+    private async void OnCombatFocusRequested(long systemId)
+    {
+        try { await NavigateToSystemFromReportAsync(systemId); }
+        catch (Exception) { /* Existing map remains usable if navigation data is unavailable. */ }
+    }
+    public Task StopHistoricalActivityAsync()
     {
         PropertyChanged -= OnHistoricalMapContextChanged;
-        _ = History.DisposeAsync();
+        History.Combat.FocusRequested -= OnCombatFocusRequested;
+        return _historicalShutdown ??= History.DisposeAsync().AsTask();
     }
 }

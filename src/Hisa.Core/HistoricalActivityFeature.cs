@@ -43,6 +43,11 @@ public sealed class HistoricalActivityFeature : INotifyPropertyChanged, IAsyncDi
         _repository = repository; _settings = settings; _dispatch = dispatch;
         _retention = retention > TimeSpan.Zero ? retention : TimeSpan.FromDays(30);
         _clock = clock ?? TimeProvider.System;
+        Combat = new CombatAnalysisFeature(repository as ICombatAnalysisRepository, dispatch, _clock);
+        PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName is nameof(Snapshot) or nameof(IsEnabled) or nameof(RangeText)) UpdateCombatContext();
+        };
         _shipNames = shipNames ?? ((_, _) => Task.FromResult<IReadOnlyDictionary<int, string>>(new Dictionary<int, string>()));
         _latest = ActivityRange.BucketStart(_clock.GetUtcNow());
         PreviousCommand = new Command(() => OffsetBuckets++);
@@ -57,6 +62,7 @@ public sealed class HistoricalActivityFeature : INotifyPropertyChanged, IAsyncDi
     public static IReadOnlyList<HistoricalOption> Metrics { get; } = new[] { "Killmail losses", "Confirmed PvP kills", "Known ISK destroyed", "Attacker entries", "Loss concentration (%)" }
         .Select((name, index) => new HistoricalOption(name, index)).ToArray();
     public ICommand PreviousCommand { get; }
+    public CombatAnalysisFeature Combat { get; }
     public ICommand NextCommand { get; }
     public ICommand LatestCommand { get; }
     public ICommand LiveCommand { get; }
@@ -106,7 +112,7 @@ public sealed class HistoricalActivityFeature : INotifyPropertyChanged, IAsyncDi
     public string WindowNote => WindowBuckets * ActivityRange.BucketSize.Ticks < ActivityRange.CommonWindows[_preset].Ticks ? "Window limited to configured aggregate retention." : "5-minute steps · most recent completed buckets";
     public string ContextNote => _mode == MapViewMode.UniverseRegions ? "Regions overview: historical system colors are hidden. Open Universe or a region to inspect systems." : "Historical node colors take precedence; live alerts and tactical markers remain active.";
     public bool IsRegionsOverview => _mode == MapViewMode.UniverseRegions;
-    public bool CanLoadShips => !_disposed && _enabled && !IsShipLoading && _mode != MapViewMode.UniverseRegions &&
+    public bool CanLoadShips => !_disposed && _enabled && Snapshot?.Range == Range && !IsShipLoading && _mode != MapViewMode.UniverseRegions &&
         _selected is not null && _graph?.Nodes.Any(node => node.Id == _selected) == true;
     public string Legend => "Gray: observed zero · blue-gray: unavailable/uncertain · yellow → orange → pink: increasing recorded activity (fixed log scale).";
     public string MetricNote => _metric switch
@@ -116,7 +122,7 @@ public sealed class HistoricalActivityFeature : INotifyPropertyChanged, IAsyncDi
         HistoricalActivityMetric.LossConcentration => "Percentage of all locally recorded killmail losses in this window attributed to each system.",
         _ => "Local killmail observations only; ESI kill statistics are not included."
     };
-    public HistoricalMapSnapshot? Snapshot { get => _snapshot; private set { if (Set(ref _snapshot, value)) { Changed(nameof(DisplayedRangeText)); Changed(nameof(CoverageText)); } } }
+    public HistoricalMapSnapshot? Snapshot { get => _snapshot; private set { if (Set(ref _snapshot, value)) { Changed(nameof(DisplayedRangeText)); Changed(nameof(CoverageText)); Changed(nameof(CanLoadShips)); } } }
     public string DisplayedRangeText => Snapshot is null ? "No historical result displayed." : $"Showing {Metrics[(int)Snapshot.Metric].Label} · UTC {Snapshot.Range.FromUtc:MMM dd HH:mm} → {Snapshot.Range.ToUtc:MMM dd HH:mm}";
     public string CoverageText => Snapshot is null ? "Coverage: Unknown — no result loaded." : CoverageLabel(Snapshot.Coverage);
     public const string CollectionNote = "Locally collected data. HISA does not backfill offline periods. Observed never guarantees complete zKillboard coverage. Gaps describe collection evidence, not precise system activity.";
@@ -153,9 +159,13 @@ public sealed class HistoricalActivityFeature : INotifyPropertyChanged, IAsyncDi
         if (_disposed) return;
         var changed = !ReferenceEquals(_graph, graph) || _mode != mode || _selected != selectedSystem;
         _graph = graph; _mode = mode; _selected = selectedSystem;
+        UpdateCombatContext();
         Changed(nameof(ContextNote)); Changed(nameof(IsRegionsOverview)); Changed(nameof(CanLoadShips));
         if (changed) ScheduleDetail(); // All-system map snapshots remain valid across graph/coordinate changes.
     }
+
+    private void UpdateCombatContext() => Combat.SetContext(_enabled && _mode != MapViewMode.UniverseRegions && Snapshot?.Range == Range ? Range : null,
+        _selected, id => _graph?.Nodes.FirstOrDefault(n => n.Id == id)?.Name ?? $"System {id}");
 
     private void RangeNotifications()
     {
@@ -188,6 +198,7 @@ public sealed class HistoricalActivityFeature : INotifyPropertyChanged, IAsyncDi
             {
                 if (!Current(_mapGate, request) || Range != range || _metric != metric) return;
                 _cached = result; Snapshot = visual; IsLoading = false;
+                ScheduleDetail();
                 Status = result.Coverage.AggregateHistoryExpired ? "Requested history has expired; counts may be incomplete." :
                     result.Total.KillmailCount == 0 && result.Coverage.State != ActivityCoverageState.Observed ? "No recorded events; collection history is unavailable or incomplete, not confirmed inactivity." :
                     $"All systems: {result.Total.KillmailCount:N0} recorded killmails in {result.Systems.Count:N0} systems.";
@@ -214,7 +225,11 @@ public sealed class HistoricalActivityFeature : INotifyPropertyChanged, IAsyncDi
         Cancel(_shipGate);
         var request = _detailGate.Begin(); ClearDetail();
         var node = _mode == MapViewMode.UniverseRegions ? null : _graph?.Nodes.FirstOrDefault(n => n.Id == _selected);
-        if (!_enabled || _disposed || node is null) { _detailGate.Complete(request); return; }
+        if (!_enabled || _disposed || node is null || Snapshot?.Range != Range)
+        {
+            if (_enabled && node is not null) DetailText = "Details are waiting for the map's selected range to load. Previous map colors use the displayed range above.";
+            _detailGate.Complete(request); return;
+        }
         IsDetailLoading = true; DetailText = $"{node.Name} — loading historical details…";
         PendingDetailTask = QueryDetailAsync(request, node, Range);
     }
@@ -313,6 +328,7 @@ public sealed class HistoricalActivityFeature : INotifyPropertyChanged, IAsyncDi
         _enabled = false; _loading = false; _detailLoading = false; _shipLoading = false;
         Cancel(_mapGate); Cancel(_detailGate); Cancel(_shipGate); Cancel(_settingsGate);
         _snapshot = null; _cached = null; _timeline = []; _ships = [];
+        await Combat.DisposeAsync().ConfigureAwait(false);
         // Drain active operations before returning; superseded requests have cancelled tokens,
         // and all repository readers have their own bounded execution deadline.
         foreach (var serial in new[] { _mapSerial, _detailSerial, _shipSerial, _settingsSerial })

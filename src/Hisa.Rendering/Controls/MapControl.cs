@@ -1096,7 +1096,7 @@ public sealed partial class MapControl : Control
 
     public MapControl()
     {
-        AffectsRender<MapControl>(GraphProperty, SelectedNodeIdProperty, ViewModeProperty, StretchToWindowProperty, HistoricalActivityProperty);
+        AffectsRender<MapControl>(GraphProperty, SelectedNodeIdProperty, ViewModeProperty, StretchToWindowProperty, HistoricalActivityProperty, CombatAnalysisProperty);
         AffectsRender<MapControl>(
             NodeColorModeProperty,
             NodeBackgroundColorModeProperty,
@@ -1341,6 +1341,7 @@ public sealed partial class MapControl : Control
 
     private bool AffectsUniverseBase(AvaloniaProperty property) =>
         property == HistoricalActivityProperty ||
+        property == CombatAnalysisProperty ||
         property == GraphProperty ||
         property == ViewModeProperty ||
         property == StretchToWindowProperty ||
@@ -2615,6 +2616,7 @@ public sealed partial class MapControl : Control
                 context.DrawEllipse(brush, NodeOutlinePen, p, radius, radius);
             }
 
+            if (!_universeOverlayOnly) DrawCombatMarker(context, node, p, radius);
             var hostileScoreForNode = 0;
             var hasHostileScore = IntelHostileScoresByNodeId is not null &&
                                   IntelHostileScoresByNodeId.TryGetValue(node.Id, out hostileScoreForNode) &&
@@ -2983,6 +2985,7 @@ public sealed partial class MapControl : Control
             {
                 context.DrawEllipse(GetCachedBrush(GetDisplayedNodeColor(node)),
                     NodeOutlinePen, point, nodeRadius, nodeRadius);
+                DrawCombatMarker(context, node, point, nodeRadius); // Baked below the live/interactive pass.
             }
         }
     }

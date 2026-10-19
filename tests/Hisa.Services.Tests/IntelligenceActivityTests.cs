@@ -123,13 +123,14 @@ public sealed partial class IntelligenceActivityTests(ITestOutputHelper output)
         // Downgrade the fixture to the exact v2 shape while preserving existing raw records.
         await db.Sql("""
             DROP TABLE ShipLossActivity; DROP TABLE SystemActivity; DROP TABLE ActivityDedup; DROP TABLE CollectionSession;
+            DROP TABLE CombatDirty; DROP TABLE CombatEvent; DROP TABLE CombatAnalysisIssue;
             DROP INDEX IX_Killmail_ActivityPending;
             ALTER TABLE Killmail DROP COLUMN ActivityAggregated;
             UPDATE SchemaVersion SET Version=2;
             """);
         db.Reopen();
         await db.Repository.InitializeAsync();
-        Assert.Equal(3, (await db.Repository.GetHealthAsync()).SchemaVersion);
+        Assert.Equal(SqliteIntelligenceDatabaseInitializer.CurrentSchemaVersion, (await db.Repository.GetHealthAsync()).SchemaVersion);
         Assert.True((await db.Repository.GetActivityAsync(Range)).Coverage.CatchUpPending);
         Assert.Equal(0, await db.Repository.DeleteOccurredBeforeAsync(Epoch.AddDays(1), 100));
         Assert.Equal(2, await db.Repository.CatchUpActivityAsync(2));

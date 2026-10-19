@@ -1401,7 +1401,6 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
     public void BeginApplicationShutdown()
     {
         IsApplicationShuttingDown = true;
-        StopHistoricalActivity();
     }
 
     public void SetMiningOverlayVisibility(bool value, bool persistPreference)

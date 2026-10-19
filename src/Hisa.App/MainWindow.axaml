@@ -390,6 +390,7 @@
                               Focusable="True"
                               Graph="{Binding CurrentGraph}"
                               HistoricalActivity="{Binding History.Snapshot}"
+                              CombatAnalysis="{Binding History.Combat.Snapshot}"
                               ViewMode="{Binding SelectedViewMode}"
                               PointerPressed="OnMainMapPointerPressed"
                               PointerMoved="OnMainMapPointerMoved"

@@ -92,6 +92,9 @@ public static class ServiceCollectionExtensions
         // Start persistence before the observation feed, and the feed before R2Z2 ingestion.
         services.AddSingleton<IIntelligenceActivityRepository>(sp =>
             (IIntelligenceActivityRepository)sp.GetRequiredService<IIntelligenceHistoryRepository>());
+        services.AddSingleton<ICombatAnalysisRepository>(sp => (ICombatAnalysisRepository)sp.GetRequiredService<IIntelligenceHistoryRepository>());
+        services.Configure<Hisa.Core.Models.Intelligence.CombatDetectionOptions>(configuration.GetSection("Hisa:Intelligence:CombatAnalysis"));
+        services.AddHostedService<CombatAnalysisHostedService>();
         // Shutdown then runs in reverse: ingestion stops, the feed drains, then persistence flushes.
         services.AddSingleton<IntelligencePersistenceHostedService>();
         services.AddSingleton<IIntelligenceCoverageRecorder>(sp => sp.GetRequiredService<IntelligencePersistenceHostedService>());

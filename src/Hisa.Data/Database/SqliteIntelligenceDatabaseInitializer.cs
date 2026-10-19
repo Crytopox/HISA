@@ -11,7 +11,7 @@ namespace Hisa.Data.Database;
 /// </summary>
 public sealed class SqliteIntelligenceDatabaseInitializer
 {
-    public const int CurrentSchemaVersion = 3;
+    public const int CurrentSchemaVersion = 4;
 
     public async Task InitializeAsync(
         SqliteConnection connection,
@@ -162,6 +162,32 @@ public sealed class SqliteIntelligenceDatabaseInitializer
                 CREATE INDEX IX_ActivityDedup_Time ON ActivityDedup(BucketStartUtcTicks);
                 INSERT INTO SchemaVersion(Id, Version) VALUES(1, 3)
                     ON CONFLICT(Id) DO UPDATE SET Version = 3;
+                """;
+            await command.ExecuteNonQueryAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        if (fromVersion < 4)
+        {
+            using var transaction = connection.BeginTransaction();
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                CREATE TABLE CombatDirty(SystemId INTEGER NOT NULL, PartitionTicks INTEGER NOT NULL, Revision INTEGER NOT NULL DEFAULT 1,
+                    PRIMARY KEY(SystemId, PartitionTicks));
+                CREATE TABLE CombatEvent(Id TEXT PRIMARY KEY, SystemId INTEGER NOT NULL, PartitionTicks INTEGER NOT NULL,
+                    FirstTicks INTEGER NOT NULL, LastTicks INTEGER NOT NULL, Classification INTEGER NOT NULL,
+                    Kills INTEGER NOT NULL, KnownIsk TEXT NOT NULL, Summary TEXT NOT NULL);
+                CREATE INDEX IX_CombatEvent_Time ON CombatEvent(FirstTicks, Id);
+                CREATE INDEX IX_CombatEvent_Retention ON CombatEvent(LastTicks);
+                CREATE INDEX IX_CombatEvent_System ON CombatEvent(SystemId, FirstTicks, Id);
+                CREATE INDEX IX_CombatEvent_Partition ON CombatEvent(SystemId, PartitionTicks);
+                CREATE TABLE CombatAnalysisIssue(SystemId INTEGER NOT NULL, PartitionTicks INTEGER NOT NULL, Reason TEXT NOT NULL,
+                    PRIMARY KEY(SystemId, PartitionTicks));
+                CREATE INDEX IX_CombatDirty_Time ON CombatDirty(PartitionTicks,SystemId);
+                CREATE INDEX IX_CombatAnalysisIssue_Time ON CombatAnalysisIssue(PartitionTicks,SystemId);
+                INSERT INTO CombatDirty(SystemId,PartitionTicks)
+                    SELECT DISTINCT SolarSystemId, OccurredAtUtcTicks / 216000000000 * 216000000000 FROM Killmail;
+                INSERT INTO SchemaVersion(Id,Version) VALUES(1,4) ON CONFLICT(Id) DO UPDATE SET Version=4;
                 """;
             await command.ExecuteNonQueryAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);

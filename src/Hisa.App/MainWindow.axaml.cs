@@ -219,6 +219,8 @@ public partial class MainWindow : Window
         Activated += (_, _) => UpdateMapAnimationSuspension();
         Deactivated += (_, _) => UpdateMapAnimationSuspension();
         PropertyChanged += OnMainWindowPropertyChanged;
+        _ = new WindowCleanup(this, () => _boundVm?.StopHistoricalActivityAsync() ?? Task.CompletedTask,
+            () => { _isClosingApp = true; _boundVm?.BeginApplicationShutdown(); }, TimeSpan.FromSeconds(5));
         Closing += (_, _) =>
         {
             _isClosingApp = true;

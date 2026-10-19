@@ -8,6 +8,23 @@
       <ScrollViewer MaxHeight="390" HorizontalScrollBarVisibility="Disabled">
         <StackPanel Spacing="8" Margin="0,6,0,0">
           <TextBlock Text="{Binding ContextNote}" Foreground="#ACB8CA" FontSize="10" TextWrapping="Wrap" />
+          <Expander Header="Combat findings" IsExpanded="True" IsVisible="{Binding Combat.IsEnabled}" Foreground="#E3D5B4">
+            <StackPanel Spacing="6">
+              <TextBlock Text="{Binding Combat.Status}" Foreground="#ACB8CA" FontSize="10" TextWrapping="Wrap" />
+              <ProgressBar IsIndeterminate="True" IsVisible="{Binding Combat.IsLoading}" Height="2" />
+              <ListBox ItemsSource="{Binding Combat.Events}" SelectedItem="{Binding Combat.SelectedEvent, Mode=TwoWay}" MaxHeight="150">
+                <ListBox.ItemTemplate><DataTemplate x:DataType="intel:CombatEngagement">
+                  <TextBlock Text="{Binding Display}" FontSize="10" TextWrapping="Wrap" />
+                </DataTemplate></ListBox.ItemTemplate>
+              </ListBox>
+              <WrapPanel>
+                <Button Content="Refresh findings" Command="{Binding Combat.RefreshCommand}" FontSize="10" Padding="5,3" />
+                <Button Content="Next page" Command="{Binding Combat.NextPageCommand}" IsEnabled="{Binding Combat.HasNextPage}" FontSize="10" Padding="5,3" />
+                <Button Content="Focus system" Command="{Binding Combat.FocusCommand}" FontSize="10" Padding="5,3" />
+              </WrapPanel>
+              <TextBlock Text="{Binding Combat.Detail}" Foreground="#DFE8F5" FontSize="11" TextWrapping="Wrap" />
+            </StackPanel>
+          </Expander>
           <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsDetailLoading}" Height="2" />
           <TextBlock Text="{Binding DetailText}" Foreground="#DFE8F5" FontSize="12" TextWrapping="Wrap" />
           <TextBlock Text="Recorded killmails · timeline (UTC, log height)" Foreground="#ACB8CA" FontSize="10" />

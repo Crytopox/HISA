@@ -5,7 +5,7 @@ using Microsoft.Data.Sqlite;
 
 namespace Hisa.Data.Database;
 
-public sealed partial class SqliteIntelligenceHistoryRepository : IIntelligenceHistoryRepository, IIntelligenceActivityRepository
+public sealed partial class SqliteIntelligenceHistoryRepository : IIntelligenceHistoryRepository, IIntelligenceActivityRepository, ICombatAnalysisRepository
 {
     private const string KillmailColumns = """
         KillmailId, Source, SourceSequence, SolarSystemId,
@@ -117,6 +117,7 @@ public sealed partial class SqliteIntelligenceHistoryRepository : IIntelligenceH
             insertParticipant.Transaction = transaction;
             var inserted = 0;
             var duplicates = 0;
+            var combatPartitions = new HashSet<(long System, long Ticks)>();
             foreach (var observation in observations)
             {
                 var wrote = await InsertKillmailAsync(insertKillmail, observation, cancellationToken);
@@ -132,7 +133,16 @@ public sealed partial class SqliteIntelligenceHistoryRepository : IIntelligenceH
                     observation.OccurredAtUtc, observation.Victim.ShipTypeId, observation.TotalValue,
                     observation.Attackers.Count, observation.Victim.CharacterId > 0 &&
                     observation.Attackers.Any(a => a.CharacterId > 0 && a.CharacterId != observation.Victim.CharacterId), cancellationToken);
+                combatPartitions.Add((observation.SolarSystemId, Hisa.Core.CombatDetector.Partition(observation.OccurredAtUtc).UtcTicks));
                 inserted++;
+            }
+            foreach (var partition in combatPartitions)
+            {
+                using (var dirty = ActivityCommand(connection, transaction, """
+                    INSERT INTO CombatDirty(SystemId,PartitionTicks) VALUES($system,$partition)
+                    ON CONFLICT(SystemId,PartitionTicks) DO UPDATE SET Revision=Revision+1;
+                    """, ("$system", partition.System), ("$partition", partition.Ticks)))
+                    await dirty.ExecuteNonQueryAsync(cancellationToken);
             }
 
             await transaction.CommitAsync(cancellationToken);
@@ -204,6 +214,11 @@ public sealed partial class SqliteIntelligenceHistoryRepository : IIntelligenceH
             deleteKillmails.Parameters.AddWithValue("$cutoff", ToTicks(cutoffUtc));
             deleteKillmails.Parameters.AddWithValue("$limit", maxRows);
             var deleted = await deleteKillmails.ExecuteNonQueryAsync(cancellationToken);
+            using (var floor = ActivityCommand(connection, transaction, """
+                INSERT INTO CoverageCheckpoint(Name,Value,SessionId) VALUES('CombatRawFloor',$floor,'')
+                ON CONFLICT(Name) DO UPDATE SET Value=MAX(Value,excluded.Value);
+                """, ("$floor", cutoffUtc.UtcTicks)))
+                await floor.ExecuteNonQueryAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return deleted;
         }

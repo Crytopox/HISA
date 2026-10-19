@@ -21,7 +21,7 @@ using Xunit.Abstractions;
 
 namespace Hisa.Rendering.Tests;
 
-public sealed class HistoricalMapRenderingTests(ITestOutputHelper output)
+public sealed partial class HistoricalMapRenderingTests(ITestOutputHelper output)
 {
     private static readonly DateTimeOffset Epoch = new(2026, 10, 19, 10, 0, 0, TimeSpan.Zero);
     private static readonly ActivityRange Range = new(Epoch.AddHours(-1), Epoch);
@@ -137,11 +137,17 @@ public sealed class HistoricalMapRenderingTests(ITestOutputHelper output)
         feature.PropertyChanged += (_, _) => notificationThreads.Add(Environment.CurrentManagedThreadId);
         feature.IsEnabled = true;
         await feature.PendingMapTask; await feature.PendingDetailTask;
+        while (await repository.ProcessCombatAsync(Epoch.AddMinutes(2), TimeSpan.FromDays(30), new()) > 0) { }
+        feature.Combat.PropertyChanged += (_, _) => notificationThreads.Add(Environment.CurrentManagedThreadId);
+        feature.Combat.IsEnabled = true; await feature.Combat.PendingTask;
+        Assert.NotEmpty(feature.Combat.Events);
+        feature.Combat.SelectedEvent = feature.Combat.Events[0];
         Assert.All(notificationThreads, id => Assert.Equal(uiThread, id));
         if (!Application.Current!.Styles.OfType<FluentTheme>().Any()) Application.Current.Styles.Add(new FluentTheme());
         Application.Current.RequestedThemeVariant = ThemeVariant.Dark;
         var map = Map(graph, MapViewMode.Universe);
         using var binding = map.Bind(MapControl.HistoricalActivityProperty, new Binding(nameof(feature.Snapshot)) { Source = feature });
+        using var combatBinding = map.Bind(MapControl.CombatAnalysisProperty, new Binding(nameof(feature.Combat.Snapshot)) { Source = feature.Combat });
         var panel = new HistoricalActivityPanel { DataContext = feature };
         var details = new HistoricalSystemDetails { DataContext = feature, Width = 310, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top, Margin = new Thickness(12) };
         using var panelVisibility = panel.Bind(Control.IsVisibleProperty, new Binding(nameof(feature.IsEnabled)) { Source = feature });
@@ -162,12 +168,14 @@ public sealed class HistoricalMapRenderingTests(ITestOutputHelper output)
                 Directory.CreateDirectory(previewDirectory);
                 using var bitmap = new RenderTargetBitmap(new PixelSize(1200, 800), new Vector(96, 96));
                 bitmap.Render(root); bitmap.Save(Path.Combine(previewDirectory, "historical-map-preview.png"));
+                bitmap.Save(Path.Combine(previewDirectory, "combat-map-preview.png"));
                 output.WriteLine("UI preview: " + Path.Combine(previewDirectory, "historical-map-preview.png"));
             }
             map.SelectedNodeId = 1; map.ZoomBy(1.3); map.PanBy(8, -4);
             var viewport = map.GetViewportState();
             feature.IsEnabled = false; window.UpdateLayout();
             Assert.False(panel.IsVisible); Assert.False(details.IsVisible); Assert.Null(map.HistoricalActivity);
+            Assert.Null(map.CombatAnalysis);
             Assert.Equal(viewport.Zoom, map.GetViewportState().Zoom);
             Assert.Equal(viewport.PanOffsetX, map.GetViewportState().PanOffsetX);
             Assert.Equal(viewport.PanOffsetY, map.GetViewportState().PanOffsetY);

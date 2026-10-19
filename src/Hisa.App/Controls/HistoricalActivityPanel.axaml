@@ -17,6 +17,7 @@
         <Button Content="5m →" Command="{Binding NextCommand}" Padding="8,3" Margin="0,0,3,3" ToolTip.Tip="Move the analysis window five minutes later" />
         <Button Content="Latest / refresh" Command="{Binding LatestCommand}" Padding="8,3" Margin="0,0,8,3" />
         <Button Content="Live map" Command="{Binding LiveCommand}" Padding="8,3" Margin="0,0,3,3" />
+        <CheckBox Content="Combat Analysis" IsChecked="{Binding Combat.IsEnabled, Mode=TwoWay}" FontSize="11" Margin="8,0" />
       </WrapPanel>
       <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
         <TextBlock Text="Latest" Foreground="#ACB8CA" FontSize="11" VerticalAlignment="Center" />
