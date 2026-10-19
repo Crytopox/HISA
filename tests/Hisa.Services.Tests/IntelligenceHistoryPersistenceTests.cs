@@ -575,6 +575,7 @@ public sealed class IntelligenceHistoryPersistenceTests
 
         public Task<long> RecordCoverageDeltaAsync(
             string checkpointName,
+            string sessionId,
             long observedTotal,
             IntelligenceCollectionGap gap,
             CancellationToken cancellationToken = default)
@@ -658,10 +659,11 @@ public sealed class IntelligenceHistoryPersistenceTests
 
         public Task<long> RecordCoverageDeltaAsync(
             string checkpointName,
+            string sessionId,
             long observedTotal,
             IntelligenceCollectionGap gap,
             CancellationToken cancellationToken = default)
-            => _inner.RecordCoverageDeltaAsync(checkpointName, observedTotal, gap, cancellationToken);
+            => _inner.RecordCoverageDeltaAsync(checkpointName, sessionId, observedTotal, gap, cancellationToken);
 
         public Task<IReadOnlyList<KillmailHistoryRecord>> GetByTimeRangeAsync(
             DateTimeOffset fromUtcInclusive,

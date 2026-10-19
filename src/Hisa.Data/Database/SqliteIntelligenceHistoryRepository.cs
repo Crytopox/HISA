@@ -45,6 +45,8 @@ public sealed class SqliteIntelligenceHistoryRepository : IIntelligenceHistoryRe
 
     internal Action<long>? AfterKillmailInsert { get; set; }
 
+    internal Action? BeforeCoverageCheckpointUpdate { get; set; }
+
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -334,11 +336,13 @@ public sealed class SqliteIntelligenceHistoryRepository : IIntelligenceHistoryRe
 
     public async Task<long> RecordCoverageDeltaAsync(
         string checkpointName,
+        string sessionId,
         long observedTotal,
         IntelligenceCollectionGap gap,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(checkpointName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
         ArgumentNullException.ThrowIfNull(gap);
         await _gate.WaitAsync(cancellationToken);
         try
@@ -349,30 +353,47 @@ public sealed class SqliteIntelligenceHistoryRepository : IIntelligenceHistoryRe
             insertGap.Transaction = transaction;
             var read = connection.CreateCommand();
             read.Transaction = transaction;
-            read.CommandText = "SELECT Value FROM CoverageCheckpoint WHERE Name = $name;";
+            read.CommandText = "SELECT Value, SessionId FROM CoverageCheckpoint WHERE Name = $name;";
             read.Parameters.AddWithValue("$name", checkpointName);
-            var storedValue = await read.ExecuteScalarAsync(cancellationToken);
-            var stored = storedValue is null or DBNull ? 0L : Convert.ToInt64(storedValue);
-            if (observedTotal <= stored)
+            long stored = 0;
+            var sameSession = false;
+            await using (var reader = await read.ExecuteReaderAsync(cancellationToken))
+            {
+                if (await reader.ReadAsync(cancellationToken))
+                {
+                    stored = reader.GetInt64(0);
+                    var storedSession = reader.IsDBNull(1) ? "" : reader.GetString(1);
+                    sameSession = string.Equals(storedSession, sessionId, StringComparison.Ordinal);
+                }
+            }
+
+            var baseline = sameSession ? stored : 0L;
+            if (observedTotal <= baseline)
             {
                 await transaction.CommitAsync(cancellationToken);
                 return 0;
             }
 
-            var delta = observedTotal - stored;
+            var delta = observedTotal - baseline;
             var recorded = delta > int.MaxValue ? int.MaxValue : (int)delta;
-            BindGap(insertGap, gap with { Count = recorded, RecordedAtUtc = gap.RecordedAtUtc == default ? DateTimeOffset.UtcNow : gap.RecordedAtUtc });
+            BindGap(insertGap, gap with
+            {
+                Count = recorded,
+                RecordedAtUtc = gap.RecordedAtUtc == default ? DateTimeOffset.UtcNow : gap.RecordedAtUtc
+            });
             await insertGap.ExecuteNonQueryAsync(cancellationToken);
+            BeforeCoverageCheckpointUpdate?.Invoke();
 
             var update = connection.CreateCommand();
             update.Transaction = transaction;
             update.CommandText = """
-                INSERT INTO CoverageCheckpoint (Name, Value)
-                VALUES ($name, $value)
-                ON CONFLICT (Name) DO UPDATE SET Value = excluded.Value;
+                INSERT INTO CoverageCheckpoint (Name, Value, SessionId)
+                VALUES ($name, $value, $sessionId)
+                ON CONFLICT (Name) DO UPDATE SET Value = excluded.Value, SessionId = excluded.SessionId;
                 """;
             update.Parameters.AddWithValue("$name", checkpointName);
-            update.Parameters.AddWithValue("$value", stored + recorded);
+            update.Parameters.AddWithValue("$value", baseline + recorded);
+            update.Parameters.AddWithValue("$sessionId", sessionId);
             await update.ExecuteNonQueryAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return recorded;

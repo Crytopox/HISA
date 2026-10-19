@@ -39,6 +39,7 @@ public interface IIntelligenceHistoryRepository : IAsyncDisposable
 
     Task<long> RecordCoverageDeltaAsync(
         string checkpointName,
+        string sessionId,
         long observedTotal,
         IntelligenceCollectionGap gap,
         CancellationToken cancellationToken = default);

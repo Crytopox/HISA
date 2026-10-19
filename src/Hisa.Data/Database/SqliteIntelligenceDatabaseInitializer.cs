@@ -11,7 +11,7 @@ namespace Hisa.Data.Database;
 /// </summary>
 public sealed class SqliteIntelligenceDatabaseInitializer
 {
-    public const int CurrentSchemaVersion = 1;
+    public const int CurrentSchemaVersion = 2;
 
     public async Task InitializeAsync(
         SqliteConnection connection,
@@ -87,7 +87,8 @@ public sealed class SqliteIntelligenceDatabaseInitializer
 
             CREATE TABLE IF NOT EXISTS CoverageCheckpoint (
                 Name TEXT NOT NULL PRIMARY KEY,
-                Value INTEGER NOT NULL
+                Value INTEGER NOT NULL,
+                SessionId TEXT NOT NULL DEFAULT ''
             );
             """, cancellationToken);
 
@@ -121,19 +122,32 @@ public sealed class SqliteIntelligenceDatabaseInitializer
         return value is null or DBNull ? 0 : Convert.ToInt32(value);
     }
 
-    private static Task ApplyUpgradesAsync(
+    private static async Task ApplyUpgradesAsync(
         SqliteConnection connection,
         int fromVersion,
         CancellationToken cancellationToken)
     {
-        _ = connection;
-        _ = cancellationToken;
-        if (fromVersion < 0)
+        if (fromVersion < 2)
         {
-            throw new InvalidOperationException($"Unsupported intelligence schema version {fromVersion}.");
+            await EnsureCoverageCheckpointSessionAsync(connection, cancellationToken);
+        }
+    }
+
+    private static async Task EnsureCoverageCheckpointSessionAsync(
+        SqliteConnection connection,
+        CancellationToken cancellationToken)
+    {
+        var probe = connection.CreateCommand();
+        probe.CommandText = "SELECT COUNT(*) FROM pragma_table_info('CoverageCheckpoint') WHERE name = 'SessionId';";
+        var existing = Convert.ToInt32(await probe.ExecuteScalarAsync(cancellationToken));
+        if (existing > 0)
+        {
+            return;
         }
 
-        return Task.CompletedTask;
+        var alter = connection.CreateCommand();
+        alter.CommandText = "ALTER TABLE CoverageCheckpoint ADD COLUMN SessionId TEXT NOT NULL DEFAULT '';";
+        await alter.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task ExecuteAsync(

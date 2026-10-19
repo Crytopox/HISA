@@ -1,3 +1,5 @@
+using Hisa.Core.Abstractions;
+using Hisa.Core.Models.Intelligence;
 using Microsoft.Extensions.Logging;
 using Hisa.Services.Intelligence;
 
@@ -60,6 +62,43 @@ public class ZkillNormalizationDiagnosticsTests
         Assert.Contains("DataGapCount: 1", message, StringComparison.Ordinal);
         Assert.DoesNotContain("{", message, StringComparison.Ordinal);
         Assert.DoesNotContain("killmail_id", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void StructuralRejections_AreDurableGapsOnce_MalformedJsonWaitsForTheFinalSkip()
+    {
+        var gaps = new List<IntelligenceCollectionGap>();
+        var diagnostics = new ZkillNormalizationDiagnostics(new ListLogger(), () => 0, new ListCoverageRecorder(gaps));
+
+        diagnostics.RecordRejection(7, KillmailNormalizationRejection.MissingKillmailId);
+        diagnostics.RecordRejection(7, KillmailNormalizationRejection.MissingKillmailId);
+        diagnostics.RecordRejection(8, KillmailNormalizationRejection.InvalidEnvelope);
+        diagnostics.RecordRejection(9, KillmailNormalizationRejection.MissingTimestamp);
+        diagnostics.RecordRejection(10, KillmailNormalizationRejection.MissingVictim);
+        diagnostics.RecordRejection(11, KillmailNormalizationRejection.MalformedJson);
+        diagnostics.RecordRejection(11, KillmailNormalizationRejection.MalformedJson);
+        diagnostics.RecordDataGap(11, 3);
+        diagnostics.RecordDataGap(11, 3);
+
+        var structural = gaps.Where(gap => gap.Kind == IntelligenceCollectionGapKind.NormalizationRejected).ToArray();
+        Assert.Equal(4, structural.Length);
+        Assert.Equal([7L, 8L, 9L, 10L], structural.Select(gap => gap.SourceSequence).ToArray());
+        Assert.Contains(structural, gap => gap.Detail == nameof(KillmailNormalizationRejection.MissingKillmailId));
+        Assert.Contains(structural, gap => gap.Detail == nameof(KillmailNormalizationRejection.InvalidEnvelope));
+        Assert.Contains(structural, gap => gap.Detail == nameof(KillmailNormalizationRejection.MissingVictim));
+        var skipped = Assert.Single(gaps, gap => gap.Kind == IntelligenceCollectionGapKind.SkippedSequence);
+        Assert.Equal(11, skipped.SourceSequence);
+        Assert.Contains("malformed JSON", skipped.Detail, StringComparison.Ordinal);
+        Assert.DoesNotContain(gaps, gap => gap.Kind == IntelligenceCollectionGapKind.NormalizationRejected && gap.SourceSequence == 11);
+    }
+
+    private sealed class ListCoverageRecorder : IIntelligenceCoverageRecorder
+    {
+        private readonly List<IntelligenceCollectionGap> _gaps;
+
+        public ListCoverageRecorder(List<IntelligenceCollectionGap> gaps) => _gaps = gaps;
+
+        public void Record(IntelligenceCollectionGap gap) => _gaps.Add(gap);
     }
 
     private sealed class ListLogger : ILogger

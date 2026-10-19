@@ -13,6 +13,9 @@ public sealed class ZkillNormalizationDiagnostics
     private readonly Func<long> _utcNowMilliseconds;
     private readonly long[] _counts;
     private readonly long[] _lastLoggedAtMilliseconds;
+    private readonly HashSet<long> _reportedSequences = new();
+    private readonly Queue<long> _reportedSequenceOrder = new();
+    private const int MaxRememberedSequences = 1024;
     private long _dataGaps;
 
     public ZkillNormalizationDiagnostics(
@@ -44,13 +47,18 @@ public sealed class ZkillNormalizationDiagnostics
             sequence,
             attempts,
             count);
+        if (!RememberSequence(sequence))
+        {
+            return;
+        }
+
         _coverageRecorder?.Record(new IntelligenceCollectionGap
         {
             Kind = IntelligenceCollectionGapKind.SkippedSequence,
             RecordedAtUtc = DateTimeOffset.UtcNow,
             Source = KillmailObservation.R2Z2SourceId,
             SourceSequence = sequence,
-            Detail = $"Skipped malformed sequence after {attempts} attempts."
+            Detail = $"Skipped malformed JSON after {attempts} attempts."
         });
     }
 
@@ -58,6 +66,18 @@ public sealed class ZkillNormalizationDiagnostics
     {
         var index = (int)reason;
         var count = Interlocked.Increment(ref _counts[index]);
+        if (reason != KillmailNormalizationRejection.MalformedJson && RememberSequence(sequence))
+        {
+            _coverageRecorder?.Record(new IntelligenceCollectionGap
+            {
+                Kind = IntelligenceCollectionGapKind.NormalizationRejected,
+                RecordedAtUtc = DateTimeOffset.UtcNow,
+                Source = KillmailObservation.R2Z2SourceId,
+                SourceSequence = sequence,
+                Detail = reason.ToString()
+            });
+        }
+
         var now = _utcNowMilliseconds();
         var last = Volatile.Read(ref _lastLoggedAtMilliseconds[index]);
         if (last != long.MinValue && now - last < LogInterval.TotalMilliseconds)
@@ -75,5 +95,24 @@ public sealed class ZkillNormalizationDiagnostics
             sequence,
             reason,
             count);
+    }
+
+    private bool RememberSequence(long sequence)
+    {
+        lock (_reportedSequences)
+        {
+            if (!_reportedSequences.Add(sequence))
+            {
+                return false;
+            }
+
+            _reportedSequenceOrder.Enqueue(sequence);
+            if (_reportedSequenceOrder.Count > MaxRememberedSequences)
+            {
+                _reportedSequences.Remove(_reportedSequenceOrder.Dequeue());
+            }
+
+            return true;
+        }
     }
 }

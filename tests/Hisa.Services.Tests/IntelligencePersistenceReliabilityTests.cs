@@ -3,6 +3,7 @@ using Hisa.Core.Models.Intelligence;
 using Hisa.Data.Database;
 using Hisa.Services.Background;
 using Hisa.Services.Intelligence;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Hisa.Services.Tests;
@@ -188,7 +189,12 @@ public sealed class IntelligencePersistenceReliabilityTests
         var rejected = Assert.Single(before, gap => gap.Kind == IntelligenceCollectionGapKind.ObservationRejected);
         Assert.Equal(3, rejected.Count);
 
-        var restartedFeed = new IntelligenceObservationFeed(NullLogger<IntelligenceObservationFeed>.Instance);
+        var restartedFeed = new IntelligenceObservationFeed(
+            NullLogger<IntelligenceObservationFeed>.Instance,
+            new IntelligenceObservationFeedOptions { Capacity = 1 });
+        restartedFeed.Publish(Observation(5, Epoch));
+        restartedFeed.Publish(Observation(6, Epoch));
+        restartedFeed.Publish(Observation(7, Epoch));
         var restarted = CreateService(database.Repository, restartedFeed, new IntelligencePersistenceOptions
         {
             CoverageCheckpointInterval = TimeSpan.FromMilliseconds(20),
@@ -197,7 +203,11 @@ public sealed class IntelligencePersistenceReliabilityTests
         await restarted.StartAsync(CancellationToken.None);
         try
         {
-            await Task.Delay(150);
+            Assert.True(await WaitForAsync(async () =>
+            {
+                var gaps = await database.Repository.GetCollectionGapsAsync(10);
+                return gaps.Where(gap => gap.Kind == IntelligenceCollectionGapKind.ObservationRejected).Sum(gap => gap.Count) == 5;
+            }, TimeSpan.FromSeconds(3)));
         }
         finally
         {
@@ -205,9 +215,160 @@ public sealed class IntelligencePersistenceReliabilityTests
         }
 
         var after = await database.Repository.GetCollectionGapsAsync(10);
-        var rejectedAfter = after.Where(gap => gap.Kind == IntelligenceCollectionGapKind.ObservationRejected).ToArray();
-        Assert.Single(rejectedAfter);
-        Assert.Equal(3, rejectedAfter[0].Count);
+        Assert.Equal(5, after.Where(gap => gap.Kind == IntelligenceCollectionGapKind.ObservationRejected).Sum(gap => gap.Count));
+    }
+
+    [Fact]
+    public async Task CoverageCheckpoint_RollsBackAPartialWrite_AndAddsTheNextSession()
+    {
+        await using var database = new TempDatabase();
+        await database.Repository.InitializeAsync();
+        var gap = new IntelligenceCollectionGap
+        {
+            Kind = IntelligenceCollectionGapKind.ObservationRejected,
+            RecordedAtUtc = DateTimeOffset.UtcNow,
+            Detail = "rejected observations"
+        };
+
+        database.Repository.BeforeCoverageCheckpointUpdate = () => throw new IOException("checkpoint crash");
+        await Assert.ThrowsAsync<IOException>(() => database.Repository.RecordCoverageDeltaAsync(
+            "feed.rejected",
+            "session-a",
+            3,
+            gap));
+        Assert.Empty(await database.Repository.GetCollectionGapsAsync(10));
+
+        database.Repository.BeforeCoverageCheckpointUpdate = null;
+        Assert.Equal(3, await database.Repository.RecordCoverageDeltaAsync("feed.rejected", "session-a", 3, gap));
+        Assert.Equal(0, await database.Repository.RecordCoverageDeltaAsync("feed.rejected", "session-a", 3, gap));
+        Assert.Equal(0, await database.Repository.RecordCoverageDeltaAsync("feed.rejected", "session-a", 1, gap));
+        Assert.Equal(2, await database.Repository.RecordCoverageDeltaAsync("feed.rejected", "session-b", 2, gap));
+
+        var gaps = await database.Repository.GetCollectionGapsAsync(10);
+        Assert.Equal(5, gaps.Where(item => item.Kind == IntelligenceCollectionGapKind.ObservationRejected).Sum(item => item.Count));
+    }
+
+    [Fact]
+    public async Task CoverageCheckpoint_UpgradesSchemaVersion1_WithoutKeepingTheOldSessionBaseline()
+    {
+        await using var database = new TempDatabase();
+        var connectionString = new SqliteConnectionStringBuilder
+        {
+            DataSource = database.DatabasePath,
+            Mode = SqliteOpenMode.ReadWriteCreate,
+            Pooling = false
+        }.ToString();
+        await using (var connection = new SqliteConnection(connectionString))
+        {
+            await connection.OpenAsync();
+            var command = connection.CreateCommand();
+            command.CommandText = """
+                CREATE TABLE SchemaVersion (
+                    Id INTEGER NOT NULL PRIMARY KEY CHECK (Id = 1),
+                    Version INTEGER NOT NULL
+                );
+                INSERT INTO SchemaVersion (Id, Version) VALUES (1, 1);
+                CREATE TABLE CoverageCheckpoint (
+                    Name TEXT NOT NULL PRIMARY KEY,
+                    Value INTEGER NOT NULL
+                );
+                INSERT INTO CoverageCheckpoint (Name, Value) VALUES ('feed.rejected', 9);
+                """;
+            await command.ExecuteNonQueryAsync();
+        }
+
+        await database.Repository.InitializeAsync();
+        var health = await database.Repository.GetHealthAsync();
+        Assert.Equal(2, health.SchemaVersion);
+
+        var gap = new IntelligenceCollectionGap
+        {
+            Kind = IntelligenceCollectionGapKind.ObservationRejected,
+            RecordedAtUtc = DateTimeOffset.UtcNow
+        };
+        Assert.Equal(2, await database.Repository.RecordCoverageDeltaAsync("feed.rejected", "session-new", 2, gap));
+        Assert.Equal(0, await database.Repository.RecordCoverageDeltaAsync("feed.rejected", "session-new", 2, gap));
+        Assert.Equal(2, (await database.Repository.GetCollectionGapsAsync(10)).Sum(item => item.Count));
+    }
+
+    [Fact]
+    public async Task Spool_QuarantinesInvalidRecords_AndPreservesPendingWhenTheDirectoryIsInaccessible()
+    {
+        await using var database = new TempDatabase();
+        await database.Repository.InitializeAsync();
+        var spool = new IntelligenceRecoverySpool(database.SpoolDirectory, 10);
+        Assert.True(spool.TryAppend(Observation(8, Epoch)));
+        File.WriteAllText(Path.Combine(database.SpoolDirectory, "2.json"), "{not-json");
+        File.WriteAllText(Path.Combine(database.SpoolDirectory, "3.json"), """{"killmailId":3,"source":null,"solarSystemId":null,"victim":null}""");
+        Assert.True(spool.TryRefresh());
+        Assert.Equal(3, spool.PendingCount);
+
+        spool.InjectedAccessException = new UnauthorizedAccessException("spool denied");
+        Assert.False(spool.TryRefresh());
+        Assert.Equal(3, spool.PendingCount);
+        Assert.True(spool.ReadBatch(8).AccessFailed);
+        Assert.Equal(3, spool.PendingCount);
+        Assert.False(spool.TryAppend(Observation(99, Epoch)));
+
+        spool.InjectedAccessException = null;
+        Assert.True(spool.TryRefresh());
+        var batch = spool.ReadBatch(8);
+        Assert.False(batch.AccessFailed);
+        Assert.Equal(3, batch.Entries.Count);
+        Assert.Contains(batch.Entries, entry => entry.Status == SpoolEntryStatus.Valid && entry.KillmailId == 8);
+        Assert.Contains(batch.Entries, entry => entry.KillmailId == 2 && entry.Status == SpoolEntryStatus.Corrupt);
+        Assert.Contains(batch.Entries, entry => entry.KillmailId == 3 && entry.Status == SpoolEntryStatus.Corrupt);
+
+        var blocked = Path.Combine(database.SpoolDirectory, "quarantine");
+        File.WriteAllText(blocked, "not a directory");
+        var corrupt = batch.Entries.Single(entry => entry.KillmailId == 2);
+        Assert.Equal(SpoolQuarantineResult.Retry, spool.TryQuarantine(corrupt.Path));
+        Assert.Equal(SpoolQuarantineResult.Retry, spool.TryQuarantine(corrupt.Path));
+        Assert.Equal(SpoolQuarantineResult.Abandoned, spool.TryQuarantine(corrupt.Path));
+        Assert.Equal(SpoolQuarantineResult.Abandoned, spool.TryQuarantine(corrupt.Path));
+        var afterAbandon = spool.ReadBatch(8);
+        Assert.DoesNotContain(afterAbandon.Entries, entry => entry.KillmailId == 2);
+        Assert.Contains(afterAbandon.Entries, entry => entry.KillmailId == 8 && entry.Status == SpoolEntryStatus.Valid);
+        Assert.True(File.Exists(corrupt.Path));
+
+        File.Delete(blocked);
+        var service = CreateService(
+            database.Repository,
+            new IntelligenceObservationFeed(NullLogger<IntelligenceObservationFeed>.Instance),
+            new IntelligencePersistenceOptions
+            {
+                RecoverySpoolPath = database.SpoolDirectory,
+                SpoolRetryDelay = TimeSpan.FromMilliseconds(20)
+            });
+        service.RecoverySpool.InjectedAccessException = new IOException("directory unavailable");
+        await service.StartAsync(CancellationToken.None);
+        try
+        {
+            await Task.Delay(60);
+            Assert.Null(await database.Repository.GetKillmailAsync(8));
+            Assert.False(service.RecoverySpool.ScanSucceeded);
+            Assert.Equal(3, spool.PendingCount);
+            Assert.True(File.Exists(Path.Combine(database.SpoolDirectory, "8.json")));
+            service.RecoverySpool.InjectedAccessException = null;
+            Assert.True(await WaitForAsync(
+                async () => await database.Repository.GetKillmailAsync(8) is not null,
+                TimeSpan.FromSeconds(3)));
+            Assert.True(await WaitForAsync(async () =>
+            {
+                var gaps = await database.Repository.GetCollectionGapsAsync(10);
+                return gaps.Count(gap => gap.Kind == IntelligenceCollectionGapKind.RecoveryUnusable) >= 1;
+            }, TimeSpan.FromSeconds(3)));
+        }
+        finally
+        {
+            await service.StopAsync(CancellationToken.None);
+        }
+
+        Assert.NotNull(await database.Repository.GetKillmailAsync(8));
+        var durable = await database.Repository.GetCollectionGapsAsync(10);
+        Assert.Contains(durable, gap => gap.Kind == IntelligenceCollectionGapKind.RecoveryUnusable && gap.KillmailId == 3);
+        Assert.False(File.Exists(Path.Combine(database.SpoolDirectory, "3.json")));
+        Assert.True(Directory.EnumerateFiles(Path.Combine(database.SpoolDirectory, "quarantine"), "3.json*").Any());
     }
 
     [Fact]
@@ -537,8 +698,8 @@ public sealed class IntelligencePersistenceReliabilityTests
         public Task<IReadOnlyList<IntelligenceCollectionGap>> GetCollectionGapsAsync(int limit, CancellationToken cancellationToken = default)
             => _inner.GetCollectionGapsAsync(limit, cancellationToken);
 
-        public Task<long> RecordCoverageDeltaAsync(string checkpointName, long observedTotal, IntelligenceCollectionGap gap, CancellationToken cancellationToken = default)
-            => _inner.RecordCoverageDeltaAsync(checkpointName, observedTotal, gap, cancellationToken);
+        public Task<long> RecordCoverageDeltaAsync(string checkpointName, string sessionId, long observedTotal, IntelligenceCollectionGap gap, CancellationToken cancellationToken = default)
+            => _inner.RecordCoverageDeltaAsync(checkpointName, sessionId, observedTotal, gap, cancellationToken);
 
         public Task<IReadOnlyList<KillmailHistoryRecord>> GetByTimeRangeAsync(DateTimeOffset fromUtcInclusive, DateTimeOffset toUtcInclusive, int limit, CancellationToken cancellationToken = default)
             => _inner.GetByTimeRangeAsync(fromUtcInclusive, toUtcInclusive, limit, cancellationToken);
@@ -599,8 +760,8 @@ public sealed class IntelligencePersistenceReliabilityTests
         public Task<IReadOnlyList<IntelligenceCollectionGap>> GetCollectionGapsAsync(int limit, CancellationToken cancellationToken = default)
             => _inner.GetCollectionGapsAsync(limit, cancellationToken);
 
-        public Task<long> RecordCoverageDeltaAsync(string checkpointName, long observedTotal, IntelligenceCollectionGap gap, CancellationToken cancellationToken = default)
-            => _inner.RecordCoverageDeltaAsync(checkpointName, observedTotal, gap, cancellationToken);
+        public Task<long> RecordCoverageDeltaAsync(string checkpointName, string sessionId, long observedTotal, IntelligenceCollectionGap gap, CancellationToken cancellationToken = default)
+            => _inner.RecordCoverageDeltaAsync(checkpointName, sessionId, observedTotal, gap, cancellationToken);
 
         public Task<IReadOnlyList<KillmailHistoryRecord>> GetByTimeRangeAsync(DateTimeOffset fromUtcInclusive, DateTimeOffset toUtcInclusive, int limit, CancellationToken cancellationToken = default)
             => _inner.GetByTimeRangeAsync(fromUtcInclusive, toUtcInclusive, limit, cancellationToken);
@@ -654,8 +815,8 @@ public sealed class IntelligencePersistenceReliabilityTests
         public Task<IReadOnlyList<IntelligenceCollectionGap>> GetCollectionGapsAsync(int limit, CancellationToken cancellationToken = default)
             => _inner.GetCollectionGapsAsync(limit, cancellationToken);
 
-        public Task<long> RecordCoverageDeltaAsync(string checkpointName, long observedTotal, IntelligenceCollectionGap gap, CancellationToken cancellationToken = default)
-            => _inner.RecordCoverageDeltaAsync(checkpointName, observedTotal, gap, cancellationToken);
+        public Task<long> RecordCoverageDeltaAsync(string checkpointName, string sessionId, long observedTotal, IntelligenceCollectionGap gap, CancellationToken cancellationToken = default)
+            => _inner.RecordCoverageDeltaAsync(checkpointName, sessionId, observedTotal, gap, cancellationToken);
 
         public Task<IReadOnlyList<KillmailHistoryRecord>> GetByTimeRangeAsync(DateTimeOffset fromUtcInclusive, DateTimeOffset toUtcInclusive, int limit, CancellationToken cancellationToken = default)
             => _inner.GetByTimeRangeAsync(fromUtcInclusive, toUtcInclusive, limit, cancellationToken);
@@ -701,7 +862,7 @@ public sealed class IntelligencePersistenceReliabilityTests
         public Task<IReadOnlyList<IntelligenceCollectionGap>> GetCollectionGapsAsync(int limit, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<IntelligenceCollectionGap>>([]);
 
-        public Task<long> RecordCoverageDeltaAsync(string checkpointName, long observedTotal, IntelligenceCollectionGap gap, CancellationToken cancellationToken = default)
+        public Task<long> RecordCoverageDeltaAsync(string checkpointName, string sessionId, long observedTotal, IntelligenceCollectionGap gap, CancellationToken cancellationToken = default)
             => throw new InvalidOperationException("checkpoint unavailable");
 
         public Task<IReadOnlyList<KillmailHistoryRecord>> GetByTimeRangeAsync(DateTimeOffset fromUtcInclusive, DateTimeOffset toUtcInclusive, int limit, CancellationToken cancellationToken = default)

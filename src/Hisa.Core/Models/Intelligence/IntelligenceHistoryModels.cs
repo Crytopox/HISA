@@ -8,6 +8,8 @@ public static class IntelligenceCollectionGapKind
     public const string SkippedSequence = "SkippedSequence";
     public const string ObservationRejected = "ObservationRejected";
     public const string ObservationUndelivered = "ObservationUndelivered";
+    public const string NormalizationRejected = "NormalizationRejected";
+    public const string RecoveryUnusable = "RecoveryUnusable";
 }
 
 public sealed record IntelligenceCollectionGap

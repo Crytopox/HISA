@@ -17,6 +17,7 @@ public sealed class IntelligencePersistenceHostedService : BackgroundService, II
     private readonly ILogger<IntelligencePersistenceHostedService> _logger;
     private readonly IntelligencePersistenceOptions _options;
     private readonly IntelligencePersistenceDiagnostics _diagnostics = new();
+    private readonly string _coverageSessionId = Guid.NewGuid().ToString("N");
     private readonly IntelligenceRecoverySpool _spool;
     private readonly Channel<QueuedWork> _channel;
     private int _subscribed;
@@ -83,7 +84,9 @@ public sealed class IntelligencePersistenceHostedService : BackgroundService, II
         });
     }
 
-    public IntelligencePersistenceSnapshot GetDiagnostics() => _diagnostics.Snapshot(_channel.Reader.Count, _spool.PendingCount);
+    internal IntelligenceRecoverySpool RecoverySpool => _spool;
+
+    public IntelligencePersistenceSnapshot GetDiagnostics() => _diagnostics.Snapshot(_channel.Reader.Count, _spool.ActionableCount);
 
     public void Record(IntelligenceCollectionGap gap)
     {
@@ -111,7 +114,7 @@ public sealed class IntelligencePersistenceHostedService : BackgroundService, II
     public override async Task StartAsync(CancellationToken cancellationToken)
     {
         await _repository.InitializeAsync(cancellationToken).ConfigureAwait(false);
-        _spool.Scan();
+        _spool.TryRefresh();
         if (Interlocked.Exchange(ref _subscribed, 1) == 0)
         {
             _feed.ObservationReceived += OnObservationReceived;
@@ -386,18 +389,55 @@ public sealed class IntelligencePersistenceHostedService : BackgroundService, II
 
     private async Task ReplaySpoolAsync(CancellationToken cancellationToken)
     {
-        if (_spool.PendingCount <= 0 || DateTime.UtcNow < _nextSpoolRetryUtc)
+        if (!_spool.ScanSucceeded && !_spool.TryRefresh())
+        {
+            _nextSpoolRetryUtc = DateTime.UtcNow + _options.SpoolRetryDelay;
+            _logger.LogWarning("Recovery spool directory is not accessible. Replay will retry.");
+            return;
+        }
+
+        if (_spool.ActionableCount <= 0 || DateTime.UtcNow < _nextSpoolRetryUtc)
         {
             return;
         }
 
-        foreach (var entry in _spool.ReadBatch(_options.BatchSize))
+        SpoolBatch batch;
+        try
         {
-            if (entry.Observation is null || entry.Observation.KillmailId <= 0)
+            batch = _spool.ReadBatch(_options.BatchSize);
+        }
+        catch (Exception ex)
+        {
+            _nextSpoolRetryUtc = DateTime.UtcNow + _options.SpoolRetryDelay;
+            _logger.LogWarning(ex, "Recovery spool read failed and will be retried.");
+            return;
+        }
+
+        if (batch.AccessFailed)
+        {
+            _nextSpoolRetryUtc = DateTime.UtcNow + _options.SpoolRetryDelay;
+            _logger.LogWarning("Recovery spool directory could not be read. Pending entries were left in place.");
+            return;
+        }
+
+        foreach (var entry in batch.Entries)
+        {
+            if (entry.Status == SpoolEntryStatus.TransientFailure)
             {
-                _spool.Acknowledge(entry.Path);
-                _diagnostics.RecordPermanentlyRejected(1);
-                _logger.LogError("Permanently rejected an unreadable recovery spool entry at {Path}.", entry.Path);
+                _nextSpoolRetryUtc = DateTime.UtcNow + _options.SpoolRetryDelay;
+                _logger.LogWarning(
+                    "Temporary filesystem failure reading recovery spool entry {Path}. Replay will retry.",
+                    entry.Path);
+                return;
+            }
+
+            if (entry.Status != SpoolEntryStatus.Valid || entry.Observation is null)
+            {
+                if (await QuarantineUnusableAsync(entry, cancellationToken).ConfigureAwait(false))
+                {
+                    return;
+                }
+
                 continue;
             }
 
@@ -413,10 +453,10 @@ public sealed class IntelligencePersistenceHostedService : BackgroundService, II
             }
             catch (Exception ex) when (Classify(ex) == PersistenceFailure.Permanent)
             {
-                _spool.Acknowledge(entry.Path);
-                _diagnostics.RecordPermanentlyRejected(1);
-                _logger.LogError(ex, "Permanently rejected spooled killmail {KillmailId}.", entry.Observation.KillmailId);
-                await TryRecordWriteFailureAsync(entry.Observation, ex, cancellationToken).ConfigureAwait(false);
+                if (await QuarantineUnusableAsync(entry, cancellationToken, ex.Message).ConfigureAwait(false))
+                {
+                    return;
+                }
             }
             catch (Exception ex)
             {
@@ -425,6 +465,38 @@ public sealed class IntelligencePersistenceHostedService : BackgroundService, II
                 return;
             }
         }
+    }
+
+    private async Task<bool> QuarantineUnusableAsync(
+        SpoolEntry entry,
+        CancellationToken cancellationToken,
+        string? detail = null)
+    {
+        var result = _spool.TryQuarantine(entry.Path);
+        if (result == SpoolQuarantineResult.Retry)
+        {
+            _nextSpoolRetryUtc = DateTime.UtcNow + _options.SpoolRetryDelay;
+            _logger.LogWarning("Could not quarantine recovery spool entry {Path}. Retrying.", entry.Path);
+            return true;
+        }
+
+        _diagnostics.RecordPermanentlyRejected(1);
+        _logger.LogError(
+            "Recovery spool entry {Path} is permanently unusable. Quarantine result: {Result}.",
+            entry.Path,
+            result);
+        await TryRecordGapsAsync(
+        [
+            new IntelligenceCollectionGap
+            {
+                Kind = IntelligenceCollectionGapKind.RecoveryUnusable,
+                RecordedAtUtc = DateTimeOffset.UtcNow,
+                Source = entry.Observation?.Source,
+                KillmailId = entry.KillmailId > 0 ? entry.KillmailId : null,
+                Detail = detail ?? entry.Detail ?? "Recovery spool entry could not be read."
+            }
+        ], cancellationToken).ConfigureAwait(false);
+        return false;
     }
 
     private async Task<KillmailWriteResult> InsertWithRetryAsync(
@@ -652,6 +724,7 @@ public sealed class IntelligencePersistenceHostedService : BackgroundService, II
 
         await _repository.RecordCoverageDeltaAsync(
             kind,
+            _coverageSessionId,
             observedTotal,
             new IntelligenceCollectionGap
             {
@@ -756,7 +829,7 @@ public sealed class IntelligencePersistenceHostedService : BackgroundService, II
         return _channel.Reader.Count > 0
             || now >= _nextRetentionUtc
             || now >= _nextCoverageCheckpointUtc
-            || (_spool.PendingCount > 0 && now >= _nextSpoolRetryUtc)
+            || (_spool.ActionableCount > 0 && now >= _nextSpoolRetryUtc)
             || _diagnostics.HasPendingSummaries;
     }
 
@@ -768,7 +841,7 @@ public sealed class IntelligencePersistenceHostedService : BackgroundService, II
             next = _nextCoverageCheckpointUtc;
         }
 
-        if (_spool.PendingCount > 0 && _nextSpoolRetryUtc < next)
+        if (_spool.ActionableCount > 0 && _nextSpoolRetryUtc < next)
         {
             next = _nextSpoolRetryUtc;
         }
