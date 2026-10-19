@@ -57,6 +57,12 @@ public sealed record KillmailHistoryDetail
     public required IReadOnlyList<KillmailParticipantRecord> Participants { get; init; }
 }
 
+public readonly record struct KillmailHistoryCursor(DateTimeOffset OccurredAtUtc, long KillmailId);
+
+public sealed record KillmailHistoryPage(
+    IReadOnlyList<KillmailHistoryRecord> Records,
+    KillmailHistoryCursor? NextCursor);
+
 public sealed record KillmailWriteResult(int Inserted, int Duplicates, int Failed);
 
 public sealed record IntelligenceHistoryHealth(

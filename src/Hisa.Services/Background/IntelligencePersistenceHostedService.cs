@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Threading.Channels;
 using Hisa.Core.Abstractions;
 using Hisa.Core.Models.Intelligence;
@@ -16,10 +17,12 @@ public sealed class IntelligencePersistenceHostedService : BackgroundService, II
     private readonly ILogger<IntelligencePersistenceHostedService> _logger;
     private readonly IntelligencePersistenceOptions _options;
     private readonly IntelligencePersistenceDiagnostics _diagnostics = new();
+    private readonly IntelligenceRecoverySpool _spool;
     private readonly Channel<QueuedWork> _channel;
     private int _subscribed;
-    private int _feedCoverageRecorded;
     private DateTime _nextRetentionUtc;
+    private DateTime _nextCoverageCheckpointUtc;
+    private DateTime _nextSpoolRetryUtc = DateTime.MinValue;
 
     public IntelligencePersistenceHostedService(
         IIntelligenceHistoryRepository repository,
@@ -51,9 +54,14 @@ public sealed class IntelligencePersistenceHostedService : BackgroundService, II
 
         if (options.MaxBatchWait <= TimeSpan.Zero ||
             options.ShutdownFlushTimeout <= TimeSpan.Zero ||
+            options.ShutdownGapReportTimeout <= TimeSpan.Zero ||
             options.RetentionPeriod <= TimeSpan.Zero ||
+            options.GapRetentionPeriod <= TimeSpan.Zero ||
             options.RetentionInterval <= TimeSpan.Zero ||
-            options.MaxWriteAttempts < 1)
+            options.SpoolRetryDelay <= TimeSpan.Zero ||
+            options.CoverageCheckpointInterval <= TimeSpan.Zero ||
+            options.MaxWriteAttempts < 1 ||
+            options.MaxSpoolEntries < 1)
         {
             throw new ArgumentOutOfRangeException(nameof(options), "Persistence timings and write attempts must be positive.");
         }
@@ -63,6 +71,10 @@ public sealed class IntelligencePersistenceHostedService : BackgroundService, II
         _logger = logger;
         _options = options;
         _nextRetentionUtc = DateTime.UtcNow;
+        _nextCoverageCheckpointUtc = DateTime.UtcNow;
+        _spool = new IntelligenceRecoverySpool(
+            IntelligencePersistenceOptions.ResolveSpoolDirectory(options, repository.DatabasePath),
+            options.MaxSpoolEntries);
         _channel = Channel.CreateBounded<QueuedWork>(new BoundedChannelOptions(options.QueueCapacity)
         {
             FullMode = BoundedChannelFullMode.Wait,
@@ -71,7 +83,7 @@ public sealed class IntelligencePersistenceHostedService : BackgroundService, II
         });
     }
 
-    public IntelligencePersistenceSnapshot GetDiagnostics() => _diagnostics.Snapshot(_channel.Reader.Count);
+    public IntelligencePersistenceSnapshot GetDiagnostics() => _diagnostics.Snapshot(_channel.Reader.Count, _spool.PendingCount);
 
     public void Record(IntelligenceCollectionGap gap)
     {
@@ -99,6 +111,7 @@ public sealed class IntelligencePersistenceHostedService : BackgroundService, II
     public override async Task StartAsync(CancellationToken cancellationToken)
     {
         await _repository.InitializeAsync(cancellationToken).ConfigureAwait(false);
+        _spool.Scan();
         if (Interlocked.Exchange(ref _subscribed, 1) == 0)
         {
             _feed.ObservationReceived += OnObservationReceived;
@@ -160,12 +173,12 @@ public sealed class IntelligencePersistenceHostedService : BackgroundService, II
 
     private async Task<bool> WaitForWorkAsync(CancellationToken stoppingToken)
     {
-        if (_channel.Reader.Count > 0 || DateTime.UtcNow >= _nextRetentionUtc || _diagnostics.HasPendingSummaries)
+        if (HasScheduledWork())
         {
             return true;
         }
 
-        var delay = _nextRetentionUtc - DateTime.UtcNow;
+        var delay = NextWakeUtc() - DateTime.UtcNow;
         using var wake = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
         if (delay > TimeSpan.Zero)
         {
@@ -174,13 +187,11 @@ public sealed class IntelligencePersistenceHostedService : BackgroundService, II
 
         try
         {
-            return await _channel.Reader.WaitToReadAsync(wake.Token).ConfigureAwait(false)
-                || _channel.Reader.Count > 0
-                || _diagnostics.HasPendingSummaries;
+            return await _channel.Reader.WaitToReadAsync(wake.Token).ConfigureAwait(false) || HasScheduledWork();
         }
         catch (OperationCanceledException) when (!stoppingToken.IsCancellationRequested)
         {
-            return _channel.Reader.Count > 0 || DateTime.UtcNow >= _nextRetentionUtc || _diagnostics.HasPendingSummaries;
+            return HasScheduledWork();
         }
     }
 
@@ -233,11 +244,14 @@ public sealed class IntelligencePersistenceHostedService : BackgroundService, II
             observations.Clear();
         }
 
+        await ReplaySpoolAsync(cancellationToken).ConfigureAwait(false);
+
         var summaryStart = gaps.Count;
         _diagnostics.AppendPending(gaps);
         if (gaps.Count == 0)
         {
             await RunRetentionIfDueAsync(cancellationToken).ConfigureAwait(false);
+            await CheckpointFeedAsync(cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -262,6 +276,7 @@ public sealed class IntelligencePersistenceHostedService : BackgroundService, II
             await Task.Delay(Backoff(1), cancellationToken).ConfigureAwait(false);
         }
 
+        await CheckpointFeedAsync(cancellationToken).ConfigureAwait(false);
         await RunRetentionIfDueAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -331,13 +346,85 @@ public sealed class IntelligencePersistenceHostedService : BackgroundService, II
             }
             catch (Exception ex)
             {
-                _diagnostics.RecordFailed(1);
-                _logger.LogError(ex, "Failed to persist killmail {KillmailId}.", observation.KillmailId);
-                await TryRecordWriteFailureAsync(observation, ex, cancellationToken).ConfigureAwait(false);
+                await ParkFailedObservationAsync(observation, ex, cancellationToken).ConfigureAwait(false);
             }
         }
 
         batch.Clear();
+    }
+
+    private async Task ParkFailedObservationAsync(
+        KillmailObservation observation,
+        Exception exception,
+        CancellationToken cancellationToken)
+    {
+        if (Classify(exception) == PersistenceFailure.Permanent)
+        {
+            _diagnostics.RecordPermanentlyRejected(1);
+            _logger.LogError(exception, "Permanently rejected killmail {KillmailId}.", observation.KillmailId);
+            await TryRecordWriteFailureAsync(observation, exception, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        if (_spool.TryAppend(observation))
+        {
+            _nextSpoolRetryUtc = DateTime.UtcNow + _options.SpoolRetryDelay;
+            _logger.LogWarning(
+                exception,
+                "Parked killmail {KillmailId} in the recovery spool after a storage failure.",
+                observation.KillmailId);
+            return;
+        }
+
+        _diagnostics.RecordLost(1);
+        _logger.LogError(
+            exception,
+            "Lost killmail {KillmailId}. The database and recovery spool are both unavailable.",
+            observation.KillmailId);
+        await TryRecordWriteFailureAsync(observation, exception, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task ReplaySpoolAsync(CancellationToken cancellationToken)
+    {
+        if (_spool.PendingCount <= 0 || DateTime.UtcNow < _nextSpoolRetryUtc)
+        {
+            return;
+        }
+
+        foreach (var entry in _spool.ReadBatch(_options.BatchSize))
+        {
+            if (entry.Observation is null || entry.Observation.KillmailId <= 0)
+            {
+                _spool.Acknowledge(entry.Path);
+                _diagnostics.RecordPermanentlyRejected(1);
+                _logger.LogError("Permanently rejected an unreadable recovery spool entry at {Path}.", entry.Path);
+                continue;
+            }
+
+            try
+            {
+                var result = await _repository.InsertBatchAsync([entry.Observation], cancellationToken).ConfigureAwait(false);
+                _spool.Acknowledge(entry.Path);
+                _diagnostics.AddWrite(result);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex) when (Classify(ex) == PersistenceFailure.Permanent)
+            {
+                _spool.Acknowledge(entry.Path);
+                _diagnostics.RecordPermanentlyRejected(1);
+                _logger.LogError(ex, "Permanently rejected spooled killmail {KillmailId}.", entry.Observation.KillmailId);
+                await TryRecordWriteFailureAsync(entry.Observation, ex, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _nextSpoolRetryUtc = DateTime.UtcNow + _options.SpoolRetryDelay;
+                _logger.LogWarning(ex, "Recovery spool replay is waiting for the intelligence database.");
+                return;
+            }
+        }
     }
 
     private async Task<KillmailWriteResult> InsertWithRetryAsync(
@@ -389,6 +476,29 @@ public sealed class IntelligencePersistenceHostedService : BackgroundService, II
                     deleted,
                     cutoff);
             }
+
+            var gapCutoff = DateTimeOffset.UtcNow - _options.GapRetentionPeriod;
+            var gapsDeleted = 0;
+            for (var batch = 0; batch < _options.MaxRetentionBatchesPerCycle; batch++)
+            {
+                var count = await _repository.DeleteGapsRecordedBeforeAsync(
+                    gapCutoff,
+                    _options.RetentionBatchSize,
+                    cancellationToken).ConfigureAwait(false);
+                gapsDeleted += count;
+                if (count < _options.RetentionBatchSize)
+                {
+                    break;
+                }
+            }
+
+            if (gapsDeleted > 0)
+            {
+                _logger.LogInformation(
+                    "Deleted {Count} intelligence coverage gaps recorded before {Cutoff:o}.",
+                    gapsDeleted,
+                    gapCutoff);
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -404,38 +514,59 @@ public sealed class IntelligencePersistenceHostedService : BackgroundService, II
         List<KillmailObservation> observations,
         List<IntelligenceCollectionGap> gaps)
     {
-        using var timeout = new CancellationTokenSource(_options.ShutdownFlushTimeout);
-        try
+        using (var flush = new CancellationTokenSource(_options.ShutdownFlushTimeout))
         {
-            Drain(observations, gaps, int.MaxValue);
-            if (observations.Count > 0)
+            try
             {
-                await CommitBatchAsync(observations, timeout.Token).ConfigureAwait(false);
-                observations.Clear();
+                Drain(observations, gaps, int.MaxValue);
+                if (observations.Count > 0)
+                {
+                    await CommitBatchAsync(observations, flush.Token).ConfigureAwait(false);
+                    observations.Clear();
+                }
+
+                await ReplaySpoolAsync(flush.Token).ConfigureAwait(false);
+                _diagnostics.AppendPending(gaps);
+                if (gaps.Count > 0)
+                {
+                    await _repository.RecordGapsAsync(gaps, flush.Token).ConfigureAwait(false);
+                    gaps.Clear();
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Intelligence persistence shutdown flush did not commit {KillmailCount} killmails and {GapCount} coverage gaps.",
+                    observations.Count,
+                    gaps.Count);
+            }
+        }
+
+        using var report = new CancellationTokenSource(_options.ShutdownGapReportTimeout);
+        var unspooled = new List<KillmailObservation>();
+        foreach (var observation in observations)
+        {
+            if (_spool.TryAppend(observation))
+            {
+                continue;
             }
 
-            _diagnostics.AppendPending(gaps);
-            if (gaps.Count > 0)
-            {
-                await _repository.RecordGapsAsync(gaps, timeout.Token).ConfigureAwait(false);
-                gaps.Clear();
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(
-                ex,
-                "Intelligence persistence shutdown flush did not commit {KillmailCount} killmails and {GapCount} coverage gaps.",
-                observations.Count,
-                gaps.Count);
+            unspooled.Add(observation);
         }
 
-        if (observations.Count > 0)
+        observations.Clear();
+        if (unspooled.Count > 0)
         {
-            await RecordUndeliveredAsync(observations, timeout.Token).ConfigureAwait(false);
+            await RecordUndeliveredAsync(unspooled, report.Token).ConfigureAwait(false);
         }
 
-        await RecordFeedCoverageAsync(timeout.Token).ConfigureAwait(false);
+        if (gaps.Count > 0)
+        {
+            await TryRecordGapsAsync(gaps, report.Token).ConfigureAwait(false);
+        }
+
+        await CheckpointFeedAsync(report.Token).ConfigureAwait(false);
     }
 
     private async Task RecordUndeliveredAsync(List<KillmailObservation> observations, CancellationToken cancellationToken)
@@ -450,64 +581,86 @@ public sealed class IntelligencePersistenceHostedService : BackgroundService, II
             KillmailId = observation.KillmailId,
             Detail = "Persistence shutdown ended before this killmail was committed."
         }).ToArray();
-        try
+        if (await TryRecordGapsAsync(gaps, cancellationToken).ConfigureAwait(false))
         {
-            await _repository.RecordGapsAsync(gaps, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to record {Count} undelivered intelligence killmails.", observations.Count);
+            return;
         }
 
-        observations.Clear();
+        _logger.LogWarning(
+            "Shutdown coverage for {Count} killmails was logged but not persisted.",
+            observations.Count);
     }
 
-    private async Task RecordFeedCoverageAsync(CancellationToken cancellationToken)
+    private async Task<bool> TryRecordGapsAsync(
+        IReadOnlyList<IntelligenceCollectionGap> gaps,
+        CancellationToken cancellationToken)
     {
-        if (Interlocked.Exchange(ref _feedCoverageRecorded, 1) != 0 ||
-            _feed is not IntelligenceObservationFeed feed)
+        try
         {
-            return;
+            await _repository.RecordGapsAsync(gaps, cancellationToken).ConfigureAwait(false);
+            return true;
         }
-
-        var gaps = new List<IntelligenceCollectionGap>(2);
-        if (feed.RejectedEnqueueCount > 0)
+        catch (Exception ex)
         {
-            gaps.Add(new IntelligenceCollectionGap
-            {
-                Kind = IntelligenceCollectionGapKind.ObservationRejected,
-                RecordedAtUtc = DateTimeOffset.UtcNow,
-                Source = KillmailObservation.R2Z2SourceId,
-                Count = ToCount(feed.RejectedEnqueueCount),
-                Detail = "Observation feed rejected publishes because its queue was full."
-            });
+            _diagnostics.RecordLoggedOnly(gaps.Count);
+            _logger.LogWarning(
+                ex,
+                "{Count} intelligence coverage gaps were logged but not persisted.",
+                gaps.Count);
+            return false;
         }
+    }
 
-        if (feed.UndeliveredCount > 0)
-        {
-            gaps.Add(new IntelligenceCollectionGap
-            {
-                Kind = IntelligenceCollectionGapKind.ObservationUndelivered,
-                RecordedAtUtc = DateTimeOffset.UtcNow,
-                Source = KillmailObservation.R2Z2SourceId,
-                Count = ToCount(feed.UndeliveredCount),
-                Detail = "Observation feed stopped before these observations were delivered."
-            });
-        }
-
-        if (gaps.Count == 0)
+    private async Task CheckpointFeedAsync(CancellationToken cancellationToken)
+    {
+        if (_feed is not IntelligenceObservationFeed feed)
         {
             return;
         }
 
         try
         {
-            await _repository.RecordGapsAsync(gaps, cancellationToken).ConfigureAwait(false);
+            await RecordFeedDeltaAsync(
+                IntelligenceCollectionGapKind.ObservationRejected,
+                feed.RejectedEnqueueCount,
+                "Observation feed rejected publishes because its queue was full.",
+                cancellationToken).ConfigureAwait(false);
+            await RecordFeedDeltaAsync(
+                IntelligenceCollectionGapKind.ObservationUndelivered,
+                feed.UndeliveredCount,
+                "Observation feed stopped before these observations were delivered.",
+                cancellationToken).ConfigureAwait(false);
+            _nextCoverageCheckpointUtc = DateTime.UtcNow + _options.CoverageCheckpointInterval;
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to record observation-feed coverage gaps.");
+            _diagnostics.RecordLoggedOnly(1);
+            _logger.LogWarning(ex, "Observation-feed coverage delta was logged but not persisted.");
         }
+    }
+
+    private async Task RecordFeedDeltaAsync(
+        string kind,
+        long observedTotal,
+        string detail,
+        CancellationToken cancellationToken)
+    {
+        if (observedTotal <= 0)
+        {
+            return;
+        }
+
+        await _repository.RecordCoverageDeltaAsync(
+            kind,
+            observedTotal,
+            new IntelligenceCollectionGap
+            {
+                Kind = kind,
+                RecordedAtUtc = DateTimeOffset.UtcNow,
+                Source = KillmailObservation.R2Z2SourceId,
+                Detail = detail
+            },
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task TryRecordWriteFailureAsync(
@@ -532,7 +685,8 @@ public sealed class IntelligencePersistenceHostedService : BackgroundService, II
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to record a write failure for killmail {KillmailId}.", observation.KillmailId);
+            _diagnostics.RecordLoggedOnly(1);
+            _logger.LogWarning(ex, "Coverage gap for killmail {KillmailId} was logged but not persisted.", observation.KillmailId);
         }
     }
 
@@ -574,7 +728,7 @@ public sealed class IntelligencePersistenceHostedService : BackgroundService, II
                 return;
             }
 
-            _diagnostics.RecordOverflow(observation.KillmailId);
+            _diagnostics.RecordOverflow(observation);
             _logger.LogWarning(
                 "Intelligence persistence queue is full. Dropped killmail {KillmailId} at sequence {Sequence}. Capacity: {Capacity}.",
                 observation.KillmailId,
@@ -583,7 +737,7 @@ public sealed class IntelligencePersistenceHostedService : BackgroundService, II
         }
         catch (Exception ex)
         {
-            _diagnostics.RecordOverflow(observation.KillmailId);
+            _diagnostics.RecordOverflow(observation);
             _logger.LogWarning(ex, "Failed to queue killmail {KillmailId} for persistence.", observation.KillmailId);
         }
     }
@@ -596,6 +750,32 @@ public sealed class IntelligencePersistenceHostedService : BackgroundService, II
         }
     }
 
+    private bool HasScheduledWork()
+    {
+        var now = DateTime.UtcNow;
+        return _channel.Reader.Count > 0
+            || now >= _nextRetentionUtc
+            || now >= _nextCoverageCheckpointUtc
+            || (_spool.PendingCount > 0 && now >= _nextSpoolRetryUtc)
+            || _diagnostics.HasPendingSummaries;
+    }
+
+    private DateTime NextWakeUtc()
+    {
+        var next = _nextRetentionUtc;
+        if (_nextCoverageCheckpointUtc < next)
+        {
+            next = _nextCoverageCheckpointUtc;
+        }
+
+        if (_spool.PendingCount > 0 && _nextSpoolRetryUtc < next)
+        {
+            next = _nextSpoolRetryUtc;
+        }
+
+        return next;
+    }
+
     private TimeSpan Backoff(int attempt)
     {
         var shift = Math.Min(attempt - 1, 6);
@@ -603,12 +783,39 @@ public sealed class IntelligencePersistenceHostedService : BackgroundService, II
         return delay <= _options.WriteRetryMaxDelay ? delay : _options.WriteRetryMaxDelay;
     }
 
-    private static bool IsTransient(Exception exception)
+    private static bool IsTransient(Exception exception) => Classify(exception) == PersistenceFailure.Transient;
+
+    private static PersistenceFailure Classify(Exception exception)
     {
-        return exception is SqliteException sqlite && sqlite.SqliteErrorCode is 5 or 6;
+        if (exception is SqliteException sqlite)
+        {
+            if (sqlite.SqliteErrorCode is 5 or 6)
+            {
+                return PersistenceFailure.Transient;
+            }
+
+            if (sqlite.SqliteErrorCode == 19)
+            {
+                return PersistenceFailure.Permanent;
+            }
+
+            return PersistenceFailure.Storage;
+        }
+
+        if (exception is JsonException or FormatException or ArgumentException)
+        {
+            return PersistenceFailure.Permanent;
+        }
+
+        return PersistenceFailure.Storage;
     }
 
-    private static int ToCount(long value) => value > int.MaxValue ? int.MaxValue : (int)value;
+    private enum PersistenceFailure
+    {
+        Transient,
+        Permanent,
+        Storage
+    }
 
     private abstract record QueuedWork;
 

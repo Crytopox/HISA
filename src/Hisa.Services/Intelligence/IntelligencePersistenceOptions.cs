@@ -35,7 +35,19 @@ public sealed class IntelligencePersistenceOptions
 
     public TimeSpan ShutdownFlushTimeout { get; set; } = TimeSpan.FromSeconds(5);
 
+    public TimeSpan ShutdownGapReportTimeout { get; set; } = TimeSpan.FromSeconds(1);
+
     public int MaxQueryLimit { get; set; } = DefaultMaxQueryLimit;
+
+    public int MaxSpoolEntries { get; set; } = 2048;
+
+    public string? RecoverySpoolPath { get; set; }
+
+    public TimeSpan SpoolRetryDelay { get; set; } = TimeSpan.FromSeconds(2);
+
+    public TimeSpan CoverageCheckpointInterval { get; set; } = TimeSpan.FromSeconds(30);
+
+    public TimeSpan GapRetentionPeriod { get; set; } = TimeSpan.FromDays(30);
 
     public static string ResolveDatabasePath(IntelligencePersistenceOptions options)
     {
@@ -46,5 +58,21 @@ public sealed class IntelligencePersistenceOptions
 
         var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HISA");
         return Path.Combine(directory, "hisa-intelligence.db");
+    }
+
+    public static string ResolveSpoolDirectory(IntelligencePersistenceOptions options, string databasePath)
+    {
+        if (!string.IsNullOrWhiteSpace(options.RecoverySpoolPath))
+        {
+            return Path.GetFullPath(options.RecoverySpoolPath);
+        }
+
+        var directory = Path.GetDirectoryName(Path.GetFullPath(databasePath));
+        if (string.IsNullOrEmpty(directory))
+        {
+            directory = Path.GetTempPath();
+        }
+
+        return Path.Combine(directory, "hisa-intelligence-spool");
     }
 }

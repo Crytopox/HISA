@@ -189,9 +189,30 @@ public sealed class SqliteIntelligenceHistoryRepository : IIntelligenceHistoryRe
             deleteKillmails.Parameters.AddWithValue("$cutoff", ToTicks(cutoffUtc));
             deleteKillmails.Parameters.AddWithValue("$limit", maxRows);
             var deleted = await deleteKillmails.ExecuteNonQueryAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return deleted;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
 
+    public async Task<int> DeleteGapsRecordedBeforeAsync(
+        DateTimeOffset cutoffUtc,
+        int maxRows,
+        CancellationToken cancellationToken = default)
+    {
+        if (maxRows < 1)
+        {
+            return 0;
+        }
+
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            var connection = RequireConnection();
             var deleteGaps = connection.CreateCommand();
-            deleteGaps.Transaction = transaction;
             deleteGaps.CommandText = """
                 DELETE FROM CollectionGap
                 WHERE Id IN (
@@ -203,9 +224,158 @@ public sealed class SqliteIntelligenceHistoryRepository : IIntelligenceHistoryRe
                 """;
             deleteGaps.Parameters.AddWithValue("$cutoff", ToTicks(cutoffUtc));
             deleteGaps.Parameters.AddWithValue("$limit", maxRows);
-            await deleteGaps.ExecuteNonQueryAsync(cancellationToken);
+            return await deleteGaps.ExecuteNonQueryAsync(cancellationToken);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<KillmailHistoryPage> GetTimeRangePageAsync(
+        DateTimeOffset fromUtcInclusive,
+        DateTimeOffset toUtcInclusive,
+        int limit,
+        KillmailHistoryCursor? after,
+        CancellationToken cancellationToken = default)
+    {
+        if (limit < 1)
+        {
+            return new KillmailHistoryPage([], null);
+        }
+
+        var boundedLimit = Math.Min(limit, _maxQueryLimit);
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            var connection = RequireConnection();
+            var command = connection.CreateCommand();
+            command.CommandText = $"""
+                SELECT {KillmailColumns}
+                FROM Killmail
+                WHERE OccurredAtUtcTicks >= $from
+                  AND OccurredAtUtcTicks <= $to
+                  AND (
+                    $afterTicks IS NULL
+                    OR OccurredAtUtcTicks > $afterTicks
+                    OR (OccurredAtUtcTicks = $afterTicks AND KillmailId > $afterId)
+                  )
+                ORDER BY OccurredAtUtcTicks ASC, KillmailId ASC
+                LIMIT $limit;
+                """;
+            command.Parameters.AddWithValue("$from", ToTicks(fromUtcInclusive));
+            command.Parameters.AddWithValue("$to", ToTicks(toUtcInclusive));
+            command.Parameters.AddWithValue("$afterTicks", after is KillmailHistoryCursor cursor ? ToTicks(cursor.OccurredAtUtc) : DBNull.Value);
+            command.Parameters.AddWithValue("$afterId", after?.KillmailId ?? 0L);
+            command.Parameters.AddWithValue("$limit", boundedLimit);
+            var results = new List<KillmailHistoryRecord>();
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                results.Add(ReadKillmail(reader));
+            }
+
+            KillmailHistoryCursor? next = results.Count == boundedLimit
+                ? new KillmailHistoryCursor(results[^1].OccurredAtUtc, results[^1].KillmailId)
+                : null;
+            return new KillmailHistoryPage(results, next);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<IReadOnlyList<IntelligenceCollectionGap>> GetCollectionGapsAsync(
+        int limit,
+        CancellationToken cancellationToken = default)
+    {
+        if (limit < 1)
+        {
+            return [];
+        }
+
+        var boundedLimit = Math.Min(limit, _maxQueryLimit);
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            var connection = RequireConnection();
+            var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT RecordedAtUtcTicks, Kind, Source, SourceSequence, KillmailId, Count, Detail
+                FROM CollectionGap
+                ORDER BY Id ASC
+                LIMIT $limit;
+                """;
+            command.Parameters.AddWithValue("$limit", boundedLimit);
+            var gaps = new List<IntelligenceCollectionGap>();
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                gaps.Add(new IntelligenceCollectionGap
+                {
+                    RecordedAtUtc = FromTicks(reader.GetInt64(0)),
+                    Kind = reader.GetString(1),
+                    Source = ReadNullableString(reader, 2),
+                    SourceSequence = ReadNullableInt64(reader, 3),
+                    KillmailId = ReadNullableInt64(reader, 4),
+                    Count = Convert.ToInt32(reader.GetValue(5), System.Globalization.CultureInfo.InvariantCulture),
+                    Detail = ReadNullableString(reader, 6)
+                });
+            }
+
+            return gaps;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<long> RecordCoverageDeltaAsync(
+        string checkpointName,
+        long observedTotal,
+        IntelligenceCollectionGap gap,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(checkpointName);
+        ArgumentNullException.ThrowIfNull(gap);
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            var connection = RequireConnection();
+            var insertGap = RequireCommand(_insertGap);
+            await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+            insertGap.Transaction = transaction;
+            var read = connection.CreateCommand();
+            read.Transaction = transaction;
+            read.CommandText = "SELECT Value FROM CoverageCheckpoint WHERE Name = $name;";
+            read.Parameters.AddWithValue("$name", checkpointName);
+            var storedValue = await read.ExecuteScalarAsync(cancellationToken);
+            var stored = storedValue is null or DBNull ? 0L : Convert.ToInt64(storedValue);
+            if (observedTotal <= stored)
+            {
+                await transaction.CommitAsync(cancellationToken);
+                return 0;
+            }
+
+            var delta = observedTotal - stored;
+            var recorded = delta > int.MaxValue ? int.MaxValue : (int)delta;
+            BindGap(insertGap, gap with { Count = recorded, RecordedAtUtc = gap.RecordedAtUtc == default ? DateTimeOffset.UtcNow : gap.RecordedAtUtc });
+            await insertGap.ExecuteNonQueryAsync(cancellationToken);
+
+            var update = connection.CreateCommand();
+            update.Transaction = transaction;
+            update.CommandText = """
+                INSERT INTO CoverageCheckpoint (Name, Value)
+                VALUES ($name, $value)
+                ON CONFLICT (Name) DO UPDATE SET Value = excluded.Value;
+                """;
+            update.Parameters.AddWithValue("$name", checkpointName);
+            update.Parameters.AddWithValue("$value", stored + recorded);
+            await update.ExecuteNonQueryAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
-            return deleted;
+            return recorded;
         }
         finally
         {

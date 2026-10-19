@@ -7,31 +7,42 @@ public sealed record IntelligencePersistenceSnapshot(
     long Queued,
     long Committed,
     long Duplicates,
-    long Failed,
+    long PermanentlyRejected,
+    long Pending,
+    long Lost,
     long QueueOverflow,
     long Undelivered,
+    long LoggedOnlyGaps,
     int QueueDepth,
     int PeakQueueDepth);
 
 public sealed class IntelligencePersistenceDiagnostics
 {
+    private readonly object _gapGate = new();
+    private readonly Dictionary<string, CoalescedGap> _coalesced = new(StringComparer.Ordinal);
     private long _received;
     private long _queued;
     private long _committed;
     private long _duplicates;
-    private long _failed;
+    private long _permanentlyRejected;
+    private long _lost;
     private long _queueOverflow;
     private long _undelivered;
+    private long _loggedOnlyGaps;
     private int _peakQueueDepth;
-    private long _pendingOverflows;
-    private long _pendingCoalescedGaps;
-    private long _lastOverflowKillmailId = long.MinValue;
-    private long _lastCoalescedSequence = long.MinValue;
 
     public long QueueOverflow => Volatile.Read(ref _queueOverflow);
 
-    public bool HasPendingSummaries =>
-        Volatile.Read(ref _pendingOverflows) > 0 || Volatile.Read(ref _pendingCoalescedGaps) > 0;
+    public bool HasPendingSummaries
+    {
+        get
+        {
+            lock (_gapGate)
+            {
+                return _coalesced.Count > 0;
+            }
+        }
+    }
 
     public void RecordReceived() => Interlocked.Increment(ref _received);
 
@@ -51,22 +62,43 @@ public sealed class IntelligencePersistenceDiagnostics
         while (Interlocked.CompareExchange(ref _peakQueueDepth, depth, seen) != seen);
     }
 
-    public void RecordOverflow(long? killmailId)
+    public void RecordOverflow(KillmailObservation observation)
     {
         Interlocked.Increment(ref _queueOverflow);
-        Interlocked.Increment(ref _pendingOverflows);
-        if (killmailId is long id)
+        RecordCoalescedGap(new IntelligenceCollectionGap
         {
-            Interlocked.Exchange(ref _lastOverflowKillmailId, id);
-        }
+            Kind = IntelligenceCollectionGapKind.QueueOverflow,
+            RecordedAtUtc = DateTimeOffset.UtcNow,
+            Source = observation.Source,
+            SourceSequence = observation.SourceSequence,
+            KillmailId = observation.KillmailId,
+            Detail = "Persistence queue rejected the observation before it was written."
+        });
     }
 
     public void RecordCoalescedGap(IntelligenceCollectionGap gap)
     {
-        Interlocked.Increment(ref _pendingCoalescedGaps);
-        if (gap.SourceSequence is long sequence)
+        lock (_gapGate)
         {
-            Interlocked.Exchange(ref _lastCoalescedSequence, sequence);
+            if (!_coalesced.TryGetValue(gap.Kind, out var existing))
+            {
+                existing = new CoalescedGap { Kind = gap.Kind };
+                _coalesced.Add(gap.Kind, existing);
+            }
+
+            existing.Count += gap.Count < 1 ? 1 : gap.Count;
+            existing.Source ??= gap.Source;
+            existing.KillmailId = gap.KillmailId ?? existing.KillmailId;
+            if (gap.SourceSequence is long sequence)
+            {
+                existing.FirstSequence ??= sequence;
+                existing.LastSequence = sequence;
+            }
+
+            if (!string.IsNullOrWhiteSpace(gap.Detail))
+            {
+                existing.Detail = gap.Detail;
+            }
         }
     }
 
@@ -83,11 +115,19 @@ public sealed class IntelligencePersistenceDiagnostics
         }
     }
 
-    public void RecordFailed(int count)
+    public void RecordPermanentlyRejected(int count)
     {
         if (count > 0)
         {
-            Interlocked.Add(ref _failed, count);
+            Interlocked.Add(ref _permanentlyRejected, count);
+        }
+    }
+
+    public void RecordLost(int count)
+    {
+        if (count > 0)
+        {
+            Interlocked.Add(ref _lost, count);
         }
     }
 
@@ -99,35 +139,31 @@ public sealed class IntelligencePersistenceDiagnostics
         }
     }
 
+    public void RecordLoggedOnly(int count)
+    {
+        if (count > 0)
+        {
+            Interlocked.Add(ref _loggedOnlyGaps, count);
+        }
+    }
+
     public void AppendPending(List<IntelligenceCollectionGap> gaps)
     {
-        var overflows = Interlocked.Exchange(ref _pendingOverflows, 0);
-        if (overflows > 0)
+        List<CoalescedGap> pending;
+        lock (_gapGate)
         {
-            var killmailId = Interlocked.Exchange(ref _lastOverflowKillmailId, long.MinValue);
-            gaps.Add(new IntelligenceCollectionGap
+            if (_coalesced.Count == 0)
             {
-                Kind = IntelligenceCollectionGapKind.QueueOverflow,
-                RecordedAtUtc = DateTimeOffset.UtcNow,
-                KillmailId = killmailId == long.MinValue ? null : killmailId,
-                Count = ToCount(overflows),
-                Detail = "Persistence queue rejected observations before they were written."
-            });
+                return;
+            }
+
+            pending = _coalesced.Values.ToList();
+            _coalesced.Clear();
         }
 
-        var coalesced = Interlocked.Exchange(ref _pendingCoalescedGaps, 0);
-        if (coalesced > 0)
+        foreach (var gap in pending)
         {
-            var sequence = Interlocked.Exchange(ref _lastCoalescedSequence, long.MinValue);
-            gaps.Add(new IntelligenceCollectionGap
-            {
-                Kind = IntelligenceCollectionGapKind.SkippedSequence,
-                RecordedAtUtc = DateTimeOffset.UtcNow,
-                Source = KillmailObservation.R2Z2SourceId,
-                SourceSequence = sequence == long.MinValue ? null : sequence,
-                Count = ToCount(coalesced),
-                Detail = "Coverage gaps were coalesced because the persistence queue was full."
-            });
+            gaps.Add(gap.ToRecord());
         }
     }
 
@@ -135,39 +171,55 @@ public sealed class IntelligencePersistenceDiagnostics
     {
         foreach (var gap in gaps)
         {
-            if (gap.Kind == IntelligenceCollectionGapKind.QueueOverflow)
-            {
-                Interlocked.Add(ref _pendingOverflows, gap.Count);
-                if (gap.KillmailId is long killmailId)
-                {
-                    Interlocked.Exchange(ref _lastOverflowKillmailId, killmailId);
-                }
-            }
-            else if (gap.Kind == IntelligenceCollectionGapKind.SkippedSequence &&
-                     gap.Detail?.Contains("coalesced", StringComparison.Ordinal) == true)
-            {
-                Interlocked.Add(ref _pendingCoalescedGaps, gap.Count);
-                if (gap.SourceSequence is long sequence)
-                {
-                    Interlocked.Exchange(ref _lastCoalescedSequence, sequence);
-                }
-            }
+            RecordCoalescedGap(gap);
         }
     }
 
-    public IntelligencePersistenceSnapshot Snapshot(int queueDepth)
+    public IntelligencePersistenceSnapshot Snapshot(int queueDepth, int pending)
     {
         return new IntelligencePersistenceSnapshot(
             Volatile.Read(ref _received),
             Volatile.Read(ref _queued),
             Volatile.Read(ref _committed),
             Volatile.Read(ref _duplicates),
-            Volatile.Read(ref _failed),
+            Volatile.Read(ref _permanentlyRejected),
+            pending,
+            Volatile.Read(ref _lost),
             Volatile.Read(ref _queueOverflow),
             Volatile.Read(ref _undelivered),
+            Volatile.Read(ref _loggedOnlyGaps),
             queueDepth,
             Volatile.Read(ref _peakQueueDepth));
     }
 
-    private static int ToCount(long value) => value > int.MaxValue ? int.MaxValue : (int)value;
+    private sealed class CoalescedGap
+    {
+        public required string Kind { get; init; }
+        public string? Source { get; set; }
+        public long? FirstSequence { get; set; }
+        public long? LastSequence { get; set; }
+        public long? KillmailId { get; set; }
+        public int Count { get; set; }
+        public string? Detail { get; set; }
+
+        public IntelligenceCollectionGap ToRecord()
+        {
+            var detail = Detail;
+            if (Count > 1 && FirstSequence is long first && LastSequence is long last && first != last)
+            {
+                detail = $"{detail} Sequences {first}..{last}.".Trim();
+            }
+
+            return new IntelligenceCollectionGap
+            {
+                Kind = Kind,
+                RecordedAtUtc = DateTimeOffset.UtcNow,
+                Source = Source,
+                SourceSequence = LastSequence,
+                KillmailId = KillmailId,
+                Count = Count < 1 ? 1 : Count,
+                Detail = detail
+            };
+        }
+    }
 }

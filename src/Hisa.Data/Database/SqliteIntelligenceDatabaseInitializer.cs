@@ -84,6 +84,11 @@ public sealed class SqliteIntelligenceDatabaseInitializer
 
             CREATE INDEX IF NOT EXISTS IX_CollectionGap_RecordedAtUtcTicks
                 ON CollectionGap (RecordedAtUtcTicks);
+
+            CREATE TABLE IF NOT EXISTS CoverageCheckpoint (
+                Name TEXT NOT NULL PRIMARY KEY,
+                Value INTEGER NOT NULL
+            );
             """, cancellationToken);
 
         var version = await ReadVersionAsync(connection, cancellationToken);

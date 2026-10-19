@@ -21,6 +21,28 @@ public interface IIntelligenceHistoryRepository : IAsyncDisposable
         int maxRows,
         CancellationToken cancellationToken = default);
 
+    Task<int> DeleteGapsRecordedBeforeAsync(
+        DateTimeOffset cutoffUtc,
+        int maxRows,
+        CancellationToken cancellationToken = default);
+
+    Task<KillmailHistoryPage> GetTimeRangePageAsync(
+        DateTimeOffset fromUtcInclusive,
+        DateTimeOffset toUtcInclusive,
+        int limit,
+        KillmailHistoryCursor? after,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<IntelligenceCollectionGap>> GetCollectionGapsAsync(
+        int limit,
+        CancellationToken cancellationToken = default);
+
+    Task<long> RecordCoverageDeltaAsync(
+        string checkpointName,
+        long observedTotal,
+        IntelligenceCollectionGap gap,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<KillmailHistoryRecord>> GetByTimeRangeAsync(
         DateTimeOffset fromUtcInclusive,
         DateTimeOffset toUtcInclusive,

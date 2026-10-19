@@ -245,8 +245,10 @@ public sealed class IntelligenceHistoryPersistenceTests
     [Fact]
     public async Task Persistence_WriteFailureDoesNotFailObservationDelivery()
     {
+        var directory = Path.Combine(Path.GetTempPath(), "hisa-spool-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
         var feed = new IntelligenceObservationFeed(NullLogger<IntelligenceObservationFeed>.Instance);
-        var repository = new ThrowingHistoryRepository();
+        var repository = new ThrowingHistoryRepository(Path.Combine(directory, "hisa-intelligence.db"));
         var service = new IntelligencePersistenceHostedService(
             repository,
             feed,
@@ -258,6 +260,7 @@ public sealed class IntelligenceHistoryPersistenceTests
                 MaxBatchWait = TimeSpan.FromMilliseconds(20),
                 MaxWriteAttempts = 2,
                 WriteRetryBaseDelay = TimeSpan.FromMilliseconds(1),
+                SpoolRetryDelay = TimeSpan.FromMinutes(5),
                 RetentionPeriod = TimeSpan.FromDays(36500),
                 RetentionInterval = TimeSpan.FromHours(1),
                 ShutdownFlushTimeout = TimeSpan.FromSeconds(2)
@@ -269,17 +272,21 @@ public sealed class IntelligenceHistoryPersistenceTests
             feed.Publish(Observation(1, Epoch));
             feed.Publish(Observation(2, Epoch.AddMinutes(1)));
             Assert.True(feed.WaitForIdle(TimeSpan.FromSeconds(2)));
-            var recorded = await WaitForAsync(() => service.GetDiagnostics().Failed >= 2, TimeSpan.FromSeconds(3));
+            var recorded = await WaitForAsync(() => service.GetDiagnostics().Pending >= 2, TimeSpan.FromSeconds(3));
 
             Assert.True(recorded);
             Assert.Equal(0, feed.DeliveryFailureCount);
             Assert.Equal(2, service.GetDiagnostics().Received);
+            Assert.Equal(0, service.GetDiagnostics().Committed);
+            Assert.Equal(0, service.GetDiagnostics().Lost);
+            Assert.Equal(0, service.GetDiagnostics().PermanentlyRejected);
         }
         finally
         {
             await service.StopAsync(CancellationToken.None);
             await feed.StopAsync(CancellationToken.None);
             await repository.DisposeAsync();
+            TryDeleteDirectory(directory);
         }
     }
 
@@ -430,7 +437,8 @@ public sealed class IntelligenceHistoryPersistenceTests
             $"intelligence-history throughput={perSecond:F0}/s peakQueue={diagnostics.PeakQueueDepth} databaseBytes={health.DatabaseSizeBytes} elapsedMs={started.ElapsedMilliseconds} committed={diagnostics.Committed}");
         Assert.Equal(count, health.KillmailCount);
         Assert.Equal(count * 3, health.ParticipantCount);
-        Assert.Equal(0, diagnostics.Failed);
+        Assert.Equal(0, diagnostics.PermanentlyRejected);
+        Assert.Equal(0, diagnostics.Lost);
         Assert.Equal(0, diagnostics.Undelivered);
         Assert.True(diagnostics.PeakQueueDepth > 0);
         Assert.True(health.DatabaseSizeBytes > 0);
@@ -531,7 +539,12 @@ public sealed class IntelligenceHistoryPersistenceTests
 
     private sealed class ThrowingHistoryRepository : IIntelligenceHistoryRepository
     {
-        public string DatabasePath => "throwing";
+        public ThrowingHistoryRepository(string databasePath)
+        {
+            DatabasePath = databasePath;
+        }
+
+        public string DatabasePath { get; }
 
         public Task InitializeAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 
@@ -545,6 +558,27 @@ public sealed class IntelligenceHistoryPersistenceTests
 
         public Task<int> DeleteOccurredBeforeAsync(DateTimeOffset cutoffUtc, int maxRows, CancellationToken cancellationToken = default)
             => Task.FromResult(0);
+
+        public Task<int> DeleteGapsRecordedBeforeAsync(DateTimeOffset cutoffUtc, int maxRows, CancellationToken cancellationToken = default)
+            => Task.FromResult(0);
+
+        public Task<KillmailHistoryPage> GetTimeRangePageAsync(
+            DateTimeOffset fromUtcInclusive,
+            DateTimeOffset toUtcInclusive,
+            int limit,
+            KillmailHistoryCursor? after,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new KillmailHistoryPage([], null));
+
+        public Task<IReadOnlyList<IntelligenceCollectionGap>> GetCollectionGapsAsync(int limit, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<IntelligenceCollectionGap>>([]);
+
+        public Task<long> RecordCoverageDeltaAsync(
+            string checkpointName,
+            long observedTotal,
+            IntelligenceCollectionGap gap,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(0L);
 
         public Task<IReadOnlyList<KillmailHistoryRecord>> GetByTimeRangeAsync(
             DateTimeOffset fromUtcInclusive,
@@ -607,6 +641,27 @@ public sealed class IntelligenceHistoryPersistenceTests
 
         public Task<int> DeleteOccurredBeforeAsync(DateTimeOffset cutoffUtc, int maxRows, CancellationToken cancellationToken = default)
             => _inner.DeleteOccurredBeforeAsync(cutoffUtc, maxRows, cancellationToken);
+
+        public Task<int> DeleteGapsRecordedBeforeAsync(DateTimeOffset cutoffUtc, int maxRows, CancellationToken cancellationToken = default)
+            => _inner.DeleteGapsRecordedBeforeAsync(cutoffUtc, maxRows, cancellationToken);
+
+        public Task<KillmailHistoryPage> GetTimeRangePageAsync(
+            DateTimeOffset fromUtcInclusive,
+            DateTimeOffset toUtcInclusive,
+            int limit,
+            KillmailHistoryCursor? after,
+            CancellationToken cancellationToken = default)
+            => _inner.GetTimeRangePageAsync(fromUtcInclusive, toUtcInclusive, limit, after, cancellationToken);
+
+        public Task<IReadOnlyList<IntelligenceCollectionGap>> GetCollectionGapsAsync(int limit, CancellationToken cancellationToken = default)
+            => _inner.GetCollectionGapsAsync(limit, cancellationToken);
+
+        public Task<long> RecordCoverageDeltaAsync(
+            string checkpointName,
+            long observedTotal,
+            IntelligenceCollectionGap gap,
+            CancellationToken cancellationToken = default)
+            => _inner.RecordCoverageDeltaAsync(checkpointName, observedTotal, gap, cancellationToken);
 
         public Task<IReadOnlyList<KillmailHistoryRecord>> GetByTimeRangeAsync(
             DateTimeOffset fromUtcInclusive,
