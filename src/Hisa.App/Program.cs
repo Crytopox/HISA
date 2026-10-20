@@ -6,6 +6,7 @@ using System.Linq;
 using System.Net.Sockets;
 using System.Runtime.ExceptionServices;
 using Avalonia;
+using Avalonia.Fonts.Inter;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -46,6 +47,7 @@ internal static class Program
     public static AppBuilder BuildAvaloniaApp()
         => AppBuilder.Configure<App>()
             .UsePlatformDetect()
+            .WithInterFont()
             .LogToTrace();
 
     private static void WireGlobalExceptionLogging(ILogger? logger)

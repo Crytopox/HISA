@@ -26,6 +26,21 @@
         </Border>
 
         <Border Padding="8" Background="#101826" BorderBrush="#243247" BorderThickness="1" CornerRadius="5">
+          <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="10" RowSpacing="6">
+            <CheckBox Grid.Row="0" Grid.ColumnSpan="2" IsChecked="{Binding MapReportPopupsEnabled}"
+                      Content="Show new-report map popups" />
+            <CheckBox Grid.Row="1" Grid.ColumnSpan="2" Margin="16,0,0,0" Content="Show killmails"
+                      IsChecked="{Binding MapReportPopupsShowKillmails}" IsEnabled="{Binding MapReportPopupsEnabled}" />
+            <CheckBox Grid.Row="2" Grid.ColumnSpan="2" Margin="16,0,0,0" Content="Show in Universe mode"
+                      IsChecked="{Binding MapReportPopupsShowInUniverse}" IsEnabled="{Binding MapReportPopupsEnabled}" />
+            <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" Foreground="#8A96A8" Text="Popup duration (seconds)" />
+            <NumericUpDown Grid.Row="3" Grid.Column="1" Minimum="1" Maximum="60" Increment="1" FormatString="N0"
+                           Value="{Binding MapReportPopupSeconds}" IsEnabled="{Binding MapReportPopupsEnabled}"
+                           Width="100" HorizontalAlignment="Left" />
+          </Grid>
+        </Border>
+
+        <Border Padding="8" Background="#101826" BorderBrush="#243247" BorderThickness="1" CornerRadius="5">
           <StackPanel Spacing="6">
             <TextBlock Text="Included Channels" FontWeight="SemiBold" Foreground="#C9D9EE" />
             <TextBlock Text="Only these channels are read." Foreground="#8A96A8" FontSize="11" />

@@ -29,7 +29,7 @@ using NtsUnaryUnionOp = NetTopologySuite.Operation.Union.UnaryUnionOp;
 
 namespace Hisa.Rendering.Controls;
 
-public sealed class MapControl : Control
+public sealed partial class MapControl : Control
 {
     private sealed class VoronoiCacheModel
     {
@@ -49,14 +49,11 @@ public sealed class MapControl : Control
     private static readonly JsonSerializerOptions VoronoiJsonOptions = new() { WriteIndented = false };
 
     private static readonly Point NodeLabelOffset = new(14, 8);
-    private static readonly Typeface NodeLabelTypeface = new("Inter", FontStyle.Normal, FontWeight.SemiBold);
-    private static readonly Typeface RegionCardTypeface = new("Inter", FontStyle.Normal, FontWeight.SemiBold);
-    private const double NodeLabelFontSize = 9;
-    private const double RegionNodeLabelFontSize = 9;
-    private const double EditorNodeLabelFontSize = 9;
-    private const double NodeRegionConstellationFontSize = 9.5;
-    private const double IndicatorRegionFontSize = 8;
-    private const double EditorRegionConstellationFontSize = 9.0;
+    private const double NodeLabelFontSize = MapTypography.LabelSize;
+    private const double RegionNodeLabelFontSize = MapTypography.LabelSize;
+    private const double EditorNodeLabelFontSize = MapTypography.LabelSize;
+    private const double IndicatorRegionFontSize = MapTypography.SecondarySize;
+    private const double EditorRegionConstellationFontSize = MapTypography.SecondarySize;
     private const double RegionMinNodeScale = 0.55;
     private const double RegionFullNodeSizeZoom = 2.4;
     private const double UniverseTileSize = 512.0;
@@ -69,9 +66,8 @@ public sealed class MapControl : Control
     private const double SovIconSlotStride = IconSize + IndicatorIconSlotGap;
     private const int PlanetIconsPerRow = 5;
     private const double IndicatorPlanetIconRowStride = IndicatorIconSize + 2.0;
-    private const double OverlayPlanetIconRowStride = IconSize + 2.0;
-    private const double IndicatorCountFontSize = 8.5;
-    private const double IndicatorJumpRangeFontSize = 9.5;
+    private const double IndicatorCountFontSize = MapTypography.SecondarySize;
+    private const double IndicatorJumpRangeFontSize = MapTypography.SecondarySize;
     private const double IndicatorJumpRangeIconSize = 12.0;
     private const string A0BlueSmallName = "Sun A0 (Blue Small)";
     private const int A0BlueSmallTypeId = 3801;
@@ -153,11 +149,11 @@ public sealed class MapControl : Control
     private static readonly IBrush NodeHoleBrush = new ImmutableSolidColorBrush(Color.Parse("#0D131D"));
     private static readonly IBrush NodeLabelBackgroundBrush = new ImmutableSolidColorBrush(Color.Parse("#B5000000"));
     private static readonly IBrush TooltipBackgroundBrush = new ImmutableSolidColorBrush(Color.Parse("#1A2536"));
-    private static readonly IBrush HoverOverlayBackgroundBrush = new ImmutableSolidColorBrush(Color.Parse("#99000000"));
+    private static readonly IBrush HoverOverlayBackgroundBrush = new ImmutableSolidColorBrush(Color.Parse("#E6101722"));
     private static readonly Pen NodeOutlinePen = new(new ImmutableSolidColorBrush(Color.Parse("#88000000")), 1.1);
     private static readonly IBrush VoronoiBorderBrush = new ImmutableSolidColorBrush(Color.Parse("#AA0D131D"));
     private static readonly Pen TooltipBorderPen = new(new ImmutableSolidColorBrush(Color.Parse("#3B5678")), 1);
-    private static readonly Pen HoverOverlayBorderPen = new(new ImmutableSolidColorBrush(Color.Parse("#4A617F")), 1);
+    private static readonly Pen HoverOverlayBorderPen = new(new ImmutableSolidColorBrush(Color.Parse("#465365")), 1);
     private static readonly IBrush EmptyTextBrush = new ImmutableSolidColorBrush(Color.Parse("#9FB4D2"));
     private static readonly Lazy<Bitmap?> A0StarIcon = new(LoadA0StarIcon);
     private static readonly Lazy<Bitmap?> JoveObservatoryIcon = new(LoadJoveObservatoryIcon);
@@ -397,10 +393,7 @@ public sealed class MapControl : Control
     private MapGraph? _lastGraphForCaches;
     private readonly Dictionary<string, FormattedText> _nodeLabelCache = [];
     private readonly Dictionary<int, FormattedText> _regionLabelCache = [];
-    private readonly Dictionary<string, FormattedText> _nodeLabelHaloCache = [];
     private readonly Dictionary<string, FormattedText> _nodeSecondaryLabelCache = [];
-    private readonly Dictionary<string, FormattedText> _nodeSecondaryLabelHaloCache = [];
-    private readonly Dictionary<int, FormattedText> _regionLabelHaloCache = [];
     private readonly Dictionary<long, IReadOnlyList<(double X, double Y)>> _voronoiWorldPolygonsByNodeId = [];
     private MapGraph? _lastGraphForVoronoi;
     private Task<Dictionary<long, IReadOnlyList<(double X, double Y)>>>? _voronoiBuildTask;
@@ -443,7 +436,7 @@ public sealed class MapControl : Control
     private static readonly ConcurrentDictionary<string, byte> OrganizationLogoLoading = new(StringComparer.OrdinalIgnoreCase);
     private static readonly ConcurrentDictionary<string, DateTime> OrganizationLogoRetryAfterUtc = new(StringComparer.OrdinalIgnoreCase);
     private static readonly TimeSpan CharacterPortraitRetryDelay = TimeSpan.FromMinutes(2);
-    private readonly List<(Rect Bounds, string Url)> _intelOverlayLinks = [];
+    private readonly List<(Rect Bounds, string Url, long NodeId)> _intelOverlayLinks = [];
     private readonly List<(Rect Bounds, MapSovUpgradeHit Hit)> _sovUpgradeIconHitTargets = [];
     private readonly List<(Rect Bounds, IReadOnlyList<UserSystemMarkDisplay> Marks, Point Anchor)> _systemMarkClusterHits = [];
     private int _hoveredSystemMarkClusterIndex = -1;
@@ -1104,7 +1097,9 @@ public sealed class MapControl : Control
 
     public MapControl()
     {
-        AffectsRender<MapControl>(GraphProperty, SelectedNodeIdProperty, ViewModeProperty, StretchToWindowProperty);
+        AffectsRender<MapControl>(GraphProperty, SelectedNodeIdProperty, ViewModeProperty, StretchToWindowProperty,
+            ReportPopupRequestsProperty, ReportPopupsEnabledProperty, ReportPopupSecondsProperty,
+            ReportPopupsShowKillmailsProperty, ReportPopupsShowInUniverseProperty);
         AffectsRender<MapControl>(
             NodeColorModeProperty,
             NodeBackgroundColorModeProperty,
@@ -1213,6 +1208,7 @@ public sealed class MapControl : Control
             TimeSpan.FromMilliseconds(150),
             DispatcherPriority.Background,
             (_, _) => OnUniverseIdleBakeTick());
+        InitializeReportOverlays();
     }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
@@ -1220,12 +1216,19 @@ public sealed class MapControl : Control
         base.OnAttachedToVisualTree(e);
         _isAttachedToVisualTree = true;
         UpdateAnimationTimerState();
+        UpdateReportOverlayTimer();
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         _isAttachedToVisualTree = false;
         _linkAnimationTimer.Stop();
+        _reportOverlayTimer.Stop();
+        _reportAgeTimer.Stop();
+        _reportPopups.SetHovered(null);
+        _overlayDrag = null;
+        _raisedPopupSystem = null;
+        _lastPointerPosition = new Point(-1, -1);
         _universeIdleBakeTimer.Stop();
         DisposeStaticLayer();
         base.OnDetachedFromVisualTree(e);
@@ -1243,6 +1246,8 @@ public sealed class MapControl : Control
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
+        OnReportOverlayPropertyChanged(change.Property);
+        if (change.Property == SelectedNodeIdProperty) InvalidateInteractive();
         if (change.Property != SuspendAnimationsProperty &&
             change.Property != SelectedNodeIdProperty)
         {
@@ -1760,6 +1765,13 @@ public sealed class MapControl : Control
         var bounds = Bounds;
         if (Graph is null || Graph.Nodes.Count == 0)
         {
+            _nodeOverlayViews.Clear();
+            _intelOverlayLinks.Clear();
+            _nodeOverlayScroll.Clear();
+            _overlayScrollBars.Clear();
+            _messageHits.Clear();
+            _hasVisibleMarquee = false;
+            UpdateReportOverlayTimer();
             context.FillRectangle(BackgroundBrush, bounds);
             DrawCenteredText(context, "No map data loaded", bounds);
             return;
@@ -1778,6 +1790,7 @@ public sealed class MapControl : Control
         }
 
         DrawAnimatedOverlays(context, bounds);
+        DrawReportOverlays(context);
     }
 
     private void RefreshGraphLocalCaches()
@@ -1789,11 +1802,8 @@ public sealed class MapControl : Control
 
         _lastGraphForCaches = Graph;
         _nodeLabelCache.Clear();
-        _nodeLabelHaloCache.Clear();
         _nodeSecondaryLabelCache.Clear();
-        _nodeSecondaryLabelHaloCache.Clear();
         _regionLabelCache.Clear();
-        _regionLabelHaloCache.Clear();
         _voronoiWorldPolygonsByNodeId.Clear();
         _voronoiWorldGeometriesByNodeId.Clear();
         _lastGraphForVoronoi = null;
@@ -2114,6 +2124,7 @@ public sealed class MapControl : Control
         {
             DrawStaticScene(context, bounds);
             DrawAnimatedOverlays(context, bounds);
+            DrawReportOverlays(context);
             if (NeedsUniverseRebake() && !_universeIdleBakeTimer.IsEnabled)
             {
                 ScheduleUniverseIdleBake(resetDeadline: false);
@@ -2155,6 +2166,7 @@ public sealed class MapControl : Control
                 _universeOverlayOnly = false;
             }
             DrawAnimatedOverlays(context, bounds);
+            DrawReportOverlays(context);
         }
 
         if (NeedsUniverseRebake() && !_universeIdleBakeTimer.IsEnabled)
@@ -2388,12 +2400,16 @@ public sealed class MapControl : Control
         }
     }
 
-    private void DrawStaticScene(DrawingContext context, Rect bounds)
+    internal void DrawStaticScene(DrawingContext context, Rect bounds)
     {
         var drawInteractive = true;
         if (drawInteractive)
         {
             _intelOverlayLinks.Clear();
+            _nodeOverlayViews.Clear();
+            _overlayScrollBars.Clear();
+            _messageHits.Clear();
+            _hasVisibleMarquee = false;
             _sovUpgradeIconHitTargets.Clear();
         }
 
@@ -2590,13 +2606,7 @@ public sealed class MapControl : Control
 
             if (ViewMode == MapViewMode.UniverseRegions)
             {
-                var text = new FormattedText(
-                    node.Name,
-                    CultureInfo.InvariantCulture,
-                    FlowDirection.LeftToRight,
-                    RegionCardTypeface,
-                    12.5,
-                    Brushes.White);
+                var text = CreateMapText(node.Name, 12.5, Brushes.White, FontWeight.Medium);
                 var baseColor = GetUniverseRegionOwnerColor(node.RegionName ?? node.Name);
                 var fillColor = isSelected
                     ? BlendColors(baseColor, Color.Parse("#FFFFFF"), 0.24)
@@ -2692,16 +2702,15 @@ public sealed class MapControl : Control
                 context.DrawEllipse(null, routePen, p, routeRadius, routeRadius);
                 if (_jumpRouteOrderByNodeId.TryGetValue(node.Id, out var order))
                 {
-                    var numberLabel = new FormattedText(
+                    var numberLabel = CreateMapText(
                         order.ToString(CultureInfo.InvariantCulture),
-                        CultureInfo.InvariantCulture,
-                        FlowDirection.LeftToRight,
-                        NodeLabelTypeface,
-                        9.5,
-                        JumpRouteNumberTextBrush);
-                    var bubbleRadius = 7.2;
+                        MapTypography.SecondarySize,
+                        JumpRouteNumberTextBrush,
+                        FontWeight.SemiBold);
+                    var bubbleRadius = Math.Max(7.2, numberLabel.Width / 2 + 3);
+                    var bubbleHeight = Math.Max(7.2, numberLabel.Height / 2 + 1);
                     var bubbleCenter = new Point(p.X + routeRadius + 5.0, p.Y - routeRadius - 4.0);
-                    context.DrawEllipse(GetCachedBrush(routeColor), null, bubbleCenter, bubbleRadius, bubbleRadius);
+                    context.DrawEllipse(GetCachedBrush(routeColor), null, bubbleCenter, bubbleRadius, bubbleHeight);
                     context.DrawText(
                         numberLabel,
                         new Point(
@@ -2804,21 +2813,6 @@ public sealed class MapControl : Control
 
         if (ViewMode != MapViewMode.UniverseRegions)
         {
-            if (SelectedNodeId is not null &&
-                _nodeIndexById.TryGetValue(SelectedNodeId.Value, out var selectedIndex) &&
-                _nodeById.TryGetValue(SelectedNodeId.Value, out var selectedNode))
-            {
-                DrawHoverOverlay(context, _screenPositions[selectedIndex], selectedNode);
-            }
-
-            if (_hoveredNodeId is not null &&
-                _hoveredNodeId != SelectedNodeId &&
-                _nodeIndexById.TryGetValue(_hoveredNodeId.Value, out var hoverIndex) &&
-                _nodeById.TryGetValue(_hoveredNodeId.Value, out var hoverNode))
-            {
-                DrawHoverOverlay(context, _screenPositions[hoverIndex], hoverNode);
-            }
-
             DrawHoveredSystemMarkClusterOverlay(context, bounds);
         }
 
@@ -3420,30 +3414,30 @@ public sealed class MapControl : Control
         var name = GetNodeLabel(node.Id, BuildIndicatorLabel(node));
         var fontSize = GetIndicatorLabelFontSize();
         var secondaryFontSize = ShowEditorGrid ? EditorRegionConstellationFontSize : IndicatorRegionFontSize;
-        double TextWidth(string value, double size) => new FormattedText(value, CultureInfo.InvariantCulture,
-            FlowDirection.LeftToRight, NodeLabelTypeface, size, Brushes.White).Width;
-        double TextHeight(string value, double size) => new FormattedText(value, CultureInfo.InvariantCulture,
-            FlowDirection.LeftToRight, NodeLabelTypeface, size, Brushes.White).Height;
+        double TextWidth(string value, double size, FontWeight weight) =>
+            CreateMapText(value, size, Brushes.White, weight).Width;
+        double TextHeight(string value, double size, FontWeight weight) =>
+            CreateMapText(value, size, Brushes.White, weight).Height;
 
         var width = name.Width;
         var height = name.Height;
         if (ShowIndicatorSecurityStatus && node.Security is not null)
         {
-            width += 7 + TextWidth(RoundSecurityForDisplay(node.Security.Value).ToString("0.0", CultureInfo.InvariantCulture), fontSize);
+            width += 7 + TextWidth(RoundSecurityForDisplay(node.Security.Value).ToString("0.0", CultureInfo.InvariantCulture), fontSize, FontWeight.SemiBold);
         }
         if (ShowIndicatorAnsiblexZone && IsAnsiblexZoneBadgeNode(node.Id) && TryGetAnsiblexZoneInfo(node.Id, out var zone))
         {
-            width += 6 + TextWidth($"Z{zone.Zone}", Math.Max(9, fontSize - 1)) + 8;
+            width += 6 + TextWidth($"Z{zone.Zone}", MapTypography.SecondarySize, FontWeight.SemiBold) + 8;
         }
         if ((ShowIndicatorRegion || (ShowEditorGrid && ShowEditorRegionLabel)) && !string.IsNullOrWhiteSpace(node.RegionName))
         {
-            width = Math.Max(width, TextWidth(node.RegionName, secondaryFontSize));
-            height += lineGap + TextHeight(node.RegionName, secondaryFontSize);
+            width = Math.Max(width, TextWidth(node.RegionName, secondaryFontSize, FontWeight.Normal));
+            height += lineGap + TextHeight(node.RegionName, secondaryFontSize, FontWeight.Normal);
         }
         if (ShowIndicatorConstellation && !string.IsNullOrWhiteSpace(node.ConstellationName))
         {
-            width = Math.Max(width, TextWidth(node.ConstellationName, secondaryFontSize));
-            height += lineGap + TextHeight(node.ConstellationName, secondaryFontSize);
+            width = Math.Max(width, TextWidth(node.ConstellationName, secondaryFontSize, FontWeight.Normal));
+            height += lineGap + TextHeight(node.ConstellationName, secondaryFontSize, FontWeight.Normal);
         }
         var starClass = GetStarClassDisplayValue(node);
         if (ShowIndicatorStarClass && !string.IsNullOrWhiteSpace(starClass))
@@ -3453,8 +3447,8 @@ public sealed class MapControl : Control
             height += lineGap + star.Height;
         }
 
-        var labelHeight = height + 4;
-        width += 6;
+        var labelHeight = height + MapTypography.LabelPadY * 2;
+        width += MapTypography.LabelPadX * 2;
         var iconCount = 0;
         if (ShowIndicatorA0StarIcon && IsA0BlueSmall(node)) iconCount++;
         if (ShowIndicatorJoveObservatoryIcon && node.HasJoveObservatory) iconCount++;
@@ -3471,7 +3465,7 @@ public sealed class MapControl : Control
                      ShowIndicatorNpcKills ? node.NpcKills : 0
                  })
         {
-            if (count > 0) iconRowWidth += IndicatorIconSize + 1.5 + TextWidth(count.ToString(CultureInfo.InvariantCulture), IndicatorCountFontSize) + IndicatorIconSlotGap;
+            if (count > 0) iconRowWidth += IndicatorIconSize + 1.5 + TextWidth(count.ToString(CultureInfo.InvariantCulture), IndicatorCountFontSize, FontWeight.SemiBold) + IndicatorIconSlotGap;
         }
         var primaryRowHasIcons = iconRowWidth > 0;
         if (primaryRowHasIcons)
@@ -3518,7 +3512,7 @@ public sealed class MapControl : Control
         {
             var best = distances.OrderByDescending(x => x.IsInRange).ThenBy(x => x.DistanceLy).First();
             var suffix = distances.Count > 1 ? $" (+{distances.Count - 1})" : string.Empty;
-            width = Math.Max(width, IndicatorIconLeftPadding + IndicatorJumpRangeIconSize + 3 + TextWidth($"{best.DistanceLy:0.0} LY{suffix}", IndicatorJumpRangeFontSize));
+            width = Math.Max(width, IndicatorIconLeftPadding + IndicatorJumpRangeIconSize + 3 + TextWidth($"{best.DistanceLy:0.0} LY{suffix}", IndicatorJumpRangeFontSize, FontWeight.SemiBold));
             height += 17;
         }
 
@@ -3641,8 +3635,25 @@ public sealed class MapControl : Control
         Focus();
         var point = e.GetPosition(this);
         var props = e.GetCurrentPoint(this).Properties;
+        if (props.IsLeftButtonPressed && DismissReportPopupAt(point))
+        {
+            e.Handled = true;
+            return;
+        }
+        if (props.IsLeftButtonPressed && BeginOverlayDrag(point))
+        {
+            e.Pointer.Capture(this);
+            e.Handled = true;
+            return;
+        }
         if (props.IsLeftButtonPressed && TryOpenIntelOverlayLink(point))
         {
+            e.Handled = true;
+            return;
+        }
+        if (props.IsLeftButtonPressed && _nodeOverlayViews.Any(view => view.Bounds.Contains(point)))
+        {
+            e.Handled = true;
             return;
         }
 
@@ -3700,6 +3711,13 @@ public sealed class MapControl : Control
         var point = e.GetPosition(this);
         _lastPointerPosition = point;
 
+        UpdateReportOverlayHover(point);
+        if (DragOverlayScroll(point))
+        {
+            e.Handled = true;
+            return;
+        }
+
         if (_lastPanPoint is null)
         {
             UpdateHover(point);
@@ -3722,6 +3740,12 @@ public sealed class MapControl : Control
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
         base.OnPointerReleased(e);
+        if (EndOverlayDrag(e.GetPosition(this)))
+        {
+            e.Pointer.Capture(null);
+            e.Handled = true;
+            return;
+        }
         var dragged = _leftDragPanned;
         if (_pendingClearSelectionOnLeftRelease && !_leftDragPanned)
         {
@@ -3753,6 +3777,12 @@ public sealed class MapControl : Control
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
     {
         base.OnPointerWheelChanged(e);
+
+        if (HandleOverlayWheel(e.GetPosition(this), e.Delta.X, e.Delta.Y, e.KeyModifiers.HasFlag(KeyModifiers.Shift)))
+        {
+            e.Handled = true;
+            return;
+        }
 
         var delta = e.Delta.Y;
         var factor = delta > 0 ? 1.1 : 0.9;
@@ -3800,6 +3830,12 @@ public sealed class MapControl : Control
 
     private void UpdateHover(Point point)
     {
+        // Keep a hover card alive while its links, tooltip or scroll area are being used.
+        if (_nodeOverlayViews.Any(view => view.Bounds.Contains(point)))
+        {
+            InvalidateInteractive();
+            return;
+        }
         if (Graph is null || Graph.Nodes.Count == 0)
         {
             if (_hoveredNodeId is not null)
@@ -4660,7 +4696,7 @@ public sealed class MapControl : Control
                 {
                     Zone = otherZone.Zone,
                     SortName = otherNode.Name,
-                    Label = CreateHoverText(otherNode.Name, Brushes.White, 12),
+                    Label = CreateHoverText(otherNode.Name, Brushes.White, MapTypography.BodySize),
                     Outbound = CreateHoverText(CompactAnsiblexCost(toCost) + " TJ", ink, 11, FontWeight.SemiBold),
                     OutboundZone = otherZone.Zone,
                     Inbound = CreateHoverText(CompactAnsiblexCost(backCost) + " TJ", ink, 11, FontWeight.SemiBold),
@@ -4681,10 +4717,10 @@ public sealed class MapControl : Control
             new()
             {
                 Zone = ownZone.Zone,
-                Label = CreateHoverText($"{ownZone.DistanceLy:0.#} ly", Brushes.White, 12),
-                Meta = CreateHoverText(capitalName, Brushes.White, 12),
+                Label = CreateHoverText($"{ownZone.DistanceLy:0.#} ly", Brushes.White, MapTypography.BodySize),
+                Meta = CreateHoverText(capitalName, Brushes.White, MapTypography.BodySize),
                 Ship = partners.Count > 0 && !string.IsNullOrWhiteSpace(AnsiblexShipClassName)
-                    ? CreateHoverText(AnsiblexShipClassName, Brushes.White, 12)
+                    ? CreateHoverText(AnsiblexShipClassName, Brushes.White, MapTypography.BodySize)
                     : null,
                 ShowCapitalMark = true
             }
@@ -4693,103 +4729,17 @@ public sealed class MapControl : Control
         return lines;
     }
 
+    private static FormattedText CreateMapText(string text, double size, IBrush? brush, FontWeight weight = default) =>
+        MapTypography.Create(text, size, brush, weight);
+
     private static FormattedText CreateHoverText(string text, IBrush brush, double size, FontWeight weight = FontWeight.Normal) =>
-        new(
-            text,
-            CultureInfo.InvariantCulture,
-            FlowDirection.LeftToRight,
-            new Typeface("Inter", FontStyle.Normal, weight),
-            size,
-            brush);
+        CreateMapText(text, size, brush, weight);
 
     private static string CompactAnsiblexCost(double costTj) =>
         costTj <= 0 ? "0" : costTj.ToString("0.#", CultureInfo.InvariantCulture);
 
     private static FormattedText CreateZoneChipText(int zone) =>
-        new(
-            $"Z{zone}",
-            CultureInfo.InvariantCulture,
-            FlowDirection.LeftToRight,
-            NodeLabelTypeface,
-            9,
-            new ImmutableSolidColorBrush(Color.Parse("#0D131D")));
-
-    private static double MeasureAnsiblexHoverLine(AnsiblexHoverLine line)
-    {
-        var width = CreateZoneChipText(line.Zone).Width + 8 + 4 + line.Label.Width;
-        if (line.ShowCapitalMark)
-        {
-            width += 6 + 8;
-        }
-
-        if (line.Meta is not null)
-        {
-            width += 4 + line.Meta.Width;
-        }
-
-        if (line.Ship is not null)
-        {
-            width += 8 + line.Ship.Width;
-        }
-
-        if (line.Outbound is not null)
-        {
-            width += 8 + AnsiblexCostPillWidth(line.Outbound);
-        }
-
-        if (line.Inbound is not null)
-        {
-            width += 4 + AnsiblexCostPillWidth(line.Inbound);
-        }
-
-        return width;
-    }
-
-    private void DrawAnsiblexHoverLine(DrawingContext context, Point origin, AnsiblexHoverLine line, double height)
-    {
-        var chipText = CreateZoneChipText(line.Zone);
-        var chipWidth = chipText.Width + 8;
-        var chipRect = new Rect(origin.X, origin.Y, chipWidth, height);
-        context.FillRectangle(GetCachedBrush(Color.Parse(AnsiblexZones.ColorHex(line.Zone))), chipRect, 3);
-        context.DrawText(chipText, new Point(chipRect.X + 4, chipRect.Y + ((height - chipText.Height) / 2)));
-
-        var x = chipRect.Right + 4;
-        var labelY = origin.Y + ((height - line.Label.Height) / 2);
-        context.DrawText(line.Label, new Point(x, labelY));
-        x += line.Label.Width;
-        if (line.ShowCapitalMark)
-        {
-            x += 6;
-            context.DrawEllipse(null, AnsiblexCapitalRingPen, new Point(x + 4, origin.Y + (height / 2)), 3.5, 3.5);
-            x += 8;
-        }
-
-        if (line.Meta is not null)
-        {
-            x += 3;
-            context.DrawText(line.Meta, new Point(x, origin.Y + ((height - line.Meta.Height) / 2)));
-            x += line.Meta.Width;
-        }
-
-        if (line.Ship is not null)
-        {
-            x += 8;
-            context.DrawText(line.Ship, new Point(x, origin.Y + ((height - line.Ship.Height) / 2)));
-            x += line.Ship.Width;
-        }
-
-        if (line.Outbound is not null)
-        {
-            x += 8;
-            x += DrawAnsiblexCostPill(context, new Point(x, origin.Y), line.Outbound, line.OutboundZone, height, pointsRight: true);
-        }
-
-        if (line.Inbound is not null)
-        {
-            x += 4;
-            DrawAnsiblexCostPill(context, new Point(x, origin.Y), line.Inbound, line.InboundZone, height, pointsRight: false);
-        }
-    }
+        CreateMapText($"Z{zone}", MapTypography.SecondarySize, new ImmutableSolidColorBrush(Color.Parse("#0D131D")), FontWeight.SemiBold);
 
     private const double AnsiblexDirectionArrowWidth = 12;
     private const double AnsiblexDirectionArrowHeight = 10;
@@ -5005,6 +4955,10 @@ public sealed class MapControl : Control
         ? EditorNodeLabelFontSize
         : ViewMode == MapViewMode.Region ? RegionNodeLabelFontSize : NodeLabelFontSize;
 
+    private double GetSecondaryLabelFontSize() => ShowEditorGrid
+        ? EditorRegionConstellationFontSize
+        : IndicatorRegionFontSize;
+
     private FormattedText GetNodeLabel(long nodeId, string name)
     {
         var fontSize = GetIndicatorLabelFontSize();
@@ -5014,74 +4968,22 @@ public sealed class MapControl : Control
             return text;
         }
 
-        text = new FormattedText(
-            name,
-            System.Globalization.CultureInfo.InvariantCulture,
-            FlowDirection.LeftToRight,
-            NodeLabelTypeface,
-            fontSize,
-            new SolidColorBrush(Color.Parse("#EEF6FF")));
+        text = CreateMapText(name, fontSize, new SolidColorBrush(Color.Parse("#EEF6FF")), FontWeight.Medium);
         _nodeLabelCache[key] = text;
-        return text;
-    }
-
-    private FormattedText GetNodeLabelHalo(long nodeId, string name)
-    {
-        var fontSize = GetIndicatorLabelFontSize();
-        var key = $"{nodeId}:{name}:{fontSize:F1}";
-        if (_nodeLabelHaloCache.TryGetValue(key, out var text))
-        {
-            return text;
-        }
-
-        text = new FormattedText(
-            name,
-            System.Globalization.CultureInfo.InvariantCulture,
-            FlowDirection.LeftToRight,
-            NodeLabelTypeface,
-            fontSize,
-            new ImmutableSolidColorBrush(Color.Parse("#AA0A111A")));
-        _nodeLabelHaloCache[key] = text;
         return text;
     }
 
     private FormattedText GetNodeSecondaryLabel(long nodeId, string name)
     {
-        var fontSize = GetIndicatorLabelFontSize();
+        var fontSize = GetSecondaryLabelFontSize();
         var key = $"{nodeId}:{name}:{fontSize:F1}";
         if (_nodeSecondaryLabelCache.TryGetValue(key, out var text))
         {
             return text;
         }
 
-        text = new FormattedText(
-            name,
-            CultureInfo.InvariantCulture,
-            FlowDirection.LeftToRight,
-            NodeLabelTypeface,
-            fontSize,
-            new SolidColorBrush(Color.Parse("#E6F0FF")));
+        text = CreateMapText(name, fontSize, new SolidColorBrush(Color.Parse("#E6F0FF")));
         _nodeSecondaryLabelCache[key] = text;
-        return text;
-    }
-
-    private FormattedText GetNodeSecondaryLabelHalo(long nodeId, string name)
-    {
-        var fontSize = GetIndicatorLabelFontSize();
-        var key = $"{nodeId}:{name}:{fontSize:F1}";
-        if (_nodeSecondaryLabelHaloCache.TryGetValue(key, out var text))
-        {
-            return text;
-        }
-
-        text = new FormattedText(
-            name,
-            CultureInfo.InvariantCulture,
-            FlowDirection.LeftToRight,
-            NodeLabelTypeface,
-            fontSize,
-            new ImmutableSolidColorBrush(Color.Parse("#AA0A111A")));
-        _nodeSecondaryLabelHaloCache[key] = text;
         return text;
     }
 
@@ -6166,53 +6068,9 @@ public sealed class MapControl : Control
             return text;
         }
 
-        text = new FormattedText(
-            name,
-            System.Globalization.CultureInfo.InvariantCulture,
-            FlowDirection.LeftToRight,
-            new Typeface("Inter", FontStyle.Normal, FontWeight.Bold),
-            14,
-            new SolidColorBrush(Color.Parse("#f1f7ff")));
+        text = CreateMapText(name, 14, new SolidColorBrush(Color.Parse("#f1f7ff")), FontWeight.Medium);
         _regionLabelCache[regionId] = text;
         return text;
-    }
-
-    private FormattedText GetRegionLabelHalo(int regionId, string name)
-    {
-        if (_regionLabelHaloCache.TryGetValue(regionId, out var text))
-        {
-            return text;
-        }
-
-        text = new FormattedText(
-            name,
-            System.Globalization.CultureInfo.InvariantCulture,
-            FlowDirection.LeftToRight,
-            new Typeface("Inter", FontStyle.Normal, FontWeight.SemiBold),
-            14,
-            new ImmutableSolidColorBrush(Color.Parse("#CC071018")));
-        _regionLabelHaloCache[regionId] = text;
-        return text;
-    }
-
-    private static void DrawLabelWithHalo(DrawingContext context, FormattedText label, FormattedText halo, Point origin)
-    {
-        context.DrawText(halo, new Point(origin.X - 1, origin.Y));
-        context.DrawText(halo, new Point(origin.X + 1, origin.Y));
-        context.DrawText(halo, new Point(origin.X, origin.Y - 1));
-        context.DrawText(halo, new Point(origin.X, origin.Y + 1));
-        context.DrawText(label, origin);
-    }
-
-    private static void DrawNodeLabel(DrawingContext context, FormattedText label, FormattedText halo, Point origin)
-    {
-        var rect = new Rect(
-            origin.X - 3,
-            origin.Y - 2,
-            label.Width + 6,
-            label.Height + 4);
-        context.FillRectangle(NodeLabelBackgroundBrush, rect, 3);
-        context.DrawText(label, origin);
     }
 
     private void DrawIndicatorLabel(DrawingContext context, MapNode node, Point origin)
@@ -6223,77 +6081,32 @@ public sealed class MapControl : Control
         var regionLabelFontSize = ShowEditorGrid ? EditorRegionConstellationFontSize : IndicatorRegionFontSize;
         var nameText = BuildIndicatorLabel(node);
         var name = GetNodeLabel(node.Id, nameText);
-        var nameHalo = GetNodeLabelHalo(node.Id, nameText);
         FormattedText? sec = null;
-        FormattedText? secHalo = null;
 
         if (ShowIndicatorSecurityStatus && node.Security is not null)
         {
             var rounded = RoundSecurityForDisplay(node.Security.Value);
             var securityLabel = rounded.ToString("0.0", CultureInfo.InvariantCulture);
-            sec = new FormattedText(
-                securityLabel,
-                CultureInfo.InvariantCulture,
-                FlowDirection.LeftToRight,
-                NodeLabelTypeface,
-                labelFontSize,
-                GetCachedBrush(GetSecurityColor(node)));
-            secHalo = new FormattedText(
-                securityLabel,
-                CultureInfo.InvariantCulture,
-                FlowDirection.LeftToRight,
-                NodeLabelTypeface,
-                labelFontSize,
-                new ImmutableSolidColorBrush(Color.Parse("#AA0A111A")));
+            sec = CreateMapText(securityLabel, labelFontSize, GetCachedBrush(MapTypography.ReadableColor(GetSecurityColor(node))), FontWeight.SemiBold);
         }
 
         FormattedText? region = null;
-        FormattedText? regionHalo = null;
         if ((ShowIndicatorRegion || (ShowEditorGrid && ShowEditorRegionLabel)) && !string.IsNullOrWhiteSpace(node.RegionName))
         {
-            region = new FormattedText(
-                node.RegionName,
-                CultureInfo.InvariantCulture,
-                FlowDirection.LeftToRight,
-                NodeLabelTypeface,
-                regionLabelFontSize,
-                new SolidColorBrush(Color.Parse("#E6F0FF")));
-            regionHalo = new FormattedText(
-                node.RegionName,
-                CultureInfo.InvariantCulture,
-                FlowDirection.LeftToRight,
-                NodeLabelTypeface,
-                regionLabelFontSize,
-                new ImmutableSolidColorBrush(Color.Parse("#AA0A111A")));
+            region = CreateMapText(node.RegionName, regionLabelFontSize, new SolidColorBrush(Color.Parse("#E6F0FF")));
         }
 
         FormattedText? constellation = null;
-        FormattedText? constellationHalo = null;
         if (ShowIndicatorConstellation && !string.IsNullOrWhiteSpace(node.ConstellationName))
         {
-            constellation = new FormattedText(
-                node.ConstellationName,
-                CultureInfo.InvariantCulture,
-                FlowDirection.LeftToRight,
-                NodeLabelTypeface,
-                regionLabelFontSize,
-                new SolidColorBrush(Color.Parse("#E6F0FF")));
-            constellationHalo = new FormattedText(
-                node.ConstellationName,
-                CultureInfo.InvariantCulture,
-                FlowDirection.LeftToRight,
-                NodeLabelTypeface,
-                regionLabelFontSize,
-                new ImmutableSolidColorBrush(Color.Parse("#AA0A111A")));
+            constellation = CreateMapText(node.ConstellationName, regionLabelFontSize, new SolidColorBrush(Color.Parse("#E6F0FF")));
         }
 
         var starClass = GetStarClassDisplayValue(node);
         FormattedText? starClassText = null;
-        FormattedText? starClassHalo = null;
         if (ShowIndicatorStarClass && !string.IsNullOrWhiteSpace(starClass))
         {
             starClassText = GetNodeSecondaryLabel(node.Id, starClass);
-            starClassHalo = GetNodeSecondaryLabelHalo(node.Id, starClass);
         }
 
         FormattedText? zoneChipText = null;
@@ -6302,13 +6115,7 @@ public sealed class MapControl : Control
         const double zoneChipGap = 6.0;
         if (ShowIndicatorAnsiblexZone && IsAnsiblexZoneBadgeNode(node.Id) && TryGetAnsiblexZoneInfo(node.Id, out var ansiblexZone))
         {
-            zoneChipText = new FormattedText(
-                $"Z{ansiblexZone.Zone}",
-                CultureInfo.InvariantCulture,
-                FlowDirection.LeftToRight,
-                NodeLabelTypeface,
-                Math.Max(9, labelFontSize - 1),
-                new ImmutableSolidColorBrush(Color.Parse("#0D131D")));
+            zoneChipText = CreateMapText($"Z{ansiblexZone.Zone}", MapTypography.SecondarySize, new ImmutableSolidColorBrush(Color.Parse("#0D131D")), FontWeight.SemiBold);
             zoneChipColor = Color.Parse(AnsiblexZones.ColorHex(ansiblexZone.Zone));
             zoneChipWidth = zoneChipText.Width + 8;
         }
@@ -6344,16 +6151,16 @@ public sealed class MapControl : Control
             height += lineGap + starClassText.Height;
         }
 
-        var rect = new Rect(origin.X - 3, origin.Y - 2, width + 6, height + 4);
+        var rect = new Rect(origin.X - MapTypography.LabelPadX, origin.Y - MapTypography.LabelPadY, width + MapTypography.LabelPadX * 2, height + MapTypography.LabelPadY * 2);
         context.FillRectangle(NodeLabelBackgroundBrush, rect, 3);
 
-        DrawLabelWithHalo(context, name, nameHalo, origin);
+        context.DrawText(name, origin);
         var firstLineCursor = origin.X + name.Width;
-        if (sec is not null && secHalo is not null)
+        if (sec is not null)
         {
             firstLineCursor += gap;
             var secOrigin = new Point(firstLineCursor, origin.Y);
-            DrawLabelWithHalo(context, sec, secHalo, secOrigin);
+            context.DrawText(sec, secOrigin);
             firstLineCursor += sec.Width;
         }
 
@@ -6368,21 +6175,21 @@ public sealed class MapControl : Control
         }
 
         var y = origin.Y + name.Height + lineGap;
-        if (region is not null && regionHalo is not null)
+        if (region is not null)
         {
-            DrawLabelWithHalo(context, region, regionHalo, new Point(origin.X, y));
+            context.DrawText(region, new Point(origin.X, y));
             y += region.Height + lineGap;
         }
 
-        if (constellation is not null && constellationHalo is not null)
+        if (constellation is not null)
         {
-            DrawLabelWithHalo(context, constellation, constellationHalo, new Point(origin.X, y));
+            context.DrawText(constellation, new Point(origin.X, y));
             y += constellation.Height + lineGap;
         }
 
-        if (starClassText is not null && starClassHalo is not null)
+        if (starClassText is not null)
         {
-            DrawLabelWithHalo(context, starClassText, starClassHalo, new Point(origin.X, y));
+            context.DrawText(starClassText, new Point(origin.X, y));
         }
 
         var indicatorIconCursorX = rect.X + IndicatorIconLeftPadding;
@@ -6444,13 +6251,11 @@ public sealed class MapControl : Control
                 .ThenBy(x => x.DistanceLy)
                 .First();
             var overlapSuffix = jumpDistancesForNode.Count > 1 ? $" (+{jumpDistancesForNode.Count - 1})" : string.Empty;
-            jumpRangeIndicatorText = new FormattedText(
+            jumpRangeIndicatorText = CreateMapText(
                 $"{best.DistanceLy:0.0} LY{overlapSuffix}",
-                CultureInfo.InvariantCulture,
-                FlowDirection.LeftToRight,
-                NodeLabelTypeface,
                 IndicatorJumpRangeFontSize,
-                Brushes.White);
+                Brushes.White,
+                FontWeight.SemiBold);
             jumpRangeIndicatorIcon = best.IsInRange ? JumpRangeInRangeIcon.Value : JumpRangeOutRangeIcon.Value;
         }
 
@@ -6502,13 +6307,7 @@ public sealed class MapControl : Control
             var isDirectSource = _indicatorExplorationSourceNodeIds.Contains(node.Id);
             DrawSovUpgradeIcon(context, sourceUpgrade, new Point(iconX, iconY), SovIconSize, isDirectSource ? 1.0 : 0.5);
 
-            var counterText = new FormattedText(
-                $"x{overlapCount}",
-                CultureInfo.InvariantCulture,
-                FlowDirection.LeftToRight,
-                NodeLabelTypeface,
-                10.5,
-                Brushes.White);
+            var counterText = CreateMapText($"x{overlapCount}", MapTypography.SecondarySize, Brushes.White, FontWeight.SemiBold);
             context.DrawText(counterText, new Point(iconX + SovIconSize + 1, iconY + ((SovIconSize - counterText.Height) / 2)));
             sovIconSlot += 2;
         }
@@ -6535,11 +6334,8 @@ public sealed class MapControl : Control
 
     private static void DrawCenteredText(DrawingContext context, string message, Rect bounds)
     {
-        var text = new FormattedText(
+        var text = CreateMapText(
             message,
-            System.Globalization.CultureInfo.InvariantCulture,
-            FlowDirection.LeftToRight,
-            new Typeface("Inter"),
             14,
             EmptyTextBrush);
 
@@ -6549,13 +6345,11 @@ public sealed class MapControl : Control
 
     private static Rect GetUniverseRegionNodeRect(MapNode node, Point center, double scale = 1.0)
     {
-        var text = new FormattedText(
+        var text = CreateMapText(
             node.Name,
-            CultureInfo.InvariantCulture,
-            FlowDirection.LeftToRight,
-            RegionCardTypeface,
             12.5,
-            Brushes.White);
+            Brushes.White,
+            FontWeight.Medium);
         const double padX = 11.5;
         const double padY = 5.8;
         var width = (text.Width + (padX * 2)) * scale;
@@ -6637,11 +6431,8 @@ public sealed class MapControl : Control
 
     private static void DrawTooltip(DrawingContext context, Point anchor, string text)
     {
-        var content = new FormattedText(
+        var content = CreateMapText(
             text,
-            System.Globalization.CultureInfo.InvariantCulture,
-            FlowDirection.LeftToRight,
-            new Typeface("Inter"),
             12,
             Brushes.White);
 
@@ -6661,944 +6452,6 @@ public sealed class MapControl : Control
     private static Point GetNodeLabelOrigin(Point nodePoint)
     {
         return new Point(nodePoint.X + NodeLabelOffset.X, nodePoint.Y + NodeLabelOffset.Y);
-    }
-
-    private void DrawHoverOverlay(DrawingContext context, Point anchor, MapNode node)
-    {
-        var header = node.Name;
-        var detailLines = new List<string>();
-        var regionText = (InfoBoxShowRegion && !string.IsNullOrWhiteSpace(node.RegionName))
-            ? $"{node.RegionName}"
-            : null;
-        var constellationText = (InfoBoxShowConstellation && !string.IsNullOrWhiteSpace(node.ConstellationName))
-            ? $"{node.ConstellationName}"
-            : null;
-        var regionConstellationLine = regionText is not null || constellationText is not null
-            ? (regionText is not null && constellationText is not null
-                ? $"{regionText} | {constellationText}"
-                : regionText ?? constellationText!)
-            : null;
-        var starClass = GetStarClassDisplayValue(node);
-        if (InfoBoxShowStarClass && !string.IsNullOrWhiteSpace(starClass))
-        {
-            detailLines.Add(starClass);
-        }
-        if (InfoBoxShowIncursionIcon && node.HasActiveIncursion)
-        {
-            detailLines.Add("Incursion: Active");
-        }
-        if (ShowUserSystemMarks &&
-            UserSystemMarksByNodeId is not null &&
-            UserSystemMarksByNodeId.TryGetValue(node.Id, out var userMark))
-        {
-            var markSummary = userMark.ShowLabel && !string.IsNullOrWhiteSpace(userMark.Label)
-                ? userMark.Label
-                : userMark.IconKind is { } iconKind
-                    ? SystemMarkIcons.GetDisplayName(iconKind)
-                    : "Marked";
-            detailLines.Add($"Mark: {markSummary}");
-        }
-        if (InfoBoxShowSystemJumps && node.SystemJumps > 0)
-        {
-            detailLines.Add($"Jumps: {node.SystemJumps}");
-        }
-        if (InfoBoxShowShipKills && node.ShipKills > 0)
-        {
-            detailLines.Add($"Ship Kills: {node.ShipKills}");
-        }
-        if (InfoBoxShowPodKills && node.PodKills > 0)
-        {
-            detailLines.Add($"Pod Kills: {node.PodKills}");
-        }
-        if (InfoBoxShowNpcKills && node.NpcKills > 0)
-        {
-            detailLines.Add($"NPC Kills: {node.NpcKills}");
-        }
-        var ansiblexHoverLines = BuildAnsiblexHoverLines(node);
-        if (node.StormEffects.Count > 0)
-        {
-            foreach (var storm in node.StormEffects.OrderByDescending(e => e.Strength).ThenBy(e => e.Type))
-            {
-                detailLines.Add($"Storm: {storm.Strength} {storm.Type}");
-            }
-        }
-        var visibleOverlaySovUpgrades = InfoBoxShowSovUpgradeIcon
-            ? GetVisibleSovUpgrades(node.SovUpgrades, OverlaySovUpgradeFilterKeys)
-                .OrderBy(x => x.UpgradeName, StringComparer.OrdinalIgnoreCase)
-                .ToList()
-            : [];
-        var wormholes = node.HubWormholeConnections
-            .OrderBy(c => c.HubType)
-            .ToList();
-        var headerText = new FormattedText(
-            header,
-            CultureInfo.InvariantCulture,
-            FlowDirection.LeftToRight,
-            new Typeface("Inter"),
-            12,
-            Brushes.White);
-        FormattedText? securityText = null;
-        if (InfoBoxShowSecurityStatus && node.Security is not null)
-        {
-            var rounded = RoundSecurityForDisplay(node.Security.Value);
-            securityText = new FormattedText(
-                rounded.ToString("0.0", CultureInfo.InvariantCulture),
-                CultureInfo.InvariantCulture,
-                FlowDirection.LeftToRight,
-                new Typeface("Inter"),
-                12,
-                GetCachedBrush(GetSecurityColor(node)));
-        }
-        var detailsText = detailLines.Count == 0
-            ? null
-            : new FormattedText(
-                string.Join('\n', detailLines),
-                CultureInfo.InvariantCulture,
-                FlowDirection.LeftToRight,
-                new Typeface("Inter"),
-                12,
-                Brushes.White);
-        var jumpRangeLineTexts = new List<(Bitmap? Icon, FormattedText Text, IBrush Brush)>();
-        if (InfoBoxShowJumpRangeLy &&
-            JumpRangeDistancesByNodeId is not null &&
-            JumpRangeDistancesByNodeId.TryGetValue(node.Id, out var jumpDistances) &&
-            jumpDistances.Count > 0)
-        {
-            foreach (var distance in jumpDistances.OrderBy(x => x.DistanceLy))
-            {
-                var isInRange = distance.IsInRange;
-                var color = _jumpRangeOriginColorByNodeId.TryGetValue(distance.OriginNodeId, out var originColor)
-                    ? GetCachedBrush(originColor)
-                    : Brushes.White;
-                var label = distance.DistanceLy <= 0
-                    ? $"{distance.OriginSystemName}: 0.00 LY (origin)"
-                    : $"{distance.OriginSystemName}: {distance.DistanceLy:0.00} LY / {distance.MaxLy:0.0} LY{(isInRange ? " (in)" : " (out)")}";
-                jumpRangeLineTexts.Add((
-                    isInRange ? JumpRangeInRangeIcon.Value : JumpRangeOutRangeIcon.Value,
-                    new FormattedText(
-                        label,
-                        CultureInfo.InvariantCulture,
-                        FlowDirection.LeftToRight,
-                        new Typeface("Inter"),
-                        12,
-                        color),
-                    color));
-            }
-        }
-        var sovLineTexts = visibleOverlaySovUpgrades
-            .Select(sov => new
-            {
-                Upgrade = sov,
-                Opacity = sov.MiningSiteStatus == MiningSiteStatus.Available ? 1.0 : 0.38,
-                Text = new FormattedText(
-                    IsSingleLevelSovUpgrade(sov.UpgradeName) ? sov.UpgradeName : $"{sov.UpgradeName} {sov.Tier}",
-                    CultureInfo.InvariantCulture,
-                    FlowDirection.LeftToRight,
-                    new Typeface("Inter"),
-                    12,
-                    Brushes.White)
-            })
-            .ToList();
-        if (InfoBoxShowSovUpgradeIcon &&
-            _overlayExplorationOverlapByNodeId.TryGetValue(node.Id, out var overlayExplorationCount) &&
-            overlayExplorationCount > 0)
-        {
-            var sourceUpgrade = GetNodeExplorationDetector(node, OverlaySovUpgradeFilterKeys)
-                ?? new SovUpgradeEntry { UpgradeName = "Exploration Detector", Tier = 1 };
-            var isDirectSource = _overlayExplorationSourceNodeIds.Contains(node.Id);
-            sovLineTexts.Add(new
-            {
-                Upgrade = sourceUpgrade,
-                Opacity = isDirectSource ? 1.0 : 0.5,
-                Text = new FormattedText(
-                    $"Exploration overlap x{overlayExplorationCount}",
-                    CultureInfo.InvariantCulture,
-                    FlowDirection.LeftToRight,
-                    new Typeface("Inter"),
-                    12,
-                    Brushes.White)
-            });
-        }
-        var regionConstellationText = regionConstellationLine is null
-            ? null
-            : new FormattedText(
-                regionConstellationLine,
-                CultureInfo.InvariantCulture,
-                FlowDirection.LeftToRight,
-                NodeLabelTypeface,
-                NodeRegionConstellationFontSize,
-                Brushes.White);
-
-        var wormholeLineHeight = 0.0;
-        var wormholeMaxWidth = 0.0;
-        foreach (var wh in wormholes)
-        {
-            var hub = new FormattedText($"{wh.HubType}", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Inter"), 12, Brushes.White);
-            var sep = new FormattedText(" | ", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Inter"), 12, new ImmutableSolidColorBrush(Color.Parse("#8A96A8")));
-            var inSig = new FormattedText($"[{(string.IsNullOrWhiteSpace(wh.InSignature) ? "-" : wh.InSignature!)}]", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Inter"), 12, new ImmutableSolidColorBrush(Color.Parse("#5EDC8A")));
-            var outSig = new FormattedText($"[{(string.IsNullOrWhiteSpace(wh.OutSignature) ? "-" : wh.OutSignature!)}]", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Inter"), 12, new ImmutableSolidColorBrush(Color.Parse("#F07171")));
-            var mass = new FormattedText($"[{GetWormholeMassShort(wh.MaxShipSize)}]", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Inter"), 12, new ImmutableSolidColorBrush(Color.Parse("#F5C06A")));
-            var width = hub.Width + sep.Width + inSig.Width + sep.Width + outSig.Width + sep.Width + mass.Width;
-            wormholeMaxWidth = Math.Max(wormholeMaxWidth, width);
-            wormholeLineHeight = Math.Max(wormholeLineHeight, Math.Max(hub.Height, Math.Max(inSig.Height, outSig.Height)));
-        }
-        var sovLineHeight = 0.0;
-        var sovMaxWidth = 0.0;
-        foreach (var sovLine in sovLineTexts)
-        {
-            sovLineHeight = Math.Max(sovLineHeight, Math.Max(SovIconSize, sovLine.Text.Height));
-            sovMaxWidth = Math.Max(sovMaxWidth, SovIconSize + 4 + sovLine.Text.Width);
-        }
-        var jumpLineHeight = 0.0;
-        var jumpMaxWidth = 0.0;
-        foreach (var jumpLine in jumpRangeLineTexts)
-        {
-            jumpLineHeight = Math.Max(jumpLineHeight, Math.Max(14, jumpLine.Text.Height));
-            jumpMaxWidth = Math.Max(jumpMaxWidth, 14 + 4 + jumpLine.Text.Width);
-        }
-        var ansiblexHoverWidth = 0.0;
-        const double ansiblexHoverRowHeight = 18.0;
-        foreach (var line in ansiblexHoverLines)
-        {
-            ansiblexHoverWidth = Math.Max(ansiblexHoverWidth, MeasureAnsiblexHoverLine(line));
-        }
-        const double intelIdentityIconSize = 22.0;
-        const double intelIdentityGap = 3.0;
-        var intelRows = new List<(
-            IntelMapHoverReport Report,
-            FormattedText Age,
-            FormattedText Hostiles,
-            FormattedText Message,
-            IReadOnlyList<(IntelMapHoverShip Ship, FormattedText Text)> Ships,
-            IReadOnlyList<(IntelMapHoverHostile Hostile, FormattedText Name, FormattedText Membership)> Identities,
-            FormattedText? Overflow,
-            double TopWidth,
-            double Width,
-            double Height)>();
-        var zkillRows = new List<(
-            IntelMapHoverKillmail Report,
-            FormattedText Age,
-            FormattedText Isk,
-            FormattedText Victim,
-            FormattedText VictimMembership,
-            IReadOnlyList<(IntelMapHoverHostile Hostile, FormattedText Name, FormattedText Membership)> Attackers,
-            FormattedText? Overflow,
-            FormattedText Message,
-            double Width,
-            double Height)>();
-        if (IntelRecentReportsByNodeId is not null &&
-            IntelRecentReportsByNodeId.TryGetValue(node.Id, out var reportsForNode) &&
-            reportsForNode.Count > 0)
-        {
-            foreach (var report in reportsForNode.Take(1))
-            {
-                var age = new FormattedText(
-                    FormatRelativeAge(report.TimestampUtc),
-                    CultureInfo.InvariantCulture,
-                    FlowDirection.LeftToRight,
-                    new Typeface("Inter", FontStyle.Normal, FontWeight.Bold),
-                    10,
-                    new ImmutableSolidColorBrush(Color.Parse("#BFD8FF")));
-                var hostiles = new FormattedText(
-                    $"{report.HostileCount} hostile{(report.HostileCount == 1 ? string.Empty : "s")}",
-                    CultureInfo.InvariantCulture,
-                    FlowDirection.LeftToRight,
-                    new Typeface("Inter", FontStyle.Normal, FontWeight.SemiBold),
-                    10,
-                    Brushes.White);
-                var message = new FormattedText(
-                    TrimIntelReportText(report.MessageText, 58),
-                    CultureInfo.InvariantCulture,
-                    FlowDirection.LeftToRight,
-                    new Typeface("Inter"),
-                    10,
-                    new ImmutableSolidColorBrush(Color.Parse("#D7E1EF")));
-                var ships = report.Ships
-                    .Where(s => !string.IsNullOrWhiteSpace(s.ShipDisplayName) &&
-                                !string.Equals(s.ShipDisplayName, "Unknown", StringComparison.OrdinalIgnoreCase))
-                    .Select(s => (s, new FormattedText(
-                        $"{s.Count}x {s.ShipDisplayName}",
-                        CultureInfo.InvariantCulture,
-                        FlowDirection.LeftToRight,
-                        new Typeface("Inter", FontStyle.Normal, FontWeight.SemiBold),
-                        10,
-                        new ImmutableSolidColorBrush(Color.Parse("#EAF2FF")))))
-                    .ToList();
-                var identities = report.Hostiles
-                    .Take(4)
-                    .Select(hostile =>
-                    {
-                        var name = new FormattedText(
-                            hostile.Name,
-                            CultureInfo.InvariantCulture,
-                            FlowDirection.LeftToRight,
-                            new Typeface("Inter", FontStyle.Normal, FontWeight.SemiBold),
-                            10,
-                            Brushes.White);
-                        var membership = new FormattedText(
-                            BuildIntelMembershipTickerSummary(hostile),
-                            CultureInfo.InvariantCulture,
-                            FlowDirection.LeftToRight,
-                            new Typeface("Inter"),
-                            9,
-                            new ImmutableSolidColorBrush(Color.Parse("#9DB8D8")));
-                        return (hostile, name, membership);
-                    })
-                    .ToList();
-                var topWidth = hostiles.Width + age.Width + 22;
-                var identitiesWidth = identities.Count == 0
-                    ? 0
-                    : identities.Max(x =>
-                        intelIdentityIconSize
-                        + (x.hostile.CorporationId is null ? 0 : intelIdentityIconSize + intelIdentityGap)
-                        + (x.hostile.AllianceId is null ? 0 : intelIdentityIconSize + intelIdentityGap)
-                        + 6
-                        + Math.Max(x.name.Width, x.membership.Width));
-                var shipsWidth = ships.Count == 0 ? 0 : ships.Max(x => intelIdentityIconSize + 4 + x.Item2.Width);
-                var shipsHeight = ships.Sum(x => Math.Max(intelIdentityIconSize, x.Item2.Height) + 2);
-                var identitiesHeight = identities.Count * (intelIdentityIconSize + intelIdentityGap);
-                var overflowParts = new List<string>();
-                if (report.HiddenShipCount > 0)
-                {
-                    overflowParts.Add($"+{report.HiddenShipCount} ships");
-                }
-                if (report.HiddenHostileCount > 0)
-                {
-                    overflowParts.Add($"+{report.HiddenHostileCount} hostiles");
-                }
-
-                var overflow = overflowParts.Count > 0
-                    ? new FormattedText(
-                        string.Join("  ", overflowParts),
-                        CultureInfo.InvariantCulture,
-                        FlowDirection.LeftToRight,
-                        new Typeface("Inter", FontStyle.Normal, FontWeight.Bold),
-                        10,
-                        new ImmutableSolidColorBrush(Color.Parse("#BFD8FF")))
-                    : null;
-                intelRows.Add((
-                    report,
-                    age,
-                    hostiles,
-                    message,
-                    ships,
-                    identities,
-                    overflow,
-                    topWidth,
-                    Math.Max(Math.Max(Math.Max(topWidth, shipsWidth), identitiesWidth), Math.Max(message.Width, overflow?.Width ?? 0)),
-                    Math.Max(age.Height + 4, hostiles.Height + 4) + shipsHeight + identitiesHeight + (overflow is null ? 0 : overflow.Height + 5) + message.Height + 7));
-            }
-        }
-        if (ZkillRecentReportsByNodeId is not null &&
-            ZkillRecentReportsByNodeId.TryGetValue(node.Id, out var zkillForNode) &&
-            zkillForNode.Count > 0)
-        {
-            foreach (var report in zkillForNode.Take(1))
-            {
-                var age = new FormattedText(
-                    FormatRelativeAge(report.TimestampUtc),
-                    CultureInfo.InvariantCulture,
-                    FlowDirection.LeftToRight,
-                    new Typeface("Inter", FontStyle.Normal, FontWeight.Bold),
-                    10,
-                    new ImmutableSolidColorBrush(Color.Parse("#BFD8FF")));
-                var isk = new FormattedText(
-                    report.IskLostLabel,
-                    CultureInfo.InvariantCulture,
-                    FlowDirection.LeftToRight,
-                    new Typeface("Inter", FontStyle.Normal, FontWeight.SemiBold),
-                    10,
-                    Brushes.White);
-                var victim = new FormattedText(
-                    report.VictimName,
-                    CultureInfo.InvariantCulture,
-                    FlowDirection.LeftToRight,
-                    new Typeface("Inter", FontStyle.Normal, FontWeight.SemiBold),
-                    10,
-                    Brushes.White);
-                var victimMembership = new FormattedText(
-                    report.VictimMembership,
-                    CultureInfo.InvariantCulture,
-                    FlowDirection.LeftToRight,
-                    new Typeface("Inter"),
-                    9,
-                    new ImmutableSolidColorBrush(Color.Parse("#9DB8D8")));
-                var attackers = report.Attackers
-                    .Take(3)
-                    .Select(hostile =>
-                    {
-                        var name = new FormattedText(
-                            hostile.Name,
-                            CultureInfo.InvariantCulture,
-                            FlowDirection.LeftToRight,
-                            new Typeface("Inter", FontStyle.Normal, FontWeight.SemiBold),
-                            10,
-                            Brushes.White);
-                        var membership = new FormattedText(
-                            BuildIntelMembershipTickerSummary(hostile),
-                            CultureInfo.InvariantCulture,
-                            FlowDirection.LeftToRight,
-                            new Typeface("Inter"),
-                            9,
-                            new ImmutableSolidColorBrush(Color.Parse("#9DB8D8")));
-                        return (Hostile: hostile, Name: name, Membership: membership);
-                    })
-                    .ToList<(IntelMapHoverHostile Hostile, FormattedText Name, FormattedText Membership)>();
-                var overflow = report.HiddenAttackerCount > 0
-                    ? new FormattedText(
-                        $"+{report.HiddenAttackerCount}",
-                        CultureInfo.InvariantCulture,
-                        FlowDirection.LeftToRight,
-                        new Typeface("Inter", FontStyle.Normal, FontWeight.Bold),
-                        10,
-                        new ImmutableSolidColorBrush(Color.Parse("#BFD8FF")))
-                    : null;
-                var message = new FormattedText(
-                    TrimIntelReportText(report.MessageText, 58),
-                    CultureInfo.InvariantCulture,
-                    FlowDirection.LeftToRight,
-                    new Typeface("Inter"),
-                    10,
-                    new ImmutableSolidColorBrush(Color.Parse("#D7E1EF")));
-                var attackersWidth = attackers.Count == 0
-                    ? 0
-                    : attackers.Max(x =>
-                        intelIdentityIconSize
-                        + intelIdentityGap
-                        + intelIdentityIconSize
-                        + (x.Hostile.CorporationId is null ? 0 : intelIdentityIconSize + intelIdentityGap)
-                        + (x.Hostile.AllianceId is null ? 0 : intelIdentityIconSize + intelIdentityGap)
-                        + 6
-                        + Math.Max(x.Name.Width, x.Membership.Width));
-                var width = Math.Max(
-                    Math.Max(isk.Width + age.Width + 24, message.Width),
-                    Math.Max(victim.Width + victimMembership.Width + 18 + (intelIdentityIconSize * 3), attackersWidth));
-                var height = Math.Max(age.Height + 4, isk.Height + 4)
-                    + intelIdentityIconSize
-                    + (string.IsNullOrWhiteSpace(report.VictimMembership) ? 0 : victimMembership.Height)
-                    + (attackers.Count * (intelIdentityIconSize + intelIdentityGap))
-                    + (overflow is null ? 0 : overflow.Height + 6)
-                    + message.Height
-                    + 12;
-                zkillRows.Add((report, age, isk, victim, victimMembership, attackers, overflow, message, width, height));
-            }
-        }
-        var intelMaxWidth = intelRows.Count == 0 ? 0.0 : intelRows.Max(x => x.Width) + 8;
-        var intelHeight = intelRows.Count == 0 ? 0.0 : intelRows.Sum(x => x.Height + 5);
-        var zkillMaxWidth = zkillRows.Count == 0 ? 0.0 : zkillRows.Max(x => x.Width) + 8;
-        var zkillHeight = zkillRows.Count == 0 ? 0.0 : zkillRows.Sum(x => x.Height + 5);
-        var intelSectionTitle = new FormattedText("Intel Reports", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Inter", FontStyle.Normal, FontWeight.Bold), 10, new ImmutableSolidColorBrush(Color.Parse("#9DB8D8")));
-        var zkillSectionTitle = new FormattedText("zKillmails", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Inter", FontStyle.Normal, FontWeight.Bold), 10, new ImmutableSolidColorBrush(Color.Parse("#9DB8D8")));
-        var hasOverlaySections = intelRows.Count > 0 || zkillRows.Count > 0;
-        var overlaySectionsHeight = 0.0;
-        if (hasOverlaySections)
-        {
-            // Extra spacer before the section splitter and first section.
-            overlaySectionsHeight += 2;
-            if (intelRows.Count > 0)
-            {
-                overlaySectionsHeight += intelSectionTitle.Height + 2;
-            }
-
-            if (zkillRows.Count > 0)
-            {
-                overlaySectionsHeight += zkillSectionTitle.Height + 2;
-            }
-        }
-        IReadOnlyList<int>? presentCharacterIds = null;
-        IReadOnlyList<string>? presentCharacterNames = null;
-        var characterPortraitSize = 28.0;
-        var characterPortraitGap = 4.0;
-        var characterRowHeight = 0.0;
-        var characterRowWidth = 0.0;
-        FormattedText? characterOverflowText = null;
-        if (ShowInfoBoxCharacterPresence &&
-            CharacterPresenceCharacterIdsByNodeId is not null &&
-            CharacterPresenceCharacterIdsByNodeId.TryGetValue(node.Id, out var idsForNode) &&
-            idsForNode.Count > 0)
-        {
-            presentCharacterIds = idsForNode;
-            if (CharacterPresenceNamesByNodeId is not null &&
-                CharacterPresenceNamesByNodeId.TryGetValue(node.Id, out var namesForNode))
-            {
-                presentCharacterNames = namesForNode;
-            }
-
-            var maxNames = Math.Clamp(CharacterPresenceHoverMaxNames, 1, 12);
-            var visibleCount = Math.Min(maxNames, idsForNode.Count);
-            characterRowWidth = visibleCount * characterPortraitSize +
-                                Math.Max(0, visibleCount - 1) * characterPortraitGap;
-            var overflow = idsForNode.Count - visibleCount;
-            if (overflow > 0)
-            {
-                characterOverflowText = new FormattedText(
-                    $"+{overflow}",
-                    CultureInfo.InvariantCulture,
-                    FlowDirection.LeftToRight,
-                    new Typeface("Inter"),
-                    12,
-                    Brushes.White);
-                characterRowWidth += 6 + characterOverflowText.Width;
-            }
-            characterRowHeight = Math.Max(characterPortraitSize, characterOverflowText?.Height ?? 0);
-        }
-
-        var start = GetNodeLabelOrigin(anchor);
-        var padX = 8.0;
-        var padY = 6.0;
-        var headerWidth = headerText.Width + (securityText is null ? 0 : (8 + securityText.Width));
-        var bodyWidth = Math.Max(Math.Max(Math.Max(Math.Max(Math.Max(Math.Max(Math.Max(Math.Max(regionConstellationText?.Width ?? 0, detailsText?.Width ?? 0), wormholeMaxWidth), sovMaxWidth), jumpMaxWidth), ansiblexHoverWidth), characterRowWidth), intelMaxWidth), zkillMaxWidth);
-        var contentWidth = Math.Max(headerWidth, bodyWidth);
-        var overlayPlanets = InfoBoxShowPlanets
-            ? GetVisiblePlanetTypeIds(node.PlanetTypeIds, OverlayPlanetFilterTypeIds)
-            : [];
-        var overlayPlanetRows = GetPlanetIconRowCount(overlayPlanets.Count);
-        var overlayIconStrip = MeasureOverlayIconStrip(node);
-        var overlayPlanetWidth = overlayPlanetRows > 0
-            ? MeasurePlanetIconRowWidth(overlayPlanets.Count, IconSize)
-            : 0.0;
-        var overlayIconBlockHeight = 0.0;
-        if (overlayIconStrip.HasIcons && overlayPlanetRows > 0)
-        {
-            overlayIconBlockHeight = 1 + OverlayPlanetIconRowStride + (overlayPlanetRows * OverlayPlanetIconRowStride);
-        }
-        else if (overlayIconStrip.HasIcons)
-        {
-            overlayIconBlockHeight = 3 + IconSize;
-        }
-        else if (overlayPlanetRows > 0)
-        {
-            overlayIconBlockHeight = 1 + (overlayPlanetRows * OverlayPlanetIconRowStride);
-        }
-
-        var contentHeight = headerText.Height
-            + (regionConstellationText is null ? 0 : regionConstellationText.Height + 2)
-            + (detailsText is null ? 0 : detailsText.Height + 2)
-            + (ansiblexHoverLines.Count == 0 ? 0 : (ansiblexHoverLines.Count * (ansiblexHoverRowHeight + 2)) + 2)
-            + intelHeight
-            + zkillHeight
-            + overlaySectionsHeight
-            + (jumpRangeLineTexts.Count == 0 ? 0 : (jumpRangeLineTexts.Count * (jumpLineHeight + 1)))
-            + (sovLineTexts.Count == 0 ? 0 : (sovLineTexts.Count * (sovLineHeight + 1)))
-            + (wormholes.Count == 0 ? 0 : (wormholes.Count * (wormholeLineHeight + 1)))
-            + (presentCharacterIds is null ? 0 : characterRowHeight + 2)
-            + overlayIconBlockHeight;
-        contentWidth = Math.Max(contentWidth, OverlayIconBlockContentWidth(Math.Max(overlayIconStrip.Width, overlayPlanetWidth), padX));
-        var rect = new Rect(
-            start.X - 2,
-            start.Y - 2,
-            contentWidth + (padX * 2),
-            contentHeight + (padY * 2));
-
-        context.FillRectangle(HoverOverlayBackgroundBrush, rect, 4);
-        context.DrawRectangle(HoverOverlayBorderPen, rect, 4);
-        var headerOrigin = new Point(rect.X + padX, rect.Y + padY);
-        context.DrawText(headerText, headerOrigin);
-        if (securityText is not null)
-        {
-            var secOrigin = new Point(headerOrigin.X + headerText.Width + 8, headerOrigin.Y);
-            context.DrawText(securityText, secOrigin);
-        }
-        var detailsStartY = headerOrigin.Y + headerText.Height + 2;
-        if (regionConstellationText is not null)
-        {
-            context.DrawText(regionConstellationText, new Point(headerOrigin.X, detailsStartY));
-            detailsStartY += regionConstellationText.Height + 2;
-        }
-        if (detailsText is not null)
-        {
-            context.DrawText(detailsText, new Point(headerOrigin.X, detailsStartY));
-            detailsStartY += detailsText.Height;
-        }
-        if (ansiblexHoverLines.Count > 0)
-        {
-            detailsStartY += 2;
-            foreach (var line in ansiblexHoverLines)
-            {
-                DrawAnsiblexHoverLine(context, new Point(headerOrigin.X, detailsStartY), line, ansiblexHoverRowHeight);
-                detailsStartY += ansiblexHoverRowHeight + 2;
-            }
-        }
-        foreach (var jumpLine in jumpRangeLineTexts)
-        {
-            if (jumpLine.Icon is not null)
-            {
-                DrawBitmap(context, jumpLine.Icon, new Point(headerOrigin.X, detailsStartY + ((jumpLineHeight - 14) / 2)), 14);
-            }
-
-            context.DrawText(jumpLine.Text, new Point(headerOrigin.X + 18, detailsStartY + ((jumpLineHeight - jumpLine.Text.Height) / 2)));
-            detailsStartY += jumpLineHeight + 1;
-        }
-
-        foreach (var sovLine in sovLineTexts)
-        {
-            DrawSovUpgradeIcon(context, sovLine.Upgrade, new Point(headerOrigin.X, detailsStartY), SovIconSize, sovLine.Opacity);
-            context.DrawText(sovLine.Text, new Point(headerOrigin.X + SovIconSize + 4, detailsStartY + ((sovLineHeight - sovLine.Text.Height) / 2)));
-            detailsStartY += sovLineHeight + 1;
-        }
-
-        var wormholeStartY = detailsStartY;
-        foreach (var wh in wormholes)
-        {
-            var hub = new FormattedText($"{wh.HubType}", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Inter"), 12, Brushes.White);
-            var sep = new FormattedText(" | ", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Inter"), 12, new ImmutableSolidColorBrush(Color.Parse("#8A96A8")));
-            var inSig = new FormattedText($"[{(string.IsNullOrWhiteSpace(wh.InSignature) ? "-" : wh.InSignature!)}]", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Inter"), 12, new ImmutableSolidColorBrush(Color.Parse("#5EDC8A")));
-            var outSig = new FormattedText($"[{(string.IsNullOrWhiteSpace(wh.OutSignature) ? "-" : wh.OutSignature!)}]", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Inter"), 12, new ImmutableSolidColorBrush(Color.Parse("#F07171")));
-            var mass = new FormattedText($"[{GetWormholeMassShort(wh.MaxShipSize)}]", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Inter"), 12, new ImmutableSolidColorBrush(Color.Parse("#F5C06A")));
-
-            var lineX = headerOrigin.X;
-            context.DrawText(hub, new Point(lineX, wormholeStartY));
-            lineX += hub.Width;
-            context.DrawText(sep, new Point(lineX, wormholeStartY));
-            lineX += sep.Width;
-            context.DrawText(inSig, new Point(lineX, wormholeStartY));
-            lineX += inSig.Width;
-            context.DrawText(sep, new Point(lineX, wormholeStartY));
-            lineX += sep.Width;
-            context.DrawText(outSig, new Point(lineX, wormholeStartY));
-            lineX += outSig.Width;
-            context.DrawText(sep, new Point(lineX, wormholeStartY));
-            lineX += sep.Width;
-            context.DrawText(mass, new Point(lineX, wormholeStartY));
-            wormholeStartY += wormholeLineHeight + 1;
-        }
-        if (presentCharacterIds is { Count: > 0 })
-        {
-            var maxNames = Math.Clamp(CharacterPresenceHoverMaxNames, 1, 12);
-            var visibleCount = Math.Min(maxNames, presentCharacterIds.Count);
-            var charStartY = wormholeStartY + 2;
-            var charX = headerOrigin.X;
-            string? hoveredCharacterName = null;
-            for (var i = 0; i < visibleCount; i++)
-            {
-                var characterId = presentCharacterIds[i];
-                var currentName = presentCharacterNames is not null && i < presentCharacterNames.Count ? presentCharacterNames[i] : null;
-                var portraitRect = new Rect(charX, charStartY, characterPortraitSize, characterPortraitSize);
-                if (portraitRect.Contains(_lastPointerPosition))
-                {
-                    hoveredCharacterName = currentName;
-                }
-
-                DrawCharacterPortraitChip(
-                    context,
-                    charX,
-                    charStartY,
-                    characterPortraitSize,
-                    characterId,
-                    currentName);
-                charX += characterPortraitSize + characterPortraitGap;
-            }
-
-            if (characterOverflowText is not null)
-            {
-                context.DrawText(characterOverflowText, new Point(charX + 6, charStartY + ((characterPortraitSize - characterOverflowText.Height) / 2)));
-            }
-
-            if (!string.IsNullOrWhiteSpace(hoveredCharacterName))
-            {
-                DrawCompactTooltip(context, _lastPointerPosition, hoveredCharacterName!);
-            }
-        }
-
-        if (intelRows.Count > 0 || zkillRows.Count > 0)
-        {
-            var intelStartY = wormholeStartY + (presentCharacterIds is { Count: > 0 } ? characterRowHeight + 4 : 2);
-            var splitterY = intelStartY - 3;
-            var splitterPen = new Pen(new ImmutableSolidColorBrush(Color.Parse("#5A6B82")), 1);
-            context.DrawLine(splitterPen, new Point(headerOrigin.X, splitterY), new Point(rect.Right - padX, splitterY));
-            string? hoveredIntelHostileName = null;
-            var drawIntelFirst = intelRows.Count > 0 && (zkillRows.Count == 0 || intelRows[0].Report.TimestampUtc >= zkillRows[0].Report.TimestampUtc);
-
-            void DrawIntelSection()
-            {
-                var sectionTitle = new FormattedText("Intel Reports", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Inter", FontStyle.Normal, FontWeight.Bold), 10, new ImmutableSolidColorBrush(Color.Parse("#9DB8D8")));
-                context.DrawText(sectionTitle, new Point(headerOrigin.X + 2, intelStartY));
-                intelStartY += sectionTitle.Height + 2;
-
-                foreach (var intelRow in intelRows)
-                {
-                    var rowRect = new Rect(headerOrigin.X, intelStartY, intelMaxWidth, intelRow.Height);
-                context.FillRectangle(new ImmutableSolidColorBrush(Color.Parse("#8A172234")), rowRect, 3);
-                context.DrawRectangle(new Pen(new ImmutableSolidColorBrush(Color.Parse("#4A2A3C58")), 1), rowRect, 3);
-
-                var chipY = intelStartY + 2;
-                var ageRect = new Rect(rowRect.Right - intelRow.Age.Width - 10, chipY, intelRow.Age.Width + 6, intelRow.Age.Height + 4);
-                context.FillRectangle(new ImmutableSolidColorBrush(Color.Parse("#3A241C35")), ageRect, 3);
-                context.DrawRectangle(new Pen(new ImmutableSolidColorBrush(Color.Parse("#5D83B5")), 1), ageRect, 3);
-                context.DrawText(intelRow.Age, new Point(ageRect.X + 3, ageRect.Y + 2));
-
-                var hostilesRect = new Rect(headerOrigin.X + 4, chipY, intelRow.Hostiles.Width + 6, intelRow.Hostiles.Height + 4);
-                var hostileColor = GetIntelHostileColor(intelRow.Report.HostileCount);
-                context.FillRectangle(new ImmutableSolidColorBrush(Color.FromArgb(130, hostileColor.R, hostileColor.G, hostileColor.B)), hostilesRect, 3);
-                context.DrawRectangle(new Pen(new ImmutableSolidColorBrush(hostileColor), 1), hostilesRect, 3);
-                context.DrawText(intelRow.Hostiles, new Point(hostilesRect.X + 3, hostilesRect.Y + 2));
-
-                var identityY = chipY + Math.Max(ageRect.Height, hostilesRect.Height) + 3;
-                foreach (var ship in intelRow.Ships)
-                {
-                    DrawIntelShipIcon(context, ship.Ship, new Point(headerOrigin.X + 4, identityY), intelIdentityIconSize);
-                    context.DrawText(ship.Text, new Point(headerOrigin.X + 4 + intelIdentityIconSize + 4, identityY + ((intelIdentityIconSize - ship.Text.Height) / 2)));
-                    identityY += Math.Max(intelIdentityIconSize, ship.Text.Height) + 2;
-                }
-
-                foreach (var identity in intelRow.Identities)
-                {
-                    var intelX = headerOrigin.X + 4;
-                    var portraitRect = new Rect(intelX, identityY, intelIdentityIconSize, intelIdentityIconSize);
-                    if (identity.Hostile.CharacterId is { } characterId)
-                    {
-                        _intelOverlayLinks.Add((portraitRect, $"https://zkillboard.com/character/{characterId}/"));
-                    }
-                    if (portraitRect.Contains(_lastPointerPosition))
-                    {
-                        hoveredIntelHostileName = identity.Hostile.Name;
-                    }
-
-                    DrawCharacterPortraitChip(
-                        context,
-                        intelX,
-                        identityY,
-                        intelIdentityIconSize,
-                        identity.Hostile.CharacterId ?? 0,
-                        identity.Hostile.Name);
-                    intelX += intelIdentityIconSize + intelIdentityGap;
-                    if (identity.Hostile.CorporationId is { } corporationId)
-                    {
-                        _intelOverlayLinks.Add((new Rect(intelX, identityY, intelIdentityIconSize, intelIdentityIconSize), $"https://zkillboard.com/corporation/{corporationId}/"));
-                        DrawOrganizationLogoChip(context, intelX, identityY, intelIdentityIconSize, "corporations", corporationId);
-                        intelX += intelIdentityIconSize + intelIdentityGap;
-                    }
-                    if (identity.Hostile.AllianceId is { } allianceId)
-                    {
-                        _intelOverlayLinks.Add((new Rect(intelX, identityY, intelIdentityIconSize, intelIdentityIconSize), $"https://zkillboard.com/alliance/{allianceId}/"));
-                        DrawOrganizationLogoChip(context, intelX, identityY, intelIdentityIconSize, "alliances", allianceId);
-                        intelX += intelIdentityIconSize + intelIdentityGap;
-                    }
-
-                    context.DrawText(identity.Name, new Point(intelX + 3, identityY));
-                    context.DrawText(identity.Membership, new Point(intelX + 3, identityY + identity.Name.Height));
-                    identityY += intelIdentityIconSize + intelIdentityGap;
-                }
-
-                if (intelRow.Overflow is not null)
-                {
-                    var overflowRect = new Rect(headerOrigin.X + 4, identityY, intelRow.Overflow.Width + 10, intelRow.Overflow.Height + 4);
-                    context.FillRectangle(new ImmutableSolidColorBrush(Color.Parse("#3A241C35")), overflowRect, 3);
-                    context.DrawRectangle(new Pen(new ImmutableSolidColorBrush(Color.Parse("#5D83B5")), 1), overflowRect, 3);
-                    context.DrawText(intelRow.Overflow, new Point(overflowRect.X + 5, overflowRect.Y + 2));
-                    identityY += overflowRect.Height + 1;
-                }
-
-                var messageY = identityY + 1;
-                context.DrawText(intelRow.Message, new Point(headerOrigin.X + 4, messageY));
-                intelStartY += intelRow.Height + 5;
-            }
-            }
-
-            void DrawZkillSection()
-            {
-                var sectionTitle = new FormattedText("zKillmails", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Inter", FontStyle.Normal, FontWeight.Bold), 10, new ImmutableSolidColorBrush(Color.Parse("#9DB8D8")));
-                context.DrawText(sectionTitle, new Point(headerOrigin.X + 2, intelStartY));
-                intelStartY += sectionTitle.Height + 2;
-
-                foreach (var zkillRow in zkillRows)
-                {
-                    var rowRect = new Rect(headerOrigin.X, intelStartY, zkillMaxWidth, zkillRow.Height);
-                    context.FillRectangle(new ImmutableSolidColorBrush(Color.Parse("#8A172234")), rowRect, 3);
-                    context.DrawRectangle(new Pen(new ImmutableSolidColorBrush(Color.Parse("#4A2A3C58")), 1), rowRect, 3);
-
-                    var chipY = intelStartY + 2;
-                    var ageRect = new Rect(rowRect.Right - zkillRow.Age.Width - 10, chipY, zkillRow.Age.Width + 6, zkillRow.Age.Height + 4);
-                    context.FillRectangle(new ImmutableSolidColorBrush(Color.Parse("#3A241C35")), ageRect, 3);
-                    context.DrawRectangle(new Pen(new ImmutableSolidColorBrush(Color.Parse("#5D83B5")), 1), ageRect, 3);
-                    context.DrawText(zkillRow.Age, new Point(ageRect.X + 3, ageRect.Y + 2));
-
-                    var iskRect = new Rect(headerOrigin.X + 4, chipY, zkillRow.Isk.Width + 6, zkillRow.Isk.Height + 4);
-                    context.FillRectangle(new ImmutableSolidColorBrush(Color.Parse("#3A2A2A")), iskRect, 3);
-                    context.DrawRectangle(new Pen(new ImmutableSolidColorBrush(Color.Parse("#8A4C4C")), 1), iskRect, 3);
-                    context.DrawText(zkillRow.Isk, new Point(iskRect.X + 3, iskRect.Y + 2));
-
-                    var lineY = chipY + Math.Max(ageRect.Height, iskRect.Height) + 3;
-                    var iconX = headerOrigin.X + 4;
-                    var iconRect = new Rect(iconX, lineY, intelIdentityIconSize, intelIdentityIconSize);
-                    if (!string.IsNullOrWhiteSpace(zkillRow.Report.KillmailUrl))
-                    {
-                        _intelOverlayLinks.Add((iconRect, zkillRow.Report.KillmailUrl));
-                    }
-                    var killmailIcon = KillmailIcon.Value;
-                    if (killmailIcon is not null)
-                    {
-                        DrawBitmap(context, killmailIcon, new Point(iconRect.X, iconRect.Y), intelIdentityIconSize);
-                    }
-
-                    iconX += intelIdentityIconSize + intelIdentityGap;
-                    DrawIntelShipIcon(
-                        context,
-                        new IntelMapHoverShip
-                        {
-                            ShipDisplayName = zkillRow.Report.VictimShipDisplayName,
-                            ShipIconKey = "unknown",
-                            ShipTypeId = zkillRow.Report.VictimShipTypeId
-                        },
-                        new Point(iconX, lineY),
-                        intelIdentityIconSize);
-                    iconX += intelIdentityIconSize + intelIdentityGap;
-                    DrawCharacterPortraitChip(context, iconX, lineY, intelIdentityIconSize, zkillRow.Report.VictimCharacterId ?? 0, zkillRow.Report.VictimName);
-                    if (zkillRow.Report.VictimCharacterId is { } victimCharacterId)
-                    {
-                        _intelOverlayLinks.Add((new Rect(iconX, lineY, intelIdentityIconSize, intelIdentityIconSize), $"https://zkillboard.com/character/{victimCharacterId}/"));
-                    }
-
-                    iconX += intelIdentityIconSize + intelIdentityGap;
-                    if (zkillRow.Report.VictimCorporationId is { } victimCorporationId)
-                    {
-                        DrawOrganizationLogoChip(context, iconX, lineY, intelIdentityIconSize, "corporations", victimCorporationId);
-                        _intelOverlayLinks.Add((new Rect(iconX, lineY, intelIdentityIconSize, intelIdentityIconSize), $"https://zkillboard.com/corporation/{victimCorporationId}/"));
-                        iconX += intelIdentityIconSize + intelIdentityGap;
-                    }
-                    if (zkillRow.Report.VictimAllianceId is { } victimAllianceId)
-                    {
-                        DrawOrganizationLogoChip(context, iconX, lineY, intelIdentityIconSize, "alliances", victimAllianceId);
-                        _intelOverlayLinks.Add((new Rect(iconX, lineY, intelIdentityIconSize, intelIdentityIconSize), $"https://zkillboard.com/alliance/{victimAllianceId}/"));
-                        iconX += intelIdentityIconSize + intelIdentityGap;
-                    }
-
-                    context.DrawText(zkillRow.Victim, new Point(iconX + 3, lineY));
-                    if (!string.IsNullOrWhiteSpace(zkillRow.Report.VictimMembership))
-                    {
-                        context.DrawText(zkillRow.VictimMembership, new Point(iconX + 3, lineY + zkillRow.Victim.Height));
-                    }
-
-                    lineY += intelIdentityIconSize + 2;
-                    foreach (var attacker in zkillRow.Attackers)
-                    {
-                        var attackerX = headerOrigin.X + 4 + intelIdentityIconSize + intelIdentityGap;
-                        DrawIntelShipIcon(
-                            context,
-                            new IntelMapHoverShip
-                            {
-                                ShipDisplayName = "Unknown",
-                                ShipIconKey = "unknown",
-                                ShipTypeId = attacker.Hostile.ShipTypeId
-                            },
-                            new Point(attackerX, lineY),
-                            intelIdentityIconSize);
-                        attackerX += intelIdentityIconSize + intelIdentityGap;
-                        DrawCharacterPortraitChip(context, attackerX, lineY, intelIdentityIconSize, attacker.Hostile.CharacterId ?? 0, attacker.Hostile.Name);
-                        if (attacker.Hostile.CharacterId is { } attackerCharacterId)
-                        {
-                            _intelOverlayLinks.Add((new Rect(attackerX, lineY, intelIdentityIconSize, intelIdentityIconSize), $"https://zkillboard.com/character/{attackerCharacterId}/"));
-                        }
-                        attackerX += intelIdentityIconSize + intelIdentityGap;
-
-                        if (attacker.Hostile.CorporationId is { } attackerCorporationId)
-                        {
-                            DrawOrganizationLogoChip(context, attackerX, lineY, intelIdentityIconSize, "corporations", attackerCorporationId);
-                            _intelOverlayLinks.Add((new Rect(attackerX, lineY, intelIdentityIconSize, intelIdentityIconSize), $"https://zkillboard.com/corporation/{attackerCorporationId}/"));
-                            attackerX += intelIdentityIconSize + intelIdentityGap;
-                        }
-                        if (attacker.Hostile.AllianceId is { } attackerAllianceId)
-                        {
-                            DrawOrganizationLogoChip(context, attackerX, lineY, intelIdentityIconSize, "alliances", attackerAllianceId);
-                            _intelOverlayLinks.Add((new Rect(attackerX, lineY, intelIdentityIconSize, intelIdentityIconSize), $"https://zkillboard.com/alliance/{attackerAllianceId}/"));
-                            attackerX += intelIdentityIconSize + intelIdentityGap;
-                        }
-
-                        context.DrawText(attacker.Name, new Point(attackerX + 3, lineY));
-                        context.DrawText(attacker.Membership, new Point(attackerX + 3, lineY + attacker.Name.Height));
-                        lineY += intelIdentityIconSize + intelIdentityGap;
-                    }
-
-                    if (zkillRow.Overflow is not null)
-                    {
-                        var overflowRect = new Rect(headerOrigin.X + 4, lineY, zkillRow.Overflow.Width + 10, zkillRow.Overflow.Height + 4);
-                        context.FillRectangle(new ImmutableSolidColorBrush(Color.Parse("#3A241C35")), overflowRect, 3);
-                        context.DrawRectangle(new Pen(new ImmutableSolidColorBrush(Color.Parse("#5D83B5")), 1), overflowRect, 3);
-                        context.DrawText(zkillRow.Overflow, new Point(overflowRect.X + 5, overflowRect.Y + 2));
-                        lineY += overflowRect.Height + 1;
-                    }
-
-                    context.DrawText(zkillRow.Message, new Point(headerOrigin.X + 4, lineY + 1));
-                    intelStartY += zkillRow.Height + 5;
-                }
-            }
-
-            if (drawIntelFirst)
-            {
-                if (intelRows.Count > 0) DrawIntelSection();
-                if (zkillRows.Count > 0) DrawZkillSection();
-            }
-            else
-            {
-                if (zkillRows.Count > 0) DrawZkillSection();
-                if (intelRows.Count > 0) DrawIntelSection();
-            }
-
-            if (!string.IsNullOrWhiteSpace(hoveredIntelHostileName))
-            {
-                DrawCompactTooltip(context, _lastPointerPosition, hoveredIntelHostileName);
-            }
-        }
-
-        if (overlayIconBlockHeight > 0)
-        {
-            var overlayIconY = rect.Bottom - padY - overlayIconBlockHeight + 3;
-            var overlayIconCursorX = rect.X + IndicatorIconLeftPadding;
-            if (InfoBoxShowA0StarIcon && IsA0BlueSmall(node))
-            {
-                DrawA0Icon(context, new Point(overlayIconCursorX, overlayIconY), IconSize);
-                overlayIconCursorX += IconSize + IndicatorIconSlotGap;
-            }
-            if (InfoBoxShowJoveObservatoryIcon && node.HasJoveObservatory)
-            {
-                DrawJoveObservatoryIcon(context, new Point(overlayIconCursorX, overlayIconY), IconSize);
-                overlayIconCursorX += IconSize + IndicatorIconSlotGap;
-            }
-            if (InfoBoxShowIceBeltsIcon && node.IceFieldCount > 0)
-            {
-                DrawIceFieldIcon(context, new Point(overlayIconCursorX, overlayIconY), IconSize);
-                overlayIconCursorX += IconSize + IndicatorIconSlotGap;
-            }
-            if (InfoBoxShowStormIcon && node.StormEffects.Count > 0)
-            {
-                DrawStormIcon(context, node, new Point(overlayIconCursorX, overlayIconY), IconSize);
-                overlayIconCursorX += IconSize + IndicatorIconSlotGap;
-            }
-            if (InfoBoxShowWormholeIcon && node.HubWormholeConnections.Count > 0)
-            {
-                DrawHubWormholeIcon(context, node, new Point(overlayIconCursorX, overlayIconY), IconSize);
-                overlayIconCursorX += IconSize + IndicatorIconSlotGap;
-            }
-            if (InfoBoxShowIncursionIcon && node.HasActiveIncursion)
-            {
-                DrawIncursionIcon(context, new Point(overlayIconCursorX, overlayIconY), IconSize);
-                overlayIconCursorX += IconSize + IndicatorIconSlotGap;
-            }
-            if (InfoBoxShowSystemJumps && node.SystemJumps > 0)
-            {
-                overlayIconCursorX += DrawCountIconBadge(context, SystemJumpsIcon.Value, node.SystemJumps, new Point(overlayIconCursorX, overlayIconY), IconSize);
-            }
-            if (InfoBoxShowShipKills && node.ShipKills > 0)
-            {
-                overlayIconCursorX += DrawCountIconBadge(context, ShipKillsIcon.Value, node.ShipKills, new Point(overlayIconCursorX, overlayIconY), IconSize);
-            }
-            if (InfoBoxShowPodKills && node.PodKills > 0)
-            {
-                overlayIconCursorX += DrawCountIconBadge(context, PodKillsIcon.Value, node.PodKills, new Point(overlayIconCursorX, overlayIconY), IconSize);
-            }
-            if (InfoBoxShowNpcKills && node.NpcKills > 0)
-            {
-                overlayIconCursorX += DrawCountIconBadge(context, NpcKillsIcon.Value, node.NpcKills, new Point(overlayIconCursorX, overlayIconY), IconSize);
-            }
-            if (overlayPlanetRows > 0)
-            {
-                var planetRowY = overlayIconStrip.HasIcons
-                    ? overlayIconY + OverlayPlanetIconRowStride
-                    : overlayIconY;
-                DrawPlanetTypeIcons(context, overlayPlanets, rect.X + IndicatorIconLeftPadding, planetRowY, IconSize, OverlayPlanetIconRowStride);
-            }
-        }
-        // SOV upgrades are rendered inline in the overlay body with icon + label rows.
     }
 
     private static string GetWormholeMassShort(string? maxShipSize)
@@ -8039,7 +6892,7 @@ public sealed class MapControl : Control
         context.DrawImage(icon, src, dst);
     }
 
-    private static double DrawCountIconBadge(DrawingContext context, Bitmap? icon, int value, Point topLeft, double size, double labelFontSize = 9.5)
+    private static double DrawCountIconBadge(DrawingContext context, Bitmap? icon, int value, Point topLeft, double size, double labelFontSize = MapTypography.SecondarySize)
     {
         if (icon is null)
         {
@@ -8048,13 +6901,11 @@ public sealed class MapControl : Control
 
         DrawBitmap(context, icon, topLeft, size);
         var label = value.ToString(CultureInfo.InvariantCulture);
-        var text = new FormattedText(
+        var text = CreateMapText(
             label,
-            CultureInfo.InvariantCulture,
-            FlowDirection.LeftToRight,
-            NodeLabelTypeface,
             labelFontSize,
-            Brushes.White);
+            Brushes.White,
+            FontWeight.SemiBold);
         context.DrawText(text, new Point(topLeft.X + size + 1.5, topLeft.Y + ((size - text.Height) / 2) - 0.5));
         return size + 1.5 + text.Width + IndicatorIconSlotGap;
     }
@@ -8222,13 +7073,11 @@ public sealed class MapControl : Control
 
         if (mark.ShowLabel && !string.IsNullOrWhiteSpace(mark.Label))
         {
-            var text = new FormattedText(
+            var text = CreateMapText(
                 mark.Label.Trim(),
-                CultureInfo.InvariantCulture,
-                FlowDirection.LeftToRight,
-                new Typeface("Inter", FontStyle.Normal, FontWeight.SemiBold),
                 10,
-                Brushes.White);
+                Brushes.White,
+                FontWeight.SemiBold);
             var chipWidth = Math.Max(18.0, text.Width + 8.0);
             var chipHeight = Math.Max(iconSize, text.Height + 4.0);
             var chip = new Rect(cursorX, anchor.Y + ((iconSize - chipHeight) / 2.0), chipWidth, chipHeight);
@@ -8254,13 +7103,11 @@ public sealed class MapControl : Control
         var color = Color.FromUInt32(first.ColorArgb);
         const double iconSize = SystemMarkIconSize;
         var countLabel = marks.Count.ToString(CultureInfo.InvariantCulture);
-        var text = new FormattedText(
+        var text = CreateMapText(
             countLabel,
-            CultureInfo.InvariantCulture,
-            FlowDirection.LeftToRight,
-            new Typeface("Inter", FontStyle.Normal, FontWeight.Bold),
             10,
-            Brushes.White);
+            Brushes.White,
+            FontWeight.Bold);
         var width = iconSize + 4.0 + text.Width + 8.0;
         var rect = new Rect(anchor.X, anchor.Y, width, iconSize);
         context.FillRectangle(new ImmutableSolidColorBrush(Color.FromArgb(220, 12, 18, 28)), rect, 4);
@@ -8313,20 +7160,15 @@ public sealed class MapControl : Control
             lines.Add($"+{hit.Marks.Count - 8} more");
         }
 
-        var body = new FormattedText(
+        var body = CreateMapText(
             string.Join('\n', lines),
-            CultureInfo.InvariantCulture,
-            FlowDirection.LeftToRight,
-            new Typeface("Inter"),
             11,
             Brushes.White);
-        var header = new FormattedText(
+        var header = CreateMapText(
             $"{hit.Marks.Count} marked systems",
-            CultureInfo.InvariantCulture,
-            FlowDirection.LeftToRight,
-            new Typeface("Inter", FontStyle.Normal, FontWeight.SemiBold),
             12,
-            Brushes.White);
+            Brushes.White,
+            FontWeight.SemiBold);
         var width = Math.Max(header.Width, body.Width) + 16;
         var height = header.Height + body.Height + 16;
         var x = hit.Anchor.X + 18;
@@ -8383,11 +7225,8 @@ public sealed class MapControl : Control
     private static Rect GetCharacterPresenceRect(Point nodePoint, double nodeRadius, int count)
     {
         var text = count > 99 ? "99+" : count.ToString(CultureInfo.InvariantCulture);
-        var textLayout = new FormattedText(
+        var textLayout = CreateMapText(
             text,
-            CultureInfo.InvariantCulture,
-            FlowDirection.LeftToRight,
-            new Typeface("Inter"),
             10,
             Brushes.White);
         var width = Math.Max(14.0, textLayout.Width + 8.0);
@@ -8402,11 +7241,8 @@ public sealed class MapControl : Control
     private static void DrawCharacterPresenceBadge(DrawingContext context, Point nodePoint, double nodeRadius, int count)
     {
         var text = count > 99 ? "99+" : count.ToString(CultureInfo.InvariantCulture);
-        var textLayout = new FormattedText(
+        var textLayout = CreateMapText(
             text,
-            CultureInfo.InvariantCulture,
-            FlowDirection.LeftToRight,
-            new Typeface("Inter"),
             10,
             Brushes.White);
         var rect = GetCharacterPresenceRect(nodePoint, nodeRadius, count);
@@ -8442,13 +7278,11 @@ public sealed class MapControl : Control
             var fallbackGlyph = string.IsNullOrWhiteSpace(characterName)
                 ? "?"
                 : characterName.Trim().Substring(0, 1).ToUpperInvariant();
-            var fallbackText = new FormattedText(
+            var fallbackText = CreateMapText(
                 fallbackGlyph,
-                CultureInfo.InvariantCulture,
-                FlowDirection.LeftToRight,
-                new Typeface("Inter", FontStyle.Normal, FontWeight.SemiBold),
                 10,
-                Brushes.White);
+                Brushes.White,
+                FontWeight.SemiBold);
             context.DrawText(
                 fallbackText,
                 new Point(
@@ -8466,8 +7300,8 @@ public sealed class MapControl : Control
 
     private bool TryOpenIntelOverlayLink(Point point)
     {
-        var link = _intelOverlayLinks.LastOrDefault(x => x.Bounds.Contains(point));
-        if (string.IsNullOrWhiteSpace(link.Url))
+        var url = GetNodeOverlayLink(point);
+        if (string.IsNullOrWhiteSpace(url))
         {
             return false;
         }
@@ -8476,7 +7310,7 @@ public sealed class MapControl : Control
         {
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
             {
-                FileName = link.Url,
+                FileName = url,
                 UseShellExecute = true
             });
             return true;
@@ -8501,13 +7335,11 @@ public sealed class MapControl : Control
         if (logo is null)
         {
             var fallbackGlyph = string.Equals(category, "alliances", StringComparison.OrdinalIgnoreCase) ? "A" : "C";
-            var fallbackText = new FormattedText(
+            var fallbackText = CreateMapText(
                 fallbackGlyph,
-                CultureInfo.InvariantCulture,
-                FlowDirection.LeftToRight,
-                new Typeface("Inter", FontStyle.Normal, FontWeight.SemiBold),
                 10,
-                Brushes.White);
+                Brushes.White,
+                FontWeight.SemiBold);
             context.DrawText(
                 fallbackText,
                 new Point(
@@ -8597,16 +7429,6 @@ public sealed class MapControl : Control
         return IndicatorIconLeftPadding + (slots * (iconSize + IndicatorIconSlotGap));
     }
 
-    private static double OverlayIconBlockContentWidth(double rowWidth, double padX)
-    {
-        if (rowWidth <= 0)
-        {
-            return 0;
-        }
-
-        return Math.Max(0, rowWidth - IndicatorIconSlotGap - padX + 4);
-    }
-
     private static IReadOnlyList<int> GetVisiblePlanetTypeIds(IReadOnlyList<int> typeIds, IEnumerable<int>? selectedTypeIds)
     {
         if (selectedTypeIds is null)
@@ -8630,47 +7452,6 @@ public sealed class MapControl : Control
         }
 
         return visible;
-    }
-
-    private (bool HasIcons, double Width) MeasureOverlayIconStrip(MapNode node)
-    {
-        double width = 0;
-        var hasIcons = false;
-        void AddFixed()
-        {
-            hasIcons = true;
-            width += IconSize + IndicatorIconSlotGap;
-        }
-
-        void AddCount(int value)
-        {
-            if (value <= 0)
-            {
-                return;
-            }
-
-            hasIcons = true;
-            var textWidth = new FormattedText(
-                value.ToString(CultureInfo.InvariantCulture),
-                CultureInfo.InvariantCulture,
-                FlowDirection.LeftToRight,
-                NodeLabelTypeface,
-                9.5,
-                Brushes.White).Width;
-            width += IconSize + 1.5 + textWidth + IndicatorIconSlotGap;
-        }
-
-        if (InfoBoxShowA0StarIcon && IsA0BlueSmall(node)) AddFixed();
-        if (InfoBoxShowJoveObservatoryIcon && node.HasJoveObservatory) AddFixed();
-        if (InfoBoxShowIceBeltsIcon && node.IceFieldCount > 0) AddFixed();
-        if (InfoBoxShowStormIcon && node.StormEffects.Count > 0) AddFixed();
-        if (InfoBoxShowWormholeIcon && node.HubWormholeConnections.Count > 0) AddFixed();
-        if (InfoBoxShowIncursionIcon && node.HasActiveIncursion) AddFixed();
-        if (InfoBoxShowSystemJumps) AddCount(node.SystemJumps);
-        if (InfoBoxShowShipKills) AddCount(node.ShipKills);
-        if (InfoBoxShowPodKills) AddCount(node.PodKills);
-        if (InfoBoxShowNpcKills) AddCount(node.NpcKills);
-        return (hasIcons, hasIcons ? IndicatorIconLeftPadding + width : 0);
     }
 
     private void DrawPlanetTypeIcons(
@@ -8893,23 +7674,15 @@ public sealed class MapControl : Control
         }
     }
 
-    private static void DrawCompactTooltip(DrawingContext context, Point anchor, string text)
+    private void DrawCompactTooltip(DrawingContext context, Point anchor, string text)
     {
-        var content = new FormattedText(
-            text,
-            CultureInfo.InvariantCulture,
-            FlowDirection.LeftToRight,
-            new Typeface("Inter"),
-            11,
-            Brushes.White);
+        var content = MapTypography.Create(text, MapTypography.BodySize, Brushes.White,
+            maxWidth: Math.Max(1, Math.Min(348, Bounds.Width - 28)), maxLines: 6);
 
         var padX = 6.0;
         var padY = 3.0;
-        var rect = new Rect(
-            anchor.X + 10.0,
-            anchor.Y + 10.0,
-            content.Width + (padX * 2),
-            content.Height + (padY * 2));
+        var rect = MapOverlayLayout.Place(anchor,
+            new Size(content.Width + padX * 2, content.Height + padY * 2), Bounds.Size);
 
         context.FillRectangle(new ImmutableSolidColorBrush(Color.Parse("#D6111A28")), rect, 4);
         context.DrawRectangle(new Pen(new ImmutableSolidColorBrush(Color.Parse("#55739A")), 1), rect, 4);
@@ -8978,39 +7751,10 @@ public sealed class MapControl : Control
         return null;
     }
 
-    private static string FormatRelativeAge(DateTime timestampUtc)
+    private string FormatRelativeAge(DateTime timestampUtc)
     {
         var utc = timestampUtc.Kind == DateTimeKind.Utc ? timestampUtc : timestampUtc.ToUniversalTime();
-        var elapsed = DateTime.UtcNow - utc;
-        if (elapsed < TimeSpan.Zero)
-        {
-            elapsed = TimeSpan.Zero;
-        }
-
-        if (elapsed < TimeSpan.FromMinutes(1))
-        {
-            return $"{Math.Max(1, (int)elapsed.TotalSeconds)}s ago";
-        }
-
-        if (elapsed < TimeSpan.FromHours(1))
-        {
-            return $"{(int)elapsed.TotalMinutes}m ago";
-        }
-
-        if (elapsed < TimeSpan.FromDays(1))
-        {
-            return $"{(int)elapsed.TotalHours}h ago";
-        }
-
-        return $"{(int)elapsed.TotalDays}d ago";
-    }
-
-    private static string TrimIntelReportText(string text, int maxLength)
-    {
-        var compact = string.Join(" ", text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
-        return compact.Length <= maxLength
-            ? compact
-            : $"{compact[..Math.Max(1, maxLength - 3)]}...";
+        return ReportAgeFormatter.Format(ReportOverlayUtcNow() - utc);
     }
 
     private static Color GetCharacterPresenceBadgeColor(int count)
@@ -9030,14 +7774,11 @@ public sealed class MapControl : Control
         var hasThera = node.HubWormholeConnections.Any(c => c.HubType == WormholeHubType.Thera);
         var hasTurnur = node.HubWormholeConnections.Any(c => c.HubType == WormholeHubType.Turnur);
         var label = hasThera && hasTurnur ? "T+U" : hasThera ? "T" : "U";
-        var text = new FormattedText(
+        var text = CreateMapText(
             label,
-            CultureInfo.InvariantCulture,
-            FlowDirection.LeftToRight,
-            new Typeface("Inter"),
             10,
             Brushes.Black);
-        return new Size(Math.Max(14, text.Width + 6), 12);
+        return new Size(Math.Max(14, text.Width + MapTypography.LabelPadX * 2), text.Height + MapTypography.LabelPadY * 2);
     }
 
     private static void DrawHubWormholeBeacon(DrawingContext context, Point topLeft, MapNode node)
@@ -9048,19 +7789,12 @@ public sealed class MapControl : Control
         var fill = new ImmutableSolidColorBrush(Color.FromArgb(230, color.R, color.G, color.B));
         var border = new Pen(new ImmutableSolidColorBrush(Color.FromArgb(255, 15, 20, 28)), 1);
         var label = hasThera && hasTurnur ? "T+U" : hasThera ? "T" : "U";
-        var text = new FormattedText(
+        var text = CreateMapText(
             label,
-            CultureInfo.InvariantCulture,
-            FlowDirection.LeftToRight,
-            new Typeface("Inter"),
             10,
             Brushes.Black);
 
-        var rect = new Rect(
-            topLeft.X,
-            topLeft.Y,
-            Math.Max(14, text.Width + 6),
-            12);
+        var rect = new Rect(topLeft, MeasureHubWormholeBadge(node));
         context.FillRectangle(fill, rect, 3);
         context.DrawRectangle(border, rect, 3);
         context.DrawText(text, new Point(rect.X + ((rect.Width - text.Width) / 2), rect.Y + ((rect.Height - text.Height) / 2) - 0.5));

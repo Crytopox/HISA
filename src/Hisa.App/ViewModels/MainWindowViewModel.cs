@@ -427,6 +427,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _limitZkillmailsToCurrentRegion;
     private bool _hideZkillmailsOutsideKnownSpace;
     private bool _intelEnabled = true;
+    private bool _mapReportPopupsEnabled = true;
+    private int _mapReportPopupSeconds = 10;
+    private bool _mapReportPopupsShowKillmails = true;
+    private bool _mapReportPopupsShowInUniverse = true;
+    private readonly List<MapReportPopupRequest> _mapReportPopupRequests = [];
     private bool _miningEnabled;
     private bool _isMiningStatsLoading;
     private bool _isMiningOverlayVisible;
@@ -540,6 +545,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private const string TrackingCharacterPreferencesKey = "Tracking.CharacterPreferences";
     private const string FollowCharacterIdKey = "Tracking.FollowCharacterId";
     private const string IntelEnabledKey = "Intel.Enabled";
+    private const string MapReportPopupsEnabledKey = "Intel.MapPopups.Enabled";
+    private const string MapReportPopupsShowKillmailsKey = "Intel.MapPopups.ShowKillmails";
+    private const string MapReportPopupsShowInUniverseKey = "Intel.MapPopups.ShowInUniverse";
+    private const string MapReportPopupSecondsKey = "Intel.MapPopups.Seconds";
     private const string MiningEnabledKey = "Mining.Enabled";
     private const string MiningRefineYieldPercentKey = "Mining.RefineYieldPercent";
     private const string MiningRangeModeKey = "Mining.RangeMode";
@@ -881,6 +890,32 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         get => _intelEnabled;
         set => SetProperty(ref _intelEnabled, value);
     }
+
+    public bool MapReportPopupsEnabled
+    {
+        get => _mapReportPopupsEnabled;
+        set => SetProperty(ref _mapReportPopupsEnabled, value);
+    }
+
+    public bool MapReportPopupsShowKillmails
+    {
+        get => _mapReportPopupsShowKillmails;
+        set => SetProperty(ref _mapReportPopupsShowKillmails, value);
+    }
+
+    public bool MapReportPopupsShowInUniverse
+    {
+        get => _mapReportPopupsShowInUniverse;
+        set => SetProperty(ref _mapReportPopupsShowInUniverse, value);
+    }
+
+    public int MapReportPopupSeconds
+    {
+        get => _mapReportPopupSeconds;
+        set => SetProperty(ref _mapReportPopupSeconds, Math.Clamp(value, 1, 60));
+    }
+
+    public IReadOnlyList<MapReportPopupRequest> MapReportPopupRequests => _mapReportPopupRequests.ToArray();
 
     public string IntelIncludeChannelsText
     {
@@ -2701,6 +2736,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         ShowInfoBoxCharacterPresence = await _settingsService.GetAsync<bool?>(ShowInfoBoxCharacterPresenceKey) ?? true;
         CharacterPresenceHoverMaxNames = await _settingsService.GetAsync<int?>(CharacterPresenceHoverMaxNamesKey) ?? 6;
         IntelEnabled = await _settingsService.GetAsync<bool?>(IntelEnabledKey) ?? true;
+        MapReportPopupsEnabled = await _settingsService.GetAsync<bool?>(MapReportPopupsEnabledKey) ?? true;
+        MapReportPopupsShowKillmails = await _settingsService.GetAsync<bool?>(MapReportPopupsShowKillmailsKey) ?? true;
+        MapReportPopupsShowInUniverse = await _settingsService.GetAsync<bool?>(MapReportPopupsShowInUniverseKey) ?? true;
+        MapReportPopupSeconds = await _settingsService.GetAsync<int?>(MapReportPopupSecondsKey) ?? 10;
         MiningEnabled = await _settingsService.GetAsync<bool?>(MiningEnabledKey) ?? false;
         MiningRefineYieldPercentText = $"{await _settingsService.GetAsync<decimal?>(MiningRefineYieldPercentKey) ?? 90.63m:0.##}";
         _selectedMiningRangeMode = await _settingsService.GetAsync<MiningStatsRangeMode?>(MiningRangeModeKey) ?? MiningStatsRangeMode.CurrentSession;
@@ -3343,6 +3382,20 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             }
         }
 
+        var receivedAtUtc = DateTimeOffset.UtcNow;
+        Dispatcher.UIThread.Post(() =>
+        {
+            RebuildIntelPresenceForView();
+            if (!report.IsHistorical && ShouldKeepIntelReportForCurrentSettings(report))
+            {
+                foreach (var system in report.Systems.Distinct(StringComparer.OrdinalIgnoreCase))
+                    _mapReportPopupRequests.Add(new MapReportPopupRequest(report.DedupeKey, system, receivedAtUtc, IsKillmail: isZkillReport || report.Killmail is not null));
+                if (_mapReportPopupRequests.Count > MaxIntelReportHistory)
+                    _mapReportPopupRequests.RemoveRange(0, _mapReportPopupRequests.Count - MaxIntelReportHistory);
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MapReportPopupRequests)));
+            }
+        });
+
         if (isZkillReport)
         {
             var includeInCurrentView = ShouldIncludeZkillmailReportInCurrentView(report);
@@ -3927,7 +3980,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         var intelHistory = history
             .Where(r => !(string.Equals(r.ChannelName, "zKillboard", StringComparison.OrdinalIgnoreCase)
                           || r.SourceFilePath.StartsWith("api://zkillboard", StringComparison.OrdinalIgnoreCase)))
-            .Select(r => new { Report = r, System = r.Systems.FirstOrDefault() })
+            .SelectMany(r => r.Systems.Distinct(StringComparer.OrdinalIgnoreCase).Select(system => new { Report = r, System = system }))
             .Where(x => !string.IsNullOrWhiteSpace(x.System) && nodeByName.ContainsKey(x.System!))
             .ToList();
         var latestHistorySystemByCharacterId = BuildLatestIntelSystemByCharacterId(
@@ -3962,6 +4015,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                             x.Report.ShipClasses);
                         return new IntelMapHoverReport
                         {
+                            ReportId = x.Report.DedupeKey,
                             TimestampUtc = x.Report.TimestampUtc,
                             ReporterName = x.Report.ReporterName,
                             MessageText = x.Report.MessageText,
@@ -3987,7 +4041,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                         };
                     })
                     .Where(x => x is not null)
-                    .Take(1)
                     .Select(x => x!)
                     .ToList())
             .Where(x => x.Value.Count > 0)
@@ -3997,14 +4050,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             .Where(r => string.Equals(r.ChannelName, "zKillboard", StringComparison.OrdinalIgnoreCase)
                         || r.SourceFilePath.StartsWith("api://zkillboard", StringComparison.OrdinalIgnoreCase))
             .Where(ShouldShowZkillmailReport)
-            .Select(r => new { Report = r, System = r.Systems.FirstOrDefault() })
+            .SelectMany(r => r.Systems.Distinct(StringComparer.OrdinalIgnoreCase).Select(system => new { Report = r, System = system }))
             .Where(x => !string.IsNullOrWhiteSpace(x.System) && nodeByName.ContainsKey(x.System!))
             .GroupBy(x => nodeByName[x.System!].Id)
             .ToDictionary(
                 g => g.Key,
                 g => (IReadOnlyList<IntelMapHoverKillmail>)g
                     .OrderByDescending(x => x.Report.TimestampUtc)
-                    .Take(1)
                     .Select(x =>
                     {
                         var victim = BuildZkillVictimCard(x.Report.Killmail, x.Report.ReportedShipNames, x.Report.ReportedShipTypeIds, x.Report.ShipClasses);
@@ -4012,6 +4064,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                         var attackers = allAttackers.Take(3).ToList();
                         return new IntelMapHoverKillmail
                         {
+                            ReportId = x.Report.DedupeKey,
+                            AttackerCount = x.Report.Killmail?.Attackers.Count ?? allAttackers.Count,
                             TimestampUtc = x.Report.TimestampUtc,
                             MessageText = x.Report.MessageText,
                             KillmailUrl = x.Report.Killmail?.Url ?? string.Empty,
@@ -5101,6 +5155,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         IntelIncludeChannelsText = string.Join(Environment.NewLine, include);
 
         await _settingsService.SetAsync(IntelEnabledKey, IntelEnabled);
+        await _settingsService.SetAsync(MapReportPopupsEnabledKey, MapReportPopupsEnabled);
+        await _settingsService.SetAsync(MapReportPopupsShowKillmailsKey, MapReportPopupsShowKillmails);
+        await _settingsService.SetAsync(MapReportPopupsShowInUniverseKey, MapReportPopupsShowInUniverse);
+        await _settingsService.SetAsync(MapReportPopupSecondsKey, MapReportPopupSeconds);
         await _settingsService.SetAsync(IntelIncludeChannelsKey, include);
         await _settingsService.SetAsync(IntelSystemExpiryMinutesKey, IntelSystemExpiryMinutes);
         await _settingsService.SetAsync(IntelListExpiryMinutesKey, IntelListExpiryMinutes);
@@ -5261,6 +5319,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public Task ClearIntelAndKillmailHistoryAsync()
     {
+        _mapReportPopupRequests.Clear();
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MapReportPopupRequests)));
         lock (_intelReportHistory)
         {
             _intelReportHistory.Clear();
@@ -6819,7 +6879,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                     : null,
                 ShipTypeId = shipTypeId,
                 ShipBitmap = shipTypeId is { } id && IntelShipBitmapCache.TryGetValue(id, out var cachedShip) ? cachedShip : null,
-                ShipDisplayName = NormalizeShipDisplayName(shipName),
+                ShipDisplayName = ResolveIntelShipDisplayName(shipTypeId, shipName),
                 ShipIconKey = ShipClassToOverlayIconKey(shipClass)
             };
             if (applyCachedIdentityData)
@@ -6856,7 +6916,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             CorporationTicker = string.Empty,
             AllianceTicker = string.Empty,
             ShipTypeId = shipTypeId > 0 ? shipTypeId : null,
-            ShipDisplayName = NormalizeShipDisplayName(shipName),
+            ShipDisplayName = ResolveIntelShipDisplayName(shipTypeId, shipName),
             ShipIconKey = ShipClassToOverlayIconKey(shipClass)
         };
         if (applyCachedIdentityData)
@@ -6877,7 +6937,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         var result = new List<IntelOverlayHostileCard>(killmail.Attackers.Count);
         foreach (var attacker in killmail.Attackers)
         {
-            var shipName = attacker.ShipTypeId is { } id ? $"Type {id}" : "Unknown";
+            var shipName = ResolveIntelShipDisplayName(attacker.ShipTypeId, "Unknown");
             var card = new IntelOverlayHostileCard
             {
                 Name = attacker.CharacterId is { } characterId
@@ -7198,7 +7258,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         {
             var names = killmail.Attackers
                 .Where(x => x.ShipTypeId is > 0)
-                .Select(x => $"Type {x.ShipTypeId!.Value}")
+                .Select(x => ResolveIntelShipDisplayName(x.ShipTypeId, "Unknown"))
                 .ToList();
             var typeIds = killmail.Attackers
                 .Where(x => x.ShipTypeId is > 0)
@@ -7302,6 +7362,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             : $"{char.ToUpperInvariant(trimmed[0])}{trimmed[1..]}";
     }
 
+    private string ResolveIntelShipDisplayName(int? typeId, string fallback)
+    {
+        if (typeId is > 0)
+        {
+            var canonicalName = _intelFeed.GetShipTypeName(typeId.Value);
+            if (!string.IsNullOrWhiteSpace(canonicalName)) return canonicalName;
+            if (string.IsNullOrWhiteSpace(fallback) || string.Equals(fallback, "Unknown", StringComparison.OrdinalIgnoreCase))
+                return $"Type {typeId.Value}";
+        }
+        return NormalizeShipDisplayName(fallback);
+    }
+
     private static string NormalizeShipDisplayName(string value)
     {
         return SingularizeShipName(CapitalizeFirstLetter(value));
@@ -7350,33 +7422,24 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             : trimmed;
     }
 
-    private static IReadOnlyList<GroupedShipSummary> BuildGroupedShipSummaries(
+    private IReadOnlyList<GroupedShipSummary> BuildGroupedShipSummaries(
         IReadOnlyList<string> shipNames,
         IReadOnlyList<int> shipTypeIds,
         IReadOnlyList<IntelShipClass> shipClasses)
     {
-        if (shipNames.Count == 0)
+        var count = Math.Max(shipNames.Count, shipTypeIds.Count);
+        var entries = new List<ShipSummaryEntry>(count);
+        for (var i = 0; i < count; i++)
         {
-            return [];
-        }
-
-        var entries = new List<ShipSummaryEntry>(shipNames.Count);
-        for (var i = 0; i < shipNames.Count; i++)
-        {
-            var raw = shipNames[i];
-            if (string.IsNullOrWhiteSpace(raw))
-            {
-                continue;
-            }
-
-            var normalizedName = NormalizeShipDisplayName(raw);
+            var raw = shipNames.Count > 0 ? shipNames[Math.Min(i, shipNames.Count - 1)] : "Unknown";
+            var shipTypeId = shipTypeIds.Count > 0 ? shipTypeIds[Math.Min(i, shipTypeIds.Count - 1)] : (int?)null;
+            var normalizedName = ResolveIntelShipDisplayName(shipTypeId, raw);
             if (string.IsNullOrWhiteSpace(normalizedName))
             {
                 continue;
             }
 
             var shipClass = shipClasses.Count > 0 ? shipClasses[Math.Min(i, shipClasses.Count - 1)] : IntelShipClass.Unknown;
-            var shipTypeId = shipTypeIds.Count > 0 ? shipTypeIds[Math.Min(i, shipTypeIds.Count - 1)] : (int?)null;
             entries.Add(new ShipSummaryEntry(
                 normalizedName,
                 shipTypeId,
@@ -7434,7 +7497,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         };
     }
 
-    private static IReadOnlyList<IntelMapHoverShip> BuildIntelHoverShips(
+    private IReadOnlyList<IntelMapHoverShip> BuildIntelHoverShips(
         IReadOnlyList<string> shipNames,
         IReadOnlyList<int> shipTypeIds,
         IReadOnlyList<IntelShipClass> shipClasses)
@@ -8161,22 +8224,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         public string? Ticker { get; init; }
     }
 
-    private static string FormatOverlayAge(TimeSpan age)
-    {
-        if (age < TimeSpan.FromMinutes(1))
-        {
-            return $"{Math.Max(1, (int)age.TotalSeconds)}s ago";
-        }
-        if (age < TimeSpan.FromHours(1))
-        {
-            return $"{(int)age.TotalMinutes}m ago";
-        }
-        if (age < TimeSpan.FromDays(1))
-        {
-            return $"{(int)age.TotalHours}h ago";
-        }
-        return $"{(int)age.TotalDays}d ago";
-    }
+    private static string FormatOverlayAge(TimeSpan age) => ReportAgeFormatter.Format(age);
 
     private static (string Label, string ColorHex) GetStormTypeDisplay(StormType type)
     {

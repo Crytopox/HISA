@@ -117,6 +117,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
     private HashSet<string> _includeChannels = new(StringComparer.OrdinalIgnoreCase);
     private TimeSpan _systemExpiry = TimeSpan.FromMinutes(15);
     private readonly DateTime _startupHistoryCutoffUtc = DateTime.UtcNow - TimeSpan.FromMinutes(10);
+    private readonly DateTime _startedAtUtc = DateTime.UtcNow;
     private readonly Dictionary<string, DateTime> _recentReportKeys = new(StringComparer.Ordinal);
     private readonly Dictionary<string, List<DateTime>> _recentIntelContentTimestamps = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, CharacterNameResolution> _characterNameResolutionCache = new(StringComparer.OrdinalIgnoreCase);
@@ -147,6 +148,9 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             }
         }
     }
+
+    public string? GetShipTypeName(int typeId) =>
+        _shipNameByTypeId.TryGetValue(typeId, out var name) ? name : null;
 
     public async Task ApplySettingsAsync(CancellationToken cancellationToken = default)
     {
@@ -404,6 +408,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             var shipName = reader.GetString(1);
             var groupName = reader.GetString(2);
             var shipClass = ShipGroupToIntelShipClass(groupName);
+            nameByTypeId[typeId] = shipName;
             if (shipClass == IntelShipClass.Unknown)
             {
                 continue;
@@ -413,7 +418,6 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             classByName[key] = shipClass;
             typeIdByName[key] = typeId;
             classByTypeId[typeId] = shipClass;
-            nameByTypeId[typeId] = shipName;
         }
 
         return (classByName, typeIdByName, classByTypeId, nameByTypeId);
@@ -751,9 +755,11 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         var snapshotChanged = false;
         using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
         long offset;
+        bool isBackfill;
         lock (_gate)
         {
-            _readOffsetsByPath.TryGetValue(filePath, out offset);
+            isBackfill = !_readOffsetsByPath.TryGetValue(filePath, out offset)
+                && File.GetCreationTimeUtc(filePath) < _startedAtUtc;
         }
 
         if (offset <= 0 && stream.Length > InitialReadTailBytes)
@@ -800,7 +806,8 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
                 continue;
             }
 
-            var report = await ParseIntelReportAsync(timestampUtc, channelName, reporter, message, filePath, cancellationToken);
+            var report = await ParseIntelReportAsync(timestampUtc, channelName, reporter, message, filePath, cancellationToken,
+                isHistorical: isBackfill || timestampUtc < _startedAtUtc);
             if (report.Systems.Count == 0)
             {
                 continue;
@@ -912,7 +919,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         return InGameKillmailLinkRegex.IsMatch(message.Trim());
     }
 
-    private async Task<IntelChatReport> ParseIntelReportAsync(DateTime timestampUtc, string channelName, string reporter, string message, string sourcePath, CancellationToken cancellationToken)
+    private async Task<IntelChatReport> ParseIntelReportAsync(DateTime timestampUtc, string channelName, string reporter, string message, string sourcePath, CancellationToken cancellationToken, bool isHistorical = false)
     {
         var sanitizedMessage = RemoveExternalIntelLinks(message);
         var parsed = _messageParser?.Parse(sanitizedMessage) ?? new IntelParseResult
@@ -967,6 +974,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             : Math.Max(parsed.ExplicitHostileCount, Math.Max(reportedHostileNames.Count, Math.Max(mergedShipNames.Count, mergedShipClasses.Count)));
         return new IntelChatReport
         {
+            IsHistorical = isHistorical,
             DedupeKey = BuildIntelReportDedupeKey(timestampUtc, reporter, message),
             TimestampUtc = timestampUtc,
             ChannelName = channelName,

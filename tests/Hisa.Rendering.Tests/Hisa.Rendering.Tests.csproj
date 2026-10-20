@@ -8,6 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.7" />
     <PackageReference Include="Avalonia.Headless.XUnit" Version="11.3.7" />
     <PackageReference Include="Avalonia.Skia" Version="11.3.7" />
     <PackageReference Include="SkiaSharp" Version="2.88.9" />

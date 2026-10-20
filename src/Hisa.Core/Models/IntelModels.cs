@@ -35,6 +35,7 @@ public enum IntelAlertType
 
 public sealed class IntelChatReport
 {
+    public bool IsHistorical { get; init; }
     public required string DedupeKey { get; init; }
     public required DateTime TimestampUtc { get; init; }
     public required string ChannelName { get; init; }
@@ -105,6 +106,7 @@ public sealed class IntelRecentReport
 
 public sealed class IntelMapHoverReport
 {
+    public string ReportId { get; init; } = string.Empty;
     public required DateTime TimestampUtc { get; init; }
     public required string ReporterName { get; init; }
     public required string MessageText { get; init; }
@@ -117,6 +119,8 @@ public sealed class IntelMapHoverReport
 
 public sealed class IntelMapHoverKillmail
 {
+    public string ReportId { get; init; } = string.Empty;
+    public int AttackerCount { get; init; }
     public required DateTime TimestampUtc { get; init; }
     public required string MessageText { get; init; }
     public required string KillmailUrl { get; init; }

@@ -12,6 +12,79 @@ namespace Hisa.Services.Tests;
 public class IntelChatLogFeedHostedServiceTests
 {
     [Fact]
+    public async Task ShipNameLookupPreservesCanonicalNamesEvenForUnclassifiedShipGroups()
+    {
+        var connectionString = $"Data Source=ship-names-{Guid.NewGuid():N};Mode=Memory;Cache=Shared";
+        await using var anchor = new SqliteConnection(connectionString);
+        await anchor.OpenAsync();
+        await using var command = anchor.CreateCommand();
+        command.CommandText = """
+            CREATE TABLE invGroups (groupID INTEGER, groupName TEXT, categoryID INTEGER);
+            CREATE TABLE invTypes (typeID INTEGER, typeName TEXT, groupID INTEGER);
+            INSERT INTO invGroups VALUES (1, 'Interceptor', 6), (2, 'Combat Recon Ship', 6),
+                                        (3, 'New Ship Group', 6), (4, 'Module', 7);
+            INSERT INTO invTypes VALUES (100, 'Ares', 1), (200, 'Huginn', 2),
+                                       (300, 'Special Ship', 3), (400, 'Module', 4);
+            """;
+        await command.ExecuteNonQueryAsync();
+        var service = new IntelChatLogFeedHostedService(new NoopSettingsService(), new ShipNameTestDatabase(connectionString),
+            new NoopHttpClientFactory(), NullLogger<IntelChatLogFeedHostedService>.Instance);
+        var load = typeof(IntelChatLogFeedHostedService).GetMethod("LoadShipMapsAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var task = (Task<(Dictionary<string, IntelShipClass>, Dictionary<string, int>, Dictionary<int, IntelShipClass>, Dictionary<int, string>)>)
+            load.Invoke(service, [CancellationToken.None])!;
+        var maps = await task;
+        typeof(IntelChatLogFeedHostedService).GetField("_shipNameByTypeId", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .SetValue(service, maps.Item4);
+        IIntelFeed feed = service;
+        Assert.Equal("Ares", feed.GetShipTypeName(100));
+        Assert.Equal("Huginn", feed.GetShipTypeName(200));
+        Assert.Equal("Special Ship", feed.GetShipTypeName(300));
+        Assert.Null(feed.GetShipTypeName(400));
+        Assert.Null(feed.GetShipTypeName(999));
+    }
+
+    private sealed class ShipNameTestDatabase(string connectionString) : ISdeDatabase
+    {
+        public SqliteConnection CreateConnection() => new(connectionString);
+    }
+
+    [Fact]
+    public async Task InitialFileHistoryIsMarkedHistoricalButNewAppendedReportsAreLive()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "hisa-intel-popup-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, "Intel.txt");
+        try
+        {
+            var historicalTime = DateTime.UtcNow.AddSeconds(-5);
+            await File.WriteAllTextAsync(path, $"Channel Name: Intel\n[ {historicalTime:yyyy.MM.dd HH:mm:ss} ] Scout > E-JCUS clear\n");
+            var service = CreateServiceWithSystems();
+            var systems = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase) { ["E-JCUS"] = 1, ["SHBF-V"] = 2 };
+            typeof(IntelChatLogFeedHostedService).GetField("_systemIdByName", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(service, systems);
+            typeof(IntelChatLogFeedHostedService).GetField("_messageParser", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .SetValue(service, new Hisa.Logs.IntelChatLogs.IntelChatMessageParser(systems));
+            var reports = new List<IntelChatReport>();
+            service.ReportReceived += (_, report) => reports.Add(report);
+            var process = typeof(IntelChatLogFeedHostedService).GetMethod("ProcessFileAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            await (Task)process.Invoke(service, [path, CancellationToken.None])!;
+            Assert.True(Assert.Single(reports).IsHistorical);
+            var liveTime = DateTime.UtcNow.AddSeconds(2);
+            await File.AppendAllTextAsync(path, $"[ {liveTime:yyyy.MM.dd HH:mm:ss} ] Scout > SHBF-V clear\n");
+            await (Task)process.Invoke(service, [path, CancellationToken.None])!;
+            Assert.Equal(2, reports.Count);
+            Assert.False(reports[1].IsHistorical);
+            Assert.Equal(new[] { "SHBF-V" }, reports[1].Systems);
+            await (Task)process.Invoke(service, [path, CancellationToken.None])!;
+            Assert.Equal(2, reports.Count);
+        }
+        finally
+        {
+            File.Delete(path);
+            Directory.Delete(directory);
+        }
+    }
+
+    [Fact]
     public async Task ResolveChatLogsDirectoryAsync_WhenConfiguredRootContainsChatlogsDirectory_ReturnsActualDirectoryPath()
     {
         var tempRoot = Path.Combine(Path.GetTempPath(), "hisa-tests", Guid.NewGuid().ToString("N"));

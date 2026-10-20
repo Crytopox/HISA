@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Fonts.Inter;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Media;
@@ -13,7 +14,8 @@ public sealed class HeadlessTestApp
 {
     public static AppBuilder BuildAvaloniaApp() => AppBuilder.Configure<Application>()
         .UseSkia()
-        .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false });
+        .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
+        .WithInterFont();
 }
 
 public sealed class HighDpiBlitTests
