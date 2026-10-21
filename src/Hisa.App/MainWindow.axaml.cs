@@ -44,6 +44,7 @@ public partial class MainWindow : Window
     private bool _isAlertPopupDragMode;
     private CharactersWindow? _charactersWindow;
     private MapEditorWindow? _mapEditorWindow;
+    private ProbeFormationDesignerWindow? _probeFormationDesignerWindow;
     private SovUpgradesWindow? _sovUpgradesWindow;
     private AnsiblexNetworkWindow? _ansiblexNetworkWindow;
     private LyCoveragePlannerWindow? _lyCoveragePlannerWindow;
@@ -503,6 +504,19 @@ public partial class MainWindow : Window
 
         _mapEditorWindow.Show();
         _mapEditorWindow.Activate();
+    }
+
+    private void OnOpenProbeFormationDesignerClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_probeFormationDesignerWindow is null)
+        {
+            var vm = Program.Host?.Services.GetRequiredService<ProbeFormationDesignerViewModel>();
+            if (vm is null) return;
+            _probeFormationDesignerWindow = new ProbeFormationDesignerWindow(vm);
+            _probeFormationDesignerWindow.Closed += (_, _) => _probeFormationDesignerWindow = null;
+        }
+        _probeFormationDesignerWindow.Show();
+        _probeFormationDesignerWindow.Activate();
     }
 
     private void OnOpenSovUpgradesClicked(object? sender, RoutedEventArgs e)

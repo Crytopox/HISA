@@ -81,6 +81,61 @@ Track SOV prospecting array sites and mark them as **Cleared** or **Missing**.
 
 Pair the tracker with **Alert Settings** and the **Mining site ready** event type.
 
+## Probe Formation Designer
+
+Open **Tools > Probe Formation Designer** to build a local library of scanning
+formations. The probe table shows every probe's XYZ coordinates and scan radius.
+Edit cells directly; Enter or leaving a cell applies the value, and Escape cancels.
+Coordinates use kilometers or AU, while scan radii use AU.
+
+Click a probe in the table or 3D view to select it. Ctrl-click toggles selection;
+Shift-click adds probes in the view or selects a range in the table. Drag empty
+viewport space to select a group. Drag a selected probe to move the group in the
+view plane, or use its colored XYZ handles for constrained movement. Escape
+cancels a drag. Right-drag orbits, middle-drag pans, and the wheel zooms.
+Enable **Snap to nearest integer** to snap mouse movement to whole values in the
+current coordinate units (km or AU). The primary probe snaps while selected probes
+keep their relative spacing; axis handles snap only the axis being moved.
+**Center centroid at origin** moves the whole formation without changing its shape.
+**Set all probes to 0** places every probe at the origin. Both actions preserve scan
+radii and support undo.
+
+The Move, Rotate, Scale, and Radius tabs apply to the selected probes, with
+undo/redo. Rotation and scaling default to the selection center. **Save library**
+persists your presets in HISA; JSON import/export shares them independently of EVE.
+
+Select **Send to EVE…** for the guided **Formations → Accounts → Review → Results**
+workflow. The current formation starts selected. Choose exact profile/account
+files on the Accounts step, then resolve name conflicts inline during Review.
+Account cards show linked character names and compact profile checkboxes. Use
+**Inspect** for the Characters, Formations, and File detail tabs; full destination
+paths, aliases, and backups are in File. Search is always available, with server
+and profile filters and discovery tools available separately.
+Close all EVE clients before applying. Results show each file's outcome and
+backup location; retrying failed targets creates a fresh review. Existing account formations and unrelated settings are
+preserved. Every write creates a verified backup in `.hisa-probe-backups` beside
+the account file; the account panel can restore these backups, including when
+the current settings file is corrupted. Restore replaces the complete settings
+file and first backs up its current contents.
+
+Windows settings and common Steam/Proton locations are discovered automatically.
+Use **Locations…** for custom Steam libraries, Wine prefixes, settings profiles,
+or an individual `core_user_*.dat` account file. Accounts are grouped by server
+and account ID, with each destination profile/file selected separately.
+
+Sibling `core_char_<id>.dat` filenames identify local characters. Public ESI
+lookups resolve Tranquility names; CCP's image service supplies portraits, with
+cached names and placeholders available offline. Other servers keep their own
+identity namespace and never silently receive Tranquility names. No ESI login
+is required. **Link characters…** lets you confirm and remember character labels
+for an account group, including entering an ID manually. These are local labels,
+not automatic ownership detection, and linking never selects destination files.
+Character settings files are never edited. Unsupported or malformed binary
+settings data blocks writes.
+
+Implementation references and codec licenses are listed in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+
 ## Screenshots
 
 ![Preview 1](https://i.imgur.com/LUIK7QL.png)

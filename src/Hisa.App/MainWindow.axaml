@@ -306,6 +306,7 @@
               <Button.Flyout>
                 <MenuFlyout>
                   <MenuItem Header="LY Coverage Planner" Click="OnOpenLyCoveragePlannerClicked" />
+                  <MenuItem Header="Probe Formation Designer" Click="OnOpenProbeFormationDesignerClicked" />
                   <MenuItem Header="Jump Route Optimizer" Click="OnOpenJumpRouteOptimizerClicked" />
                   <MenuItem Header="Mining Stats" Click="OnOpenMiningStatsWindowClicked" />
                   <MenuItem Header="Mining Sites Tracker" Click="OnOpenMiningSitesClicked" />
@@ -343,6 +344,7 @@
                           IsChecked="{Binding IsDisplaySettingsOpen, Mode=TwoWay}" />
                 <Separator />
                 <MenuItem Header="Tools">
+                  <MenuItem Header="Probe Formation Designer" Click="OnOpenProbeFormationDesignerClicked" />
                   <MenuItem Header="LY Coverage Planner" Click="OnOpenLyCoveragePlannerClicked" />
                   <MenuItem Header="Jump Route Optimizer" Click="OnOpenJumpRouteOptimizerClicked" />
                   <MenuItem Header="Mining Stats" Click="OnOpenMiningStatsWindowClicked" />

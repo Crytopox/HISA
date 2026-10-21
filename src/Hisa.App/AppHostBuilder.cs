@@ -36,6 +36,10 @@ internal static class AppHostBuilder
         builder.Services.AddSingleton<MainWindowViewModel>();
         builder.Services.AddSingleton<MainWindow>();
         builder.Services.AddSingleton<MapEditorViewModel>();
+        builder.Services.AddSingleton<Hisa.Core.Abstractions.IProbeFormationLibrary, Hisa.Services.Probes.ProbeFormationLibrary>();
+        builder.Services.AddSingleton<Hisa.Core.Abstractions.IEveProbeSettingsService, Hisa.Services.Probes.EveProbeSettingsService>();
+        builder.Services.AddSingleton<Hisa.Core.Abstractions.IEveSettingsIdentityService,Hisa.Services.Probes.EveSettingsIdentityService>();
+        builder.Services.AddTransient<ProbeFormationDesignerViewModel>();
         builder.Services.AddSingleton<MapEditorWindow>();
         builder.Services.AddSingleton<DebugWindowViewModel>();
         builder.Services.AddSingleton<DebugWindow>();

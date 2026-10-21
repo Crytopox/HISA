@@ -1,0 +1,110 @@
+{
+  "package": "@truebrain/blue-marshal@1.0.1",
+  "base64": "fQEclnGYtRYCFgMsLwi+orSHrQ/dARYCLBMNdGVtcEZvcm1hdGlvbiYG/CwuD0luZGVwZW5kZW50IOmbqicsFAMKWHA/oAwk/kAKAAAAAIGEHsEKAAAAAAAAwD8Dm5YutQgAAAAGBxMecHJvYmVzY2FubmluZy5jdXN0b21Gb3JtYXRpb25zLC8IvqK0h60P3QEGBxMhcHJvYmVzY2FubmluZy5zZWxlY3RlZEZvcm1hdGlvbklEFAsBHyAvDS71wLERH4w8CfAWcf4TA/8AgC4NU25vdyDimIMg8J+YgAIMZXhhbXBsZS5EYXRhFxMMZXhhbXBsZS5EYXRhFgETBXN0YXRlBgUZFQITCGNhbGxiYWNrCgAAAAAAAPQ/IhQDAg1leGFtcGxlLmJ1aWxkLAkTA2FyZxYBHxMEZmxhZwYCLRMDa2V5BgMtIyUlAgxleGFtcGxlLkRhdGEtLRMJdW5yZWxhdGVkEwJ1aQoAAAAAAAD4fywJLgNrZXk=",
+  "expected": {
+    "bytes:ui": {
+      "bytes:probescanning.customFormations": {
+        "tuple": [
+          "long:134280801871504062",
+          {
+            "int:-4": {
+              "tuple": [
+                "bytes:tempFormation",
+                []
+              ]
+            },
+            "int:7": {
+              "tuple": [
+                "utf8:Independent 雪",
+                [
+                  {
+                    "tuple": [
+                      {
+                        "tuple": [
+                          123456.789123,
+                          -500000.25,
+                          0.125
+                        ]
+                      },
+                      37399467675
+                    ]
+                  }
+                ]
+              ]
+            }
+          }
+        ]
+      },
+      "bytes:probescanning.selectedFormationID": {
+        "tuple": [
+          "long:134280801871504062",
+          7
+        ]
+      },
+      "bytes:unrelated": {
+        "tuple": [
+          null,
+          true,
+          false,
+          "long:-123456789012345678901234567890",
+          "bytes:b64:/wCA",
+          "utf8:Snow ☃ 😀",
+          "global:example.Data",
+          {
+            "instance": {
+              "class": "example.Data",
+              "state": {
+                "int:5": "bytes:state"
+              }
+            }
+          },
+          {
+            "callback": [
+              "bytes:callback",
+              1.25
+            ]
+          },
+          {
+            "reduce": {
+              "newobj": false,
+              "callable": "global:example.build",
+              "args": {
+                "tuple": [
+                  1,
+                  "bytes:arg"
+                ]
+              },
+              "state": {
+                "bytes:flag": true
+              },
+              "list_items": [
+                2
+              ],
+              "dict_items": [
+                [
+                  "bytes:key",
+                  3
+                ]
+              ]
+            }
+          },
+          {
+            "reduce": {
+              "newobj": true,
+              "callable": null,
+              "args": {
+                "tuple": [
+                  "global:example.Data"
+                ]
+              },
+              "state": null,
+              "list_items": [],
+              "dict_items": []
+            }
+          }
+        ]
+      }
+    },
+    "json:{\"tuple\":[1,\"utf8:key\"]}": "float:nan"
+  }
+}

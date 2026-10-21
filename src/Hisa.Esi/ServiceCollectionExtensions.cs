@@ -26,6 +26,11 @@ public static class ServiceCollectionExtensions
             options.Incursions.TokenLimitPer15Minutes = EsiInternalDefaults.IncursionTokenLimitPer15Minutes;
         });
         services.AddSingleton<IEsiMetricsStore, EsiMetricsStore>();
+        services.AddHttpClient(EveCharacterResolver.ClientName,(sp,client) => {
+            var options=sp.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<EsiOptions>>().CurrentValue;
+            client.BaseAddress=new Uri(options.BaseUrl);client.Timeout=TimeSpan.FromSeconds(15);ApplyCommonHeaders(sp,client);
+        });
+        services.AddSingleton<IEveCharacterResolver,EveCharacterResolver>();
         services.AddHttpClient<IEsiAuthService, EsiAuthService>((sp, client) =>
         {
             ApplyCommonHeaders(sp, client);

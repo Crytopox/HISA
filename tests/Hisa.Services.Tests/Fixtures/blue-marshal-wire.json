@@ -1,0 +1,37 @@
+[
+  {
+    "name": "table",
+    "base64": "fQERAQ==",
+    "expected": "bytes:*corpid"
+  },
+  {
+    "name": "v1shared",
+    "base64": "fQEsUwJoaRsA",
+    "expected": {
+      "tuple": [
+        "bytes:hi",
+        "bytes:hi"
+      ]
+    }
+  },
+  {
+    "name": "v0shared",
+    "base64": "fgEAAAAsUwJoaRsBAQAAAA==",
+    "expected": {
+      "tuple": [
+        "bytes:hi",
+        "bytes:hi"
+      ]
+    }
+  },
+  {
+    "name": "v0crc",
+    "base64": "fgAAAAAcCgAKAAk=",
+    "expected": 1
+  },
+  {
+    "name": "unicode16",
+    "base64": "fQESAmgA6QA=",
+    "expected": "utf8:hé"
+  }
+]

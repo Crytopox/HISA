@@ -1,0 +1,119 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:vm="clr-namespace:Hisa.App" xmlns:rendering="clr-namespace:Hisa.Rendering.Controls;assembly=Hisa.Rendering"
+ x:Class="Hisa.App.ProbeFormationDesignerWindow" x:DataType="vm:ProbeFormationDesignerViewModel"
+ Title="HISA · Probe Formation Designer" Width="1550" Height="880" MinWidth="1050" MinHeight="720" Background="#0D131D">
+ <Window.Styles>
+  <Style Selector="Button"><Setter Property="Padding" Value="9,6" /><Setter Property="MinHeight" Value="30" /></Style>
+  <Style Selector="TextBlock.section"><Setter Property="FontWeight" Value="SemiBold" /><Setter Property="Foreground" Value="#D8E5F8" /></Style>
+  <Style Selector="TextBlock.muted"><Setter Property="Foreground" Value="#8A96A8" /><Setter Property="FontSize" Value="11" /></Style>
+  <Style Selector="TextBox.numeric"><Setter Property="FontSize" Value="12" /><Setter Property="Padding" Value="4" /><Setter Property="MinHeight" Value="28" /><Setter Property="MinWidth" Value="0" /></Style>
+  <Style Selector="TextBox.numeric.error"><Setter Property="BorderBrush" Value="#F08080" /></Style>
+  <Style Selector="TabItem"><Setter Property="FontSize" Value="13" /><Setter Property="Padding" Value="10,6" /></Style>
+ </Window.Styles>
+ <Window.Resources>
+  <DataTemplate x:Key="NumericCell" x:DataType="vm:ProbeNumericCell">
+   <StackPanel Spacing="2">
+    <TextBox Classes="numeric" Classes.error="{Binding HasError}" Text="{Binding Text, Mode=TwoWay}" Tag="{Binding}"
+     KeyDown="OnCellKey" LostFocus="OnCellLostFocus" ToolTip.Tip="{Binding Error}" />
+    <TextBlock Text="{Binding Error}" IsVisible="{Binding HasError}" Foreground="#F08080" FontSize="10" TextWrapping="Wrap" />
+   </StackPanel>
+  </DataTemplate>
+ </Window.Resources>
+ <Grid Margin="12" RowDefinitions="Auto,*,Auto" RowSpacing="10">
+  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+   <StackPanel>
+    <TextBlock Text="PROBE FORMATION DESIGNER" Classes="muted" Margin="0,0,0,4" />
+    <TextBox x:Name="NameEditor" Text="{Binding FormationName, Mode=TwoWay}" Watermark="Formation name" FontSize="18"
+     Width="320" HorizontalAlignment="Left" KeyDown="OnNameKey" LostFocus="OnNameLostFocus" />
+   </StackPanel>
+   <WrapPanel Grid.Column="1" VerticalAlignment="Center" IsEnabled="{Binding IsIdle}">
+    <Button Content="Undo" Click="OnUndo" IsEnabled="{Binding CanUndo}" ToolTip.Tip="Ctrl+Z" />
+    <Button Content="Redo" Click="OnRedo" IsEnabled="{Binding CanRedo}" ToolTip.Tip="Ctrl+Y" />
+    <Button Content="Save library" Click="OnSave" ToolTip.Tip="Ctrl+S" Margin="10,0" />
+    <Button Content="Send to EVE…" Click="OnSendToEve" />
+   </WrapPanel>
+  </Grid>
+  <Grid Grid.Row="1" IsEnabled="{Binding IsIdle}">
+   <Grid.ColumnDefinitions><ColumnDefinition Width="190" MinWidth="155" MaxWidth="320" /><ColumnDefinition Width="8" /><ColumnDefinition Width="*" MinWidth="300" /><ColumnDefinition Width="8" /><ColumnDefinition Width="430" MinWidth="330" /></Grid.ColumnDefinitions>
+   <Border Background="#141D2B" CornerRadius="6" Padding="10" MinWidth="155">
+    <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="10">
+     <TextBlock Text="Formations" Classes="section" />
+     <TextBox Grid.Row="1" Text="{Binding Search}" Watermark="Search…" />
+     <ListBox x:Name="FormationList" Grid.Row="2" ItemsSource="{Binding FilteredLibrary}" SelectedItem="{Binding LibrarySelection, Mode=OneWay}" SelectionChanged="OnFormationSelectionChanged">
+      <ListBox.Styles><Style Selector="ListBoxItem"><Setter Property="Background" Value="Transparent" /></Style></ListBox.Styles>
+      <ListBox.ItemTemplate><DataTemplate x:DataType="vm:ProbeFormationLibraryRow"><TextBlock Text="{Binding Name}" TextWrapping="Wrap" Margin="2,5" /></DataTemplate></ListBox.ItemTemplate>
+     </ListBox>
+     <StackPanel Grid.Row="3" Spacing="6">
+      <Button Content="+ New formation" Click="OnNew" HorizontalAlignment="Stretch" />
+      <WrapPanel><Button Content="Duplicate" Click="OnDuplicate" /><Button Content="Delete" Click="OnDelete" /></WrapPanel>
+      <Button Content="Import / Export ▾" HorizontalAlignment="Stretch"><Button.Flyout><MenuFlyout>
+       <MenuItem Header="Import formations…" Click="OnImport" /><MenuItem Header="Export current formation…" Click="OnExport" /><MenuItem Header="Export entire library…" Click="OnExportAll" />
+      </MenuFlyout></Button.Flyout></Button>
+      <TextBlock Text="Unsaved changes" IsVisible="{Binding IsDirty}" Foreground="#E8C56A" FontSize="11" />
+     </StackPanel>
+    </Grid>
+   </Border>
+   <GridSplitter Grid.Column="1" ResizeDirection="Columns" Background="Transparent" />
+   <Grid Grid.Column="2" RowDefinitions="Auto,*,Auto" Margin="4,0" MinWidth="300" RowSpacing="8">
+    <WrapPanel>
+     <Button Content="Fit formation" Click="OnFit" /><Button Content="Fit selection" Click="OnFitSelection" IsEnabled="{Binding HasSelection}" />
+     <Button Content="Views ▾"><Button.Flyout><MenuFlyout><MenuItem Header="Perspective" Click="OnView" /><MenuItem Header="Front" Click="OnView" /><MenuItem Header="Top" Click="OnView" /><MenuItem Header="Side" Click="OnView" /></MenuFlyout></Button.Flyout></Button>
+     <CheckBox Content="Ranges" IsChecked="{Binding #Viewport.ShowRanges, Mode=TwoWay}" Margin="8,0" />
+     <Button Content="Fit ranges" Click="OnFitRange" IsEnabled="{Binding HasSelection}" />
+    </WrapPanel>
+    <rendering:ProbeFormationControl x:Name="Viewport" Grid.Row="1" Formation="{Binding Current}" SelectedProbe="{Binding SelectedProbe, Mode=OneWay}" SelectedIndices="{Binding SelectedIndices}" />
+    <StackPanel Grid.Row="2" Spacing="4"><TextBlock Text="{Binding SelectionCenter}" Classes="muted" TextWrapping="Wrap" /><TextBlock Text="Ctrl-click: toggle · Shift-click: add · Drag empty space: box select" Classes="muted" TextWrapping="Wrap" /></StackPanel>
+   </Grid>
+   <GridSplitter Grid.Column="3" ResizeDirection="Columns" Background="Transparent" />
+   <Border Grid.Column="4" Background="#141D2B" CornerRadius="6" Padding="10" MinWidth="330">
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+     <StackPanel Spacing="10">
+      <Grid ColumnDefinitions="*,Auto"><StackPanel><TextBlock Text="Probes" Classes="section" /><TextBlock Text="{Binding SelectionSummary}" Foreground="#77C8EF" Margin="0,4,0,0" /></StackPanel><ComboBox Grid.Column="1" ItemsSource="{Binding UnitOptions}" SelectedItem="{Binding Units, Mode=TwoWay}" ToolTip.Tip="XYZ coordinate units" /></Grid>
+      <CheckBox Content="Snap to nearest integer" IsChecked="{Binding SnapToNearestInteger, Mode=TwoWay}" ToolTip.Tip="Mouse movement snaps the primary probe to whole values in the current XYZ units (km or AU). Group spacing is preserved." />
+      <WrapPanel><Button Content="Center centroid at origin" Click="OnCenterFormation" ToolTip.Tip="Move the entire formation so its centroid is at XYZ 0, preserving probe spacing." /><Button Content="Set all probes to 0" Click="OnZeroAllProbes" ToolTip.Tip="Place every probe at XYZ 0. Undo restores the previous positions." /></WrapPanel>
+      <WrapPanel><Button Content="Select all" Click="OnSelectAll" /><Button Content="Clear" Click="OnClear" /><Button Content="+ Add" Click="OnAddProbe" IsEnabled="{Binding CanAddProbe}" /></WrapPanel>
+      <Grid ColumnDefinitions="25,*,*,*,*" ColumnSpacing="4" Margin="5,0"><TextBlock Text="#" Classes="muted" /><TextBlock Grid.Column="1" Text="X · West" Classes="muted" /><TextBlock Grid.Column="2" Text="Y · Up" Classes="muted" /><TextBlock Grid.Column="3" Text="Z · North" Classes="muted" /><TextBlock Grid.Column="4" Text="Radius AU" Classes="muted" /></Grid>
+      <ItemsControl x:Name="ProbeTable" ItemsSource="{Binding ProbeRows}">
+       <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:ProbeTableRow">
+        <Border Background="{Binding Background}" CornerRadius="4" Padding="5,2" Margin="0,1" ToolTip.Tip="Click row to select · Ctrl toggles · Shift selects a range">
+         <Grid ColumnDefinitions="25,*,*,*,*" ColumnSpacing="4">
+          <TextBlock Text="{Binding Number}" VerticalAlignment="Center" Foreground="#B6D5EA" />
+          <ContentControl Grid.Column="1" Content="{Binding X}" ContentTemplate="{StaticResource NumericCell}" />
+          <ContentControl Grid.Column="2" Content="{Binding Y}" ContentTemplate="{StaticResource NumericCell}" />
+          <ContentControl Grid.Column="3" Content="{Binding Z}" ContentTemplate="{StaticResource NumericCell}" />
+          <ContentControl Grid.Column="4" Content="{Binding Radius}" ContentTemplate="{StaticResource NumericCell}" />
+         </Grid>
+        </Border>
+       </DataTemplate></ItemsControl.ItemTemplate>
+      </ItemsControl>
+      <TextBlock Text="Enter or leave a cell to apply · Escape to cancel" Classes="muted" TextWrapping="Wrap" />
+      <WrapPanel><Button Content="Duplicate selected" Click="OnDuplicateProbes" IsEnabled="{Binding CanDuplicateProbes}" /><Button Content="Delete selected" Click="OnDeleteProbes" IsEnabled="{Binding CanDeleteProbes}" /></WrapPanel>
+      <Separator />
+      <TextBlock Text="Transform selected probes" Classes="section" />
+      <TabControl IsEnabled="{Binding HasSelection}" FontSize="12">
+       <TabItem Header="Move"><StackPanel Spacing="8" Margin="0,8,0,0">
+        <Grid ColumnDefinitions="*,*,*" ColumnSpacing="5"><TextBox x:Name="DeltaX" Text="0" Watermark="ΔX" ToolTip.Tip="X offset in current coordinate units" /><TextBox Grid.Column="1" x:Name="DeltaY" Text="0" Watermark="ΔY" ToolTip.Tip="Y offset in current coordinate units" /><TextBox Grid.Column="2" x:Name="DeltaZ" Text="0" Watermark="ΔZ" ToolTip.Tip="Z offset in current coordinate units" /></Grid>
+        <Button Content="Move selected by XYZ offset" Click="OnTranslate" HorizontalAlignment="Stretch" />
+        <Button Content="Center selected on origin" Click="OnCenter" HorizontalAlignment="Stretch" />
+       </StackPanel></TabItem>
+       <TabItem Header="Rotate"><StackPanel Spacing="8" Margin="0,8,0,0">
+        <ComboBox x:Name="Pivot" SelectedIndex="0"><ComboBoxItem Content="Pivot: selection center" /><ComboBoxItem Content="Pivot: origin" /></ComboBox>
+        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="5"><ComboBox x:Name="RotationAxis" SelectedIndex="1"><ComboBoxItem Content="X" /><ComboBoxItem Content="Y" /><ComboBoxItem Content="Z" /></ComboBox><TextBox Grid.Column="1" x:Name="Angle" Text="90" ToolTip.Tip="Rotation in degrees" /><Button Grid.Column="2" Content="Rotate °" Click="OnRotate" /></Grid>
+       </StackPanel></TabItem>
+       <TabItem Header="Scale"><StackPanel Spacing="8" Margin="0,8,0,0">
+        <ComboBox x:Name="ScalePivot" SelectedIndex="0"><ComboBoxItem Content="Pivot: selection center" /><ComboBoxItem Content="Pivot: origin" /></ComboBox>
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="5"><TextBox x:Name="ScaleFactor" Text="1" ToolTip.Tip="Positive scale factor; probe positions only" /><Button Grid.Column="1" Content="Scale positions" Click="OnScale" /></Grid>
+       </StackPanel></TabItem>
+       <TabItem Header="Radius"><StackPanel Spacing="8" Margin="0,8,0,0">
+        <TextBlock Text="{Binding SelectionRadius}" Classes="muted" />
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6"><TextBox x:Name="BulkRadius" Watermark="Radius in AU" /><Button Grid.Column="1" Content="Set radius AU" Click="OnBulkRadius" /></Grid>
+        <ComboBox x:Name="RadiusChoices" ItemsSource="{Binding StandardRadii}" PlaceholderText="Use standard radius…" SelectionChanged="OnRadiusChoice" />
+       </StackPanel></TabItem>
+      </TabControl>
+     </StackPanel>
+    </ScrollViewer>
+   </Border>
+  </Grid>
+  <ScrollViewer Grid.Row="2" MaxHeight="65"><TextBlock Text="{Binding Status}" Foreground="#AABCD5" TextWrapping="Wrap" /></ScrollViewer>
+ </Grid>
+</Window>

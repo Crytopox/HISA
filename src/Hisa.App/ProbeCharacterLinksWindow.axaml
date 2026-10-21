@@ -1,0 +1,19 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="clr-namespace:Hisa.App"
+ x:Class="Hisa.App.ProbeCharacterLinksWindow" x:DataType="vm:ProbeFormationAccountsViewModel" Title="Link characters locally" Width="700" Height="650" MinWidth="520" MinHeight="420" Background="#0D131D" WindowStartupLocation="CenterOwner">
+ <Window.Styles>
+  <Style Selector="Border.character"><Setter Property="Background" Value="#141F2F" /><Setter Property="CornerRadius" Value="6" /><Setter Property="Padding" Value="12,6" /><Setter Property="Margin" Value="0,0,0,8" /><Setter Property="BorderThickness" Value="1" /><Setter Property="BorderBrush" Value="#25384D" /></Style>
+  <Style Selector="Border.character.chosen"><Setter Property="Background" Value="#19354D" /><Setter Property="BorderBrush" Value="#4484AE" /></Style>
+ </Window.Styles>
+ <Grid Margin="20" RowDefinitions="Auto,Auto,*,Auto,Auto" RowSpacing="14">
+  <StackPanel Spacing="6"><TextBlock Text="Recognize this account" FontSize="22" FontWeight="SemiBold" /><TextBlock Text="{Binding TargetContext}" FontSize="12" Foreground="#76CBF3" /><TextBlock Text="Choose the characters that belong to this account. These labels are saved only in HISA." TextWrapping="Wrap" Foreground="#A0B7D0" /></StackPanel>
+  <TextBox Grid.Row="1" Text="{Binding CharacterSearch}" Watermark="Search character name or ID…" />
+  <Grid Grid.Row="2"><TextBlock Text="No matching characters. Try another search or add a character ID below." IsVisible="{Binding !HasMatchingLinkCandidates}" TextWrapping="Wrap" Foreground="#8FABC4" Margin="4,12" /><ScrollViewer><ItemsControl ItemsSource="{Binding FilteredLinkCandidates}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:TransferCharacterRow">
+   <Border Classes="character" Classes.chosen="{Binding Linked}" AttachedToVisualTree="OnCharacterVisible" ToolTip.Tip="{Binding Detail}"><CheckBox IsChecked="{Binding Linked, Mode=TwoWay}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"><Grid ColumnDefinitions="44,*" ColumnSpacing="12" Margin="6,0">
+    <Border Width="44" Height="44" CornerRadius="5" ClipToBounds="True" Background="#263B51"><Grid><Image Source="{Binding Portrait}" Stretch="UniformToFill" /><TextBlock Text="?" IsVisible="{Binding !HasPortrait}" HorizontalAlignment="Center" VerticalAlignment="Center" /></Grid></Border>
+    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4"><TextBlock Text="{Binding Name}" TextWrapping="Wrap" FontWeight="SemiBold" /><TextBlock Text="{Binding CharacterId}" Foreground="#8FABC4" FontSize="11" /></StackPanel>
+   </Grid></CheckBox></Border>
+  </DataTemplate></ItemsControl.ItemTemplate></ItemsControl></ScrollViewer></Grid>
+  <Expander Grid.Row="3" Header="Missing a character? Add by ID" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"><Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="0,8"><TextBox Text="{Binding ManualCharacterId}" Watermark="Character ID" /><Button Grid.Column="1" Content="Add character" Click="OnAdd" IsEnabled="{Binding IsIdle}" /></Grid></Expander>
+  <Grid Grid.Row="4" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8"><TextBlock Text="{Binding LinkStatus}" TextWrapping="Wrap" FontSize="11" Foreground="#ECC878" /><Button Grid.Column="1" Content="Cancel" Click="OnCancel" /><Button Grid.Column="2" Content="Save local links" Click="OnSave" IsEnabled="{Binding IsIdle}" /></Grid>
+ </Grid>
+</Window>
