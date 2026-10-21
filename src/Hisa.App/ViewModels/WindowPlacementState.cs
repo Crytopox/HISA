@@ -13,6 +13,8 @@ public sealed class WindowPlacementState
     public int? ScreenWorkingAreaHeight { get; init; }
     public int? ScreenOffsetX { get; init; }
     public int? ScreenOffsetY { get; init; }
+    public string? ScreenDisplayName { get; init; }
+    public double? ScreenScaling { get; init; }
     public int? MainWindowOffsetX { get; init; }
     public int? MainWindowOffsetY { get; init; }
 }

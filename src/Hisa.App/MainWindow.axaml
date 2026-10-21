@@ -310,6 +310,7 @@
                   <MenuItem Header="Jump Route Optimizer" Click="OnOpenJumpRouteOptimizerClicked" />
                   <MenuItem Header="Mining Stats" Click="OnOpenMiningStatsWindowClicked" />
                   <MenuItem Header="Mining Sites Tracker" Click="OnOpenMiningSitesClicked" />
+                  <MenuItem Header="Intel History" Click="OnOpenIntelHistoryClicked" />
                 </MenuFlyout>
               </Button.Flyout>
             </Button>
@@ -349,6 +350,7 @@
                   <MenuItem Header="Jump Route Optimizer" Click="OnOpenJumpRouteOptimizerClicked" />
                   <MenuItem Header="Mining Stats" Click="OnOpenMiningStatsWindowClicked" />
                   <MenuItem Header="Mining Sites Tracker" Click="OnOpenMiningSitesClicked" />
+                  <MenuItem Header="Intel History" Click="OnOpenIntelHistoryClicked" />
                 </MenuItem>
                 <MenuItem Header="Settings">
                   <MenuItem Header="Map Editor" Click="OnOpenMapEditorClicked" />

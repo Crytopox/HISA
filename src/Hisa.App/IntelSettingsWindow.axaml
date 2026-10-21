@@ -9,6 +9,7 @@
         Title="Intel Settings"
         Width="430"
         MinWidth="420"
+        MaxHeight="850"
         SizeToContent="Height"
         Background="#0D131D">
   <Border Margin="10" Padding="10" Background="#121A26" BorderBrush="#263244" BorderThickness="1" CornerRadius="6">
@@ -43,7 +44,7 @@
         <Border Padding="8" Background="#101826" BorderBrush="#243247" BorderThickness="1" CornerRadius="5">
           <StackPanel Spacing="6">
             <TextBlock Text="Included Channels" FontWeight="SemiBold" Foreground="#C9D9EE" />
-            <TextBlock Text="Only these channels are read." Foreground="#8A96A8" FontSize="11" />
+            <TextBlock Text="Only these channels are read. Leave empty to read all intel channels." Foreground="#8A96A8" FontSize="11" TextWrapping="Wrap" />
             <TextBox Text="{Binding IntelIncludeChannelsText, Mode=TwoWay}"
                      AcceptsReturn="True"
                      Height="120"
@@ -51,14 +52,24 @@
           </StackPanel>
         </Border>
 
-        <StackPanel Orientation="Horizontal" Spacing="8">
+        <Border Padding="8" Background="#101826" BorderBrush="#243247" BorderThickness="1" CornerRadius="5">
+          <StackPanel Spacing="6">
+            <TextBlock Text="Notification exclusions" FontWeight="SemiBold" Foreground="#C9D9EE" />
+            <TextBlock Text="One word or phrase per line. Whole-word matching ignores case. Matches suppress alert popups, sounds and map popups; messages remain in history and map state."
+                       Foreground="#8A96A8" FontSize="11" TextWrapping="Wrap" />
+            <TextBox Text="{Binding IntelNotificationExclusionsText, Mode=TwoWay}" AcceptsReturn="True" Height="90"
+                     Watermark="clear&#10;clr&#10;status" />
+          </StackPanel>
+        </Border>
+
+        <WrapPanel Orientation="Horizontal">
           <Button Content="Clear Intel + zKillmails" MinWidth="160" Click="OnClearIntelHistoryClicked" />
           <Button Content="Save" MinWidth="90" Click="OnSaveIntelSettingsClicked" />
           <TextBlock x:Name="SaveFeedbackText"
                      Text="Changes apply immediately."
                      Foreground="#8A96A8"
                      VerticalAlignment="Center" />
-        </StackPanel>
+        </WrapPanel>
       </StackPanel>
     </ScrollViewer>
   </Border>

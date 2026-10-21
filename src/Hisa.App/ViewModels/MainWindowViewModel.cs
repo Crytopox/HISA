@@ -21,7 +21,7 @@ using Hisa.Rendering;
 
 namespace Hisa.App;
 
-public sealed class MainWindowViewModel : INotifyPropertyChanged
+public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 {
     private sealed class CharacterTrackingPreference
     {
@@ -628,7 +628,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _incursionStateService.IncursionSnapshotUpdated += OnIncursionSnapshotUpdated;
         _systemActivityStateService.SystemActivitySnapshotUpdated += OnSystemActivitySnapshotUpdated;
         _localCharacterLocationFeed.SystemChanged += OnLocalCharacterSystemChanged;
+        _intelFeed.ChannelMessageReceived += OnIntelChannelMessageReceived;
         _intelFeed.ReportReceived += OnIntelReportReceived;
+        IntelHistory.PreferencesChanged += OnIntelHistoryPreferencesChanged;
         _intelFeed.SnapshotUpdated += OnIntelSnapshotUpdated;
         _miningSessionFeed.SnapshotUpdated += OnMiningSnapshotUpdated;
         _intelOverlayAgeTimer = new DispatcherTimer { Interval = OverlayAgeChipRefreshInterval };
@@ -2759,10 +2761,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         HideZkillmailsOutsideKnownSpace = await _settingsService.GetAsync<bool?>(ZkillHideOutsideKnownSpaceKey) ?? false;
         var initialIncludeChannels = await _settingsService.GetAsync<List<string>>(IntelIncludeChannelsKey) ?? [];
         IntelIncludeChannelsText = string.Join(Environment.NewLine, initialIncludeChannels);
-        if (IntelEnabled && initialIncludeChannels.Count == 0)
-        {
-            StatusText = "Intel feed paused: configure included channels in Intel Settings.";
-        }
+        await InitializeIntelHistoryAsync();
         EnableLinkAnimations = await _settingsService.GetAsync<bool?>(EnableLinkAnimationsKey) ?? true;
         AnsiblexLinkOpacityPercent = await _settingsService.GetAsync<int?>(AnsiblexLinkOpacityPercentKey) ?? 70;
         EnableIntelReportAnimations = await _settingsService.GetAsync<bool?>(EnableIntelReportAnimationsKey) ?? true;
@@ -3386,7 +3385,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         Dispatcher.UIThread.Post(() =>
         {
             RebuildIntelPresenceForView();
-            if (!report.IsHistorical && ShouldKeepIntelReportForCurrentSettings(report))
+            if (!report.IsHistorical && ShouldKeepIntelReportForCurrentSettings(report) && !_intelNotificationFilter.Suppresses(report))
             {
                 foreach (var system in report.Systems.Distinct(StringComparer.OrdinalIgnoreCase))
                     _mapReportPopupRequests.Add(new MapReportPopupRequest(report.DedupeKey, system, receivedAtUtc, IsKillmail: isZkillReport || report.Killmail is not null));
@@ -3413,7 +3412,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     private void EvaluateAlertRules(IntelChatReport report, bool isKillmail)
     {
-        if (_alertRules.Count == 0)
+        if (_alertRules.Count == 0 || (!isKillmail && _intelNotificationFilter.Suppresses(report)))
         {
             return;
         }
@@ -5144,15 +5143,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             .Where(x => x.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
-        if (IntelEnabled && include.Count == 0)
-        {
-            StatusText = "Intel is enabled but no included channels are configured. Add at least one channel name.";
-            return;
-        }
-
         IntelSystemExpiryMinutes = Math.Clamp(IntelSystemExpiryMinutes, 1, 180);
         IntelListExpiryMinutes = Math.Clamp(IntelListExpiryMinutes, 1, 240);
         IntelIncludeChannelsText = string.Join(Environment.NewLine, include);
+        await SaveIntelHistorySettingsAsync();
 
         await _settingsService.SetAsync(IntelEnabledKey, IntelEnabled);
         await _settingsService.SetAsync(MapReportPopupsEnabledKey, MapReportPopupsEnabled);
@@ -5319,6 +5313,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public Task ClearIntelAndKillmailHistoryAsync()
     {
+        IntelHistory.Clear();
         _mapReportPopupRequests.Clear();
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MapReportPopupRequests)));
         lock (_intelReportHistory)
@@ -6593,7 +6588,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     private async Task EnsureIntelIdentityAssetsAsync()
     {
-        var characterIds = _intelCardsForView
+        var characterIds = IntelAssetCards
             .SelectMany(c => c.Hostiles)
             .Select(h => h.CharacterId)
             .Where(id => id is > 0)
@@ -6748,13 +6743,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     private async Task EnsureShipImagesForIntelCardsAsync()
     {
-        var typeIds = _intelCardsForView
+        var typeIds = IntelAssetCards
             .SelectMany(c => c.Hostiles)
             .Select(h => h.ShipTypeId)
             .Where(id => id is > 0)
             .Select(id => id!.Value)
-            .Concat(_intelCardsForView.SelectMany(c => c.ShipsSummary).Select(s => s.ShipTypeId).Where(id => id is > 0).Select(id => id!.Value))
-            .Concat(_intelCardsForView.SelectMany(c => c.FriendlyShipsSummary).Select(s => s.ShipTypeId).Where(id => id is > 0).Select(id => id!.Value))
+            .Concat(IntelAssetCards.SelectMany(c => c.ShipsSummary).Select(s => s.ShipTypeId).Where(id => id is > 0).Select(id => id!.Value))
+            .Concat(IntelAssetCards.SelectMany(c => c.FriendlyShipsSummary).Select(s => s.ShipTypeId).Where(id => id is > 0).Select(id => id!.Value))
             .Concat(_zkillmailCardsForView.Select(c => c.Victim.ShipTypeId).Where(id => id is > 0).Select(id => id!.Value))
             .Concat(_zkillmailCardsForView.SelectMany(c => c.VisibleAttackers).Select(a => a.ShipTypeId).Where(id => id is > 0).Select(id => id!.Value))
             .Concat(_zkillmailCardsForView.SelectMany(c => c.ShipsSummary).Select(s => s.ShipTypeId).Where(id => id is > 0).Select(id => id!.Value))
@@ -6783,7 +6778,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 continue;
             }
 
-            foreach (var card in _intelCardsForView)
+            foreach (var card in IntelAssetCards)
             {
                 foreach (var hostile in card.Hostiles)
                 {
@@ -7617,7 +7612,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     private Task ResolveIntelCharacterIdsAsync()
     {
-        var unresolvedNames = _intelCardsForView
+        var unresolvedNames = IntelAssetCards
             .SelectMany(c => c.Hostiles)
             .Where(h => h.CharacterId is null)
             .Select(h => h.Name)
@@ -7703,7 +7698,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         Dispatcher.UIThread.Post(() =>
         {
             var changed = false;
-            foreach (var card in _intelCardsForView)
+            foreach (var card in IntelAssetCards)
             {
                 foreach (var hostile in card.Hostiles)
                 {
@@ -7822,7 +7817,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             Dispatcher.UIThread.Post(() =>
             {
                 var changed = false;
-                foreach (var card in _intelCardsForView)
+                foreach (var card in IntelAssetCards)
                 {
                     foreach (var hostile in card.Hostiles)
                     {

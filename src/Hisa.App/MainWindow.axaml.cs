@@ -40,6 +40,7 @@ public partial class MainWindow : Window
     private AlertsSettingsWindow? _alertsSettingsWindow;
     private AlertPopupSettingsWindow? _alertPopupSettingsWindow;
     private AlertPopupWindow? _alertPopupWindow;
+    private IntelHistoryWindow? _intelHistoryWindow;
     private AlertPopupSettings _alertPopupSettings = new();
     private bool _isAlertPopupDragMode;
     private CharactersWindow? _charactersWindow;
@@ -831,6 +832,20 @@ public partial class MainWindow : Window
             .OrderBy(c => Math.Abs((c.TimestampUtc - alert.SourceEvent.TimestampUtc).TotalSeconds))
             .FirstOrDefault(c => Math.Abs((c.TimestampUtc - alert.SourceEvent.TimestampUtc).TotalSeconds) <= tolerance.TotalSeconds)
             ?? _boundVm.ZkillmailCardsForView.FirstOrDefault(c => c.SolarSystemId == alert.SourceEvent.SolarSystemId);
+    }
+
+    private async void OnOpenIntelHistoryClicked(object? sender, RoutedEventArgs e)
+        => await ShowIntelHistoryAsync();
+
+    private async Task ShowIntelHistoryAsync()
+    {
+        if (_boundVm is null || _isClosingApp) return;
+        if (_intelHistoryWindow is null)
+        {
+            _intelHistoryWindow = new IntelHistoryWindow(_boundVm);
+            _intelHistoryWindow.SystemNavigationRequested += OnAlertPopupSystemNavigationRequested;
+        }
+        await _intelHistoryWindow.ShowHistoryAsync();
     }
 
     private void EnsureAlertPopupWindow()
@@ -2170,6 +2185,7 @@ public partial class MainWindow : Window
         }
 
         Dispatcher.UIThread.Post(RestoreMiningOverlayOnStartup, DispatcherPriority.Background);
+        if (_boundVm.ShouldRestoreIntelHistoryVisible) await ShowIntelHistoryAsync();
     }
 
     private void RestoreMiningOverlayOnStartup()
@@ -2379,6 +2395,7 @@ public partial class MainWindow : Window
 
     private void CloseAuxiliaryWindows()
     {
+        _intelHistoryWindow?.Shutdown();
         static void TryClose(Window? window)
         {
             if (window is null)

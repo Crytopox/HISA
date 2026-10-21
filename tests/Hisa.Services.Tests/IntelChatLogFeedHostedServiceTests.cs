@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using System.Net;
 using Hisa.Core.Abstractions;
 using Hisa.Core.Models;
@@ -11,6 +11,201 @@ namespace Hisa.Services.Tests;
 
 public class IntelChatLogFeedHostedServiceTests
 {
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ChannelSourceDetectsGrowthWithDelayedLastWriteAndSurvivesSourceDeletion(bool watcherEvent)
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "hisa-intel-growth", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var now = DateTime.UtcNow;
+        var active = Path.Combine(directory, $"Intel_{now.AddDays(-6):yyyyMMdd_HHmmss}_1.txt");
+        var stopped = Path.Combine(directory, $"Intel_{now:yyyyMMdd_HHmmss}_2.txt");
+        var oldWrite = now.AddDays(watcherEvent ? -3 : -1);
+        try
+        {
+            await File.WriteAllTextAsync(active, $"Channel Name: Intel\n[ {now:yyyy.MM.dd HH:mm:ss} ] Scout > older client\n");
+            await File.WriteAllTextAsync(stopped, $"Channel Name: Intel\n[ {now:yyyy.MM.dd HH:mm:ss} ] Scout > newer client\n");
+            File.SetLastWriteTimeUtc(active, oldWrite);
+            using var service = CreateServiceWithSystems();
+            var messages = new List<IntelChatReport>();
+            service.ChannelMessageReceived += (_, report) => messages.Add(report);
+            Invoke("EnqueueAllKnownFiles", directory); await Flush();
+            Assert.Equal(stopped, Assert.Single(messages).SourceFilePath);
+            await File.AppendAllTextAsync(active, $"[ {now.AddSeconds(1):yyyy.MM.dd HH:mm:ss} ] Scout > active client still receiving\n");
+            File.SetLastWriteTimeUtc(active, oldWrite); // Simulate an open writer with delayed metadata.
+            if (watcherEvent)
+                Invoke("OnWatcherChanged", service, new FileSystemEventArgs(WatcherChangeTypes.Changed, directory, Path.GetFileName(active)));
+            else Invoke("EnqueueKnownActiveFiles");
+            await Flush();
+            Assert.Equal(active, Assert.Single(messages, message => message.MessageText == "active client still receiving").SourceFilePath);
+            File.Delete(active);
+            await File.AppendAllTextAsync(stopped, $"[ {now.AddSeconds(2):yyyy.MM.dd HH:mm:ss} ] Scout > remaining client\n");
+            Invoke("EnqueueKnownActiveFiles"); await Flush();
+            Assert.Equal(stopped, Assert.Single(messages, message => message.MessageText == "remaining client").SourceFilePath);
+
+            void Invoke(string name, params object[] args) => typeof(IntelChatLogFeedHostedService).GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(service, args);
+            Task Flush() => (Task)typeof(IntelChatLogFeedHostedService).GetMethod("FlushDirtyFilesAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(service, [CancellationToken.None])!;
+        }
+        finally { File.Delete(active); File.Delete(stopped); Directory.Delete(directory); }
+    }
+
+    [Fact]
+    public async Task ChannelSourceFollowsActualActivityAcrossAccountsAndPollsForMissedEvents()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "hisa-intel-sources", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var now = DateTime.UtcNow;
+        var olderSession = Path.Combine(directory, $"Intel_{now.AddDays(-6):yyyyMMdd_HHmmss}_1.txt");
+        var newerSession = Path.Combine(directory, $"Intel_{now:yyyyMMdd_HHmmss}_2.txt");
+        var otherChannel = Path.Combine(directory, $"Other_{now:yyyyMMdd_HHmmss}_1.txt");
+        var initiallyMissing = Path.Combine(directory, $"Missing_{now:yyyyMMdd_HHmmss}_2.txt");
+        try
+        {
+            await File.WriteAllTextAsync(olderSession, $"Channel Name: Intel\n{Line(now, "fresh from long running client")}");
+            await File.WriteAllTextAsync(newerSession, $"Channel Name: Intel\n{Line(now.AddMinutes(-2), "stale newer session")}");
+            await File.WriteAllTextAsync(otherChannel, $"Channel Name: Other\n{Line(now, "other channel")}");
+            File.SetLastWriteTimeUtc(olderSession, now); File.SetLastWriteTimeUtc(newerSession, now.AddMinutes(-2));
+            using var service = CreateServiceWithSystems();
+            typeof(IntelChatLogFeedHostedService).GetField("_includeChannels", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .SetValue(service, new HashSet<string>(["Intel", "Other", "Missing"], StringComparer.OrdinalIgnoreCase));
+            var messages = new List<IntelChatReport>();
+            service.ChannelMessageReceived += (_, report) => messages.Add(report);
+            Invoke("EnqueueAllKnownFiles", directory);
+            await Flush();
+            Assert.Equal(2, messages.Count);
+            Assert.DoesNotContain(messages, message => message.MessageText == "stale newer session");
+            Assert.Equal(olderSession, messages.Single(message => message.ChannelName == "Intel").SourceFilePath);
+
+            // The second client writes copies and a new report. Only its new content is delivered.
+            await File.AppendAllTextAsync(newerSession, Line(now.AddSeconds(1), "fresh from long running client") + Line(now.AddSeconds(2), "new client report"));
+            File.SetLastWriteTimeUtc(newerSession, now.AddSeconds(2));
+            Invoke("OnWatcherChanged", service, new FileSystemEventArgs(WatcherChangeTypes.Changed, directory, Path.GetFileName(newerSession)));
+            await Flush();
+            Assert.Equal(4, messages.Count); // Catch up one previously unread historical line and the new report.
+            Assert.Single(messages, message => message.MessageText == "fresh from long running client");
+            Assert.Equal(newerSession, messages.Single(message => message.MessageText == "new client report").SourceFilePath);
+            Assert.False(messages.Single(message => message.MessageText == "new client report").IsHistorical);
+
+            // No watcher event: an older logged-in account takes over when the current client closes.
+            await File.AppendAllTextAsync(olderSession, Line(now.AddSeconds(3), "new client report") + Line(now.AddSeconds(4), "failover report"));
+            File.SetLastWriteTimeUtc(olderSession, now.AddSeconds(4));
+            Invoke("EnqueueKnownActiveFiles");
+            await Flush();
+            Assert.Single(messages, message => message.MessageText == "new client report");
+            Assert.Equal(olderSession, messages.Single(message => message.MessageText == "failover report").SourceFilePath);
+
+            // A configured channel can appear later without blocking other channels or needing a restart.
+            await File.WriteAllTextAsync(initiallyMissing, $"Channel Name: Missing\n{Line(now.AddSeconds(5), "joined later")}");
+            Invoke("OnWatcherChanged", service, new FileSystemEventArgs(WatcherChangeTypes.Created, directory, Path.GetFileName(initiallyMissing)));
+            await Flush();
+            Assert.Equal("Missing", messages.Single(message => message.MessageText == "joined later").ChannelName);
+
+            // All watcher events arriving together still select exactly one source per channel.
+            await File.AppendAllTextAsync(newerSession, Line(now.AddSeconds(6), "simultaneous report"));
+            await File.AppendAllTextAsync(olderSession, Line(now.AddSeconds(6), "simultaneous report"));
+            File.SetLastWriteTimeUtc(newerSession, now.AddSeconds(7)); File.SetLastWriteTimeUtc(olderSession, now.AddSeconds(6));
+            Invoke("OnWatcherChanged", service, new FileSystemEventArgs(WatcherChangeTypes.Changed, directory, Path.GetFileName(olderSession)));
+            Invoke("OnWatcherChanged", service, new FileSystemEventArgs(WatcherChangeTypes.Changed, directory, Path.GetFileName(newerSession)));
+            await Flush();
+            Assert.Equal(newerSession, Assert.Single(messages, message => message.MessageText == "simultaneous report").SourceFilePath);
+
+            void Invoke(string name, params object[] args) => typeof(IntelChatLogFeedHostedService).GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(service, args);
+            Task Flush() => (Task)typeof(IntelChatLogFeedHostedService).GetMethod("FlushDirtyFilesAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(service, [CancellationToken.None])!;
+        }
+        finally
+        {
+            File.Delete(olderSession); File.Delete(newerSession); File.Delete(otherChannel); File.Delete(initiallyMissing); Directory.Delete(directory);
+        }
+        static string Line(DateTime time, string text) => $"[ {time:yyyy.MM.dd HH:mm:ss} ] Scout > {text}\n";
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PartialChannelLinesWaitForNewlineAndPreserveUnicodeOffsets(bool utf16)
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "hisa-intel-lines", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, "Intel.txt");
+        var encoding = utf16 ? System.Text.Encoding.Unicode : new System.Text.UTF8Encoding(false);
+        try
+        {
+            var now = DateTime.UtcNow;
+            await File.WriteAllTextAsync(path, $"Channel Name: Intel\r\n[ {now:yyyy.MM.dd HH:mm:ss} ] Scout > système Ω cle", encoding);
+            using var service = CreateServiceWithSystems();
+            var messages = new List<IntelChatReport>();
+            service.ChannelMessageReceived += (_, report) => messages.Add(report);
+            var process = typeof(IntelChatLogFeedHostedService).GetMethod("ProcessFileAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            await (Task)process.Invoke(service, [path, CancellationToken.None])!;
+            Assert.Empty(messages);
+            await File.AppendAllTextAsync(path, "ar\r\n", encoding);
+            await (Task)process.Invoke(service, [path, CancellationToken.None])!;
+            Assert.Equal("système Ω clear", Assert.Single(messages).MessageText);
+            await (Task)process.Invoke(service, [path, CancellationToken.None])!;
+            Assert.Single(messages);
+        }
+        finally { File.Delete(path); Directory.Delete(directory); }
+    }
+
+    [Fact]
+    public async Task ChannelHistoryIncludesPlainTextAndLinksButReportsStillRequireSystems()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "hisa-intel-history-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, "Intel.txt");
+        var duplicate = Path.Combine(directory, "Intel-copy.txt");
+        var otherChannel = Path.Combine(directory, "Other.txt");
+        try
+        {
+            var timestamp = DateTime.UtcNow.AddSeconds(-5);
+            var content = $"Channel Name: Intel\n" +
+                $"[ {timestamp:yyyy.MM.dd HH:mm:ss} ] Scout > status?\n" +
+                $"[ {timestamp:yyyy.MM.dd HH:mm:ss} ] Scout > Kill: Rave Maulerant (Thorax)\n" +
+                $"[ {timestamp:yyyy.MM.dd HH:mm:ss} ] Scout > E-JCUS clear\n" +
+                $"[ {timestamp:yyyy.MM.dd HH:mm:ss} ] EVE System > Channel MOTD: E-JCUS\n" +
+                $"[ {timestamp:yyyy.MM.dd HH:mm:ss} ] EVE System > Channel changed to Intel\n" +
+                $"[ {timestamp:yyyy.MM.dd HH:mm:ss} ] Scout > https://example.com/report\n" +
+                $"[ {timestamp.AddHours(-1):yyyy.MM.dd HH:mm:ss} ] Scout > too old\n";
+            await File.WriteAllTextAsync(path, content);
+            await File.WriteAllTextAsync(duplicate, content);
+            using var service = CreateServiceWithSystems();
+            var systems = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase) { ["E-JCUS"] = 1 };
+            typeof(IntelChatLogFeedHostedService).GetField("_systemIdByName", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(service, systems);
+            typeof(IntelChatLogFeedHostedService).GetField("_messageParser", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .SetValue(service, new Hisa.Logs.IntelChatLogs.IntelChatMessageParser(systems));
+            var messages = new List<IntelChatReport>();
+            var reports = new List<IntelChatReport>();
+            service.ChannelMessageReceived += (_, message) => messages.Add(message);
+            service.ReportReceived += (_, report) => reports.Add(report);
+            var process = typeof(IntelChatLogFeedHostedService).GetMethod("ProcessFileAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            await (Task)process.Invoke(service, [path, CancellationToken.None])!;
+            await (Task)process.Invoke(service, [duplicate, CancellationToken.None])!;
+            Assert.Equal(4, messages.Count);
+            Assert.All(messages, message => Assert.True(message.IsHistorical));
+            Assert.Equal("status?", messages[0].MessageText);
+            Assert.Empty(messages[0].Systems);
+            Assert.Equal("Kill: Rave Maulerant (Thorax)", messages[1].MessageText);
+            Assert.Equal("https://example.com/report", messages[3].MessageText);
+            Assert.True(Assert.Single(reports).IsClear);
+            var live = DateTime.UtcNow.AddSeconds(2);
+            await File.AppendAllTextAsync(path, $"[ {live:yyyy.MM.dd HH:mm:ss} ] Scout > still watching\n");
+            await (Task)process.Invoke(service, [path, CancellationToken.None])!;
+            Assert.Equal(5, messages.Count);
+            Assert.False(messages[^1].IsHistorical);
+            Assert.Single(reports);
+            // Identical content reported in another channel is a separate history entry.
+            await File.WriteAllTextAsync(otherChannel, $"Channel Name: Other\n[ {timestamp:yyyy.MM.dd HH:mm:ss} ] Scout > status?\n");
+            await (Task)process.Invoke(service, [otherChannel, CancellationToken.None])!;
+            Assert.Equal(6, messages.Count);
+            Assert.Equal("Other", messages[^1].ChannelName);
+        }
+        finally
+        {
+            File.Delete(path); File.Delete(duplicate); File.Delete(otherChannel); Directory.Delete(directory);
+        }
+    }
+
     [Fact]
     public async Task ShipNameLookupPreservesCanonicalNamesEvenForUnclassifiedShipGroups()
     {

@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
@@ -23,8 +23,8 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
     private static readonly TimeSpan DirtyFlushDebounceDelay = TimeSpan.FromMilliseconds(125);
     private static readonly TimeSpan KnownActiveFileSweepInterval = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan SnapshotExpirySweepInterval = TimeSpan.FromSeconds(5);
-    private static readonly TimeSpan ChannelFileSweepInterval = TimeSpan.FromSeconds(10);
-    // Only consider / read files newer than this value, utcNow + ChannelFileRecencyWindow
+    private static readonly TimeSpan ChannelFileSweepInterval = TimeSpan.FromSeconds(2);
+    // Older inactive logs are checked by discovery; active/recent candidates get the fast poll.
     private static readonly TimeSpan ChannelFileRecencyWindow = TimeSpan.FromDays(2);
     private const string LogsRootSettingsKey = "Tracking.LogsRootPath";
     private const string IntelEnabledSettingsKey = "Intel.Enabled";
@@ -135,6 +135,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         _logger = logger;
     }
 
+    public event EventHandler<IntelChatReport>? ChannelMessageReceived;
     public event EventHandler<IntelChatReport>? ReportReceived;
     public event EventHandler<IReadOnlyDictionary<long, IntelSystemSnapshot>>? SnapshotUpdated;
 
@@ -179,7 +180,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
 
         if (_enabled && _chatLogsDirectory is not null)
         {
-            EnqueueAllKnownFiles(_chatLogsDirectory, startupOnlyNewestPerChannel: true);
+            EnqueueAllKnownFiles(_chatLogsDirectory);
         }
 
         if (_enabled && _zkillEnabled && (!wasEnabled || !wasZkillEnabled || _nextZkillSequence is null))
@@ -212,7 +213,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             SetupWatcher(_chatLogsDirectory);
             if (_enabled)
             {
-                EnqueueAllKnownFiles(_chatLogsDirectory, startupOnlyNewestPerChannel: true);
+                EnqueueAllKnownFiles(_chatLogsDirectory);
             }
         }
         else if (!_enabled)
@@ -253,9 +254,8 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
                 {
                     // Coalesce a burst of file watcher events for the same active session log before
                     // reopening files. Offsets still guarantee we only consume each appended line once.
-                    while (await _dirtySignal.WaitAsync(DirtyFlushDebounceDelay, stoppingToken))
-                    {
-                    }
+                    await Task.Delay(DirtyFlushDebounceDelay, stoppingToken);
+                    while (_dirtySignal.Wait(0)) { }
 
                     if (_enabled)
                     {
@@ -282,7 +282,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
 
                 if (_enabled && chatLogsDirectory is not null && nowUtc >= nextChannelSweepUtc)
                 {
-                    EnqueueAllKnownFiles(chatLogsDirectory, startupOnlyNewestPerChannel: true);
+                    EnqueueAllKnownFiles(chatLogsDirectory);
                     nextChannelSweepUtc = nowUtc + ChannelFileSweepInterval;
                 }
             }
@@ -303,13 +303,18 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         string[] knownFiles;
         lock (_gate)
         {
-            knownFiles = _readOffsetsByPath.Keys.ToArray();
+            var active = _activeChannelFiles.Values.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var cutoff = DateTime.UtcNow - ChannelFileRecencyWindow;
+            knownFiles = _channelFileCandidates.Values.Where(file => file.ActivityUtc >= cutoff || active.Contains(file.Path))
+                .Select(file => file.Path).ToArray();
         }
 
         foreach (var filePath in knownFiles)
         {
-            EnqueueDirtyFile(filePath);
+            RefreshChannelFile(filePath);
         }
+        foreach (var file in SelectChannelFiles())
+            if (NeedsChannelRead(file)) EnqueueDirtyFile(file.Path);
     }
 
     private static TimeSpan MinPositiveDelay(params TimeSpan[] delays)
@@ -482,7 +487,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         _watcher.Changed += OnWatcherChanged;
         _watcher.Created += OnWatcherChanged;
         _watcher.Renamed += OnWatcherRenamed;
-        _watcher.Error += (_, _) => EnqueueAllKnownFiles(chatLogsDirectory, startupOnlyNewestPerChannel: true);
+        _watcher.Error += (_, _) => EnqueueAllKnownFiles(chatLogsDirectory);
     }
 
     private void OnWatcherChanged(object sender, FileSystemEventArgs e)
@@ -496,6 +501,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
                 return;
             }
 
+            RefreshChannelFile(e.FullPath, observedWrite: true);
             EnqueueDirtyFile(e.FullPath);
         }
     }
@@ -511,6 +517,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
                 return;
             }
 
+            RefreshChannelFile(e.FullPath, observedWrite: true);
             EnqueueDirtyFile(e.FullPath);
         }
     }
@@ -570,7 +577,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         return true;
     }
 
-    private void EnqueueAllKnownFiles(string chatLogsDirectory, bool startupOnlyNewestPerChannel)
+    private void EnqueueAllKnownFiles(string chatLogsDirectory)
     {
         string[] files;
         try
@@ -583,59 +590,9 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             return;
         }
 
-        if (startupOnlyNewestPerChannel)
-        {
-            var cutoffUtc = DateTime.UtcNow - ChannelFileRecencyWindow;
-            var newestByChannel = new Dictionary<string, (string Path, DateTime SessionStartedUtc)>(StringComparer.OrdinalIgnoreCase);
-            foreach (var filePath in files)
-            {
-                var fileName = Path.GetFileName(filePath);
-                if (!IsCandidateIntelFile(fileName))
-                {
-                    continue;
-                }
-
-                if (!TryParseIntelFileName(fileName, out var channelFromName, out var sessionStartedUtc) || !ShouldReadChannel(channelFromName))
-                {
-                    continue;
-                }
-
-                // Skip historical session files without touching disk; only the current session per
-                // channel is of interest, and active files keep flowing in via the FileSystemWatcher.
-                if (sessionStartedUtc < cutoffUtc)
-                {
-                    continue;
-                }
-
-                if (!newestByChannel.TryGetValue(channelFromName, out var existing) || sessionStartedUtc > existing.SessionStartedUtc)
-                {
-                    newestByChannel[channelFromName] = (filePath, sessionStartedUtc);
-                }
-            }
-
-            foreach (var entry in newestByChannel.Values)
-            {
-                EnqueueDirtyFile(entry.Path);
-            }
-
-            return;
-        }
-
-        foreach (var filePath in files)
-        {
-            var fileName = Path.GetFileName(filePath);
-            if (!IsCandidateIntelFile(fileName))
-            {
-                continue;
-            }
-
-            if (TryExtractChannelNameFromFileName(fileName, out var channelFromName) && !ShouldReadChannel(channelFromName))
-            {
-                continue;
-            }
-
-            EnqueueDirtyFile(filePath);
-        }
+        foreach (var filePath in files) RefreshChannelFile(filePath);
+        foreach (var file in SelectChannelFiles())
+            if (NeedsChannelRead(file)) EnqueueDirtyFile(file.Path);
     }
 
     private void EnqueueDirtyFile(string filePath)
@@ -717,12 +674,23 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         }
 
         var files = _dirtyFiles.Keys.ToArray();
-        foreach (var file in files)
+        foreach (var path in files)
         {
-            _dirtyFiles.TryRemove(file, out _);
+            _dirtyFiles.TryRemove(path, out _);
+            RefreshChannelFile(path);
+        }
+        // Watcher bursts from multiple accounts are resolved before opening a source.
+        foreach (var file in SelectChannelFiles())
+        {
+            if (!NeedsChannelRead(file)) continue;
             try
             {
-                await ProcessFileAsync(file, cancellationToken);
+                await ProcessFileAsync(file.Path, cancellationToken);
+                lock (_gate)
+                {
+                    if (_readOffsetsByPath.ContainsKey(file.Path)) _processedChannelFiles[file.Path] = file;
+                    else _unavailableChannelFiles[file.Path] = DateTime.UtcNow.AddSeconds(1);
+                }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -730,7 +698,9 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to process intel chat log file {FilePath}", file);
+                lock (_gate) _unavailableChannelFiles[file.Path] = DateTime.UtcNow.AddSeconds(1);
+                _logger.LogWarning(ex, "Failed to process intel chat log file {FilePath}; trying another account.", file.Path);
+                EnqueueKnownActiveFiles();
             }
         }
     }
@@ -755,11 +725,9 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
         var snapshotChanged = false;
         using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
         long offset;
-        bool isBackfill;
         lock (_gate)
         {
-            isBackfill = !_readOffsetsByPath.TryGetValue(filePath, out offset)
-                && File.GetCreationTimeUtc(filePath) < _startedAtUtc;
+            _readOffsetsByPath.TryGetValue(filePath, out offset);
         }
 
         if (offset <= 0 && stream.Length > InitialReadTailBytes)
@@ -773,10 +741,8 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
             offset = 0;
         }
 
-        stream.Position = offset;
-        using var reader = new StreamReader(stream, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
-        string? line;
-        while ((line = await reader.ReadLineAsync(cancellationToken)) is not null)
+        var (lines, nextOffset) = await ReadCompleteChannelLinesAsync(stream, offset, cancellationToken);
+        foreach (var line in lines)
         {
             if (!TryParseChatLine(line, out var timestampUtc, out var reporter, out var message))
             {
@@ -789,12 +755,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
                 continue;
             }
 
-            if (IsChannelMotdMessage(reporter, message))
-            {
-                continue;
-            }
-
-            if (IsIgnoredIntelMessage(message))
+            if (string.Equals(reporter, "EVE System", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
@@ -806,9 +767,27 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
                 continue;
             }
 
-            var report = await ParseIntelReportAsync(timestampUtc, channelName, reporter, message, filePath, cancellationToken,
-                isHistorical: isBackfill || timestampUtc < _startedAtUtc);
-            if (report.Systems.Count == 0)
+            IntelChatReport report;
+            try
+            {
+                report = await ParseIntelReportAsync(timestampUtc, channelName, reporter, message, filePath, cancellationToken,
+                    isHistorical: timestampUtc < _startedAtUtc);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogDebug(ex, "Unable to enrich intel message; retaining original text.");
+                report = new IntelChatReport
+                {
+                    IsHistorical = timestampUtc < _startedAtUtc,
+                    DedupeKey = BuildIntelReportDedupeKey(timestampUtc, reporter, message),
+                    TimestampUtc = timestampUtc, ChannelName = channelName, ReporterName = reporter,
+                    MessageText = message, SourceFilePath = filePath, Systems = [], ShipClasses = [],
+                    ReportedShipNames = [], ReportedShipTypeIds = [], Alerts = [], ReportedHostileNames = []
+                };
+            }
+
+            ChannelMessageReceived?.Invoke(this, report);
+            if (report.Systems.Count == 0 || IsIgnoredIntelMessage(message))
             {
                 continue;
             }
@@ -819,7 +798,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
 
         lock (_gate)
         {
-            _readOffsetsByPath[filePath] = stream.Position;
+            _readOffsetsByPath[filePath] = nextOffset;
         }
 
         if (snapshotChanged)
@@ -1494,7 +1473,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
 
     private bool TryRegisterIntelLine(DateTime timestampUtc, string channelName, string reporter, string message)
     {
-        var dedupeKey = BuildIntelReportDedupeKey(timestampUtc, reporter, message);
+        var dedupeKey = $"{NormalizeReportIdentityPart(channelName)}:{BuildIntelReportDedupeKey(timestampUtc, reporter, message)}";
         var contentKey = BuildIntelContentDedupeKey(channelName, reporter, message);
         var nowUtc = DateTime.UtcNow;
         lock (_gate)

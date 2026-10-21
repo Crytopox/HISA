@@ -1,0 +1,130 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:Hisa.App"
+        x:Class="Hisa.App.IntelHistoryWindow"
+        x:DataType="vm:IntelHistoryViewModel"
+        Title="Intel History" Width="380" Height="520" MinWidth="280" MinHeight="160"
+        SystemDecorations="None" CanResize="True" Topmost="True" ShowActivated="False"
+        ShowInTaskbar="False" Background="#101722">
+  <Window.Styles>
+    <Style Selector="Button.compact">
+      <Setter Property="Padding" Value="4,1" />
+      <Setter Property="MinHeight" Value="18" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="#B9CCE3" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="ListBoxItem">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Margin" Value="0" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+  </Window.Styles>
+  <Grid>
+  <Border BorderBrush="#304057" BorderThickness="1" CornerRadius="6">
+    <Grid RowDefinitions="Auto,*,Auto">
+      <Border Grid.Row="0" x:Name="DragHandle" Background="#172232" BorderBrush="#29394E" BorderThickness="0,0,0,1" Padding="7,3,4,3" Cursor="SizeAll" PointerPressed="OnHeaderPointerPressed">
+        <Grid ColumnDefinitions="*,Auto,Auto" Background="Transparent">
+          <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center" IsHitTestVisible="False">
+            <TextBlock Text="INTEL HISTORY" FontSize="11" FontWeight="SemiBold" Foreground="#E1EBF7" />
+          </StackPanel>
+          <Button Grid.Column="1" Classes="compact" Content="Channels" ToolTip.Tip="Choose channels for this overlay">
+            <Button.Flyout>
+              <Flyout Placement="BottomEdgeAlignedRight">
+                <StackPanel Width="230" Spacing="8">
+                  <TextBlock Text="CHANNELS" FontSize="11" FontWeight="SemiBold" />
+                  <CheckBox Content="Follow all channels" IsChecked="{Binding FollowAllChannels, Mode=TwoWay}" />
+                  <Border Height="1" Background="#304057" />
+                  <ScrollViewer MaxHeight="260">
+                    <ItemsControl ItemsSource="{Binding Channels}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:IntelHistoryChannel">
+                          <CheckBox Content="{Binding Name}" IsChecked="{Binding Selected, Mode=TwoWay}" FontSize="12" />
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </ScrollViewer>
+                  <TextBlock Text="Channel sources are configured in Intel Settings." TextWrapping="Wrap" FontSize="11" Foreground="#8B9DB5" />
+                </StackPanel>
+              </Flyout>
+            </Button.Flyout>
+          </Button>
+          <Button Grid.Column="2" Classes="compact" Content="×" FontSize="17" Click="OnHideClicked" ToolTip.Tip="Hide history" />
+        </Grid>
+      </Border>
+      <ListBox Grid.Row="1" x:Name="HistoryList" ItemsSource="{Binding VisibleRows}" Background="Transparent"
+               BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto">
+        <ListBox.ItemsPanel><ItemsPanelTemplate><VirtualizingStackPanel /></ItemsPanelTemplate></ListBox.ItemsPanel>
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="vm:IntelHistoryRow">
+            <Border BorderBrush="#263346" BorderThickness="0,0,0,1" Padding="6,4">
+              <StackPanel Spacing="2">
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="4">
+                  <TextBlock Text="{Binding EventIcon}" Foreground="{Binding Accent}" FontSize="10" ToolTip.Tip="{Binding EventLabel}" />
+                  <TextBlock Grid.Column="1" FontSize="10" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Report.ChannelName}">
+                    <Run Text="{Binding Report.ReporterName}" FontWeight="SemiBold" Foreground="#C9D8EC" />
+                    <Run Text=" · " Foreground="#617791" /><Run Text="{Binding Report.ChannelName}" Foreground="#7FA3CA" />
+                  </TextBlock>
+                  <TextBlock Grid.Column="2" Text="{Binding Age}" Foreground="#90A3BC" FontSize="10" ToolTip.Tip="{Binding TimestampLabel}" />
+                </Grid>
+                <SelectableTextBlock Text="{Binding Report.MessageText}" TextWrapping="Wrap" FontSize="11" LineHeight="14" Foreground="#E1E8F2" />
+                <ItemsControl ItemsSource="{Binding Metadata}" IsVisible="{Binding HasMetadata}">
+                  <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                  <ItemsControl.DataTemplates>
+                    <DataTemplate DataType="{x:Type vm:IntelHistorySystem}" x:DataType="vm:IntelHistorySystem">
+                      <Button Classes="compact" Content="{Binding Name}" FontSize="9" Foreground="#91C5FC" Background="#17283C" Margin="0,0,3,0"
+                              IsEnabled="{Binding CanNavigate}" Click="OnSystemClicked" ToolTip.Tip="Show system on the map" />
+                    </DataTemplate>
+                    <DataTemplate DataType="{x:Type vm:IntelHistoryShipToken}" x:DataType="vm:IntelHistoryShipToken">
+                      <Border Background="#192537" CornerRadius="2" Padding="3,0" Margin="0,0,3,0" ToolTip.Tip="{Binding Tooltip}">
+                        <StackPanel Orientation="Horizontal" Spacing="2" Height="18">
+                          <Image Source="{Binding Ship.ShipBitmap}" Width="15" Height="15" IsVisible="{Binding Ship.HasShipBitmap}" />
+                          <TextBlock Text="◇" Foreground="#91A7C4" VerticalAlignment="Center" IsVisible="{Binding Ship.HasNoShipBitmap}" />
+                          <TextBlock FontSize="9" Foreground="{Binding Foreground}" VerticalAlignment="Center">
+                            <Run Text="{Binding Ship.Count}" /><Run Text="× " /><Run Text="{Binding Ship.ShipName}" />
+                          </TextBlock>
+                        </StackPanel>
+                      </Border>
+                    </DataTemplate>
+                    <DataTemplate DataType="{x:Type vm:IntelOverlayHostileCard}" x:DataType="vm:IntelOverlayHostileCard">
+                      <Button Classes="compact" Click="OnPilotClicked" ToolTip.Tip="{Binding TooltipText}" Margin="0,0,3,0" Padding="1,0" Background="#192537">
+                        <Grid Width="18" Height="18">
+                          <Image Source="{Binding PortraitBitmap}" Width="18" Height="18" IsVisible="{Binding HasPortraitBitmap}" />
+                          <TextBlock Text="{Binding PortraitFallbackText}" Foreground="#91A7C4" FontSize="10" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding HasNoPortraitBitmap}" />
+                        </Grid>
+                      </Button>
+                    </DataTemplate>
+                    <DataTemplate DataType="{x:Type vm:IntelHistoryOverflowToken}" x:DataType="vm:IntelHistoryOverflowToken">
+                      <TextBlock Text="{Binding Label}" ToolTip.Tip="{Binding Tooltip}" FontSize="9" Foreground="#90A3BC" Margin="2,2" />
+                    </DataTemplate>
+                  </ItemsControl.DataTemplates>
+                </ItemsControl>
+              </StackPanel>
+            </Border>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+      <TextBlock Grid.Row="1" Text="{Binding EmptyMessage}" IsVisible="{Binding IsEmpty}" Foreground="#90A3BC"
+                 TextWrapping="Wrap" Margin="22" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="12" />
+      <Border Grid.Row="2" BorderBrush="#29394E" BorderThickness="0,1,0,0" Padding="6,1,2,1">
+        <Grid ColumnDefinitions="*,Auto,Auto">
+          <TextBlock Text="{Binding Summary}" Foreground="#7F93AE" FontSize="10" VerticalAlignment="Center" />
+          <Button Grid.Column="1" x:Name="NewReportsButton" Classes="compact" Content="↑ New reports" Click="OnNewReportsClicked" IsVisible="False" />
+          <Border Grid.Column="2" Width="18" Background="Transparent" Tag="SouthEast" Cursor="BottomRightCorner" PointerPressed="OnResizePointerPressed" ToolTip.Tip="Resize history">
+            <TextBlock Text="◢" FontSize="12" Foreground="#687F9E" VerticalAlignment="Bottom" HorizontalAlignment="Right" />
+          </Border>
+        </Grid>
+      </Border>
+    </Grid>
+  </Border>
+    <Border x:Name="ResizeNorth" Tag="North" Background="Transparent" Height="5" VerticalAlignment="Top" Margin="12,0" Cursor="TopSide" PointerPressed="OnResizePointerPressed" />
+    <Border x:Name="ResizeSouth" Tag="South" Background="Transparent" Height="5" VerticalAlignment="Bottom" Margin="12,0" Cursor="BottomSide" PointerPressed="OnResizePointerPressed" />
+    <Border x:Name="ResizeWest" Tag="West" Background="Transparent" Width="5" HorizontalAlignment="Left" Margin="0,12" Cursor="LeftSide" PointerPressed="OnResizePointerPressed" />
+    <Border x:Name="ResizeEast" Tag="East" Background="Transparent" Width="5" HorizontalAlignment="Right" Margin="0,12" Cursor="RightSide" PointerPressed="OnResizePointerPressed" />
+    <Border x:Name="ResizeNorthWest" Tag="NorthWest" Background="Transparent" Width="12" Height="12" HorizontalAlignment="Left" VerticalAlignment="Top" Cursor="TopLeftCorner" PointerPressed="OnResizePointerPressed" />
+    <Border x:Name="ResizeNorthEast" Tag="NorthEast" Background="Transparent" Width="12" Height="12" HorizontalAlignment="Right" VerticalAlignment="Top" Cursor="TopRightCorner" PointerPressed="OnResizePointerPressed" />
+    <Border x:Name="ResizeSouthWest" Tag="SouthWest" Background="Transparent" Width="12" Height="12" HorizontalAlignment="Left" VerticalAlignment="Bottom" Cursor="BottomLeftCorner" PointerPressed="OnResizePointerPressed" />
+    <Border x:Name="ResizeSouthEast" Tag="SouthEast" Background="Transparent" Width="16" Height="16" HorizontalAlignment="Right" VerticalAlignment="Bottom" Cursor="BottomRightCorner" PointerPressed="OnResizePointerPressed" />
+  </Grid>
+</Window>
