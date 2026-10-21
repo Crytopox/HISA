@@ -149,6 +149,26 @@
       <Setter Property="HorizontalContentAlignment" Value="Center" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
+    <Style Selector="Button.update-reminder">
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="MinHeight" Value="22" />
+      <Setter Property="Height" Value="22" />
+      <Setter Property="Padding" Value="8,0" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="CornerRadius" Value="3" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="Background" Value="#2D2416" />
+      <Setter Property="BorderBrush" Value="#70582D" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Foreground" Value="#EAC68A" />
+    </Style>
+    <Style Selector="Button.update-reminder:pointerover /template/ ContentPresenter#PART_ContentPresenter,
+                     Button.update-reminder:focus-visible /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#3D3020" />
+      <Setter Property="BorderBrush" Value="#C49A52" />
+      <Setter Property="Foreground" Value="#FFE8C4" />
+    </Style>
     <Style Selector="ToggleButton.activity-strip">
       <Setter Property="MinWidth" Value="0" />
       <Setter Property="MinHeight" Value="22" />
@@ -1688,9 +1708,14 @@
 
     <Grid Grid.Row="2" RowDefinitions="Auto,Auto">
     <Border Grid.Row="1" Padding="6,3" Background="#121A26" BorderBrush="#263244" BorderThickness="0,1,0,0" IsVisible="{Binding IsBottomNavigationVisible}">
-      <Grid ColumnDefinitions="*,Auto">
-        <TextBlock Grid.Column="0" Text="{Binding StatusText}" Foreground="#8A96A8" FontSize="11" VerticalAlignment="Center" IsVisible="{Binding IsDebugBuild}" />
-        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <Button x:Name="UpdateReminderButton"
+                Classes="update-reminder"
+                Margin="0,0,8,0"
+                IsVisible="False"
+                Click="OnUpdateReminderClicked" />
+        <TextBlock Grid.Column="1" Text="{Binding StatusText}" Foreground="#8A96A8" FontSize="11" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="0,0,8,0" IsVisible="{Binding IsDebugBuild}" />
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
           <ToggleButton Classes="activity-strip"
                         Content="System Marks"
                         IsChecked="{Binding IsSystemMarksOverlayOpen, Mode=TwoWay}"

@@ -82,6 +82,7 @@ public partial class MainWindow : Window
     {
         _killmailAppService = new KillmailAppService();
         InitializeComponent();
+        UpdatePersistentReminder(null);
         AddHandler(InputElement.PointerPressedEvent, OnWindowPointerPressed, RoutingStrategies.Tunnel, true);
         SizeChanged += (_, _) => UpdateTopToolbarLayout();
 
@@ -369,6 +370,7 @@ public partial class MainWindow : Window
 
         _startupUpdateReminderShown = true;
         var update = await _updateService.CheckForUpdatesAsync();
+        UpdatePersistentReminder(update);
         if (update is not { IsUpdateAvailable: true } ||
             !IsVisible ||
             !await _updateService.ShouldShowStartupReminderAsync(update))
@@ -379,6 +381,32 @@ public partial class MainWindow : Window
         var reminder = new UpdateAvailableWindow(update);
         reminder.Show(this);
     }
+
+    private void UpdatePersistentReminder(GitHubUpdateResult? update)
+    {
+#if DEBUG
+        if (update is not { IsUpdateAvailable: true })
+        {
+            UpdateReminderButton.Content = "Update available · preview";
+            ToolTip.SetTip(UpdateReminderButton,
+                $"Installed: v{GitHubUpdateService.GetCurrentVersionText()}    Latest: preview (Debug only)\nOpen GitHub Releases");
+            UpdateReminderButton.IsVisible = true;
+            return;
+        }
+#endif
+        UpdateReminderButton.IsVisible = update is { IsUpdateAvailable: true };
+        if (update is not { IsUpdateAvailable: true })
+        {
+            return;
+        }
+
+        UpdateReminderButton.Content = $"Update available · {update.LatestTag}";
+        ToolTip.SetTip(UpdateReminderButton,
+            $"Installed: v{update.CurrentVersion.ToString(3)}    Latest: {update.LatestTag}\nOpen GitHub Releases");
+    }
+
+    private void OnUpdateReminderClicked(object? sender, RoutedEventArgs e)
+        => ExternalUrlLauncher.Open(GitHubUpdateService.ReleasesUrl);
 
     private void OnOpenCharactersClicked(object? sender, RoutedEventArgs e)
     {
