@@ -50,6 +50,11 @@ HISA is actively used and developed. Bug reports, weird edge cases, and suggesti
 - Local character location tracking
 - Character names, counts, and markers displayed on the map
 
+### Fleet Boost Tracker
+- Click **Start tracking** to count new pilot declarations across Shield, Armour, Info, and Skirmish; **Reset tracking** starts a fresh session for that channel.
+- Each pilot's latest charge post replaces their previous charges. Mindlink declarations (`ML`, `+ML`, `mindlink`) remain attached to that pilot until cleared, removed, or reset.
+- View reporting pilots by clicking a charge; remove a pilot from all charge counts when needed.
+
 ### Live Data Integrations
 - Live Thera / Turnur wormhole data
 - Live incursion and Metaliminal storm data

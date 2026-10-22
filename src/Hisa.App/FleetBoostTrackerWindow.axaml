@@ -1,0 +1,82 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:Hisa.App" x:Class="Hisa.App.FleetBoostTrackerWindow"
+        x:DataType="vm:FleetBoostTrackerViewModel" Title="Fleet Boost Tracker"
+        Width="720" Height="240" MinWidth="680" MinHeight="240" Background="#101722"
+        SystemDecorations="None" CanResize="True" ShowInTaskbar="True" Topmost="{Binding Pinned}">
+  <Window.Styles>
+    <Style Selector="Button.compact"><Setter Property="Padding" Value="8,4"/><Setter Property="MinHeight" Value="26"/><Setter Property="FontSize" Value="11"/><Setter Property="Cursor" Value="Hand"/></Style>
+    <Style Selector="Button.charge"><Setter Property="Padding" Value="6,3"/><Setter Property="Margin" Value="0,0,0,3"/><Setter Property="HorizontalAlignment" Value="Stretch"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Background" Value="#162131"/><Setter Property="BorderBrush" Value="#29394E"/><Setter Property="CornerRadius" Value="5"/><Setter Property="Cursor" Value="Hand"/></Style>
+  </Window.Styles>
+  <Border BorderBrush="#304057" BorderThickness="1" CornerRadius="7">
+    <Grid RowDefinitions="Auto,Auto,*,Auto,Auto">
+      <Border x:Name="DragHandle" Background="#172232" Padding="10,5,5,5" PointerPressed="OnDrag">
+        <Grid ColumnDefinitions="*,Auto,Auto,Auto">
+          <TextBlock Text="FLEET BOOST TRACKER" FontSize="11" FontWeight="SemiBold" Foreground="#E1EBF7" VerticalAlignment="Center" IsHitTestVisible="False"/>
+          <ToggleButton Grid.Column="1" Content="Always above" IsChecked="{Binding Pinned, Mode=TwoWay}" ToolTip.Tip="Keep above other windows" FontSize="11" Padding="8,2" MinHeight="23"/>
+          <Button Grid.Column="2" x:Name="MinimizeButton" Classes="compact" Content="−" FontSize="15" Padding="8,0" MinHeight="22" Height="22" Background="Transparent" Click="OnMinimize" ToolTip.Tip="Minimize to taskbar"/>
+          <Button Grid.Column="3" Classes="compact" Content="×" FontSize="17" Padding="8,0" MinHeight="22" Height="22" Background="Transparent" Click="OnHide" ToolTip.Tip="Hide tracker"/>
+        </Grid>
+      </Border>
+      <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto" Margin="8,4,8,4" ColumnSpacing="6">
+        <ComboBox x:Name="ChannelSelector" ItemsSource="{Binding Channels}" SelectedItem="{Binding SelectedChannel, Mode=TwoWay}" PlaceholderText="Select fleet channel" FontSize="12" MinHeight="28" HorizontalAlignment="Stretch"/>
+        <Button Grid.Column="1" x:Name="StartButton" Classes="compact" Content="{Binding ActionLabel}" IsEnabled="{Binding HasChannel}" Click="OnStart"/>
+        <Button Grid.Column="2" Classes="compact" Content="Settings" Click="OnSettings"/>
+      </Grid>
+      <Grid Grid.Row="2" Margin="8,0,4,2">
+        <ItemsControl x:Name="BoostColumns" ItemsSource="{Binding Columns}">
+          <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="4"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:FleetBoostColumn">
+              <Grid RowDefinitions="Auto,*" Margin="0,0,4,0">
+                <TextBlock Text="{Binding Name}" Foreground="{Binding Accent}" FontWeight="SemiBold" FontSize="12" Margin="3,2,0,4"/>
+                <ItemsControl Grid.Row="1" ItemsSource="{Binding Rows}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:FleetBoostChargeRow">
+                      <Button Classes="charge" ToolTip.Tip="{Binding Charge.Name}" Opacity="{Binding Emphasis}">
+                        <Grid ColumnDefinitions="20,*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="4" RowSpacing="0">
+                          <Image Grid.RowSpan="2" Source="{Binding Icon}" Width="20" Height="20"/>
+                          <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="11" Foreground="#D6E3F3" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                          <TextBlock Grid.Column="2" Grid.RowSpan="2" Text="{Binding Count}" FontSize="18" FontWeight="SemiBold" Foreground="#ECF4FF" VerticalAlignment="Center"/>
+                          <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding MindlinkCount}" FontSize="10" Foreground="#88BFA9"/>
+                        </Grid>
+                        <Button.Flyout>
+                          <Flyout Placement="Bottom">
+                            <StackPanel Width="300" Spacing="8">
+                              <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
+                              <TextBlock Text="No pilots have reported this charge." IsVisible="{Binding IsEmpty}" FontSize="12" Foreground="#8B9DB5"/>
+                              <ScrollViewer MaxHeight="250">
+                                <ItemsControl ItemsSource="{Binding Pilots}">
+                                  <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:FleetBoostPilotRow">
+                                      <Grid ColumnDefinitions="*,Auto,Auto" RowDefinitions="Auto,Auto" Margin="0,0,0,7" ColumnSpacing="8">
+                                        <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" FontSize="12"/>
+                                        <TextBlock Grid.Row="1" Text="{Binding TimeLabel}" FontSize="10" Foreground="#8B9DB5"/>
+                                        <TextBlock Grid.Column="1" Grid.RowSpan="2" Text="{Binding MindlinkLabel}" VerticalAlignment="Center" Foreground="#88BFA9" FontSize="11"/>
+                                        <Button Grid.Column="2" Grid.RowSpan="2" Classes="compact" Content="Remove" Tag="{Binding Name}" Click="OnRemove" ToolTip.Tip="Remove pilot from all boosts in this channel"/>
+                                      </Grid>
+                                    </DataTemplate>
+                                  </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                              </ScrollViewer>
+                            </StackPanel>
+                          </Flyout>
+                        </Button.Flyout>
+                      </Button>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </Grid>
+      <TextBlock Grid.Row="3" Text="{Binding Error}" IsVisible="{Binding HasError}" Foreground="#F2A3A3" FontSize="11" TextWrapping="Wrap" Margin="10,0,10,5"/>
+      <Border Grid.Row="4" BorderBrush="#29394E" BorderThickness="0,1,0,0" Padding="10,5,3,4">
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock x:Name="StatusFooter" Text="{Binding FooterMessage}" ToolTip.Tip="{Binding FooterMessage}" Foreground="#8298B3" FontSize="10" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+          <Border Grid.Column="1" Width="17" Height="14" Background="Transparent" PointerPressed="OnResize" Cursor="BottomRightCorner"><TextBlock Text="◢" Foreground="#687F9E" FontSize="12"/></Border>
+        </Grid>
+      </Border>
+    </Grid>
+  </Border>
+</Window>

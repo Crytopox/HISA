@@ -535,14 +535,7 @@ public sealed partial class IntelChatLogFeedHostedService : BackgroundService, I
 
     private static bool TryExtractChannelNameFromFileName(string fileName, out string channelName)
     {
-        channelName = string.Empty;
-        var match = IntelFileNameRegex.Match(fileName);
-        if (!match.Success)
-        {
-            return false;
-        }
-
-        channelName = match.Groups["channel"].Value;
+        channelName = Hisa.Logs.ChatLogs.ChatLogFiles.ChannelFromPath(fileName) ?? string.Empty;
         return channelName.Length > 0;
     }
 

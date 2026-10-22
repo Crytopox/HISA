@@ -76,6 +76,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IntelChatLogFeedHostedService>();
         services.AddSingleton<IIntelFeed>(sp => sp.GetRequiredService<IntelChatLogFeedHostedService>());
         services.AddHostedService(sp => sp.GetRequiredService<IntelChatLogFeedHostedService>());
+        services.AddSingleton<FleetBoostTrackerService>();
+        services.AddSingleton<IFleetBoostTracker>(sp => sp.GetRequiredService<FleetBoostTrackerService>());
+        services.AddHostedService(sp => sp.GetRequiredService<FleetBoostTrackerService>());
         services.AddSingleton<MiningSessionLogFeedHostedService>();
         services.AddSingleton<IMiningSessionFeed>(sp => sp.GetRequiredService<MiningSessionLogFeedHostedService>());
         services.AddHostedService(sp => sp.GetRequiredService<MiningSessionLogFeedHostedService>());

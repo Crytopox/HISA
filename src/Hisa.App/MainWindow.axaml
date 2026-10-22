@@ -331,6 +331,7 @@
                   <MenuItem Header="Mining Stats" Click="OnOpenMiningStatsWindowClicked" />
                   <MenuItem Header="Mining Sites Tracker" Click="OnOpenMiningSitesClicked" />
                   <MenuItem Header="Intel History" Click="OnOpenIntelHistoryClicked" />
+                  <MenuItem Header="Fleet Boost Tracker" Click="OnOpenFleetBoostTrackerClicked" />
                 </MenuFlyout>
               </Button.Flyout>
             </Button>
@@ -342,6 +343,7 @@
                   <MenuItem Header="Preferences" Click="OnOpenPreferencesClicked" />
                   <MenuItem Header="Hostile Colors" Click="OnOpenHostileColorsSettingsClicked" />
                   <MenuItem Header="Intel Settings" Click="OnOpenIntelSettingsClicked" />
+                  <MenuItem Header="Boost Tracker" Click="OnOpenFleetBoostSettingsClicked" />
                   <MenuItem Header="Alerts Settings" Click="OnOpenAlertsSettingsClicked" />
                   <MenuItem Header="Alert Popup Settings" Click="OnOpenAlertPopupSettingsClicked" />
                   <MenuItem Header="Characters" Click="OnOpenCharactersClicked" />
@@ -371,12 +373,14 @@
                   <MenuItem Header="Mining Stats" Click="OnOpenMiningStatsWindowClicked" />
                   <MenuItem Header="Mining Sites Tracker" Click="OnOpenMiningSitesClicked" />
                   <MenuItem Header="Intel History" Click="OnOpenIntelHistoryClicked" />
+                  <MenuItem Header="Fleet Boost Tracker" Click="OnOpenFleetBoostTrackerClicked" />
                 </MenuItem>
                 <MenuItem Header="Settings">
                   <MenuItem Header="Map Editor" Click="OnOpenMapEditorClicked" />
                   <MenuItem Header="Preferences" Click="OnOpenPreferencesClicked" />
                   <MenuItem Header="Hostile Colors" Click="OnOpenHostileColorsSettingsClicked" />
                   <MenuItem Header="Intel Settings" Click="OnOpenIntelSettingsClicked" />
+                  <MenuItem Header="Boost Tracker" Click="OnOpenFleetBoostSettingsClicked" />
                   <MenuItem Header="Alerts Settings" Click="OnOpenAlertsSettingsClicked" />
                   <MenuItem Header="Alert Popup Settings" Click="OnOpenAlertPopupSettingsClicked" />
                   <MenuItem Header="Characters" Click="OnOpenCharactersClicked" />
