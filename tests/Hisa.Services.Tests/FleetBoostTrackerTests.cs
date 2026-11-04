@@ -33,6 +33,33 @@ public class FleetBoostTrackerTests
     }
 
     [Fact]
+    public async Task AppendPreservesPartialLineBoundaryWhenFileTimestampsChange()
+    {
+        using var f = new Fixture();
+        var path = f.PathFor("Fleet");
+        var now = DateTime.UtcNow;
+        var baselineWriteTime = now.AddHours(-2);
+        // Keep the partial report eligible for the session even if setup crosses a second.
+        var partial = Line(now.AddMinutes(1), "Partial", "Shield Extension Charge").TrimEnd('\n');
+        await File.WriteAllTextAsync(path, "Channel Name: Fleet\n" + partial);
+        File.SetLastWriteTimeUtc(path, baselineWriteTime);
+        var baselineCreationTime = File.GetCreationTimeUtc(path);
+        var usesWriteTimeAsCreationTime = baselineCreationTime == File.GetLastWriteTimeUtc(path);
+        await f.Start();
+
+        var start = f.Service.GetSnapshot("Fleet").StartedUtc!.Value;
+        await File.AppendAllTextAsync(path, "\n" + Line(start, "Fresh", "Rapid Deployment Charge"));
+        File.SetLastWriteTimeUtc(path, now.AddHours(-1));
+        if (OperatingSystem.IsWindows())
+            File.SetCreationTimeUtc(path, baselineCreationTime.AddHours(-1));
+        if (OperatingSystem.IsWindows() || usesWriteTimeAsCreationTime)
+            Assert.NotEqual(baselineCreationTime, File.GetCreationTimeUtc(path));
+
+        await f.Service.ScanOnceAsync();
+        Assert.Equal("Fresh", Assert.Single(f.Service.GetSnapshot("Fleet").Pilots).Name);
+    }
+
+    [Fact]
     public async Task IncompleteWritesWaitForNewlineAndDuplicateClientsDoNotInflateCounts()
     {
         using var f = new Fixture();

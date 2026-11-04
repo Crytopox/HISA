@@ -23,7 +23,7 @@ public sealed class FleetBoostTrackerService(ISettingsService settings, ILogger<
         public string Status = "Not started";
         public readonly Dictionary<string, Cursor> Files = new(StringComparer.OrdinalIgnoreCase);
     }
-    private sealed record Cursor(long Offset, DateTime CreatedUtc, byte[] Tail, bool SkipPartial, DateTime WrittenUtc);
+    private sealed record Cursor(long Offset, byte[] Tail, bool SkipPartial, DateTime WrittenUtc);
     public event EventHandler? Changed;
     public IReadOnlyList<string> Channels { get { lock (_gate) return _channels.ToArray(); } }
     public FleetBoostSnapshot GetSnapshot(string channel)
@@ -77,7 +77,7 @@ public sealed class FleetBoostTrackerService(ISettingsService settings, ILogger<
                         var length = stream.Length;
                         var tail = ReadTail(stream, length);
                         var partial = length > 0 && !EndsInNewline(stream, length);
-                        state.Files[path] = new(length, File.GetCreationTimeUtc(path), tail, partial, File.GetLastWriteTimeUtc(path));
+                        state.Files[path] = new(length, tail, partial, File.GetLastWriteTimeUtc(path));
                         // Remember old copies in the boundary second, without registering a pilot.
                         var (lines, _) = await ChatLogFiles.ReadCompleteChannelLinesAsync(stream, Math.Max(0, length - 512 * 1024), cancellationToken, length);
                         lock (_gate)
@@ -88,7 +88,7 @@ public sealed class FleetBoostTrackerService(ISettingsService settings, ILogger<
                     {
                         logger.LogDebug(ex, "Unable to baseline boost log {Path}", path);
                         // A file we could not baseline must never replay its boundary second.
-                        state.Files[path] = new(-1, default, [], false, default);
+                        state.Files[path] = new(-1, [], false, default);
                     }
                 }
             }
@@ -144,21 +144,22 @@ public sealed class FleetBoostTrackerService(ISettingsService settings, ILogger<
                     try
                     {
                         var info = new FileInfo(path);
-                        var created = info.CreationTimeUtc;
                         state.Files.TryGetValue(path, out var cursor);
-                        if (cursor is not null && cursor.Offset == info.Length && cursor.CreatedUtc == created && cursor.WrittenUtc == info.LastWriteTimeUtc)
+                        if (cursor is not null && cursor.Offset == info.Length && cursor.WrittenUtc == info.LastWriteTimeUtc)
                         { sources++; continue; }
                         using var stream = Open(path);
                         if (cursor?.Offset == -1)
                         {
                             // Retry a failed baseline conservatively: only future complete lines.
-                            state.Files[path] = new(stream.Length, created, ReadTail(stream, stream.Length), !EndsInNewline(stream, stream.Length), info.LastWriteTimeUtc);
+                            var length = stream.Length;
+                            state.Files[path] = new(length, ReadTail(stream, length), !EndsInNewline(stream, length), info.LastWriteTimeUtc);
                             sources++;
                             continue;
                         }
                         var offset = cursor?.Offset ?? 0;
                         var skip = cursor?.SkipPartial ?? false;
-                        if (cursor is not null && (created != cursor.CreatedUtc || stream.Length < offset ||
+                        // Unix filesystems can report a creation time that changes on append.
+                        if (cursor is not null && (stream.Length < offset ||
                             !ReadTail(stream, offset).SequenceEqual(cursor.Tail)))
                         {
                             offset = 0;
@@ -170,7 +171,7 @@ public sealed class FleetBoostTrackerService(ISettingsService settings, ILogger<
                             if (skip) { skip = false; continue; }
                             if (FleetBoostMessageParser.Parse(line) is { } message) reports.Add(message);
                         }
-                        state.Files[path] = new(next, created, ReadTail(stream, next), skip, info.LastWriteTimeUtc);
+                        state.Files[path] = new(next, ReadTail(stream, next), skip, info.LastWriteTimeUtc);
                         sources++;
                     }
                     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
