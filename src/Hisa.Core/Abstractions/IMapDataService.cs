@@ -5,7 +5,7 @@ namespace Hisa.Core.Abstractions;
 public interface IMapDataService
 {
     Task<IReadOnlyList<RegionOption>> GetRegionsAsync(CancellationToken cancellationToken = default);
-    Task<MapGraph> GetUniverseGraphAsync(MapCoordinateMode coordinateMode, CancellationToken cancellationToken = default);
+    Task<MapGraph> GetUniverseGraphAsync(MapCoordinateMode coordinateMode, CancellationToken cancellationToken = default, bool includeUuaF4 = false);
     Task<MapGraph> GetUniverseRegionsGraphAsync(MapCoordinateMode coordinateMode, CancellationToken cancellationToken = default);
     Task<MapGraph> GetRegionGraphAsync(int regionId, MapCoordinateMode coordinateMode, CancellationToken cancellationToken = default);
     Task<IReadOnlyDictionary<long, int>> GetSystemNeighborCountsAsync(IReadOnlyCollection<long> systemIds, CancellationToken cancellationToken = default);

@@ -118,9 +118,13 @@ public sealed class MapDataService : IMapDataService
         return result.OrderBy(x => x.RegionName, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
-    public async Task<MapGraph> GetUniverseGraphAsync(MapCoordinateMode coordinateMode, CancellationToken cancellationToken = default)
+    public async Task<MapGraph> GetUniverseGraphAsync(MapCoordinateMode coordinateMode, CancellationToken cancellationToken = default, bool includeUuaF4 = false)
     {
         var systems = await QuerySystemsAsync(null, coordinateMode, cancellationToken);
+        if (!includeUuaF4)
+        {
+            systems.RemoveAll(system => system.RegionId == RegionIds.UuaF4);
+        }
         var links = await QuerySystemLinksAsync(null, cancellationToken);
         return BuildNormalizedGraph(systems, links, preserveAspect: true,
             applyFlattenedUniverseDeoverlap: coordinateMode == MapCoordinateMode.ThreeDProjectedXZ);
@@ -176,6 +180,7 @@ public sealed class MapDataService : IMapDataService
             FROM mapRegions r
             INNER JOIN mapSolarSystems s ON s.regionID = r.regionID
             WHERE {xColumn} IS NOT NULL AND {yColumn} IS NOT NULL
+              AND r.regionID <> {RegionIds.UuaF4}
               AND (r.regionID IN (
                     SELECT fromRegionID FROM mapRegionJumps
                     UNION

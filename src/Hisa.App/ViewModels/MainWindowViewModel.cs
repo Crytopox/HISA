@@ -967,6 +967,10 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
                 if (!_isInitializing)
                 {
                     _ = _settingsService.SetAsync(ViewModeKey, value);
+                    if (SearchSuggestions.Any(IsSearchCandidateHiddenInOverview))
+                    {
+                        ClearSearchSuggestions();
+                    }
                     _ = UpdateSearchSuggestionsAsync(MapSearchText);
                     _ = ReloadGraphAsync();
                 }
@@ -6030,7 +6034,7 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
             pick = PickBestCandidateForMode(candidates);
         }
 
-        if (pick is null)
+        if (pick is null || IsSearchCandidateHiddenInOverview(pick))
         {
             return null;
         }
@@ -7214,7 +7218,7 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
             }
         }
 
-        var universeGraph = await _mapDataService.GetUniverseGraphAsync(MapCoordinateMode.SdePlanarXY, cancellationToken);
+        var universeGraph = await _mapDataService.GetUniverseGraphAsync(MapCoordinateMode.SdePlanarXY, cancellationToken, includeUuaF4: true);
         var systemIds = universeGraph.Nodes
             .Where(n => n.Id > 0)
             .Select(n => n.Id)
@@ -9094,16 +9098,12 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MissingConnectionNodeIdsForView)));
     }
 
-    private IReadOnlyList<MapSearchCandidate> FilterCandidatesForCurrentMode(IReadOnlyList<MapSearchCandidate> candidates)
-    {
-        return SelectedViewMode switch
-        {
-            MapViewMode.UniverseRegions => candidates.Where(c => c.Kind == MapSearchKind.Region).ToList(),
-            MapViewMode.Universe => candidates.ToList(),
-            MapViewMode.Region => candidates.ToList(),
-            _ => candidates.ToList()
-        };
-    }
+    private bool IsSearchCandidateHiddenInOverview(MapSearchCandidate candidate) =>
+        candidate.RegionId == RegionIds.UuaF4 && SelectedViewMode is MapViewMode.Universe or MapViewMode.UniverseRegions;
+
+    private IReadOnlyList<MapSearchCandidate> FilterCandidatesForCurrentMode(IReadOnlyList<MapSearchCandidate> candidates) =>
+        candidates.Where(c => !IsSearchCandidateHiddenInOverview(c) &&
+            (SelectedViewMode != MapViewMode.UniverseRegions || c.Kind == MapSearchKind.Region)).ToList();
 
     private MapSearchCandidate? PickBestCandidateForMode(IReadOnlyList<MapSearchCandidate> candidates)
     {

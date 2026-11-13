@@ -83,6 +83,74 @@ public sealed class RegionSelectorTests
         }
     }
 
+    [AvaloniaFact]
+    public async Task UuaF4IsHiddenInOverviewsAndCanStillOpenInRegionView()
+    {
+        await using var database = await OpenDatabaseAsync();
+        await using var services = CreateServices(database.ConnectionString);
+        await new SqliteDatabaseInitializer(database.ConnectionString).InitializeAsync();
+        var mapData = services.GetRequiredService<IMapDataService>();
+
+        foreach (var coordinateMode in Enum.GetValues<MapCoordinateMode>())
+        {
+            var universe = await mapData.GetUniverseGraphAsync(coordinateMode);
+            Assert.NotEmpty(universe.Nodes);
+            Assert.DoesNotContain(universe.Nodes, node => node.RegionId == RegionIds.UuaF4);
+
+            var regions = await mapData.GetUniverseRegionsGraphAsync(coordinateMode);
+            Assert.DoesNotContain(regions.Nodes, node => node.Id == RegionIds.UuaF4);
+            Assert.Contains(regions.Nodes, node => node.Id == RegionIds.A821A);
+            Assert.Contains(regions.Nodes, node => node.Id == RegionIds.J7HzF);
+        }
+
+        var vm = services.GetRequiredService<MainWindowViewModel>();
+        try
+        {
+            await vm.InitialLoadTask;
+            foreach (var viewMode in new[] { MapViewMode.Universe, MapViewMode.UniverseRegions })
+            {
+                vm.SelectedViewMode = viewMode;
+                foreach (var term in new[] { "UUA-F4", "Polaris", "9RW5-Z" })
+                {
+                    var suggestionsUpdated = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    void OnPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs args)
+                    {
+                        if (args.PropertyName == nameof(vm.HasSearchSuggestions))
+                        {
+                            suggestionsUpdated.TrySetResult();
+                        }
+                    }
+
+                    vm.PropertyChanged += OnPropertyChanged;
+                    try
+                    {
+                        vm.MapSearchText = term;
+                        await suggestionsUpdated.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                        Assert.DoesNotContain(vm.SearchSuggestions, candidate => candidate.RegionId == RegionIds.UuaF4);
+                    }
+                    finally
+                    {
+                        vm.PropertyChanged -= OnPropertyChanged;
+                    }
+
+                    Assert.Null(await vm.ExecuteSearchAsync());
+                    var candidate = Assert.Single(await mapData.SearchAsync(term), candidate => candidate.RegionId == RegionIds.UuaF4);
+                    Assert.Null(await vm.ExecuteSearchAsync(candidate));
+                }
+            }
+
+            vm.SelectedViewMode = MapViewMode.Region;
+            vm.MapSearchText = "UUA-F4";
+            Assert.NotNull(await vm.ExecuteSearchAsync());
+            Assert.Equal(RegionIds.UuaF4, vm.SelectedRegion?.RegionId);
+            Assert.Contains(vm.CurrentGraph!.Nodes, node => node.Name == "Polaris");
+        }
+        finally
+        {
+            vm.BeginApplicationShutdown();
+        }
+    }
+
     [Fact]
     public async Task StartupAddsMissingLayoutsWithoutReplacingExistingOrCustomRegions()
     {
