@@ -464,7 +464,7 @@ public partial class MapEditorWindow : Window
 
         _snapResidualDx += dx;
         _snapResidualDy += dy;
-        var snapStep = vm.GetSnapGridStep();
+        var snapStep = vm.EditorGridStep;
         var applyDx = Math.Truncate(_snapResidualDx / snapStep) * snapStep;
         var applyDy = Math.Truncate(_snapResidualDy / snapStep) * snapStep;
         if (Math.Abs(applyDx) < 1e-12 && Math.Abs(applyDy) < 1e-12)
@@ -535,6 +535,14 @@ public partial class MapEditorWindow : Window
     private void OnFitViewClicked(object? sender, RoutedEventArgs e)
     {
         EditorMapControl.FitToView();
+    }
+
+    private void OnAlignToGridClicked(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MapEditorViewModel vm)
+        {
+            vm.AlignSelectedNodesToGrid();
+        }
     }
 
     private void OnEditorMapPointerWheelChanged(object? sender, PointerWheelEventArgs e)

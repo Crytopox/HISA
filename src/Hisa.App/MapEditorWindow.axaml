@@ -102,6 +102,7 @@
                 <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="6" RowSpacing="6">
                   <Button Classes="editor-compact" Grid.Row="0" Grid.Column="0" Content="Fit View" Click="OnFitViewClicked" />
                   <Button Classes="editor-compact" Grid.Row="0" Grid.Column="1" Content="Save Region" Click="OnSaveCurrentRegionClicked" IsEnabled="{Binding IsSelectedLayoutRegionEditable}" />
+                  <Button Classes="editor-compact" Grid.Row="1" Grid.ColumnSpan="2" Content="Align to Grid" Click="OnAlignToGridClicked" IsEnabled="{Binding CanAlignToGrid}" />
                 </Grid>
               </StackPanel>
             </Border>
@@ -120,7 +121,7 @@
                               StretchToWindow="False"
                               ShowEditorGrid="True"
                               ShowEditorRegionLabel="{Binding ShowEditorRegionLabel}"
-                              EditorGridStep="0.01"
+                              EditorGridStep="{Binding EditorGridStep}"
                               MinZoom="0.10"
                               MaxZoomOverride="12.0"
                               AllowFitBeyondMinZoom="True"

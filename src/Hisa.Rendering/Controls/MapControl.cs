@@ -2419,11 +2419,9 @@ public sealed partial class MapControl : Control
         }
 
         var plot = GetPlotMetrics();
-        var viewCenterX = Bounds.Width / 2.0;
-        var viewCenterY = Bounds.Height / 2.0;
         if (ShowEditorGrid)
         {
-            DrawEditorGrid(context, plot, viewCenterX, viewCenterY);
+            DrawEditorGrid(context, plot);
         }
 
         var renderVoronoiBackground = NodeBackgroundColorMode != MapNodeColorMode.None && _zoom >= GetVoronoiZoomThreshold();
@@ -4202,7 +4200,7 @@ public sealed partial class MapControl : Control
             offsetX, offsetY);
     }
 
-    private void DrawEditorGrid(DrawingContext context, PlotMetrics plot, double viewCenterX, double viewCenterY)
+    private void DrawEditorGrid(DrawingContext context, PlotMetrics plot)
     {
         var step = Math.Max(0.0001, EditorGridStep);
         if (!TryScreenToWorld(new Point(0, 0), out var worldTopLeft) ||
@@ -4215,14 +4213,9 @@ public sealed partial class MapControl : Control
         var maxX = Math.Max(worldTopLeft.X, worldBottomRight.X);
         var minY = Math.Min(worldTopLeft.Y, worldBottomRight.Y);
         var maxY = Math.Max(worldTopLeft.Y, worldBottomRight.Y);
-        const int maxLinesPerAxis = 160;
-        var spanX = Math.Max(step, maxX - minX);
-        var spanY = Math.Max(step, maxY - minY);
-        var needed = Math.Max(spanX / step, spanY / step);
-        if (needed > maxLinesPerAxis)
-        {
-            step *= Math.Ceiling(needed / maxLinesPerAxis);
-        }
+        const double minLineSpacing = 4.0;
+        var lineSpacing = step * Math.Min(plot.Width, plot.Height) * _zoom;
+        step *= Math.Max(1, Math.Ceiling(minLineSpacing / lineSpacing));
 
         var worldScale = Math.Max(1e-9, ((plot.Width + plot.Height) * 0.5) * _zoom);
         var lineWidth = 1.0 / worldScale;

@@ -148,6 +148,49 @@ public sealed class UniverseTileRenderingTests
         Assert.Equal(new PixelSize(1040, 1040), MapControl.GetUniverseTilePixelSize(2));
     }
 
+    [AvaloniaFact]
+    public void EditorGridDrawsSnapIntersectionsAcrossWideViewports()
+    {
+        var map = new MapControl
+        {
+            Graph = CreateGraph(0.51),
+            ViewMode = MapViewMode.Region,
+            ShowEditorGrid = true,
+            StretchToWindow = false,
+            EditorGridStep = 0.01
+        };
+        var node = map.Graph.Nodes[0];
+        var world = new Point(node.X, node.Y);
+
+        Arrange(map, 1600, 480);
+        AssertSnapIntersection(1600, 480);
+        map.ZoomBy(2);
+        map.PanBy(37, -23);
+        AssertSnapIntersection(1600, 480);
+        Arrange(map, 1280, 520);
+        AssertSnapIntersection(1280, 520);
+
+        void AssertSnapIntersection(int width, int height)
+        {
+            using var rendered = RenderBitmap(map, width, height, 1);
+            using var pixels = Decode(rendered);
+            var center = map.WorldToScreen(world);
+            Assert.True(HasNodePixel(pixels, center));
+
+            var step = map.WorldToScreen(world + new Point(map.EditorGridStep, map.EditorGridStep)) - center;
+            var x = (int)Math.Floor(center.X);
+            var y = (int)Math.Floor(center.Y);
+            var betweenX = (int)Math.Floor(center.X + step.X * 0.5);
+            var betweenY = (int)Math.Floor(center.Y + step.Y * 0.5);
+            var sampleX = (int)Math.Floor(center.X - step.X * 3.5);
+            var sampleY = (int)Math.Floor(center.Y - step.Y * 3.5);
+            Assert.True(Math.Max(pixels.GetPixel(x - 1, sampleY).Blue, pixels.GetPixel(x, sampleY).Blue) >
+                        pixels.GetPixel(betweenX, sampleY).Blue);
+            Assert.True(Math.Max(pixels.GetPixel(sampleX, y - 1).Blue, pixels.GetPixel(sampleX, y).Blue) >
+                        pixels.GetPixel(sampleX, betweenY).Blue);
+        }
+    }
+
     [Fact]
     public void EvictionKeepsVisibleTilesAndRemovesOldestOffscreenFirst()
     {

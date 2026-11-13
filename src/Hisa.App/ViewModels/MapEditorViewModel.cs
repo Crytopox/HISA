@@ -123,6 +123,8 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
 
     public bool IsSelectedLayoutRegionEditable => SelectedLayoutRegion is not null && !SelectedLayoutRegion.IsReadOnly;
     public bool IsSelectedLayoutRegionReadOnly => SelectedLayoutRegion is not null && SelectedLayoutRegion.IsReadOnly;
+    public bool CanAlignToGrid => IsSelectedLayoutRegionEditable && _selectedNodeIds.Count > 0;
+    public double EditorGridStep => SnapGridStep;
 
     public async Task ReloadAsync(CancellationToken cancellationToken = default)
     {
@@ -367,31 +369,55 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
             return false;
         }
 
-        var changed = false;
+        return MoveSelectedNodes(dx, dy, snapToGrid: !freeMove) > 0;
+    }
+
+    public void AlignSelectedNodesToGrid()
+    {
+        if (!CanAlignToGrid)
+        {
+            return;
+        }
+
+        var moved = MoveSelectedNodes(0, 0, snapToGrid: true);
+        StatusText = moved switch
+        {
+            0 => "Selected nodes are already aligned.",
+            1 => "Aligned 1 node to the grid.",
+            _ => $"Aligned {moved} nodes to the grid."
+        };
+    }
+
+    private int MoveSelectedNodes(double dx, double dy, bool snapToGrid)
+    {
+        var moved = 0;
         foreach (var selectedNodeId in _selectedNodeIds)
         {
             if (_editableNodesById.TryGetValue(selectedNodeId, out var node))
             {
-                var oldX = node.X;
-                var oldY = node.Y;
-                node.X += dx;
-                node.Y += dy;
-                if (!freeMove)
+                var x = node.X + dx;
+                var y = node.Y + dy;
+                if (snapToGrid)
                 {
-                    node.X = Math.Round(node.X / SnapGridStep) * SnapGridStep;
-                    node.Y = Math.Round(node.Y / SnapGridStep) * SnapGridStep;
+                    x = Math.Round(x / EditorGridStep) * EditorGridStep;
+                    y = Math.Round(y / EditorGridStep) * EditorGridStep;
                 }
 
-                changed |= Math.Abs(node.X - oldX) > 1e-12 || Math.Abs(node.Y - oldY) > 1e-12;
+                if (Math.Abs(x - node.X) > 1e-12 || Math.Abs(y - node.Y) > 1e-12)
+                {
+                    node.X = x;
+                    node.Y = y;
+                    moved++;
+                }
             }
         }
 
-        if (changed)
+        if (moved > 0)
         {
             RefreshCurrentGraphFromEditableNodes(keepSelection: true);
         }
 
-        return changed;
+        return moved;
     }
 
     public async Task DeleteSelectedNodeAsync()
@@ -520,17 +546,24 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
 
     private async Task LoadSelectedLayoutRegionAsync()
     {
+        var region = SelectedLayoutRegion;
         _editableNodesById.Clear();
+        SetSelectedNodes([]);
 
-        if (SelectedLayoutRegion is null)
+        if (region is null)
         {
             CurrentGraph = new MapGraph { Nodes = [], Links = [] };
             StatusText = "Select a layout region.";
             return;
         }
 
-        var graph = await _mapLayoutEditorService.GetLayoutRegionGraphAsync(SelectedLayoutRegion.Id)
+        var graph = await _mapLayoutEditorService.GetLayoutRegionGraphAsync(region.Id)
             ?? new MapGraph { Nodes = [], Links = [] };
+        if (!ReferenceEquals(region, SelectedLayoutRegion))
+        {
+            return;
+        }
+
         foreach (var node in graph.Nodes)
         {
             _editableNodesById[node.Id] = new EditableNode
@@ -547,12 +580,9 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
             };
         }
 
-        SelectedNodeId = null;
-        _selectedNodeIds.Clear();
-        RefreshSelectedNodeIdsForView();
         CurrentGraph = graph;
         await RefreshEditorDiagnosticsAsync();
-        StatusText = $"Loaded: {SelectedLayoutRegion.Name} | Nodes: {graph.Nodes.Count} | Links: {graph.Links.Count}";
+        StatusText = $"Loaded: {region.Name} | Nodes: {graph.Nodes.Count} | Links: {graph.Links.Count}";
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectionStatus)));
     }
 
@@ -842,12 +872,11 @@ public sealed class MapEditorViewModel : INotifyPropertyChanged
     public IReadOnlyCollection<long> GetSelectedNodeIds() => _selectedNodeIds;
     public bool IsNodeSelected(long nodeId) => _selectedNodeIds.Contains(nodeId);
 
-    public double GetSnapGridStep() => SnapGridStep;
-
     private void RefreshSelectedNodeIdsForView()
     {
         SelectedNodeIdsForView = _selectedNodeIds.ToArray();
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedNodeIdsForView)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanAlignToGrid)));
     }
 
     private async Task RefreshEditorDiagnosticsAsync()
