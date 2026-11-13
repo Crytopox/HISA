@@ -1790,6 +1790,10 @@ public sealed partial class MapControl : Control
         }
 
         DrawAnimatedOverlays(context, bounds);
+        if (ViewMode == MapViewMode.UniverseRegions)
+        {
+            DrawRegionsOverviewLabels(context, bounds);
+        }
         DrawReportOverlays(context);
     }
 
@@ -2567,6 +2571,11 @@ public sealed partial class MapControl : Control
             context.DrawLine(_penCache.Get(legColor, 2.5), _screenPositions[fromIdx], _screenPositions[toIdx]);
         }
 
+        if (ViewMode == MapViewMode.UniverseRegions)
+        {
+            return;
+        }
+
         var labelsDrawn = 0;
 
         for (var i = 0; i < Graph.Nodes.Count; i++)
@@ -2601,31 +2610,6 @@ public sealed partial class MapControl : Control
                                 : ShowEditorGrid && _crossRegionConnectorSet.Contains(node.Id)
                                         ? EditorCrossRegionConnectorBrush
                                         : GetCachedBrush(GetNodeBaseColor(node, NodeColorMode));
-
-            if (ViewMode == MapViewMode.UniverseRegions)
-            {
-                var text = CreateMapText(node.Name, 12.5, Brushes.White, FontWeight.Medium);
-                var baseColor = GetUniverseRegionOwnerColor(node.RegionName ?? node.Name);
-                var fillColor = isSelected
-                    ? BlendColors(baseColor, Color.Parse("#FFFFFF"), 0.24)
-                    : isHovered
-                        ? BlendColors(baseColor, Color.Parse("#FFFFFF"), 0.14)
-                        : baseColor;
-                var bgColor = BlendColors(fillColor, Color.Parse("#0B1220"), 0.68);
-                var borderColor = isSelected
-                    ? BlendColors(baseColor, Color.Parse("#FFFFFF"), 0.48)
-                    : isHovered
-                        ? BlendColors(baseColor, Color.Parse("#FFFFFF"), 0.32)
-                        : BlendColors(baseColor, Color.Parse("#000000"), 0.16);
-                var rect = GetUniverseRegionNodeRect(node, p, isHovered ? 1.04 : 1.0);
-
-                var outer = new Rect(rect.X - 1, rect.Y - 1, rect.Width + 2, rect.Height + 2);
-                context.FillRectangle(GetCachedBrush(Color.FromArgb(110, bgColor.R, bgColor.G, bgColor.B)), outer, 6);
-                context.FillRectangle(GetCachedBrush(bgColor), rect, 5);
-                context.DrawRectangle(new Pen(GetCachedBrush(borderColor), isSelected ? 1.9 : 1.35), rect, 5);
-                context.DrawText(text, new Point(rect.X + ((rect.Width - text.Width) / 2), rect.Y + ((rect.Height - text.Height) / 2)));
-                continue;
-            }
 
             if (!_universeOverlayOnly || isSelected || isHovered ||
                 isSearchHighlighted || isInActiveRegion || isSelectedRegionNode)
@@ -2723,16 +2707,13 @@ public sealed partial class MapControl : Control
             }
         }
 
-        if (ViewMode != MapViewMode.UniverseRegions)
-        {
-            DrawUserSystemMarks(context, bounds);
-        }
+        DrawUserSystemMarks(context, bounds);
 
         for (var i = 0; i < Graph.Nodes.Count; i++)
         {
             var node = Graph.Nodes[i];
             var p = _screenPositions[i];
-            if (ViewMode == MapViewMode.UniverseRegions || !IsPointVisible(p, bounds, 24))
+            if (!IsPointVisible(p, bounds, 24))
             {
                 continue;
             }
@@ -2809,14 +2790,51 @@ public sealed partial class MapControl : Control
             return;
         }
 
-        if (ViewMode != MapViewMode.UniverseRegions)
-        {
-            DrawHoveredSystemMarkClusterOverlay(context, bounds);
-        }
+        DrawHoveredSystemMarkClusterOverlay(context, bounds);
 
         if (ShouldShowUniverseRegionLabels())
         {
             DrawUniverseRegionLabels(context);
+        }
+    }
+
+    private void DrawRegionsOverviewLabels(DrawingContext context, Rect bounds)
+    {
+        if (Graph is null)
+        {
+            return;
+        }
+
+        for (var i = 0; i < Graph.Nodes.Count; i++)
+        {
+            var center = _screenPositions[i];
+            if (!IsPointVisible(center, bounds, 24))
+            {
+                continue;
+            }
+
+            var node = Graph.Nodes[i];
+            var isSelected = SelectedNodeId == node.Id || _additionalSelectedSet.Contains(node.Id);
+            var isHovered = _hoveredNodeId == node.Id;
+            var text = CreateMapText(node.Name, 12.5, Brushes.White, FontWeight.Medium);
+            var baseColor = GetUniverseRegionOwnerColor(node.RegionName ?? node.Name);
+            var fillColor = isSelected
+                ? BlendColors(baseColor, Color.Parse("#FFFFFF"), 0.24)
+                : isHovered
+                    ? BlendColors(baseColor, Color.Parse("#FFFFFF"), 0.14)
+                    : baseColor;
+            var bgColor = BlendColors(fillColor, Color.Parse("#0B1220"), 0.68);
+            var borderColor = isSelected
+                ? BlendColors(baseColor, Color.Parse("#FFFFFF"), 0.48)
+                : isHovered
+                    ? BlendColors(baseColor, Color.Parse("#FFFFFF"), 0.32)
+                    : BlendColors(baseColor, Color.Parse("#000000"), 0.16);
+            var rect = GetUniverseRegionNodeRect(node, center, isHovered ? 1.04 : 1.0);
+
+            context.FillRectangle(GetCachedBrush(Color.FromArgb(110, bgColor.R, bgColor.G, bgColor.B)), rect.Inflate(1), 6);
+            context.FillRectangle(GetCachedBrush(bgColor), rect, 5);
+            context.DrawRectangle(new Pen(GetCachedBrush(borderColor), isSelected ? 1.9 : 1.35), rect, 5);
+            context.DrawText(text, new Point(center.X - (text.Width / 2), center.Y - (text.Height / 2)));
         }
     }
 
@@ -3396,10 +3414,7 @@ public sealed partial class MapControl : Control
 
         var reservedRects = new List<Rect>(_systemMarkClusterHits.Count + _regionCentroids.Count);
         reservedRects.AddRange(_systemMarkClusterHits.Select(hit => hit.Bounds));
-        if (ShouldShowUniverseRegionLabels())
-        {
-            reservedRects.AddRange(BuildUniverseRegionLabelLayouts().Select(layout => layout.Rect));
-        }
+        reservedRects.AddRange(BuildUniverseRegionLabelLayouts().Select(layout => layout.Rect));
 
         foreach (var placement in UniverseLabelPlacement.Place(candidates, obstacles, bounds, budget, reservedRects))
         {
@@ -3576,15 +3591,15 @@ public sealed partial class MapControl : Control
         };
     }
 
-    private bool ShouldShowUniverseRegionLabels()
-    {
-        if (ViewMode != MapViewMode.Universe)
-        {
-            return false;
-        }
+    private const double UniverseRegionLabelMinZoom = 1.0;
 
-        const double minVisibleZoom = 1.0;
-        return _zoom >= minVisibleZoom && _zoom < GetLabelZoomThreshold();
+    private bool ShouldShowUniverseRegionLabels() =>
+        ViewMode == MapViewMode.Universe && _zoom >= UniverseRegionLabelMinZoom && _zoom < GetLabelZoomThreshold();
+
+    private double GetUniverseRegionLabelZoomProgress()
+    {
+        var threshold = GetLabelZoomThreshold();
+        return Math.Clamp((_zoom - UniverseRegionLabelMinZoom) / (threshold - UniverseRegionLabelMinZoom), 0.0, 1.0);
     }
 
     private void DrawUniverseRegionLabels(DrawingContext context)
@@ -3594,10 +3609,7 @@ public sealed partial class MapControl : Control
             return;
         }
 
-        const double minVisibleZoom = 1.0;
-        var threshold = GetLabelZoomThreshold();
-        var progress = Math.Clamp((_zoom - minVisibleZoom) / (threshold - minVisibleZoom), 0.0, 1.0);
-        var scale = 0.74 + (0.26 * progress);
+        var progress = GetUniverseRegionLabelZoomProgress();
         var idleOpacity = 0.40 + (0.28 * progress);
         var activeOpacity = 0.60 + (0.24 * progress);
 
@@ -3606,24 +3618,19 @@ public sealed partial class MapControl : Control
             var isSelected = _selectedRegionId == layout.RegionId;
             var isHovered = _hoveredRegionId == layout.RegionId;
             var opacity = isSelected || isHovered ? activeOpacity : idleOpacity;
-            var rect = new Rect(
-                layout.Center.X - ((layout.Rect.Width * scale) / 2.0),
-                layout.Center.Y - ((layout.Rect.Height * scale) / 2.0),
-                layout.Rect.Width * scale,
-                layout.Rect.Height * scale);
-
             using var _ = context.PushOpacity(opacity);
             context.FillRectangle(
                 new SolidColorBrush(Color.Parse(isSelected ? "#2A3A52" : isHovered ? "#243347" : "#172333")),
-                rect,
+                layout.Rect,
                 4);
             context.DrawRectangle(
                 new Pen(new SolidColorBrush(Color.Parse(isSelected ? "#74B0E5" : isHovered ? "#638FB9" : "#33506F")), 0.9),
-                rect,
+                layout.Rect,
                 4);
 
-            var origin = new Point(layout.Center.X - ((layout.Label.Width * scale) / 2.0), layout.Center.Y - ((layout.Label.Height * scale) / 2.0));
-            using (context.PushTransform(Matrix.CreateScale(scale, scale) * Matrix.CreateTranslation(origin.X, origin.Y)))
+            var origin = new Point(layout.Rect.Center.X - ((layout.Label.Width * layout.Scale) / 2.0),
+                layout.Rect.Center.Y - ((layout.Label.Height * layout.Scale) / 2.0));
+            using (context.PushTransform(Matrix.CreateScale(layout.Scale, layout.Scale) * Matrix.CreateTranslation(origin.X, origin.Y)))
             {
                 context.DrawText(layout.Label, new Point(0, 0));
             }
@@ -3681,6 +3688,7 @@ public sealed partial class MapControl : Control
                 SelectedNodeId = null;
                 ClearSearchHighlight();
                 InvalidateInteractive();
+                e.Handled = true;
                 return;
             }
 
@@ -3859,13 +3867,8 @@ public sealed partial class MapControl : Control
             return;
         }
 
-        var hoverId = FindClosestNodeAt(point, 10.0);
-        int? hoveredRegionId = null;
-        if (hoverId is null &&
-            ShouldShowUniverseRegionLabels())
-        {
-            hoveredRegionId = TryGetHoveredRegionFromRegionLabel(point);
-        }
+        var hoveredRegionId = HitTestUniverseRegionLabel(point);
+        var hoverId = hoveredRegionId is null ? FindClosestNodeAt(point, 10.0) : null;
 
         var hoveredCluster = -1;
         for (var i = _systemMarkClusterHits.Count - 1; i >= 0; i--)
@@ -4331,18 +4334,19 @@ public sealed partial class MapControl : Control
         return true;
     }
 
-    private int? TryGetHoveredRegionFromRegionLabel(Point point)
+    private int? HitTestUniverseRegionLabel(Point point)
     {
-        if (!ShouldShowUniverseRegionLabels())
+        if (!new Rect(Bounds.Size).Contains(point))
         {
             return null;
         }
 
-        foreach (var layout in BuildUniverseRegionLabelLayouts())
+        var layouts = BuildUniverseRegionLabelLayouts();
+        for (var i = layouts.Count - 1; i >= 0; i--)
         {
-            if (layout.Rect.Contains(point))
+            if (layouts[i].Rect.Contains(point))
             {
-                return layout.RegionId;
+                return layouts[i].RegionId;
             }
         }
 
@@ -4351,12 +4355,7 @@ public sealed partial class MapControl : Control
 
     private bool TryToggleRegionSelectionFromLabel(Point point)
     {
-        if (!ShouldShowUniverseRegionLabels())
-        {
-            return false;
-        }
-
-        var regionId = TryGetHoveredRegionFromRegionLabel(point);
+        var regionId = HitTestUniverseRegionLabel(point);
         if (regionId is null)
         {
             return false;
@@ -4388,26 +4387,27 @@ public sealed partial class MapControl : Control
 
     private IReadOnlyList<UniverseRegionLabelLayout> BuildUniverseRegionLabelLayouts()
     {
-        if (Graph is null || Graph.Nodes.Count == 0)
+        if (!ShouldShowUniverseRegionLabels() || Graph is null || Graph.Nodes.Count == 0)
         {
             return [];
         }
 
         EnsureRegionCentroids();
+        var scale = 0.74 + (0.26 * GetUniverseRegionLabelZoomProgress());
         var result = new List<UniverseRegionLabelLayout>(_regionCentroids.Count);
         foreach (var centroid in _regionCentroids)
         {
             var center = ToScreenPoint(centroid.X, centroid.Y);
             var label = GetRegionLabel(centroid.RegionId, centroid.Name);
-            var padX = 6.0;
-            var padY = 3.0;
+            var width = (label.Width + 12.0) * scale;
+            var height = (label.Height + 6.0) * scale;
             var rect = new Rect(
-                center.X - (label.Width / 2.0) - padX,
-                center.Y - (label.Height / 2.0) - padY,
-                label.Width + (padX * 2),
-                label.Height + (padY * 2));
+                center.X - (width / 2.0),
+                center.Y - (height / 2.0),
+                width,
+                height);
 
-            result.Add(new UniverseRegionLabelLayout(centroid.RegionId, centroid.Name, center, rect, label));
+            result.Add(new UniverseRegionLabelLayout(centroid.RegionId, rect, label, scale));
         }
 
         return result;
@@ -7832,7 +7832,7 @@ public sealed partial class MapControl : Control
         context.DrawImage(icon, src, dst);
     }
 
-    private sealed record UniverseRegionLabelLayout(int RegionId, string RegionName, Point Center, Rect Rect, FormattedText Label);
+    private sealed record UniverseRegionLabelLayout(int RegionId, Rect Rect, FormattedText Label, double Scale);
     private readonly record struct PlotMetrics(double OriginX, double OriginY, double Width, double Height);
 
     private sealed class UniverseMapTile(RenderTargetBitmap? bitmap) : IDisposable
