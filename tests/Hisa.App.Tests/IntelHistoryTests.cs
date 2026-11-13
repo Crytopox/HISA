@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Text.Json;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Headless.XUnit;
 using Avalonia.Headless;
 using Avalonia.Input;
@@ -124,6 +125,45 @@ public sealed class IntelHistoryTests
             image.Save(Path.Combine(AppContext.BaseDirectory, $"intel-history-{width}-{height}.png"));
             window.Close(); Assert.False(window.IsVisible);
             window.Show(); Assert.True(window.IsVisible);
+        }
+        finally { window.Shutdown(); }
+    }
+
+    [AvaloniaFact]
+    public async Task AlwaysOnTopToggleUpdatesWindowAndPersistsAcrossReloads()
+    {
+        const string preferencesKey = "Intel.History.Channels";
+        using var fixture = new MainFixture();
+        var vm = fixture.Vm;
+        var initialize = typeof(MainWindowViewModel).GetMethod("InitializeIntelHistoryAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        await fixture.Settings.SetAsync(preferencesKey, new { FollowAllChannels = true, SelectedChannels = Array.Empty<string>() });
+        await (Task)initialize.Invoke(vm, [])!;
+        var window = new IntelHistoryWindow(vm) { Width = 280, Height = 160 };
+        window.Show();
+        try
+        {
+            Dispatcher.UIThread.RunJobs();
+            window.UpdateLayout();
+            var toggle = window.FindControl<ToggleButton>("AlwaysOnTopToggle")!;
+            var position = toggle.TranslatePoint(new Point(toggle.Bounds.Width / 2, toggle.Bounds.Height / 2), window)!.Value;
+            Assert.True(window.Topmost);
+            Assert.True(toggle.IsChecked);
+
+            foreach (var expected in new[] { false, true })
+            {
+                window.MouseDown(position, MouseButton.Left);
+                window.MouseUp(position, MouseButton.Left);
+                Assert.Equal(expected, window.Topmost);
+                Assert.Equal(expected, toggle.IsChecked);
+                var saved = await fixture.Settings.GetAsync<IntelHistoryPreferences>(preferencesKey);
+                Assert.NotNull(saved);
+                Assert.Equal(expected, saved.AlwaysOnTop);
+                vm.IntelHistory.LoadPreferences(new IntelHistoryPreferences { AlwaysOnTop = !expected });
+                Assert.Equal(!expected, window.Topmost);
+                await (Task)initialize.Invoke(vm, [])!;
+                Assert.Equal(expected, window.Topmost);
+                Assert.Equal(expected, toggle.IsChecked);
+            }
         }
         finally { window.Shutdown(); }
     }

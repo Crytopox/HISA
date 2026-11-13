@@ -4,7 +4,7 @@
         x:Class="Hisa.App.IntelHistoryWindow"
         x:DataType="vm:IntelHistoryViewModel"
         Title="Intel History" Width="380" Height="520" MinWidth="280" MinHeight="160"
-        SystemDecorations="None" CanResize="True" Topmost="True" ShowActivated="False"
+        SystemDecorations="None" CanResize="True" Topmost="{Binding AlwaysOnTop}" ShowActivated="False"
         ShowInTaskbar="False" Background="#101722">
   <Window.Styles>
     <Style Selector="Button.compact">
@@ -25,7 +25,7 @@
   <Border BorderBrush="#304057" BorderThickness="1" CornerRadius="6">
     <Grid RowDefinitions="Auto,*,Auto">
       <Border Grid.Row="0" x:Name="DragHandle" Background="#172232" BorderBrush="#29394E" BorderThickness="0,0,0,1" Padding="7,3,4,3" Cursor="SizeAll" PointerPressed="OnHeaderPointerPressed">
-        <Grid ColumnDefinitions="*,Auto,Auto" Background="Transparent">
+        <Grid ColumnDefinitions="*,Auto,Auto,Auto" Background="Transparent">
           <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center" IsHitTestVisible="False">
             <TextBlock Text="INTEL HISTORY" FontSize="11" FontWeight="SemiBold" Foreground="#E1EBF7" />
           </StackPanel>
@@ -50,7 +50,9 @@
               </Flyout>
             </Button.Flyout>
           </Button>
-          <Button Grid.Column="2" Classes="compact" Content="×" FontSize="17" Click="OnHideClicked" ToolTip.Tip="Hide history" />
+          <ToggleButton Grid.Column="2" x:Name="AlwaysOnTopToggle" Content="Always on top"
+                        IsChecked="{Binding AlwaysOnTop, Mode=TwoWay}" FontSize="11" Padding="6,1" MinHeight="18" />
+          <Button Grid.Column="3" Classes="compact" Content="×" FontSize="17" Click="OnHideClicked" ToolTip.Tip="Hide history" />
         </Grid>
       </Border>
       <ListBox Grid.Row="1" x:Name="HistoryList" ItemsSource="{Binding VisibleRows}" Background="Transparent"

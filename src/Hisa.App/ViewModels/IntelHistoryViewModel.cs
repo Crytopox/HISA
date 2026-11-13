@@ -85,6 +85,7 @@ public sealed class IntelHistoryRow : INotifyPropertyChanged
 
 public sealed class IntelHistoryPreferences
 {
+    public bool AlwaysOnTop { get; set; } = true;
     public bool FollowAllChannels { get; set; } = true;
     public List<string> SelectedChannels { get; set; } = [];
 }
@@ -96,6 +97,7 @@ public sealed class IntelHistoryViewModel : INotifyPropertyChanged
     private readonly HashSet<string> _observed = new(StringComparer.OrdinalIgnoreCase);
     private HashSet<string> _configured = new(StringComparer.OrdinalIgnoreCase);
     private HashSet<string> _selected = new(StringComparer.OrdinalIgnoreCase);
+    private bool _alwaysOnTop = true;
     private bool _followAll = true;
     private bool _changingChannels;
     private bool _enabled = true;
@@ -103,6 +105,18 @@ public sealed class IntelHistoryViewModel : INotifyPropertyChanged
     public ObservableCollection<IntelHistoryRow> VisibleRows { get; } = [];
     public ObservableCollection<IntelHistoryChannel> Channels { get; } = [];
     public IReadOnlyList<IntelHistoryRow> Rows => _rows;
+    public bool AlwaysOnTop
+    {
+        get => _alwaysOnTop;
+        set
+        {
+            if (_alwaysOnTop == value) return;
+            _alwaysOnTop = value;
+            Changed();
+            PreferencesChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
     public bool FollowAllChannels
     {
         get => _followAll;
@@ -124,13 +138,20 @@ public sealed class IntelHistoryViewModel : INotifyPropertyChanged
     public event EventHandler? RowsChanging;
     public event EventHandler? RowsChanged;
 
-    public IntelHistoryPreferences GetPreferences() => new() { FollowAllChannels = _followAll, SelectedChannels = _selected.Order(StringComparer.OrdinalIgnoreCase).ToList() };
+    public IntelHistoryPreferences GetPreferences() => new()
+    {
+        AlwaysOnTop = _alwaysOnTop,
+        FollowAllChannels = _followAll,
+        SelectedChannels = _selected.Order(StringComparer.OrdinalIgnoreCase).ToList()
+    };
 
     public void LoadPreferences(IntelHistoryPreferences preferences)
     {
+        _alwaysOnTop = preferences.AlwaysOnTop;
         _followAll = preferences.FollowAllChannels;
         _selected = preferences.SelectedChannels.ToHashSet(StringComparer.OrdinalIgnoreCase);
         RebuildChannels(); RefreshVisible(); Changed(nameof(FollowAllChannels));
+        Changed(nameof(AlwaysOnTop));
     }
 
     public void Configure(IEnumerable<string> channels, bool enabled, int expiryMinutes, DateTime now)
