@@ -5,6 +5,45 @@ namespace Hisa.Logs.Tests;
 public sealed class GameLogMiningHistoryReaderTests
 {
     [Fact]
+    public async Task ReadAsync_UsesOnlyRegularYieldInTheSameFileForLegacyResidue()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"hisa-mining-history-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+
+        try
+        {
+            const string header = "------------------------------------------------------------\nListener: Test Miner\n------------------------------------------------------------\n";
+            await File.WriteAllTextAsync(Path.Combine(directory, "20260613_120000_1234.txt"), header +
+                """
+                [ 2026.06.13 12:00:00 ] (mining) You mined <color=#ff8dc169>100<font size=10> units of <font size=12>Veldspar
+                [ 2026.06.13 12:00:01 ] (notify) Phased Prismaticite has Phased-Out and can be mined at 10% efficiency.
+                [ 2026.06.13 12:00:02 ] (mining) Critical mining success! You mined an additional <font size=12>25<font size=10> units of <font size=12>Prismaticite
+                [ 2026.06.13 12:00:03 ] (mining) Additional <color=#ffff454b>10<font size=10> units depleted from Prismaticite as residue
+                [ 2026.06.13 12:00:03 ] (mining) Additional <color=#ffff454b>5<font size=10> units depleted from asteroid as residue
+                """);
+            await File.WriteAllTextAsync(Path.Combine(directory, "20260613_120004_1234.txt"), header +
+                "[ 2026.06.13 12:00:04 ] (mining) Additional <color=#ffff454b>7<font size=10> units depleted from asteroid as residue");
+
+            var snapshots = await GameLogMiningHistoryReader.ReadAsync(
+                directory, new DateTime(2026, 6, 13, 12, 0, 3, DateTimeKind.Utc));
+
+            var ores = Assert.Single(snapshots).Value.Ores.ToDictionary(x => x.OreName);
+            Assert.Equal(2, ores.Count);
+            Assert.Equal(5, ores["Veldspar"].WasteUnits);
+            Assert.Equal(10, ores["Prismaticite"].WasteUnits);
+            Assert.All(ores.Values, ore =>
+            {
+                Assert.Equal(0, ore.MinedUnits);
+                Assert.Equal(0, ore.BonusUnits);
+            });
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task ReadAsync_SeparatesCriticalBonusFromRegularYield()
     {
         var directory = Path.Combine(Path.GetTempPath(), $"hisa-mining-history-{Guid.NewGuid():N}");

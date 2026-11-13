@@ -74,6 +74,105 @@ public sealed class MiningSessionLogFeedHostedServiceTests
         Assert.True(state.RefreshDueUtc > DateTime.UtcNow, $"Expected ore cache to remain fresh after refresh, but refresh due was {state.RefreshDueUtc:o}.");
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task MiningSnapshots_CountResidueAndUseLocalVolumes(bool pricesUnavailable)
+    {
+        var now = DateTime.UtcNow;
+        var start = now.AddMinutes(-5);
+        var cutoff = now.AddMinutes(-3);
+        using var logs = new TestMiningLogs();
+        await logs.WriteAsync(start, 1234,
+            Yield(start, 100, "Veldspar"),
+            $"[ {start:yyyy.MM.dd HH:mm:ss} ] (notify) Phased Prismaticite has Phased-Out and can be mined at 10% efficiency.",
+            $"[ {start:yyyy.MM.dd HH:mm:ss} ] (mining) Critical mining success! You mined an additional <font size=12>25<font size=10> units of <font size=12>Prismaticite",
+            Residue(cutoff, 10, "Prismaticite"),
+            Residue(cutoff, 5, "asteroid"),
+            Yield(cutoff, 4, "Fullerite-C32"),
+            Residue(cutoff, 2, "Fullerite-C32"),
+            Yield(cutoff, 1, "Glacial Mass IV-Grade"),
+            Yield(cutoff, 2, "Brimful Bitumens"),
+            Yield(cutoff, 1, "Blue Ice"));
+        await logs.WriteAsync(start.AddMinutes(-1), 1234, Residue(cutoff, 900, "asteroid"));
+
+        using var handler = new CountingOreHttpMessageHandler();
+        IHttpClientFactory prices = pricesUnavailable
+            ? new TrackingThrowingHttpClientFactory()
+            : new TestHttpClientFactory(handler);
+        using var service = CreateService(logs.Settings, prices);
+        var live = new TaskCompletionSource<MiningCharacterStatsSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
+        service.SnapshotUpdated += (_, snapshots) =>
+        {
+            if (snapshots.TryGetValue(1234, out var snapshot))
+            {
+                live.TrySetResult(snapshot);
+            }
+        };
+
+        await service.StartAsync(CancellationToken.None);
+        try
+        {
+            var published = await live.Task.WaitAsync(TimeSpan.FromSeconds(15));
+            var current = (await service.GetSnapshotAsync(MiningStatsRangeMode.CurrentSession))[1234];
+            var recent = (await service.GetSnapshotAsync(MiningStatsRangeMode.Last1Hour))[1234];
+            var rolling = (await service.GetRollingSnapshotAsync(TimeSpan.FromMinutes(4)))[1234];
+
+            foreach (var snapshot in new[] { published, current, recent, rolling })
+            {
+                var ores = snapshot.Ores.ToDictionary(x => x.OreName);
+                Assert.Equal(10, ores["Prismaticite"].WasteUnits);
+                Assert.Equal(400, ores["Prismaticite"].TotalWasteVolumeM3);
+                Assert.Equal(5, ores["Veldspar"].WasteUnits);
+                Assert.Equal(20, ores["Fullerite-C32"].TotalMinedVolumeM3);
+                Assert.Equal(10, ores["Fullerite-C32"].TotalWasteVolumeM3);
+                Assert.Equal(0, ores["Fullerite-C32"].EstimatedIskPerUnit);
+                Assert.Equal(1000, ores["Glacial Mass IV-Grade"].TotalMinedVolumeM3);
+                Assert.Equal(20, ores["Brimful Bitumens"].TotalMinedVolumeM3);
+                Assert.Equal(pricesUnavailable ? 0 : 1000, ores["Blue Ice"].TotalMinedVolumeM3);
+                Assert.Equal(pricesUnavailable ? 0m : 12345m * 0.9063m, ores["Prismaticite"].EstimatedIskPerUnit);
+                Assert.Equal(410.5, snapshot.TotalWasteVolumeM3);
+            }
+
+            Assert.Equal(100, current.Ores.Single(x => x.OreName == "Veldspar").MinedUnits);
+            Assert.Equal(25, recent.Ores.Single(x => x.OreName == "Prismaticite").BonusUnits);
+            Assert.True(current.EfficiencyPercent > 100);
+            Assert.Equal(0, rolling.Ores.Single(x => x.OreName == "Veldspar").MinedUnits);
+            Assert.Equal(0, rolling.Ores.Single(x => x.OreName == "Prismaticite").BonusUnits);
+        }
+        finally
+        {
+            await service.StopAsync(CancellationToken.None);
+        }
+    }
+
+    private static string Yield(DateTime timestamp, int units, string ore) =>
+        $"[ {timestamp:yyyy.MM.dd HH:mm:ss} ] (mining) You mined <color=#ff8dc169>{units}<font size=10> units of <font size=12>{ore}";
+
+    private static string Residue(DateTime timestamp, int units, string source) =>
+        $"[ {timestamp:yyyy.MM.dd HH:mm:ss} ] (mining) Additional <color=#ffff454b>{units}<font size=10> units depleted from {source} as residue";
+
+    private sealed class TestMiningLogs : IDisposable
+    {
+        private readonly string _root = Directory.CreateTempSubdirectory("hisa-mining-").FullName;
+        public ISettingsService Settings { get; } = new InMemorySettingsService();
+
+        public TestMiningLogs()
+        {
+            Directory.CreateDirectory(Path.Combine(_root, "Gamelogs"));
+            Directory.CreateDirectory(Path.Combine(_root, "ChatLogs"));
+            File.WriteAllText(Path.Combine(_root, "ChatLogs", "Local_20260613_120000_1234.txt"), "");
+            Settings.SetAsync("Tracking.LogsRootPath", _root).GetAwaiter().GetResult();
+            Settings.SetAsync<bool?>("Mining.Enabled", true).GetAwaiter().GetResult();
+        }
+
+        public Task WriteAsync(DateTime start, int characterId, params string[] entries) =>
+            File.WriteAllLinesAsync(Path.Combine(_root, "Gamelogs", $"{start:yyyyMMdd_HHmmss}_{characterId}.txt"),
+                ["------------------------------------------------------------", "Listener: Test Miner", "------------------------------------------------------------", .. entries]);
+
+        public void Dispose() => Directory.Delete(_root, recursive: true);
+    }
+
     private static MiningSessionLogFeedHostedService CreateService(
         ISettingsService settingsService,
         IHttpClientFactory httpClientFactory,
@@ -131,8 +230,10 @@ public sealed class MiningSessionLogFeedHostedServiceTests
                 INSERT INTO invTypes (typeName, volume) VALUES
                     ('Veldspar', 0.1),
                     ('Bitumens', 10.0),
-                    ('Blue Ice', 1000.0),
-                    ('Prismaticite', 1.0);
+                    ('Brimful Bitumens', 10.0),
+                    ('Glacial Mass IV-Grade', 1000.0),
+                    ('Fullerite-C32', 5.0),
+                    ('Prismaticite', 40.0);
                 """;
             command.ExecuteNonQuery();
         }

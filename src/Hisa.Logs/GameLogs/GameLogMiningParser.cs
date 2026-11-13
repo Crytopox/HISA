@@ -93,10 +93,12 @@ public static partial class GameLogMiningParser
             return false;
         }
 
+        var source = match.Groups["source"].Value.Trim();
         miningEvent = new MiningLogEvent
         {
             Kind = MiningLogEventKind.Residue,
             TimestampUtc = timestampUtc,
+            OreName = string.Equals(source, "asteroid", StringComparison.OrdinalIgnoreCase) ? string.Empty : source,
             Units = ParseUnits(match.Groups["units"].Value)
         };
         return true;
@@ -151,7 +153,7 @@ public static partial class GameLogMiningParser
     [GeneratedRegex(@"^\[\s*(?<timestamp>\d{4}\.\d{2}\.\d{2}\s+\d{2}:\d{2}:\d{2})\s*\]\s*\(mining\).*?Critical mining success!.*?additional .*?>(?<units>\d+)<.*?units of .*?>(?<ore>[^<]+)$", RegexOptions.CultureInvariant)]
     private static partial Regex BuildCriticalOreRegex();
 
-    [GeneratedRegex(@"^\[\s*(?<timestamp>\d{4}\.\d{2}\.\d{2}\s+\d{2}:\d{2}:\d{2})\s*\]\s*\(mining\).*?Additional .*?<color=#?[0-9A-Fa-f]+>(?<units>\d+)<.*?units depleted from asteroid as residue$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^\[\s*(?<timestamp>\d{4}\.\d{2}\.\d{2}\s+\d{2}:\d{2}:\d{2})\s*\]\s*\(mining\).*?Additional .*?<color=#?[0-9A-Fa-f]+>(?<units>\d+)<.*?units depleted from (?<source>[^<]+?) as residue$", RegexOptions.CultureInvariant)]
     private static partial Regex BuildResidueRegex();
 
     [GeneratedRegex(@"^\[\s*(?<timestamp>\d{4}\.\d{2}\.\d{2}\s+\d{2}:\d{2}:\d{2})\s*\]\s*\(notify\)\s*(?<ore>.+?) has .*? mined at (?<efficiency>\d+)% efficiency\.$", RegexOptions.CultureInvariant)]

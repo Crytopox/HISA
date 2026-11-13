@@ -27,8 +27,9 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
     private readonly SemaphoreSlim _oreRefreshSync = new(1, 1);
     private readonly object _gate = new();
     private readonly Dictionary<int, MiningCharacterStatsSnapshot> _snapshotByCharacterId = [];
+    private volatile Dictionary<string, double>? _oreVolumesByName;
     private Dictionary<string, RawOreReferenceValue> _rawOreValuesByName = new(StringComparer.OrdinalIgnoreCase);
-    private Dictionary<string, OreReferenceValue> _oreValuesByName = new(StringComparer.OrdinalIgnoreCase);
+    private volatile Dictionary<string, OreReferenceValue> _oreValuesByName = new(StringComparer.OrdinalIgnoreCase);
     private DateTime _oreValuesRefreshDueUtc = DateTime.MinValue;
     private bool _enabled;
     private string? _gameLogsDirectory;
@@ -106,8 +107,6 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
             return;
         }
 
-        _refineYieldFactor = await ResolveRefineYieldFactorAsync(stoppingToken);
-
         _gameLogsDirectory = await ResolveGameLogsDirectoryAsync(stoppingToken);
         if (_gameLogsDirectory is null)
         {
@@ -115,7 +114,7 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
             return;
         }
 
-        await RefreshOreValuesAsync(stoppingToken);
+        await EnsureOreValuesFreshAsync(stoppingToken);
         var lookback = await ResolveInitialScanLookbackAsync(stoppingToken);
         _logger.LogInformation("Starting mining session tracking from: {Path}", _gameLogsDirectory);
         _logger.LogInformation("Mining session startup scan lookback: {Hours} hour(s).", lookback.TotalHours);
@@ -181,12 +180,16 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
             : TimeSpan.FromSeconds(1);
         var elapsedHours = Math.Max(elapsed.TotalHours, 1d / 3600d);
 
+        var volumesByName = _oreVolumesByName;
+        var oreValuesByName = _oreValuesByName;
         var oreStats = session.Ores
             .Select(ore =>
             {
-                TryGetOreReferenceValue(ore.OreName, out var oreValue);
+                var oreValue = GetOreReferenceValue(oreValuesByName, ore.OreName);
                 var minedUnits = ore.MinedUnits + ore.BonusUnits;
-                var volumePerUnit = oreValue?.VolumeM3 ?? 0d;
+                var volumePerUnit = volumesByName is not null && volumesByName.TryGetValue(ore.OreName, out var localVolume)
+                    ? localVolume
+                    : oreValue?.VolumeM3 ?? 0d;
                 var iskPerUnit = oreValue?.EstimatedIskPerUnit ?? 0m;
                 var regularYieldVolume = ore.MinedUnits * volumePerUnit;
                 var critYieldVolume = ore.BonusUnits * volumePerUnit;
@@ -296,13 +299,16 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
     private async Task EnsureOreValuesFreshAsync(CancellationToken cancellationToken)
     {
         var nextRefineYieldFactor = await ResolveRefineYieldFactorAsync(cancellationToken);
-        if (nextRefineYieldFactor != _refineYieldFactor)
+        lock (_gate)
         {
-            _refineYieldFactor = nextRefineYieldFactor;
-            RebuildDerivedOreValues();
+            if (nextRefineYieldFactor != _refineYieldFactor)
+            {
+                _refineYieldFactor = nextRefineYieldFactor;
+                RebuildDerivedOreValues();
+            }
         }
 
-        if (HasFreshOreValues())
+        if (_oreVolumesByName is not null && HasFreshOreValues())
         {
             return;
         }
@@ -310,9 +316,16 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
         await _oreRefreshSync.WaitAsync(cancellationToken);
         try
         {
-            if (HasFreshOreValues())
+            if (_oreVolumesByName is null)
             {
-                return;
+                try
+                {
+                    _oreVolumesByName = await LoadOreVolumesByNameAsync(cancellationToken);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogWarning(ex, "Failed to load mining resource volumes from the local SDE.");
+                }
             }
 
             if (_oreValuesByName.Count == 0)
@@ -348,7 +361,6 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
             await Task.WhenAll(standardTask, moonTask, iceTask, prismaticiteTask);
 
             var nextRaw = new Dictionary<string, RawOreReferenceValue>(StringComparer.OrdinalIgnoreCase);
-            var fallbackVolumesByName = await LoadOreVolumesByNameAsync(cancellationToken);
             var sourceGeneratedAtUtc = new[]
             {
                 standardTask.Result?.GeneratedAt,
@@ -368,8 +380,7 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
 
             foreach (var ore in moonTask.Result?.Data ?? [])
             {
-                var volume = ore.Volume ?? (fallbackVolumesByName.TryGetValue(ore.Name, out var fallbackVolume) ? fallbackVolume : 10d);
-                var rawValue = new RawOreReferenceValue(volume, ore.UnitsToReprocess, (decimal)ore.RefinedValueToday, IsDirectPerOreValue: false);
+                var rawValue = new RawOreReferenceValue(ore.Volume ?? 0d, ore.UnitsToReprocess, (decimal)ore.RefinedValueToday, IsDirectPerOreValue: false);
                 nextRaw[ore.Name] = rawValue;
                 AddOreLookupAliases(nextRaw, ore.Name, rawValue);
             }
@@ -413,9 +424,9 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
 
             await _settingsService.SetAsync(MiningOreReferenceCacheSettingsKey, cachePayload, cancellationToken);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
-            _logger.LogWarning(ex, "Failed to refresh mining ore values from EveHakLabs. Mining stats will continue without ISK valuation.");
+            _logger.LogWarning(ex, "Failed to refresh mining ore values from EveHakLabs. Existing estimates will be used when available.");
         }
     }
 
@@ -428,7 +439,7 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
         command.CommandText = """
             SELECT typeName, volume
             FROM invTypes
-            WHERE volume IS NOT NULL;
+            WHERE volume > 0;
             """;
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
@@ -482,59 +493,37 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
         return clampedPercent / 100m;
     }
 
-    private bool TryBuildOreReferenceValue(RawOreReferenceValue rawValue, out OreReferenceValue value)
-    {
-        if (rawValue.VolumeM3 <= 0d)
-        {
-            value = new OreReferenceValue(0d, 0m);
-            return false;
-        }
-
-        var units = Math.Max(1, rawValue.UnitsToReprocess);
-        var iskPerUnit = rawValue.IsDirectPerOreValue
-            ? rawValue.ReferenceValue * _refineYieldFactor
-            : (rawValue.ReferenceValue * _refineYieldFactor) / units;
-        value = new OreReferenceValue(rawValue.VolumeM3, iskPerUnit);
-        return true;
-    }
-
     private void RebuildDerivedOreValues()
     {
         var next = new Dictionary<string, OreReferenceValue>(StringComparer.OrdinalIgnoreCase);
         foreach (var kvp in _rawOreValuesByName)
         {
-            if (TryBuildOreReferenceValue(kvp.Value, out var value))
-            {
-                next[kvp.Key] = value;
-            }
+            var raw = kvp.Value;
+            var units = raw.IsDirectPerOreValue ? 1 : Math.Max(1, raw.UnitsToReprocess);
+            var iskPerUnit = raw.ReferenceValue * _refineYieldFactor / units;
+            next[kvp.Key] = new OreReferenceValue(raw.VolumeM3 > 0d ? raw.VolumeM3 : 0d, iskPerUnit);
         }
 
         _oreValuesByName = next;
     }
 
-    private bool TryGetOreReferenceValue(string oreName, out OreReferenceValue? value)
+    private static OreReferenceValue? GetOreReferenceValue(
+        IReadOnlyDictionary<string, OreReferenceValue> valuesByName,
+        string oreName)
     {
-        if (_oreValuesByName.TryGetValue(oreName, out value))
+        OreReferenceValue? value;
+        while (!valuesByName.TryGetValue(oreName, out value))
         {
-            return true;
-        }
-
-        var remaining = oreName.Trim();
-        while (true)
-        {
-            var separatorIndex = remaining.IndexOf(' ');
-            if (separatorIndex < 0 || separatorIndex >= remaining.Length - 1)
+            var separatorIndex = oreName.IndexOf(' ');
+            if (separatorIndex < 0 || separatorIndex >= oreName.Length - 1)
             {
-                value = null;
-                return false;
+                return null;
             }
 
-            remaining = remaining[(separatorIndex + 1)..].TrimStart();
-            if (_oreValuesByName.TryGetValue(remaining, out value))
-            {
-                return true;
-            }
+            oreName = oreName[(separatorIndex + 1)..].TrimStart();
         }
+
+        return value;
     }
 
     private static void AddOreLookupAliases(
@@ -891,7 +880,7 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
             }
 
             var currentEfficiencyPercent = aggregate.CurrentEfficiencyPercent;
-            string? lastOreName = null;
+            string? lastRegularOreName = null;
             foreach (var miningEvent in state.Events)
             {
                 if (miningEvent.Kind == MiningLogEventKind.SiteEfficiencyChanged)
@@ -899,12 +888,14 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
                     currentEfficiencyPercent = miningEvent.EfficiencyPercent;
                 }
 
-                if (!string.IsNullOrWhiteSpace(miningEvent.OreName))
+                if (miningEvent.Kind == MiningLogEventKind.Yield && !miningEvent.IsCriticalBonus)
                 {
-                    lastOreName = miningEvent.OreName;
+                    lastRegularOreName = miningEvent.OreName;
                 }
 
-                if (miningEvent.TimestampUtc < cutoffUtc)
+                var oreName = miningEvent.OreName.Length > 0 ? miningEvent.OreName : lastRegularOreName;
+                if (miningEvent.TimestampUtc < cutoffUtc ||
+                    (miningEvent.Kind == MiningLogEventKind.Residue && oreName is null))
                 {
                     continue;
                 }
@@ -937,7 +928,7 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
                         }
                         break;
                     case MiningLogEventKind.Residue:
-                        var residueOre = GetOrCreateOre(aggregate, lastOreName);
+                        var residueOre = GetOrCreateOre(aggregate, oreName!);
                         residueOre.WasteUnits += miningEvent.Units;
                         break;
                     case MiningLogEventKind.SiteEfficiencyChanged:
@@ -947,13 +938,12 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
             }
         }
 
-        private static AggregateOreState GetOrCreateOre(AggregateCharacterState aggregate, string? oreName)
+        private static AggregateOreState GetOrCreateOre(AggregateCharacterState aggregate, string oreName)
         {
-            var key = string.IsNullOrWhiteSpace(oreName) ? "Unknown" : oreName.Trim();
-            if (!aggregate.OresByName.TryGetValue(key, out var ore))
+            if (!aggregate.OresByName.TryGetValue(oreName, out var ore))
             {
-                ore = new AggregateOreState { OreName = key };
-                aggregate.OresByName[key] = ore;
+                ore = new AggregateOreState { OreName = oreName };
+                aggregate.OresByName[oreName] = ore;
             }
 
             return ore;
@@ -962,7 +952,7 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
         private static MiningSessionSnapshot? BuildSnapshot(AggregateCharacterState aggregate)
         {
             var ores = aggregate.OresByName.Values
-                .Where(x => x.MinedUnits > 0 || x.BonusUnits > 0)
+                .Where(x => x.MinedUnits > 0 || x.BonusUnits > 0 || x.WasteUnits > 0)
                 .OrderByDescending(x => x.MinedUnits + x.BonusUnits)
                 .Select(x => new MiningOreTotals
                 {
@@ -970,7 +960,7 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
                     MinedUnits = x.MinedUnits,
                     BonusUnits = x.BonusUnits,
                     WasteUnits = x.WasteUnits,
-                    LastMinedUtc = x.LastMinedUtc == default ? aggregate.LastActivityUtc : x.LastMinedUtc,
+                    LastMinedUtc = x.LastMinedUtc,
                     LastKnownEfficiencyPercent = x.LastKnownEfficiencyPercent
                 })
                 .ToList();

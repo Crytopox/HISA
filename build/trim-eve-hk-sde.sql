@@ -97,9 +97,8 @@ DROP TABLE IF EXISTS staStations;
 DROP TABLE IF EXISTS trnTranslationLanguages;
 
 -- Preserve star and planet mapDenormalize rows (groupID 6 and 7) and their
--- invTypes/invGroups for map overlays, plus the category-6 ship records used by
--- intel parsing, before deleting unrelated retained-table rows. Celestial
--- statistics stay limited to stars. Moons, belts, and stations are removed.
+-- invTypes/invGroups for map overlays, ships for intel parsing, and harvestable
+-- resources for mining volume. Celestial statistics stay limited to stars.
 DROP TABLE IF EXISTS temp.hisa_keep_star_item_ids;
 DROP TABLE IF EXISTS temp.hisa_keep_inv_type_ids;
 DROP TABLE IF EXISTS temp.hisa_keep_inv_group_ids;
@@ -129,6 +128,13 @@ SELECT t.typeID
 FROM invTypes t
 INNER JOIN invGroups g ON g.groupID = t.groupID
 WHERE g.categoryID = 6;
+
+INSERT OR IGNORE INTO hisa_keep_inv_type_ids(typeID)
+SELECT t.typeID
+FROM invTypes t
+INNER JOIN invGroups g ON g.groupID = t.groupID
+WHERE t.volume > 0
+  AND (g.categoryID = 25 OR g.groupID = 711 OR t.typeName = 'Prismaticite');
 
 CREATE TEMP TABLE hisa_keep_inv_group_ids (
     groupID INTEGER PRIMARY KEY

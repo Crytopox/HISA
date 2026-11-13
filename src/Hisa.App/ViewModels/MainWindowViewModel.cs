@@ -4952,6 +4952,7 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
         var totalFlow = snapshot.TotalMiningVolumeM3;
         var yieldRatio = totalFlow > 0 ? snapshot.TotalMinedVolumeM3 / totalFlow : 1d;
         var wasteRatio = totalFlow > 0 ? snapshot.TotalWasteVolumeM3 / totalFlow : 0d;
+        var hasUnpricedWaste = HasUnpricedMiningWaste(snapshot.Ores);
 
         return new MiningStatsCard
         {
@@ -4966,12 +4967,10 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
             MiningRateSummary = $"{snapshot.MiningRateM3PerHour / 3600d:0.##} m3/s | {snapshot.MiningRateM3PerHour:N0} m3/hr",
             WasteRateSummary = $"{snapshot.WasteRateM3PerHour / 3600d:0.##} m3/s | {snapshot.WasteRateM3PerHour:N0} m3/hr",
             IskRateSummary = snapshot.EstimatedIskPerHour > 0 ? $"{snapshot.EstimatedIskPerHour:N0} ISK/hr" : "Price unavailable",
-            WasteIskRateSummary = snapshot.WasteEstimatedIskPerHour > 0 ? $"-{snapshot.WasteEstimatedIskPerHour:N0} ISK/hr" : "No waste loss",
+            WasteIskRateSummary = FormatMiningWasteIsk(snapshot.WasteEstimatedIskPerHour, hasUnpricedWaste, perHour: true),
             TotalMinedSummary = $"{snapshot.TotalMinedVolumeM3:N0} m3 mined",
             TotalEstimatedIskSummary = snapshot.TotalEstimatedIsk > 0 ? $"{snapshot.TotalEstimatedIsk:N0} ISK total" : "Price unavailable",
-            TotalWasteIskSummary = snapshot.TotalWasteEstimatedIsk > 0
-                ? $"-{snapshot.TotalWasteEstimatedIsk:N0} ISK"
-                : "No waste loss",
+            TotalWasteIskSummary = FormatMiningWasteIsk(snapshot.TotalWasteEstimatedIsk, hasUnpricedWaste),
             SessionTotalSummary = $"{snapshot.TotalRegularYieldVolumeM3:N0} m3 yield | {snapshot.TotalCritVolumeM3:N0} m3 crit",
             WasteTotalSummary = $"{snapshot.TotalWasteVolumeM3:N0} m3",
             EfficiencySummary = BuildMiningEfficiencySummary(snapshot),
@@ -5016,6 +5015,7 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
             ? lastActivityUtc - earliestSessionStartUtc
             : TimeSpan.FromSeconds(1);
         var totalWasteEstimatedIskPerHour = snapshots.Sum(x => x.WasteEstimatedIskPerHour);
+        var hasUnpricedWaste = snapshots.Any(x => HasUnpricedMiningWaste(x.Ores));
         var oreMixSummary = string.Join(
             " | ",
             snapshots
@@ -5059,12 +5059,10 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
                 ? $"{wasteRateM3PerHour / 3600d:0.##} m3/s"
                 : $"{wasteRateM3PerHour / 3600d:0.##} m3/s | {wasteRateM3PerHour:N0} m3/hr",
             IskRateSummary = estimatedIskPerHour > 0 ? $"{estimatedIskPerHour:N0} ISK/hr" : "Price unavailable",
-            WasteIskRateSummary = totalWasteEstimatedIskPerHour > 0 ? $"-{totalWasteEstimatedIskPerHour:N0} ISK/hr" : "No waste loss",
+            WasteIskRateSummary = FormatMiningWasteIsk(totalWasteEstimatedIskPerHour, hasUnpricedWaste, perHour: true),
             TotalMinedSummary = $"{totalMinedVolume:N0} m3 mined",
             TotalEstimatedIskSummary = totalEstimatedIsk > 0 ? $"{totalEstimatedIsk:N0} ISK total" : "Price unavailable",
-            TotalWasteIskSummary = totalWasteEstimatedIsk > 0
-                ? $"-{totalWasteEstimatedIsk:N0} ISK"
-                : "No waste loss",
+            TotalWasteIskSummary = FormatMiningWasteIsk(totalWasteEstimatedIsk, hasUnpricedWaste),
             SessionTotalSummary = $"{totalRegularYieldVolume:N0} m3 yield | {totalCritVolume:N0} m3 crit",
             WasteTotalSummary = $"{totalWasteVolume:N0} m3 residue",
             EfficiencySummary = $"{weightedEfficiency:0.#}% actual efficiency across fleet",
@@ -5074,6 +5072,21 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
             YieldRatio = yieldRatio,
             WasteRatio = wasteRatio
         };
+    }
+
+    private static bool HasUnpricedMiningWaste(IReadOnlyList<MiningOreStatsSnapshot> ores) =>
+        ores.Any(x => x.WasteUnits > 0 && x.EstimatedIskPerUnit <= 0);
+
+    private static string FormatMiningWasteIsk(decimal estimate, bool hasUnpricedWaste, bool perHour = false)
+    {
+        if (hasUnpricedWaste)
+        {
+            return "Price unavailable";
+        }
+
+        return estimate > 0
+            ? $"-{estimate:N0} ISK{(perHour ? "/hr" : string.Empty)}"
+            : "No waste loss";
     }
 
     private static string BuildMiningEfficiencySummary(MiningCharacterStatsSnapshot snapshot)

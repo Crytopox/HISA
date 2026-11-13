@@ -156,21 +156,14 @@ public sealed class GameLogMiningTracker : IDisposable
                     return Task.CompletedTask;
                 }
 
-                if (existing.SessionStartedUtc < key.SessionStartedUtc)
+                if (existing.SessionStartedUtc < key.SessionStartedUtc ||
+                    !string.Equals(existing.FilePath, fullPath, StringComparison.OrdinalIgnoreCase))
                 {
                     _activeByPath.Remove(existing.FilePath);
                     tracked = new TrackedGameLogFile(key.CharacterId, key.SessionStartedUtc, fullPath);
                     _activeByCharacterId[key.CharacterId] = tracked;
                     _activeByPath[fullPath] = tracked;
                     _snapshotByCharacterId.Remove(key.CharacterId);
-                    replaced = true;
-                }
-                else if (!string.Equals(existing.FilePath, fullPath, StringComparison.OrdinalIgnoreCase))
-                {
-                    _activeByPath.Remove(existing.FilePath);
-                    tracked = existing with { FilePath = fullPath };
-                    _activeByCharacterId[key.CharacterId] = tracked;
-                    _activeByPath[fullPath] = tracked;
                     replaced = true;
                 }
                 else
@@ -280,6 +273,12 @@ public sealed class GameLogMiningTracker : IDisposable
 
     private static void ApplyEvent(TrackedGameLogFile tracked, MiningLogEvent miningEvent)
     {
+        var oreName = miningEvent.OreName.Length > 0 ? miningEvent.OreName : tracked.LastRegularOreName;
+        if (miningEvent.Kind == MiningLogEventKind.Residue && oreName is null)
+        {
+            return;
+        }
+
         tracked.LastActivityUtc = miningEvent.TimestampUtc;
         if (tracked.FirstActivityUtc == default || miningEvent.TimestampUtc < tracked.FirstActivityUtc)
         {
@@ -297,6 +296,7 @@ public sealed class GameLogMiningTracker : IDisposable
                 else
                 {
                     ore.MinedUnits += miningEvent.Units;
+                    tracked.LastRegularOreName = miningEvent.OreName;
                 }
                 ore.LastMinedUtc = miningEvent.TimestampUtc;
                 if (tracked.CurrentEfficiencyPercent is { } efficiencyPercent)
@@ -305,28 +305,21 @@ public sealed class GameLogMiningTracker : IDisposable
                 }
                 break;
             case MiningLogEventKind.Residue:
-                var residueOre = GetOrCreateOre(tracked, tracked.LastOreName);
+                var residueOre = GetOrCreateOre(tracked, oreName!);
                 residueOre.WasteUnits += miningEvent.Units;
                 break;
             case MiningLogEventKind.SiteEfficiencyChanged:
                 tracked.CurrentEfficiencyPercent = miningEvent.EfficiencyPercent;
-                tracked.LastOreName = miningEvent.OreName;
                 break;
-        }
-
-        if (!string.IsNullOrWhiteSpace(miningEvent.OreName))
-        {
-            tracked.LastOreName = miningEvent.OreName;
         }
     }
 
-    private static MutableOreTotals GetOrCreateOre(TrackedGameLogFile tracked, string? oreName)
+    private static MutableOreTotals GetOrCreateOre(TrackedGameLogFile tracked, string oreName)
     {
-        var key = string.IsNullOrWhiteSpace(oreName) ? "Unknown" : oreName.Trim();
-        if (!tracked.OresByName.TryGetValue(key, out var ore))
+        if (!tracked.OresByName.TryGetValue(oreName, out var ore))
         {
-            ore = new MutableOreTotals { OreName = key };
-            tracked.OresByName[key] = ore;
+            ore = new MutableOreTotals { OreName = oreName };
+            tracked.OresByName[oreName] = ore;
         }
 
         return ore;
@@ -335,7 +328,7 @@ public sealed class GameLogMiningTracker : IDisposable
     private void PublishTrackedSnapshot(TrackedGameLogFile tracked)
     {
         var ores = tracked.OresByName.Values
-            .Where(x => x.MinedUnits > 0 || x.BonusUnits > 0)
+            .Where(x => x.MinedUnits > 0 || x.BonusUnits > 0 || x.WasteUnits > 0)
             .OrderByDescending(x => x.MinedUnits + x.BonusUnits)
             .Select(x => new MiningOreTotals
             {
@@ -343,7 +336,7 @@ public sealed class GameLogMiningTracker : IDisposable
                 MinedUnits = x.MinedUnits,
                 BonusUnits = x.BonusUnits,
                 WasteUnits = x.WasteUnits,
-                LastMinedUtc = x.LastMinedUtc == default ? tracked.SessionStartedUtc : x.LastMinedUtc,
+                LastMinedUtc = x.LastMinedUtc,
                 LastKnownEfficiencyPercent = x.LastKnownEfficiencyPercent
             })
             .ToList();
@@ -523,7 +516,7 @@ public sealed class GameLogMiningTracker : IDisposable
     {
         public long ReadOffset { get; set; }
         public string? CharacterName { get; set; }
-        public string? LastOreName { get; set; }
+        public string? LastRegularOreName { get; set; }
         public DateTime FirstActivityUtc { get; set; }
         public DateTime LastActivityUtc { get; set; }
         public int? CurrentEfficiencyPercent { get; set; }

@@ -102,10 +102,22 @@ public static class GameLogMiningHistoryReader
             }
         }
 
+        string? lastRegularOreName = null;
         while ((line = reader.ReadLine()) is not null)
         {
-            if (!GameLogMiningParser.TryParseMiningEvent(line, out var miningEvent) ||
-                miningEvent.TimestampUtc < cutoffUtc)
+            if (!GameLogMiningParser.TryParseMiningEvent(line, out var miningEvent))
+            {
+                continue;
+            }
+
+            if (miningEvent.Kind == MiningLogEventKind.Yield && !miningEvent.IsCriticalBonus)
+            {
+                lastRegularOreName = miningEvent.OreName;
+            }
+
+            var oreName = miningEvent.OreName.Length > 0 ? miningEvent.OreName : lastRegularOreName;
+            if (miningEvent.TimestampUtc < cutoffUtc ||
+                (miningEvent.Kind == MiningLogEventKind.Residue && oreName is null))
             {
                 continue;
             }
@@ -135,27 +147,24 @@ public static class GameLogMiningHistoryReader
                     {
                         yieldOre.LastKnownEfficiencyPercent = yieldEfficiency;
                     }
-                    aggregate.LastOreName = miningEvent.OreName;
                     break;
                 case MiningLogEventKind.Residue:
-                    var residueOre = GetOrCreateOre(aggregate, aggregate.LastOreName);
+                    var residueOre = GetOrCreateOre(aggregate, oreName!);
                     residueOre.WasteUnits += miningEvent.Units;
                     break;
                 case MiningLogEventKind.SiteEfficiencyChanged:
                     aggregate.CurrentEfficiencyPercent = miningEvent.EfficiencyPercent;
-                    aggregate.LastOreName = miningEvent.OreName;
                     break;
             }
         }
     }
 
-    private static AggregateOreState GetOrCreateOre(AggregateCharacterState aggregate, string? oreName)
+    private static AggregateOreState GetOrCreateOre(AggregateCharacterState aggregate, string oreName)
     {
-        var key = string.IsNullOrWhiteSpace(oreName) ? "Unknown" : oreName.Trim();
-        if (!aggregate.OresByName.TryGetValue(key, out var ore))
+        if (!aggregate.OresByName.TryGetValue(oreName, out var ore))
         {
-            ore = new AggregateOreState { OreName = key };
-            aggregate.OresByName[key] = ore;
+            ore = new AggregateOreState { OreName = oreName };
+            aggregate.OresByName[oreName] = ore;
         }
 
         return ore;
@@ -164,7 +173,7 @@ public static class GameLogMiningHistoryReader
     private static MiningSessionSnapshot? BuildSnapshot(AggregateCharacterState aggregate)
     {
         var ores = aggregate.OresByName.Values
-            .Where(x => x.MinedUnits > 0 || x.BonusUnits > 0)
+            .Where(x => x.MinedUnits > 0 || x.BonusUnits > 0 || x.WasteUnits > 0)
             .OrderByDescending(x => x.MinedUnits + x.BonusUnits)
             .Select(x => new MiningOreTotals
             {
@@ -172,7 +181,7 @@ public static class GameLogMiningHistoryReader
                 MinedUnits = x.MinedUnits,
                 BonusUnits = x.BonusUnits,
                 WasteUnits = x.WasteUnits,
-                LastMinedUtc = x.LastMinedUtc == default ? aggregate.LastActivityUtc : x.LastMinedUtc,
+                LastMinedUtc = x.LastMinedUtc,
                 LastKnownEfficiencyPercent = x.LastKnownEfficiencyPercent
             })
             .ToList();
@@ -203,7 +212,6 @@ public static class GameLogMiningHistoryReader
         public required DateTime FirstActivityUtc { get; set; }
         public required DateTime LastActivityUtc { get; set; }
         public required string SourceFilePath { get; set; }
-        public string? LastOreName { get; set; }
         public int? CurrentEfficiencyPercent { get; set; }
         public Dictionary<string, AggregateOreState> OresByName { get; } = new(StringComparer.OrdinalIgnoreCase);
     }

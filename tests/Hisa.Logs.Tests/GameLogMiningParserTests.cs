@@ -33,16 +33,20 @@ public sealed class GameLogMiningParserTests
         Assert.True(miningEvent.IsCriticalBonus);
     }
 
-    [Fact]
-    public void TryParseMiningEvent_ParsesResidue()
+    [Theory]
+    [InlineData("asteroid", "")]
+    [InlineData("Prismaticite", "Prismaticite")]
+    [InlineData("Glacial Mass IV-Grade", "Glacial Mass IV-Grade")]
+    public void TryParseMiningEvent_ParsesResidue(string source, string expectedOreName)
     {
-        const string line = "[ 2026.06.09 09:41:53 ] (mining) <color=0x77ffffff>Additional <font size=12><color=#ffff454b>154<color=0x77ffffff><font size=10> units depleted from asteroid as residue";
+        var line = $"[ 2026.06.09 09:41:53 ] (mining) <color=0x77ffffff>Additional <font size=12><color=#ffff454b>154<color=0x77ffffff><font size=10> units depleted from {source} as residue";
 
         var parsed = GameLogMiningParser.TryParseMiningEvent(line, out var miningEvent);
 
         Assert.True(parsed);
         Assert.Equal(MiningLogEventKind.Residue, miningEvent.Kind);
         Assert.Equal(154, miningEvent.Units);
+        Assert.Equal(expectedOreName, miningEvent.OreName);
     }
 
     [Fact]
