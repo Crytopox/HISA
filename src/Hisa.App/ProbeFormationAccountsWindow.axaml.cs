@@ -6,6 +6,7 @@ using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Hisa.Core.Models;
 
 namespace Hisa.App;
@@ -34,8 +35,20 @@ public partial class ProbeFormationAccountsWindow : Window
     private void OnSelectVisible(object? sender,RoutedEventArgs e)=>Vm?.SelectVisible();
     private void OnClearTargets(object? sender,RoutedEventArgs e)=>Vm?.ClearTargets();
     private void OnResetFilters(object? sender,RoutedEventArgs e)=>Vm?.ResetFilters();
+    private void OnReplaceMatching(object? sender, RoutedEventArgs e) => Vm?.ReplaceMatching();
+    private void OnCloseTargetDetails(object? sender, RoutedEventArgs e)
+    {
+        if (Vm is not { SelectedTarget: { } target } vm) return;
+        vm.CloseTargetDetails();
+        this.GetVisualDescendants().OfType<Button>().FirstOrDefault(button => ReferenceEquals(button.Tag, target))?.Focus();
+    }
     private async void OnRefresh(object? sender,RoutedEventArgs e){if(Vm is { } vm)await vm.RunAsync(vm.DiscoverAsync);}
-    private async void OnTargetDetails(object? sender,RoutedEventArgs e){if(Vm is { } vm&&sender is Button{Tag:TransferTargetRow row})await vm.RunAsync(()=>vm.SelectTargetAsync(row));}
+    private async void OnTargetDetails(object? sender, RoutedEventArgs e)
+    {
+        if (Vm is not { } vm || sender is not Button { Tag: TransferTargetRow row }) return;
+        await vm.RunAsync(() => vm.SelectTargetAsync(row));
+        CloseDetailsButton.Focus();
+    }
     private async void OnSaveAlias(object? sender,RoutedEventArgs e){if(Vm is { } vm)await vm.RunAsync(vm.SaveAliasAsync);}
     private void OnCopyFormation(object? sender,RoutedEventArgs e){if(Vm is { } vm&&sender is Button{Tag:EveStoredFormation row})vm.Run(()=>vm.CopyFormation(row));}
     private async void OnRetryFailed(object? sender,RoutedEventArgs e){if(Vm is { } vm)await vm.RunAsync(vm.RetryFailedAsync);}

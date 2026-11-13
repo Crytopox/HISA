@@ -113,7 +113,7 @@ public sealed partial class ProbeFormationDesignerViewModel
             var values = new[] {p.Position.X,p.Position.Y,p.Position.Z,p.RadiusMeters};
             foreach (var c in row.Cells) if (!c.IsPending || committing) c.Reset(values[c.Column], c.Column == 3 ? ProbeFormationMath.AstronomicalUnit : UnitFactor);
         }
-        DraftChanged(); NotifySelection();
+        DraftChanged(); NotifySelection(); RefreshPlacement();
     }
     public void CommitPendingEdits()
     {
@@ -129,7 +129,15 @@ public sealed partial class ProbeFormationDesignerViewModel
     {
         ProbeFormationMath.Validate(changed);
         if (selected is null) return;
-        if (Current is { } before && before.Name == changed.Name && before.Probes.SequenceEqual(changed.Probes)) { if (newSelection is not null) SetSelectionCore(newSelection, newSelection.FirstOrDefault(-1)); return; }
+        if (Current is { } before && before.Name == changed.Name && before.Probes.SequenceEqual(changed.Probes))
+        {
+            if (newSelection is not null)
+            {
+                SetSelectionCore(newSelection, newSelection.FirstOrDefault(-1));
+                NotifySelection();
+            }
+            return;
+        }
         Remember(); selected.Formation = changed;
         SetSelectionCore(newSelection ?? selectedIndices, newSelection?.FirstOrDefault(-1) ?? selectedProbe); Refresh();
     }

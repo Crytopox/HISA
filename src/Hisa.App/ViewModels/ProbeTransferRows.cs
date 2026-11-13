@@ -61,35 +61,58 @@ public sealed class TransferAccountGroupRow(EveAccountGroup group) : ProbeTransf
     public string DisplayTitle=>Characters.Count==0?Title:Names;
     public string AccountContext=>Characters.Count==0?$"{Group.Server} · {Targets.Count} profile file{(Targets.Count==1?"":"s")}":$"Account {Group.AccountId} · {Group.Server}";
 }
-public sealed class FormationReviewRow(ProbeFormation formation,IReadOnlyList<EveStoredFormation> matches,Action changed) : ProbeTransferRow
+public sealed class FormationReviewRow(ProbeFormation formation, IReadOnlyList<EveStoredFormation> matches,
+    bool replacementMissing, Action changed) : ProbeTransferRow
 {
     public ProbeFormation Formation {get;}=formation;
     public IReadOnlyList<EveStoredFormation> Matches {get;}=matches;
     public bool IsConflict=>Matches.Count>0;
+    public bool ReplacementMissing => replacementMissing;
     public string Name=>Formation.Name;
-    public string Description=>$"{Formation.Probes.Count} probes · "+(IsConflict?"An existing formation has this name":"Add as a new formation");
-    public string[] ActionOptions {get;}=["Choose action…","Keep existing","Replace selected ID","Create renamed copy"];
+    public bool RequiresAction => IsConflict || replacementMissing;
+    public bool IsUnresolved => RequiresAction && (ActionIndex <= 0 || ActionIndex == 2 && IsConflict && Target is null);
+    public string Description => replacementMissing ? "Previously selected replacement is unavailable."
+        : Matches.Count switch { 0 => "New formation", 1 => "Matching name", _ => $"{Matches.Count} matching names" };
+    public string[] ActionOptions { get; } = replacementMissing && matches.Count == 0
+        ? ["Choose action…", "Skip", "Add as new"]
+        : ["Choose action…", "Keep existing", "Replace", "Create renamed copy"];
     private int actionIndex;
     public int ActionIndex {get=>actionIndex;set{if(Set(ref actionIndex,value)){Raise(nameof(NeedsName));Raise(nameof(NeedsTarget));changed();}}}
-    private EveStoredFormation? target=matches.FirstOrDefault();
+    private EveStoredFormation? target = matches.Count == 1 ? matches[0] : null;
     public EveStoredFormation? Target {get=>target;set{if(Set(ref target,value))changed();}}
     private string newName=formation.Name+" (HISA)";
     public string NewName {get=>newName;set{if(Set(ref newName,value))changed();}}
     public bool NeedsName=>IsConflict&&ActionIndex==3;
-    public bool NeedsTarget=>IsConflict&&ActionIndex==2;
-    public FormationMergeChoice? Choice=>!IsConflict?null:new(Formation.Id,ActionIndex switch{1=>FormationConflictAction.KeepExisting,2=>FormationConflictAction.Replace,3=>FormationConflictAction.RenamedCopy,_=>FormationConflictAction.Unresolved},Target?.EveId,NewName);
+    public bool NeedsTarget => Matches.Count > 1 && ActionIndex == 2;
+    public FormationMergeChoice? Choice => ActionIndex == 1 && RequiresAction
+        ? new(Formation.Id, FormationConflictAction.KeepExisting)
+        : !IsConflict ? null : new(Formation.Id, ActionIndex switch
+        {
+            2 => FormationConflictAction.Replace,
+            3 => FormationConflictAction.RenamedCopy,
+            _ => FormationConflictAction.Unresolved
+        }, Target?.EveId, NewName);
+
+    private string outcome = "";
+    public string Outcome { get => outcome; internal set => Set(ref outcome, value); }
 }
 public sealed class FileReviewRow(TransferTargetRow target,EveFormationSnapshot? snapshot,string? error=null) : ProbeTransferRow
 {
     public TransferTargetRow Target {get;}=target;
     public EveFormationSnapshot? Snapshot {get;}=snapshot;
+    public bool HasSnapshot => Snapshot is not null;
     public ObservableCollection<FormationReviewRow> Formations {get;}=[];
     public FormationMergePreview? Preview {get;internal set;}
+    private bool expanded;
+    public bool IsExpanded { get => expanded; set => Set(ref expanded, value); }
     private string message=error??"";
     public string Message {get=>message;internal set=>Set(ref message,value);}
-    public string Title=>$"Account {Target.Account.AccountId} · {Target.Profile}";
+    private bool hasError = error is not null;
+    public bool HasError { get => hasError; internal set => Set(ref hasError, value); }
+    public string Title => $"Account {Target.Account.AccountId} · {EveSettingsIdentity.Server(Target.Account.Installation)} · {Target.Label}";
 }
 public sealed record TransferResultRow(string Path,string State,string Message,string? BackupPath)
 {
     public bool Failed=>State=="Failed";
+    public bool HasBackup => BackupPath is not null;
 }

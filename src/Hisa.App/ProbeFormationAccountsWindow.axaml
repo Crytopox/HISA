@@ -4,11 +4,11 @@
  x:Class="Hisa.App.ProbeFormationAccountsWindow" x:DataType="vm:ProbeFormationAccountsViewModel"
  Title="HISA · Send formations to EVE" Width="1200" Height="800" MinWidth="1000" MinHeight="620" Background="#0D131D">
  <Window.Styles>
-  <Style Selector="Button"><Setter Property="Padding" Value="12,7" /></Style>
-  <Style Selector="Border.card"><Setter Property="Background" Value="#141F2F" /><Setter Property="CornerRadius" Value="6" /><Setter Property="Padding" Value="12" /><Setter Property="Margin" Value="0,0,0,10" /></Style>
+  <Style Selector="Button"><Setter Property="Padding" Value="10,6" /></Style>
+  <Style Selector="Border.card"><Setter Property="Background" Value="#141F2F" /><Setter Property="CornerRadius" Value="6" /><Setter Property="Padding" Value="10" /><Setter Property="Margin" Value="0,0,0,6" /></Style>
   <Style Selector="TextBlock.title"><Setter Property="FontWeight" Value="SemiBold" /><Setter Property="FontSize" Value="15" /><Setter Property="Foreground" Value="#D5E7FA" /></Style>
   <Style Selector="TextBlock.muted"><Setter Property="FontSize" Value="11" /><Setter Property="Foreground" Value="#8FABC4" /></Style>
-  <Style Selector="Border.target"><Setter Property="Background" Value="#101A28" /><Setter Property="CornerRadius" Value="4" /><Setter Property="BorderBrush" Value="#25384D" /><Setter Property="BorderThickness" Value="1" /><Setter Property="Padding" Value="10,5" /><Setter Property="Margin" Value="0,3" /></Style>
+  <Style Selector="Border.target"><Setter Property="Background" Value="#101A28" /><Setter Property="CornerRadius" Value="4" /><Setter Property="BorderBrush" Value="#25384D" /><Setter Property="BorderThickness" Value="1" /><Setter Property="Padding" Value="8,1" /><Setter Property="Margin" Value="0,2" /></Style>
   <Style Selector="Border.target.chosen"><Setter Property="Background" Value="#19354D" /><Setter Property="BorderBrush" Value="#4484AE" /></Style>
   <Style Selector="Button.quiet"><Setter Property="Padding" Value="9,5" /><Setter Property="Background" Value="Transparent" /></Style>
   <Style Selector="TabItem"><Setter Property="FontSize" Value="12" /><Setter Property="Padding" Value="9,7" /></Style>
@@ -24,25 +24,37 @@
    <Border Width="32" Height="32" CornerRadius="5" ClipToBounds="True" Background="#263B51" Margin="0,0,5,0" AttachedToVisualTree="OnCharacterVisible" ToolTip.Tip="{Binding Name}"><Grid><Image Source="{Binding Portrait}" Stretch="UniformToFill" /><TextBlock Text="?" IsVisible="{Binding !HasPortrait}" HorizontalAlignment="Center" VerticalAlignment="Center" /></Grid></Border>
   </DataTemplate>
  </Window.Resources>
- <Grid Margin="18" RowDefinitions="Auto,*,Auto,Auto" RowSpacing="12">
-  <Grid ColumnDefinitions="*,Auto">
-   <StackPanel Spacing="5"><TextBlock Text="Send formations to EVE" FontSize="23" FontWeight="SemiBold" /><TextBlock Text="Formations  →  Accounts  →  Review  →  Results" Classes="muted" /><TextBlock Text="{Binding StepTitle}" Foreground="#76CBF3" FontSize="15" /></StackPanel>
+ <Grid Margin="16" RowDefinitions="Auto,*,Auto,Auto" RowSpacing="10">
+  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+   <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+    <TextBlock Text="{Binding StepTitle}" FontSize="22" FontWeight="SemiBold" />
+    <TextBlock Text="{Binding StepProgress}" Classes="muted" VerticalAlignment="Center" />
+   </StackPanel>
    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="6"><TextBlock Text="{Binding Summary}" HorizontalAlignment="Right" /><TextBlock Text="Resolving character names…" IsVisible="{Binding IsResolving}" Classes="muted" HorizontalAlignment="Right" /></StackPanel>
   </Grid>
   <Grid Grid.Row="1" IsEnabled="{Binding IsIdle}">
-   <Grid IsVisible="{Binding IsFormations}" RowDefinitions="Auto,*" RowSpacing="12">
-    <StackPanel><TextBlock Text="Choose the formations you want to send. Your current formation is selected." /><TextBlock Text="No formations in the library. Create one in the designer first." IsVisible="{Binding HasNoFormations}" Margin="0,12,0,0" Classes="muted" /></StackPanel>
-    <ScrollViewer Grid.Row="1"><ItemsControl ItemsSource="{Binding Formations}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-     <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:TransferFormationRow"><Border Classes="card" Width="270" Margin="0,0,12,12"><Grid ColumnDefinitions="88,*" ColumnSpacing="10"><rendering:ProbeFormationThumbnail Formation="{Binding Formation}" Width="88" Height="72" /><StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="6"><CheckBox IsChecked="{Binding Selected, Mode=TwoWay}"><TextBlock Text="{Binding Name}" TextWrapping="Wrap" MaxWidth="116" /></CheckBox><TextBlock Text="{Binding Description}" Classes="muted" /></StackPanel></Grid></Border></DataTemplate></ItemsControl.ItemTemplate>
+   <Grid IsVisible="{Binding IsFormations}" RowDefinitions="Auto,*" RowSpacing="8">
+    <TextBlock Text="No formations in the library. Create one in the designer first." IsVisible="{Binding HasNoFormations}" Classes="muted" />
+    <ScrollViewer Grid.Row="1"><ItemsControl ItemsSource="{Binding Formations}">
+     <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:TransferFormationRow">
+      <Border Classes="target" Classes.chosen="{Binding Selected}">
+       <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
+        <CheckBox IsChecked="{Binding Selected, Mode=TwoWay}" HorizontalContentAlignment="Stretch">
+         <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}" />
+        </CheckBox>
+        <TextBlock Grid.Column="1" Text="{Binding Description}" Classes="muted" VerticalAlignment="Center" />
+        <rendering:ProbeFormationThumbnail Grid.Column="2" Formation="{Binding Formation}" Width="52" Height="36" />
+       </Grid>
+      </Border>
+     </DataTemplate></ItemsControl.ItemTemplate>
     </ItemsControl></ScrollViewer>
    </Grid>
-   <Grid IsVisible="{Binding IsAccounts}" RowDefinitions="Auto,Auto,*" RowSpacing="10">
-    <TextBlock Text="Choose the profile files to update. Character labels help you recognize each account." Classes="muted" TextWrapping="Wrap" />
-    <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+   <Grid IsVisible="{Binding IsAccounts}" RowDefinitions="Auto,*" RowSpacing="8">
+    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
      <TextBox Text="{Binding Search}" Watermark="Search characters, accounts or profiles…" />
      <Button Grid.Column="1" Content="Discovery ▾" Classes="quiet"><Button.Flyout><MenuFlyout><MenuItem Header="Refresh accounts" Click="OnRefresh" /><MenuItem Header="Settings locations…" Click="OnLocations" /></MenuFlyout></Button.Flyout></Button>
     </Grid>
-    <Grid Grid.Row="2" ColumnDefinitions="*,340" ColumnSpacing="16">
+    <Grid Grid.Row="1" ColumnDefinitions="*,Auto">
      <Grid RowDefinitions="Auto,Auto,*" RowSpacing="8">
       <Expander x:Name="AccountFilters" Header="Filter by server or profile" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
        <Grid ColumnDefinitions="*,*,Auto" ColumnSpacing="8" Margin="0,6"><ComboBox ItemsSource="{Binding ServerOptions}" SelectedItem="{Binding ServerFilter, Mode=TwoWay}" HorizontalAlignment="Stretch" /><ComboBox Grid.Column="1" ItemsSource="{Binding ProfileOptions}" SelectedItem="{Binding ProfileFilter, Mode=TwoWay}" HorizontalAlignment="Stretch" /><Button Grid.Column="2" Content="Reset" Click="OnResetFilters" IsEnabled="{Binding HasActiveFilters}" Classes="quiet" /></Grid>
@@ -51,7 +63,7 @@
       <ScrollViewer Grid.Row="2"><StackPanel>
        <Border Classes="card" IsVisible="{Binding HasNoVisibleGroups}"><StackPanel Spacing="8"><TextBlock Text="No matching accounts" Classes="title" /><TextBlock Text="Try another search or add your settings folder." TextWrapping="Wrap" Classes="muted" /><Button Content="Settings locations…" Click="OnLocations" HorizontalAlignment="Left" /></StackPanel></Border>
        <ItemsControl ItemsSource="{Binding VisibleGroups}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:TransferAccountGroupRow">
-        <Border Classes="card"><StackPanel Spacing="10">
+        <Border Classes="card"><StackPanel Spacing="4">
          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="7">
           <ItemsControl ItemsSource="{Binding Characters}" ItemTemplate="{StaticResource CharacterAvatar}" MaxWidth="116" ClipToBounds="True" VerticalAlignment="Center"><ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel></ItemsControl>
           <StackPanel Grid.Column="1" Spacing="3"><TextBlock Text="{Binding DisplayTitle}" Classes="title" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding DisplayTitle}" /><TextBlock Text="{Binding AccountContext}" Classes="muted" /></StackPanel>
@@ -63,10 +75,12 @@
        </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
       </StackPanel></ScrollViewer>
      </Grid>
-     <Border Grid.Column="1" Classes="card" Margin="0"><Grid>
-      <StackPanel IsVisible="{Binding !HasTarget}" VerticalAlignment="Center" Spacing="10" Margin="12"><TextBlock Text="Account details" Classes="title" /><TextBlock Text="Use Inspect on a profile to see its linked characters, saved formations and destination file." TextWrapping="Wrap" Classes="muted" /><TextBlock Text="Inspecting an account does not select it for transfer." TextWrapping="Wrap" Classes="muted" /></StackPanel>
-      <Grid IsVisible="{Binding HasTarget}" RowDefinitions="Auto,*" RowSpacing="14">
-       <StackPanel Spacing="4"><TextBlock Text="{Binding TargetTitle}" Classes="title" TextTrimming="CharacterEllipsis" /><TextBlock Text="{Binding TargetContext}" Classes="muted" /></StackPanel>
+     <Border Grid.Column="1" Classes="card" Margin="10,0,0,0" Width="320" IsVisible="{Binding HasTarget}">
+      <Grid RowDefinitions="Auto,*" RowSpacing="8">
+       <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+        <StackPanel Spacing="4"><TextBlock Text="{Binding TargetTitle}" Classes="title" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding TargetTitle}" /><TextBlock Text="{Binding TargetContext}" Classes="muted" /></StackPanel>
+        <Button Grid.Column="1" x:Name="CloseDetailsButton" Content="Close" Click="OnCloseTargetDetails" Classes="quiet" />
+       </Grid>
        <TabControl Grid.Row="1" x:Name="AccountDetailTabs">
         <TabItem Header="Characters"><ScrollViewer><StackPanel Spacing="12" Margin="0,12,0,0">
          <TextBlock Text="Linked locally" Classes="muted" /><ItemsControl ItemsSource="{Binding SelectedCharacters}" ItemTemplate="{StaticResource CharacterBadge}" />
@@ -84,28 +98,89 @@
         </StackPanel></ScrollViewer></TabItem>
        </TabControl>
       </Grid>
-     </Grid></Border>
+     </Border>
     </Grid>
    </Grid>
-   <Grid IsVisible="{Binding IsReview}" RowDefinitions="Auto,*,Auto" RowSpacing="10">
-    <TextBlock Text="Review the exact account files and resolve each name conflict. Existing unselected formations are preserved." TextWrapping="Wrap" />
-    <ScrollViewer Grid.Row="1"><ItemsControl ItemsSource="{Binding Reviews}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:FileReviewRow"><Border Classes="card"><StackPanel Spacing="8">
-     <TextBlock Text="{Binding Title}" Classes="title" /><TextBlock Text="{Binding Target.Path}" Classes="muted" TextWrapping="Wrap" />
-     <ItemsControl ItemsSource="{Binding Formations}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:FormationReviewRow"><Border BorderBrush="#30445B" BorderThickness="0,1,0,0" Padding="0,8"><StackPanel Spacing="6"><TextBlock Text="{Binding Name}" FontWeight="SemiBold" /><TextBlock Text="{Binding Description}" Classes="muted" />
-      <ComboBox ItemsSource="{Binding ActionOptions}" SelectedIndex="{Binding ActionIndex, Mode=TwoWay}" IsVisible="{Binding IsConflict}" />
-      <ComboBox ItemsSource="{Binding Matches}" SelectedItem="{Binding Target, Mode=TwoWay}" IsVisible="{Binding NeedsTarget}"><ComboBox.ItemTemplate><DataTemplate x:DataType="models:EveStoredFormation"><StackPanel Orientation="Horizontal" Spacing="8"><TextBlock Text="{Binding EveId}" /><TextBlock Text="{Binding Formation.Name}" /></StackPanel></DataTemplate></ComboBox.ItemTemplate></ComboBox>
-      <TextBox Text="{Binding NewName}" Watermark="Name for the new copy" IsVisible="{Binding NeedsName}" />
-     </StackPanel></Border></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
-     <TextBlock Text="{Binding Message}" TextWrapping="Wrap" Foreground="#ECC878" />
-    </StackPanel></Border></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></ScrollViewer>
-    <StackPanel Grid.Row="2" Spacing="6"><TextBlock Text="{Binding ClientStatusText}" TextWrapping="Wrap" /><CheckBox Content="I confirm all EVE clients are closed" IsChecked="{Binding Acknowledged, Mode=TwoWay}" /></StackPanel>
+   <Grid IsVisible="{Binding IsReview}" RowDefinitions="Auto,*,Auto" RowSpacing="8">
+    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+     <TextBlock Text="{Binding ReviewSummary}" TextWrapping="Wrap" VerticalAlignment="Center" />
+     <Button x:Name="ReplaceMatchingButton" Grid.Column="1" Content="Replace matching formations across all selected files"
+      Click="OnReplaceMatching" IsEnabled="{Binding CanReplaceMatching}"
+      ToolTip.Tip="Sets Replace for unique name matches. Choose an ID for duplicate names." />
+    </Grid>
+    <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
+     <ItemsControl ItemsSource="{Binding ReviewDestinations}">
+      <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:FileReviewRow">
+       <Expander IsExpanded="{Binding IsExpanded, Mode=TwoWay}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,5">
+        <Expander.Header>
+         <StackPanel Spacing="2">
+          <TextBlock Text="{Binding Title}" Classes="title" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Title}" />
+          <TextBlock Text="{Binding Message}" Classes="muted" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Message}" />
+         </StackPanel>
+        </Expander.Header>
+        <StackPanel Spacing="8" Margin="0,4,0,6">
+         <SelectableTextBlock Text="{Binding Target.Path}" Classes="muted" TextWrapping="Wrap" />
+         <TextBlock Text="{Binding Message}" IsVisible="{Binding HasError}" Foreground="#F3B397" TextWrapping="Wrap" />
+         <ItemsControl ItemsSource="{Binding Formations}" IsVisible="{Binding HasSnapshot}">
+          <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:FormationReviewRow">
+           <Border BorderBrush="#30445B" BorderThickness="0,1,0,0" Padding="0,5">
+            <Grid ColumnDefinitions="*,165,205" ColumnSpacing="10">
+             <StackPanel VerticalAlignment="Center">
+              <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}" />
+              <TextBlock Text="{Binding Description}" Classes="muted" TextWrapping="Wrap" />
+             </StackPanel>
+             <ComboBox Grid.Column="1" ItemsSource="{Binding ActionOptions}" SelectedIndex="{Binding ActionIndex, Mode=TwoWay}"
+              IsVisible="{Binding RequiresAction}" HorizontalAlignment="Stretch" />
+             <StackPanel Grid.Column="2" Spacing="3" VerticalAlignment="Center">
+              <ComboBox ItemsSource="{Binding Matches}" SelectedItem="{Binding Target, Mode=TwoWay}" IsVisible="{Binding NeedsTarget}"
+               HorizontalAlignment="Stretch" PlaceholderText="Choose existing ID">
+               <ComboBox.ItemTemplate><DataTemplate x:DataType="models:EveStoredFormation">
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                 <TextBlock Text="{Binding EveId, StringFormat='ID {0}'}" />
+                 <TextBlock Grid.Column="1" Text="{Binding Formation.Name}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Formation.Name}" />
+                </Grid>
+               </DataTemplate></ComboBox.ItemTemplate>
+              </ComboBox>
+              <TextBox Text="{Binding NewName}" Watermark="New formation name" IsVisible="{Binding NeedsName}" />
+              <TextBlock Text="{Binding Outcome}" Classes="muted" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Outcome}" />
+             </StackPanel>
+            </Grid>
+           </Border>
+          </DataTemplate></ItemsControl.ItemTemplate>
+         </ItemsControl>
+        </StackPanel>
+       </Expander>
+      </DataTemplate></ItemsControl.ItemTemplate>
+     </ItemsControl>
+    </ScrollViewer>
+    <StackPanel Grid.Row="2" Spacing="4">
+     <TextBlock Text="{Binding ClientStatusText}" TextWrapping="Wrap" Classes="muted" />
+     <CheckBox Content="I confirm all EVE clients are closed" IsChecked="{Binding Acknowledged, Mode=TwoWay}" IsVisible="{Binding NeedsClientAcknowledgment}" />
+    </StackPanel>
    </Grid>
    <Grid IsVisible="{Binding IsResults}" RowDefinitions="*,Auto" RowSpacing="10">
-    <ScrollViewer><ItemsControl ItemsSource="{Binding Results}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:TransferResultRow"><Border Classes="card"><StackPanel Spacing="8"><TextBlock Text="{Binding State}" Classes="title" /><TextBlock Text="{Binding Path}" TextWrapping="Wrap" /><TextBlock Text="{Binding Message}" TextWrapping="Wrap" Classes="muted" /><TextBlock Text="{Binding BackupPath}" TextWrapping="Wrap" Classes="muted" /></StackPanel></Border></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></ScrollViewer>
+    <ScrollViewer><ItemsControl ItemsSource="{Binding Results}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:TransferResultRow">
+     <Border Classes="card">
+      <Grid ColumnDefinitions="105,*" ColumnSpacing="10">
+       <TextBlock Text="{Binding State}" Classes="title" />
+       <StackPanel Grid.Column="1" Spacing="3">
+        <SelectableTextBlock Text="{Binding Path}" TextWrapping="Wrap" />
+        <TextBlock Text="{Binding Message}" TextWrapping="Wrap" Classes="muted" />
+        <SelectableTextBlock Text="{Binding BackupPath, StringFormat='Backup · {0}'}" IsVisible="{Binding HasBackup}" TextWrapping="Wrap" FontSize="11" />
+       </StackPanel>
+      </Grid>
+     </Border>
+    </DataTemplate></ItemsControl.ItemTemplate></ItemsControl></ScrollViewer>
     <WrapPanel Grid.Row="1"><Button Content="Review failed targets again" Click="OnRetryFailed" IsEnabled="{Binding HasFailed}" /><Button Content="Back to accounts" Click="OnBackToAccounts" /></WrapPanel>
    </Grid>
   </Grid>
-  <ScrollViewer Grid.Row="2" MaxHeight="60"><TextBlock Text="{Binding Status}" TextWrapping="Wrap" Foreground="#AABFD4" /></ScrollViewer>
-  <Grid Grid.Row="3" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10"><TextBlock Text="Every write includes a verified backup." Classes="muted" VerticalAlignment="Center" /><Button Grid.Column="1" Content="← Back" Click="OnBack" IsEnabled="{Binding CanBack}" /><Button Grid.Column="2" Content="{Binding PrimaryAction}" Click="OnPrimaryAction" IsEnabled="{Binding CanContinue}" MinWidth="160" /></Grid>
+  <ScrollViewer Grid.Row="2" MaxHeight="60" IsVisible="{Binding HasStatus}"><TextBlock Text="{Binding Status}" TextWrapping="Wrap" Foreground="#AABFD4" /></ScrollViewer>
+  <Border Grid.Row="3" BorderThickness="0,1,0,0" BorderBrush="#30445B" Padding="0,8,0,0">
+   <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
+    <TextBlock Text="Writes include a verified backup." IsVisible="{Binding IsReview}" Classes="muted" VerticalAlignment="Center" />
+    <Button Grid.Column="1" Content="Back" Click="OnBack" IsVisible="{Binding CanBack}" />
+    <Button Grid.Column="2" Classes="accent" Content="{Binding PrimaryAction}" Click="OnPrimaryAction" IsEnabled="{Binding CanContinue}" MinWidth="150" />
+   </Grid>
+  </Border>
  </Grid>
 </Window>

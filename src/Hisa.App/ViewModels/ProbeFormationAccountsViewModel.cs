@@ -18,13 +18,15 @@ public sealed class ProbeFormationAccountsViewModel : ProbeTransferRow,IDisposab
     private IReadOnlyList<EveCharacterFile> characterFiles=[];
     private IReadOnlyList<EveLocalCharacterLink> links=[];
     private EveDiscoveryPreferences preferences=new([],new Dictionary<string,string>());
-    private string sourceSignature="",search="",serverFilter="All servers",profileFilter="All profiles",status="Choose formations to send.",alias="",characterSearch="";
+    private string sourceSignature="",search="",serverFilter="All servers",profileFilter="All profiles",status="",alias="",characterSearch="";
     private int step,detailGeneration,revision;
-    private bool working,writing,acknowledged,reviewCurrent,disposed,resolving;
+    private bool working,writing,acknowledged,reviewCurrent,disposed,resolving,updatingChoices;
+    private string reviewSummary = "";
     private TransferTargetRow? selectedTarget;
     public ObservableCollection<TransferFormationRow> Formations {get;}=[];
     public ObservableCollection<TransferAccountGroupRow> Groups {get;}=[];
     public ObservableCollection<FileReviewRow> Reviews {get;}=[];
+    public ObservableCollection<FileReviewRow> ReviewDestinations { get; } = [];
     public ObservableCollection<TransferResultRow> Results {get;}=[];
     public ObservableCollection<EveStoredFormation> ExistingFormations {get;}=[];
     public ObservableCollection<EveSettingsBackup> Backups {get;}=[];
@@ -36,7 +38,8 @@ public sealed class ProbeFormationAccountsViewModel : ProbeTransferRow,IDisposab
     private string linkStatus="";
     public string LinkStatus {get=>linkStatus;set=>Set(ref linkStatus,value);}
     public string Alias {get=>alias;set=>Set(ref alias,value);}
-    public string Status {get=>status;set=>Set(ref status,value);}
+    public string Status { get => status; set { if (Set(ref status, value)) Raise(nameof(HasStatus)); } }
+    public bool HasStatus => !string.IsNullOrWhiteSpace(Status);
     public bool IsWorking {get=>working;private set{working=value;RefreshState();}}
     public bool IsWriting {get=>writing;private set{writing=value;RefreshState();}}
     public bool IsIdle=>!IsWorking&&!IsWriting;
@@ -46,16 +49,23 @@ public sealed class ProbeFormationAccountsViewModel : ProbeTransferRow,IDisposab
     public bool IsAccounts=>Step==1;
     public bool IsReview=>Step==2;
     public bool IsResults=>Step==3;
-    public string StepTitle=>new[]{"1  Formations","2  Accounts","3  Review","4  Results"}[Step];
+    public string StepTitle => new[] { "Formations", "Accounts", "Review", "Results" }[Step];
+    public string StepProgress => $"{Step + 1} / 4";
     public string PrimaryAction=>Step switch{0=>"Choose accounts →",1=>"Review changes →",2=>"Apply to EVE",_=>"Done"};
     public string Summary {get{var f=Formations.Count(f=>f.Selected);var t=AllTargets.Count(t=>t.Selected);return $"{f} formation{(f==1?"":"s")} · {t} destination file{(t==1?"":"s")}";}}
     public bool CanBack=>IsIdle&&Step is 1 or 2;
     public bool CanContinue=>IsIdle&&(Step switch{0=>Formations.Any(f=>f.Selected)&&!SourceHasDrafts,1=>AllTargets.Any(t=>t.Selected)&&Formations.Any(f=>f.Selected)&&!SourceHasDrafts,2=>CanApply,_=>true});
     public bool CanApply=>IsIdle&&reviewCurrent&&Reviews.Count>0&&Reviews.All(r=>r.Preview is not null)&&ClientStatus!=EveClientStatus.Running&&(ClientStatus!=EveClientStatus.Unknown||Acknowledged)&&!SourceHasDrafts;
+    public string ReviewSummary { get => reviewSummary; private set => Set(ref reviewSummary, value); }
+    public bool CanReplaceMatching => IsReview && IsIdle && reviewCurrent && Reviews
+        .Where(file => file.Snapshot is { Errors.Count: 0 })
+        .SelectMany(file => file.Formations)
+        .Any(row => row.Matches.Count == 1 && row.ActionIndex != (int)FormationConflictAction.Replace);
     public bool HasFailed=>Results.Any(r=>r.Failed);
     public bool HasNoFormations=>Formations.Count==0;
     public bool Acknowledged {get=>acknowledged;set{if(Set(ref acknowledged,value))RefreshState();}}
     public EveClientStatus ClientStatus {get;private set;}
+    public bool NeedsClientAcknowledgment => ClientStatus == EveClientStatus.Unknown;
     public string ClientStatusText=>ClientStatus switch{EveClientStatus.Running=>"EVE is running — close all clients before applying.",EveClientStatus.Unknown=>"Client detection is inconclusive. Confirm all clients are closed.",_=>"No running EVE client detected."};
     public IReadOnlyList<string> Locations=>preferences.Roots;
     public IEnumerable<TransferTargetRow> AllTargets=>Groups.SelectMany(g=>g.Targets);
@@ -140,7 +150,15 @@ public sealed class ProbeFormationAccountsViewModel : ProbeTransferRow,IDisposab
     private void InvalidateReview()
     {
         revision++;
-        reviewCurrent=false;foreach(var row in Reviews){row.Preview=null;row.Message="Selection or formation changed. Return to Accounts and review again.";}RefreshState();
+        reviewCurrent = false;
+        ReviewSummary = "Selection or formation changed. Return to Accounts and review again.";
+        foreach (var row in Reviews)
+        {
+            row.Preview = null;
+            row.Message = "Review required";
+            foreach (var formation in row.Formations) formation.Outcome = "";
+        }
+        RefreshState();
     }
     private void RefreshFilters()
     {
@@ -157,7 +175,7 @@ public sealed class ProbeFormationAccountsViewModel : ProbeTransferRow,IDisposab
     public async Task NextAsync()
     {
         if(SourceHasDrafts)throw new ArgumentException("Finish or cancel pending editor changes before transferring.");
-        if(Step==0){if(!Formations.Any(f=>f.Selected))throw new ArgumentException("Select at least one formation.");Step=1;StartIdentityResolution();}
+        if(Step==0){if(!Formations.Any(f=>f.Selected))throw new ArgumentException("Select at least one formation.");Status="";Step=1;StartIdentityResolution();}
         else if(Step==1)await BuildReviewAsync();
         else if(Step==2)await ApplyAsync();
     }
@@ -166,32 +184,162 @@ public sealed class ProbeFormationAccountsViewModel : ProbeTransferRow,IDisposab
         if(SourceHasDrafts)throw new ArgumentException("Finish or cancel pending editor changes first.");
         var formations=Formations.Where(f=>f.Selected).Select(f=>f.Formation).ToArray();var targets=AllTargets.Where(t=>t.Selected).ToArray();
         if(formations.Length==0||targets.Length==0)throw new ArgumentException("Select formations and at least one target file.");
-        var old=Reviews.ToDictionary(r=>r.Target.Path,r=>r.Formations.ToDictionary(f=>f.Formation.Id,f=>f.Choice));
-        Reviews.Clear();reviewCurrent=false;acknowledged=false;
+        var old = Reviews.ToDictionary(row => row.Target.Path, row => row.Formations.ToDictionary(f => f.Formation.Id));
+        var reviewRevision = revision;
+        Reviews.Clear();
+        ReviewDestinations.Clear();
+        reviewCurrent = false;
+        Acknowledged = false;
         foreach(var target in targets){
             FileReviewRow row;
-            try{var snapshot=await eve.ReadAsync(target.Account,lifetime.Token);row=new(target,snapshot);
-                foreach(var f in formations){var review=new FormationReviewRow(f,snapshot.Formations.Where(e=>e.Formation.Name.Equals(f.Name,StringComparison.OrdinalIgnoreCase)).ToArray(),RebuildPreviews);
-                    if(old.TryGetValue(target.Path,out var previous)&&previous.GetValueOrDefault(f.Id) is { } choice){
-                        var matchingTarget=review.Matches.FirstOrDefault(m=>m.EveId==choice.TargetId);
-                        review.ActionIndex=choice.Action==FormationConflictAction.Replace&&matchingTarget is null?0:(int)choice.Action;
-                        review.Target=matchingTarget??review.Matches.FirstOrDefault();review.NewName=choice.NewName??review.NewName;
+            try
+            {
+                var snapshot = await eve.ReadAsync(target.Account, lifetime.Token);
+                row = new(target, snapshot);
+                old.TryGetValue(target.Path, out var previous);
+                var reviewed = new List<FormationReviewRow>();
+                foreach (var formation in formations)
+                {
+                    var matches = snapshot.Formations
+                        .Where(existing => existing.Formation.Name.Equals(formation.Name, StringComparison.OrdinalIgnoreCase)).ToArray();
+                    var prior = previous?.GetValueOrDefault(formation.Id);
+                    var choice = prior?.Choice;
+                    var matchingTarget = matches.FirstOrDefault(match => match.EveId == choice?.TargetId);
+                    var replacementMissing = (choice is { Action: FormationConflictAction.Replace, TargetId: not null }
+                        && matchingTarget is null) || prior is { ReplacementMissing: true, IsUnresolved: true };
+                    var review = new FormationReviewRow(formation, matches, replacementMissing, RebuildPreviews);
+                    if (prior is not null && choice is not null && !replacementMissing && review.RequiresAction)
+                    {
+                        if (matchingTarget is not null && (matches.Length == 1 || prior.Matches.Count > 1))
+                            review.Target = matchingTarget;
+                        review.ActionIndex = choice?.Action == FormationConflictAction.Replace && matchingTarget is null ? 0 : prior.ActionIndex;
+                        review.NewName = prior.NewName;
                     }
-                    row.Formations.Add(review);}
-            }catch(Exception ex)when(ex is not OperationCanceledException){row=new(target,null,ex.Message);}
+                    reviewed.Add(review);
+                }
+                foreach (var item in reviewed.OrderByDescending(item => item.RequiresAction)) row.Formations.Add(item);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                row = new(target, null, ex.Message);
+                if (old.TryGetValue(target.Path, out var previous))
+                    foreach (var item in previous.Values) row.Formations.Add(item);
+            }
             Reviews.Add(row);
         }
-        reviewCurrent=true;RebuildPreviews();RefreshClientStatus();Step=2;Status="Review each destination and resolve name conflicts before applying.";
+        if (reviewRevision != revision || SourceHasDrafts)
+        {
+            InvalidateReview();
+            Status = ReviewSummary;
+            return;
+        }
+        reviewCurrent = true;
+        RebuildPreviews();
+        foreach (var row in Reviews) row.IsExpanded = row.Preview is null;
+        ArrangeReviewDestinations();
+        RefreshClientStatus();
+        Step = 2;
+        Status = "";
     }
+
+    public void ReplaceMatching()
+    {
+        if (!CanReplaceMatching) return;
+        updatingChoices = true;
+        var changedFiles = new List<FileReviewRow>();
+        try
+        {
+            foreach (var file in Reviews.Where(file => file.Snapshot is { Errors.Count: 0 }))
+            {
+                var rows = file.Formations.Where(row => row.Matches.Count == 1 && row.ActionIndex != (int)FormationConflictAction.Replace).ToArray();
+                foreach (var row in rows)
+                {
+                    row.Target = row.Matches[0];
+                    row.ActionIndex = (int)FormationConflictAction.Replace;
+                }
+                if (rows.Length > 0) changedFiles.Add(file);
+            }
+        }
+        finally { updatingChoices = false; }
+        RebuildPreviews();
+        foreach (var file in changedFiles) file.IsExpanded = file.Preview is null;
+        ArrangeReviewDestinations();
+    }
+
+    private void ArrangeReviewDestinations()
+    {
+        var ordered = Reviews.OrderByDescending(row => row.HasError).ThenBy(row => row.Preview is not null).ToArray();
+        for (var index = 0; index < ordered.Length; index++)
+        {
+            var currentIndex = ReviewDestinations.IndexOf(ordered[index]);
+            if (currentIndex == -1) ReviewDestinations.Insert(index, ordered[index]);
+            else if (currentIndex != index) ReviewDestinations.Move(currentIndex, index);
+        }
+    }
+
     private void RebuildPreviews()
     {
-        if(!reviewCurrent)return;
-        foreach(var row in Reviews){if(row.Snapshot is null)continue;row.Preview=null;
-            try{row.Preview=eve.Preview(row.Snapshot,row.Formations.Select(f=>f.Formation).ToArray(),row.Formations.Select(f=>f.Choice).OfType<FormationMergeChoice>().ToArray());row.Message=$"{row.Preview.Entries.Count(e=>!e.ReplacesExisting)} additions · {row.Preview.Entries.Count(e=>e.ReplacesExisting)} replacements · {row.Formations.Count(f=>f.Choice?.Action==FormationConflictAction.KeepExisting)} skipped";}
-            catch(Exception ex){row.Message=ex.Message;}
-        }RefreshState();
+        if (!reviewCurrent || updatingChoices) return;
+        var additions = 0;
+        var replacements = 0;
+        var unchanged = 0;
+        var unresolved = 0;
+        var errors = 0;
+        foreach (var row in Reviews)
+        {
+            row.Preview = null;
+            foreach (var formation in row.Formations) formation.Outcome = formation.IsUnresolved ? "Needs a decision" : "";
+            if (row.Snapshot is not { } snapshot) { errors++; continue; }
+            row.HasError = false;
+            var pending = row.Formations.Count(formation => formation.IsUnresolved);
+            unresolved += pending;
+            if (snapshot.Errors.Count > 0)
+            {
+                row.Message = string.Join(" · ", snapshot.Errors);
+                row.HasError = true;
+                errors++;
+                continue;
+            }
+            try
+            {
+                var preview = eve.Preview(snapshot, row.Formations.Select(f => f.Formation).ToArray(),
+                    row.Formations.Select(f => f.IsUnresolved
+                        ? new FormationMergeChoice(f.Formation.Id, FormationConflictAction.KeepExisting)
+                        : f.Choice).OfType<FormationMergeChoice>().ToArray());
+                var entries = preview.Entries.ToDictionary(entry => entry.Formation.Id);
+                foreach (var formation in row.Formations.Where(formation => !formation.IsUnresolved))
+                {
+                    formation.Outcome = entries.GetValueOrDefault(formation.Formation.Id) switch
+                    {
+                        { ReplacesExisting: true } entry => $"Replace ID {entry.TargetId}",
+                        { } entry when entry.Formation.Name != formation.Name => $"Add as {entry.Formation.Name}",
+                        { } => "Add",
+                        _ when formation.Choice?.Action == FormationConflictAction.KeepExisting => "Skipped",
+                        _ when formation.Target is { } target => $"Unchanged · ID {target.EveId}",
+                        _ => "Unchanged"
+                    };
+                }
+                var added = preview.Entries.Count(entry => !entry.ReplacesExisting);
+                var replaced = preview.Entries.Count - added;
+                var kept = row.Formations.Count - preview.Entries.Count - pending;
+                if (pending == 0) row.Preview = preview;
+                row.Message = pending > 0 ? $"{pending} unresolved" : $"{added} added · {replaced} replaced · {kept} skipped or unchanged";
+                additions += added;
+                replacements += replaced;
+                unchanged += kept;
+            }
+            catch (Exception ex) when (ex is ArgumentException or InvalidDataException or OverflowException)
+            {
+                row.Message = ex.Message;
+                row.HasError = true;
+                errors++;
+            }
+        }
+        ReviewSummary = $"Additions {additions} · Replacements {replacements} · Skipped or unchanged {unchanged} · Unresolved {unresolved}"
+            + (errors == 0 ? "" : $" · File errors {errors}");
+        RefreshState();
     }
-    public void RefreshClientStatus(){ClientStatus=eve.GetClientStatus();Raise(nameof(ClientStatus));Raise(nameof(ClientStatusText));RefreshState();}
+    public void RefreshClientStatus(){ClientStatus=eve.GetClientStatus();Raise(nameof(ClientStatus));Raise(nameof(ClientStatusText));Raise(nameof(NeedsClientAcknowledgment));RefreshState();}
     public async Task ApplyAsync()
     {
         RefreshClientStatus();
@@ -216,6 +364,14 @@ public sealed class ProbeFormationAccountsViewModel : ProbeTransferRow,IDisposab
         await BuildReviewAsync();
     }
     public void BackToAccounts(){if(IsWriting)return;Step=1;InvalidateReview();}
+    public void CloseTargetDetails()
+    {
+        detailGeneration++;
+        SelectedTarget = null;
+        ExistingFormations.Clear();
+        Backups.Clear();
+        Raise(nameof(HasExistingFormations));
+    }
     public async Task SelectTargetAsync(TransferTargetRow target)
     {
         var generation=++detailGeneration;SelectedTarget=target;ExistingFormations.Clear();Backups.Clear();
@@ -282,7 +438,7 @@ public sealed class ProbeFormationAccountsViewModel : ProbeTransferRow,IDisposab
     }
     private void RefreshState()
     {
-        foreach(var name in new[]{nameof(IsWorking),nameof(IsWriting),nameof(IsIdle),nameof(Step),nameof(IsFormations),nameof(IsAccounts),nameof(IsReview),nameof(IsResults),nameof(StepTitle),nameof(PrimaryAction),nameof(Summary),nameof(DestinationSummary),nameof(CanBack),nameof(CanContinue),nameof(CanApply),nameof(HasFailed),nameof(SourceHasDrafts),nameof(HasNoFormations)})Raise(name);
+        foreach(var name in new[]{nameof(IsWorking),nameof(IsWriting),nameof(IsIdle),nameof(Step),nameof(IsFormations),nameof(IsAccounts),nameof(IsReview),nameof(IsResults),nameof(StepTitle),nameof(StepProgress),nameof(PrimaryAction),nameof(Summary),nameof(DestinationSummary),nameof(CanBack),nameof(CanContinue),nameof(CanApply),nameof(CanReplaceMatching),nameof(HasFailed),nameof(SourceHasDrafts),nameof(HasNoFormations)})Raise(name);
     }
     public void Dispose(){if(disposed)return;disposed=true;source.PropertyChanged-=OnSourceChanged;lifetime.Cancel();foreach(var row in characters.Values)row.Dispose();}
 }

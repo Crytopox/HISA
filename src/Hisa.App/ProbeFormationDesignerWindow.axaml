@@ -45,6 +45,7 @@
      </ListBox>
      <StackPanel Grid.Row="3" Spacing="6">
       <Button Content="+ New formation" Click="OnNew" HorizontalAlignment="Stretch" />
+      <Button Content="Six-axis perch…" Click="OnSixAxisPerch" HorizontalAlignment="Stretch" />
       <WrapPanel><Button Content="Duplicate" Click="OnDuplicate" /><Button Content="Delete" Click="OnDelete" /></WrapPanel>
       <Button Content="Import / Export ▾" HorizontalAlignment="Stretch"><Button.Flyout><MenuFlyout>
        <MenuItem Header="Import formations…" Click="OnImport" /><MenuItem Header="Export current formation…" Click="OnExport" /><MenuItem Header="Export entire library…" Click="OnExportAll" />
@@ -54,15 +55,42 @@
     </Grid>
    </Border>
    <GridSplitter Grid.Column="1" ResizeDirection="Columns" Background="Transparent" />
-   <Grid Grid.Column="2" RowDefinitions="Auto,*,Auto" Margin="4,0" MinWidth="300" RowSpacing="8">
+   <Grid Grid.Column="2" RowDefinitions="Auto,*,Auto,Auto" Margin="4,0" MinWidth="300" RowSpacing="8">
     <WrapPanel>
      <Button Content="Fit formation" Click="OnFit" /><Button Content="Fit selection" Click="OnFitSelection" IsEnabled="{Binding HasSelection}" />
      <Button Content="Views ▾"><Button.Flyout><MenuFlyout><MenuItem Header="Perspective" Click="OnView" /><MenuItem Header="Front" Click="OnView" /><MenuItem Header="Top" Click="OnView" /><MenuItem Header="Side" Click="OnView" /></MenuFlyout></Button.Flyout></Button>
      <CheckBox Content="Ranges" IsChecked="{Binding #Viewport.ShowRanges, Mode=TwoWay}" Margin="8,0" />
      <Button Content="Fit ranges" Click="OnFitRange" IsEnabled="{Binding HasSelection}" />
+     <CheckBox Content="Show estimated EVE placement" IsChecked="{Binding ShowEstimatedPlacement, Mode=TwoWay}" IsEnabled="{Binding HasFormation}" />
     </WrapPanel>
-    <rendering:ProbeFormationControl x:Name="Viewport" Grid.Row="1" Formation="{Binding Current}" SelectedProbe="{Binding SelectedProbe, Mode=OneWay}" SelectedIndices="{Binding SelectedIndices}" />
-    <StackPanel Grid.Row="2" Spacing="4"><TextBlock Text="{Binding SelectionCenter}" Classes="muted" TextWrapping="Wrap" /><TextBlock Text="Ctrl-click: toggle · Shift-click: add · Drag empty space: box select" Classes="muted" TextWrapping="Wrap" /></StackPanel>
+    <rendering:ProbeFormationControl x:Name="Viewport" Grid.Row="1" Formation="{Binding Current}" SelectedProbe="{Binding SelectedProbe, Mode=OneWay}" SelectedIndices="{Binding SelectedIndices}" ShowEstimatedPlacement="{Binding ShowEstimatedPlacement}" />
+    <StackPanel Grid.Row="2" Spacing="4">
+     <TextBlock Text="{Binding SelectionCenter}" Classes="muted" TextWrapping="Wrap" />
+     <TextBlock Text="Ctrl-click: toggle · Shift-click: add · Drag empty space: box select" Classes="muted" TextWrapping="Wrap" />
+    </StackPanel>
+    <Border Grid.Row="3" IsVisible="{Binding HasEstimatedPlacement}" Background="#141D2B" CornerRadius="6" Padding="8,5">
+     <StackPanel Spacing="3">
+      <TextBlock Text="{Binding Units, StringFormat='Estimated ship-relative positions ({0})'}" Foreground="MediumSpringGreen" />
+      <TextBlock Text="{Binding EstimatedShift}" Classes="muted" TextWrapping="Wrap" />
+      <Grid ColumnDefinitions="25,*,*,*,*" ColumnSpacing="4">
+       <TextBlock Text="#" Classes="muted" /><TextBlock Grid.Column="1" Text="X" Classes="muted" />
+       <TextBlock Grid.Column="2" Text="Y" Classes="muted" /><TextBlock Grid.Column="3" Text="Z" Classes="muted" />
+       <TextBlock Grid.Column="4" Text="Ship distance" Classes="muted" />
+      </Grid>
+      <ItemsControl ItemsSource="{Binding EstimatedProbes}">
+       <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:EstimatedProbeRow">
+        <Grid ColumnDefinitions="25,*,*,*,*" ColumnSpacing="4">
+         <Grid.Styles><Style Selector="TextBlock"><Setter Property="FontSize" Value="11" /></Style></Grid.Styles>
+         <TextBlock Text="{Binding Number}" />
+         <TextBlock Grid.Column="1" Text="{Binding X}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding X}" />
+         <TextBlock Grid.Column="2" Text="{Binding Y}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Y}" />
+         <TextBlock Grid.Column="3" Text="{Binding Z}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Z}" />
+         <TextBlock Grid.Column="4" Text="{Binding Distance}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Distance}" />
+        </Grid>
+       </DataTemplate></ItemsControl.ItemTemplate>
+      </ItemsControl>
+     </StackPanel>
+    </Border>
    </Grid>
    <GridSplitter Grid.Column="3" ResizeDirection="Columns" Background="Transparent" />
    <Border Grid.Column="4" Background="#141D2B" CornerRadius="6" Padding="10" MinWidth="330">
@@ -70,7 +98,11 @@
      <StackPanel Spacing="10">
       <Grid ColumnDefinitions="*,Auto"><StackPanel><TextBlock Text="Probes" Classes="section" /><TextBlock Text="{Binding SelectionSummary}" Foreground="#77C8EF" Margin="0,4,0,0" /></StackPanel><ComboBox Grid.Column="1" ItemsSource="{Binding UnitOptions}" SelectedItem="{Binding Units, Mode=TwoWay}" ToolTip.Tip="XYZ coordinate units" /></Grid>
       <CheckBox Content="Snap to nearest integer" IsChecked="{Binding SnapToNearestInteger, Mode=TwoWay}" ToolTip.Tip="Mouse movement snaps the primary probe to whole values in the current XYZ units (km or AU). Group spacing is preserved." />
-      <WrapPanel><Button Content="Center centroid at origin" Click="OnCenterFormation" ToolTip.Tip="Move the entire formation so its centroid is at XYZ 0, preserving probe spacing." /><Button Content="Set all probes to 0" Click="OnZeroAllProbes" ToolTip.Tip="Place every probe at XYZ 0. Undo restores the previous positions." /></WrapPanel>
+      <WrapPanel>
+       <Button Content="Balance with counterweight…" Click="OnBalance" IsEnabled="{Binding HasFormation}" />
+       <Button Content="Center centroid at origin" Click="OnCenterFormation" ToolTip.Tip="Move the entire formation so its centroid is at XYZ 0, preserving probe spacing." />
+       <Button Content="Set all probes to 0" Click="OnZeroAllProbes" ToolTip.Tip="Place every probe at XYZ 0. Undo restores the previous positions." />
+      </WrapPanel>
       <WrapPanel><Button Content="Select all" Click="OnSelectAll" /><Button Content="Clear" Click="OnClear" /><Button Content="+ Add" Click="OnAddProbe" IsEnabled="{Binding CanAddProbe}" /></WrapPanel>
       <Grid ColumnDefinitions="25,*,*,*,*" ColumnSpacing="4" Margin="5,0"><TextBlock Text="#" Classes="muted" /><TextBlock Grid.Column="1" Text="X · West" Classes="muted" /><TextBlock Grid.Column="2" Text="Y · Up" Classes="muted" /><TextBlock Grid.Column="3" Text="Z · North" Classes="muted" /><TextBlock Grid.Column="4" Text="Radius AU" Classes="muted" /></Grid>
       <ItemsControl x:Name="ProbeTable" ItemsSource="{Binding ProbeRows}">

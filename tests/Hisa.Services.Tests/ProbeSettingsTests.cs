@@ -28,7 +28,14 @@ public sealed class ProbeSettingsTests : IDisposable
     {
         var original = await SetupAsync(crc); var service = new EveProbeSettingsService(() => EveClientStatus.Closed);
         var snapshot = await service.ReadAsync(Account); Assert.Empty(snapshot.Formations); Assert.Empty(snapshot.Errors);
-        var f = ProbeFormationMath.Create("precise 雪") with { Probes = [new(new(123456.789123, -500000, 0), .125 * ProbeFormationMath.AstronomicalUnit)] };
+        var f = ProbeFormationMath.Create("precise 雪") with
+        {
+            Probes =
+            [
+                new(new(123456.789123, -500000.25, 0.125), .125 * ProbeFormationMath.AstronomicalUnit),
+                new(new(-98765.4321987, 78910.11213, -456789.01234), 4 * ProbeFormationMath.AstronomicalUnit)
+            ]
+        };
         var preview = service.Preview(snapshot, [f], []);
         var result = await service.ApplyAsync(preview, false); Assert.True(result.Success, result.Message);
         Assert.Equal(original, await File.ReadAllBytesAsync(result.BackupPath!));

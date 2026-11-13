@@ -28,9 +28,11 @@ public sealed class ProbeFormationControl : Control
     public static readonly StyledProperty<ProbeFormation?> FormationProperty = AvaloniaProperty.Register<ProbeFormationControl, ProbeFormation?>(nameof(Formation));
     public static readonly StyledProperty<int> SelectedProbeProperty = AvaloniaProperty.Register<ProbeFormationControl, int>(nameof(SelectedProbe), -1);
     public static readonly StyledProperty<bool> ShowRangesProperty = AvaloniaProperty.Register<ProbeFormationControl, bool>(nameof(ShowRanges), false);
+    public static readonly StyledProperty<bool> ShowEstimatedPlacementProperty = AvaloniaProperty.Register<ProbeFormationControl, bool>(nameof(ShowEstimatedPlacement));
     public ProbeFormation? Formation { get => GetValue(FormationProperty); set => SetValue(FormationProperty, value); }
     public int SelectedProbe { get => GetValue(SelectedProbeProperty); set => SetValue(SelectedProbeProperty, value); }
     public bool ShowRanges { get => GetValue(ShowRangesProperty); set => SetValue(ShowRangesProperty, value); }
+    public bool ShowEstimatedPlacement { get => GetValue(ShowEstimatedPlacementProperty); set => SetValue(ShowEstimatedPlacementProperty, value); }
     public static readonly StyledProperty<IReadOnlyList<int>> SelectedIndicesProperty = AvaloniaProperty.Register<ProbeFormationControl, IReadOnlyList<int>>(nameof(SelectedIndices), Array.Empty<int>());
     public IReadOnlyList<int> SelectedIndices { get => GetValue(SelectedIndicesProperty); set => SetValue(SelectedIndicesProperty, value); }
     public ProbeCamera Camera { get; } = new();
@@ -46,9 +48,26 @@ public sealed class ProbeFormationControl : Control
     private Rect? selectionRectangle;
     private readonly List<(ProbeAxis Axis, Point Start, Point End)> handles = [];
     private static readonly IBrush[] AxisBrushes = [Brushes.IndianRed, Brushes.LightGreen, Brushes.DeepSkyBlue];
-    static ProbeFormationControl() { AffectsRender<ProbeFormationControl>(FormationProperty, SelectedProbeProperty, ShowRangesProperty, SelectedIndicesProperty); }
+    static ProbeFormationControl() { AffectsRender<ProbeFormationControl>(FormationProperty, SelectedProbeProperty, ShowRangesProperty, SelectedIndicesProperty, ShowEstimatedPlacementProperty); }
     public ProbeFormationControl() { Focusable = true; ClipToBounds = true; }
-    public void FitToView() { if (Formation is { } f) Camera.Fit(f); InvalidateVisual(); }
+    public void FitToView()
+    {
+        if (Formation is { } formation)
+        {
+            Camera.Fit(formation);
+            if (ShowEstimatedPlacement)
+            {
+                var centroid = formation.Centroid;
+                Camera.Target = centroid * .5;
+                var extent = formation.Probes.Select(probe => Math.Max(
+                    (probe.Position - Camera.Target).Length,
+                    (ProbeFormationMath.EstimatedPlacement(probe.Position, centroid) - Camera.Target).Length))
+                    .Append(Camera.Target.Length).Max();
+                Camera.Distance = Math.Clamp(extent * 3.6, 1, 1e25);
+            }
+        }
+        InvalidateVisual();
+    }
     public void SetView(string view) { Camera.View(view); InvalidateVisual(); }
     public override void Render(DrawingContext context)
     {
@@ -68,8 +87,9 @@ public sealed class ProbeFormationControl : Control
             Line(context, default, v, new Pen(AxisBrushes[(int)axis], 1));
             if (Camera.Project(v, size) is { } endpoint) Label(context, axis switch { ProbeAxis.X => "+X West", ProbeAxis.Y => "+Y Up", _ => "+Z North" }, endpoint, AxisBrushes[(int)axis]);
         }
-        if (Camera.Project(default, size) is { } ship) { context.DrawEllipse(null, new Pen(Brushes.White, 1), ship, 6, 6); Label(context, "Origin", ship + new Vector(8, 5), Brushes.White); }
-        if (Camera.Project(f.Centroid, size) is { } centroid) { context.DrawRectangle(null, new Pen(Brushes.Gold, 1), new Rect(centroid - new Vector(4, 4), new Size(8, 8))); Label(context, "Centroid", centroid + new Vector(8, -18), Brushes.Gold); }
+        if (Camera.Project(default, size) is { } ship) { context.DrawEllipse(null, new Pen(Brushes.White, 1), ship, 6, 6); Label(context, "Ship · origin", ship + new Vector(8, 5), Brushes.White); }
+        var center = f.Centroid;
+        if (center != default && Camera.Project(center, size) is { } centroid) { context.DrawRectangle(null, new Pen(Brushes.Gold, 1), new Rect(centroid - new Vector(4, 4), new Size(8, 8))); Label(context, "Centroid", centroid + new Vector(8, -18), Brushes.Gold); }
         if (ShowRanges) foreach (var index in SelectedIndices.Where(i => i >= 0 && i < f.Probes.Count)) {
             var probe = f.Probes[index]; var rangePen = new Pen(new SolidColorBrush(Color.Parse("#50648CA8")), 1);
             foreach (var axis in Enum.GetValues<ProbeAxis>()) {
@@ -86,6 +106,19 @@ public sealed class ProbeFormationControl : Control
             var selected = SelectedIndices.Contains(item.Index); var brush = selected ? Brushes.Gold : Brushes.DeepSkyBlue;
             context.DrawEllipse(brush, new Pen(Brushes.White, selected ? 2 : 1), point, selected ? 7 : 5, selected ? 7 : 5);
             Label(context, (item.Index + 1).ToString(CultureInfo.InvariantCulture), point + new Vector(9, -9), brush);
+        }
+        if (ShowEstimatedPlacement)
+        {
+            var pen = new Pen(Brushes.MediumSpringGreen, 1.5);
+            for (var index = 0; index < f.Probes.Count; index++)
+            {
+                var authored = f.Probes[index].Position;
+                var estimated = ProbeFormationMath.EstimatedPlacement(authored, center);
+                if (Camera.Project(estimated, size) is not { } point) continue;
+                context.DrawEllipse(null, pen, point, 9, 9);
+                if (Camera.Project(authored, size) is not { } original || Distance(original, point) > 14)
+                    Label(context, (index + 1).ToString(CultureInfo.InvariantCulture), point + new Vector(10, 5), Brushes.MediumSpringGreen);
+            }
         }
         var valid = SelectedIndices.Where(i => i >= 0 && i < f.Probes.Count).ToArray();
         if (valid.Length > 0 && Camera.Project(ProbeFormationMath.SelectionCentroid(f,valid), size) is { } start) {

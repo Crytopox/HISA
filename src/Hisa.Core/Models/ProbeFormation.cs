@@ -7,7 +7,7 @@ public readonly record struct ProbePosition(double X, double Y, double Z)
     public static ProbePosition operator +(ProbePosition a, ProbePosition b) => new(a.X + b.X, a.Y + b.Y, a.Z + b.Z);
     public static ProbePosition operator -(ProbePosition a, ProbePosition b) => new(a.X - b.X, a.Y - b.Y, a.Z - b.Z);
     public static ProbePosition operator *(ProbePosition a, double f) => new(a.X * f, a.Y * f, a.Z * f);
-    [JsonIgnore] public double Length => Math.Sqrt(X * X + Y * Y + Z * Z);
+    [JsonIgnore] public double Length => double.Hypot(double.Hypot(X, Y), Z);
     public double Dot(ProbePosition b) => X * b.X + Y * b.Y + Z * b.Z;
     public ProbePosition Cross(ProbePosition b) => new(Y * b.Z - Z * b.Y, Z * b.X - X * b.Z, X * b.Y - Y * b.X);
 }
@@ -36,6 +36,40 @@ public static class ProbeFormationMath
     }
     public static ProbeFormation Translate(ProbeFormation f, ProbePosition delta) => Checked(f with { Probes = f.Probes.Select(p => p with { Position = p.Position + delta }).ToArray() });
     public static ProbeFormation Center(ProbeFormation f) => Translate(f, f.Centroid * -1);
+    public static ProbePosition EstimatedPlacement(ProbePosition position, ProbePosition centroid) => position - centroid;
+
+    public static ProbeFormation BalanceWithCounterweight(ProbeFormation formation, int? existingIndex)
+    {
+        var probes = formation.Probes.ToList();
+        var index = existingIndex ?? probes.Count;
+        if (existingIndex is not null && (index < 0 || index >= probes.Count))
+            throw new ArgumentException("Choose an existing probe to move.");
+        if (existingIndex is null && probes.Count >= 8)
+            throw new ArgumentException("Choose an existing probe to move in an eight-probe formation.");
+
+        var otherProbes = probes.Where((_, i) => i != index).ToArray();
+        var weight = otherProbes.Aggregate(default(ProbePosition), (sum, probe) => sum - probe.Position);
+        if (!double.IsFinite(weight.X) || !double.IsFinite(weight.Y) || !double.IsFinite(weight.Z))
+        {
+            // Scale the terms when an intermediate sum overflows.
+            weight = otherProbes.Aggregate(default(ProbePosition),
+                (mean, probe) => mean - probe.Position * (1d / otherProbes.Length)) * otherProbes.Length;
+        }
+        if (existingIndex is null)
+            probes.Add(new(weight, 32 * AstronomicalUnit));
+        else
+            probes[index] = probes[index] with { Position = weight };
+        return Checked(formation with { Probes = probes.ToArray() });
+    }
+
+    public static ProbeFormation CreateSixAxisPerch(string name, double distanceMeters)
+    {
+        if (!double.IsFinite(distanceMeters) || distanceMeters <= 0)
+            throw new ArgumentException("Enter a positive, finite perch distance.");
+        ProbePosition[] directions = [new(1, 0, 0), new(-1, 0, 0), new(0, 1, 0), new(0, -1, 0), new(0, 0, 1), new(0, 0, -1)];
+        return Checked(new(Guid.NewGuid(), name, directions.Select(direction =>
+            new FormationProbe(direction * distanceMeters, 32 * AstronomicalUnit)).ToArray()));
+    }
     public static ProbePosition SelectionCentroid(ProbeFormation f, IReadOnlyCollection<int> indices)
     {
         ValidateSelection(f, indices);

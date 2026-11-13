@@ -52,6 +52,8 @@ public partial class ProbeFormationDesignerWindow : Window
     private void Edit(Action<ProbeFormationDesignerViewModel> action) { if (Vm is { } vm) vm.Run(() => { Viewport.CancelGesture(); CommitEditor(); action(vm); }); }
     private void OnViewModelChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(ProbeFormationDesignerViewModel.ShowEstimatedPlacement) && Vm?.ShowEstimatedPlacement == true)
+            Avalonia.Threading.Dispatcher.UIThread.Post(Viewport.FitToView);
         if (e.PropertyName == nameof(ProbeFormationDesignerViewModel.Current) && Vm?.Current?.Id != viewportFormationId) {
             viewportFormationId = Vm?.Current?.Id;
             Avalonia.Threading.Dispatcher.UIThread.Post(Viewport.FitToView);
@@ -134,6 +136,90 @@ public partial class ProbeFormationDesignerWindow : Window
     private void OnNameLostFocus(object? sender, RoutedEventArgs e) => Vm?.Run(CommitEditor);
     private async void OnSave(object? s, RoutedEventArgs e) { if (Vm is { } vm) await vm.RunAsync(async () => { Viewport.CancelGesture(); CommitEditor(); await vm.SaveAsync(); }); }
     private void OnNew(object? s, RoutedEventArgs e) => Edit(vm => vm.Create());
+
+    private async void OnSixAxisPerch(object? sender, RoutedEventArgs e)
+    {
+        if (Vm is not { } vm) return;
+        var distance = new TextBox { Text = "500", Watermark = "Distance in km" };
+        var error = new TextBlock { Foreground = Avalonia.Media.Brushes.LightCoral, TextWrapping = Avalonia.Media.TextWrapping.Wrap };
+        var panel = new StackPanel { Spacing = 10, Children = { new TextBlock { Text = "Distance from ship (km)" }, distance, error } };
+        var apply = new Button { Content = "Create formation", IsDefault = true };
+        var dialog = FormationDialog("Six-axis perch", panel, apply);
+        apply.Click += (_, _) =>
+        {
+            try
+            {
+                CommitEditor();
+                vm.CreateSixAxisPerch(ProbeFormationDesignerViewModel.Number(distance.Text ?? ""));
+                dialog.Close();
+            }
+            catch (ArgumentException ex) { error.Text = ex.Message; }
+        };
+        dialog.Opened += (_, _) => { distance.Focus(); distance.SelectAll(); };
+        await dialog.ShowDialog(this);
+    }
+
+    private async void OnBalance(object? sender, RoutedEventArgs e)
+    {
+        if (Vm is not { } vm) return;
+        Viewport.CancelGesture();
+        try { CommitEditor(); }
+        catch (ArgumentException ex) { vm.Status = ex.Message; return; }
+        if (vm.Current is not { } formation) return;
+
+        var canAdd = formation.Probes.Count < 8;
+        var choices = Enumerable.Range(1, formation.Probes.Count).Select(number => $"Move probe {number}");
+        if (canAdd) choices = choices.Prepend("Add a probe");
+        var target = new ComboBox
+        {
+            ItemsSource = choices.ToArray(), SelectedIndex = canAdd ? 0 : -1,
+            PlaceholderText = "Choose a probe to move", HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+        var preview = new TextBlock { TextWrapping = Avalonia.Media.TextWrapping.Wrap };
+        var panel = new StackPanel { Spacing = 10, Children = { target, preview } };
+        var apply = new Button { Content = "Apply counterweight", IsDefault = true };
+        var dialog = FormationDialog("Balance with counterweight", panel, apply);
+        int? Index() => canAdd && target.SelectedIndex == 0 ? null : target.SelectedIndex - (canAdd ? 1 : 0);
+        void UpdatePreview()
+        {
+            apply.IsEnabled = false;
+            if (target.SelectedIndex < 0) { preview.Text = "Select which probe will become the counterweight."; return; }
+            try
+            {
+                preview.Text = vm.PreviewCounterweight(Index());
+                apply.IsEnabled = true;
+            }
+            catch (ArgumentException ex) { preview.Text = ex.Message; }
+        }
+        target.SelectionChanged += (_, _) => UpdatePreview();
+        apply.Click += (_, _) =>
+        {
+            if (!ReferenceEquals(vm.Current, formation)) { preview.Text = "The formation changed. Reopen the counterweight preview."; apply.IsEnabled = false; return; }
+            try { vm.ApplyCounterweight(Index()); dialog.Close(); }
+            catch (ArgumentException ex) { preview.Text = ex.Message; }
+        };
+        UpdatePreview();
+        await dialog.ShowDialog(this);
+    }
+
+    private static Window FormationDialog(string title, StackPanel content, Button apply)
+    {
+        var cancel = new Button { Content = "Cancel", IsCancel = true };
+        content.Margin = new Thickness(18);
+        content.Children.Add(new StackPanel
+        {
+            Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right,
+            Spacing = 8, Children = { cancel, apply }
+        });
+        var dialog = new Window
+        {
+            Title = title, Width = 420, SizeToContent = SizeToContent.Height, CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = Avalonia.Media.Brush.Parse("#141D2B"), Content = content
+        };
+        cancel.Click += (_, _) => dialog.Close();
+        return dialog;
+    }
     private void OnDuplicate(object? s, RoutedEventArgs e) => Edit(vm => vm.Duplicate());
     private async void OnDelete(object? s, RoutedEventArgs e) { if (Vm is { Current: { } f } && await Ask("Delete formation", $"Delete '{f.Name}' from the library?", "Delete", "Cancel") == "Delete") Edit(vm => vm.Delete()); }
     private void OnUndo(object? s, RoutedEventArgs e) => Edit(vm => vm.Undo());

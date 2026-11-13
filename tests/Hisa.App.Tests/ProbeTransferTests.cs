@@ -1,6 +1,8 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
 using Avalonia.VisualTree;
@@ -48,8 +50,63 @@ public sealed class ProbeTransferTests
             }finally{picker.Close();}
             Assert.False(vm.HasLinkedCharacters); // Closing the picker did not persist its draft.
             Render(window,$"probe-transfer-details-{width}.png");
+            window.FindControl<Button>("CloseDetailsButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.Null(vm.SelectedTarget);
+            Assert.Same(target, Assert.IsAssignableFrom<Button>(window.FocusManager?.GetFocusedElement()).Tag);
+            Assert.Single(vm.AllTargets, t => t.Selected);
         }finally{window.Close();}
         static void Render(Window view,string name){Avalonia.Threading.Dispatcher.UIThread.RunJobs();using var image=new RenderTargetBitmap(new((int)view.Bounds.Width,(int)view.Bounds.Height));image.Render(view);image.Save(Path.Combine(AppContext.BaseDirectory,name));}
+    }
+    [AvaloniaTheory]
+    [InlineData(1200, 800)]
+    [InlineData(1000, 620)]
+    public async Task BulkReplaceCanBeActivatedByKeyboardAndLeavesAmbiguousNamesForReview(int width, int height)
+    {
+        var fixture = await Fixture.Create();
+        var formation = fixture.Source.Current!;
+        fixture.Eve.ExtraAccounts = 30;
+        using var vm = fixture.Vm;
+        await vm.InitializeAsync();
+        await vm.NextAsync();
+        vm.SelectVisible();
+        var targets = vm.AllTargets.ToArray();
+        var existing = formation with { Name = formation.Name.ToUpperInvariant(), Probes = [new(default, 10)] };
+        fixture.Eve.Stored[targets[0].Path] = [new(7, existing)];
+        fixture.Eve.Stored[targets[1].Path] = [new(5, existing), new(9, existing)];
+        fixture.Eve.Stored[targets[2].Path] = [new(15, formation)];
+        await vm.NextAsync();
+
+        var window = new ProbeFormationAccountsWindow { DataContext = vm, Width = width, Height = height };
+        window.Show();
+        try
+        {
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+            var bulk = window.FindControl<Button>("ReplaceMatchingButton")!;
+            Assert.True(bulk.IsEnabled);
+            Assert.True(bulk.Focus());
+            window.KeyPressQwerty(PhysicalKey.Space, RawInputModifiers.None);
+            window.KeyReleaseQwerty(PhysicalKey.Space, RawInputModifiers.None);
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+
+            Assert.Equal(33, vm.ReviewDestinations.Count);
+            Assert.Equal("Additions 30 · Replacements 1 · Skipped or unchanged 1 · Unresolved 1", vm.ReviewSummary);
+            Assert.Equal(targets[1].Path, vm.ReviewDestinations[0].Target.Path);
+            Assert.Equal(0, fixture.Eve.ApplyCalls);
+            Assert.Equal(7, Assert.Single(vm.Reviews.Single(r => r.Target == targets[0]).Preview!.Entries).TargetId);
+            var ambiguous = Assert.Single(vm.ReviewDestinations[0].Formations);
+            Assert.Equal(0, ambiguous.ActionIndex);
+            ambiguous.ActionIndex = (int)FormationConflictAction.Replace;
+            Assert.Null(ambiguous.Target);
+            Assert.False(vm.CanApply);
+            ambiguous.Target = ambiguous.Matches[1];
+            Assert.Equal(9, Assert.Single(vm.ReviewDestinations[0].Preview!.Entries).TargetId);
+            Assert.True(vm.CanApply);
+            vm.Reviews.Single(r => r.Target == targets[0]).Formations[0].ActionIndex = (int)FormationConflictAction.KeepExisting;
+            await vm.ApplyAsync();
+            Assert.Equal(33, vm.Results.Count);
+            Assert.Equal(2, vm.Results.Count(r => r.State == "Unchanged"));
+        }
+        finally { window.Close(); }
     }
     [Fact]
     public async Task IdentityLinksAndAliasesNeverSelectOrRedirectWriteTargets()
@@ -106,6 +163,56 @@ public sealed class ProbeTransferTests
         await vm.NextAsync();vm.Reviews[0].Formations[0].ActionIndex=2;Assert.True(vm.CanApply);
         fixture.Eve.Stored[target.Path]=[new(9,formation with{Probes=[new(default,20)]})];await vm.BuildReviewAsync();
         Assert.Equal(0,vm.Reviews[0].Formations[0].ActionIndex);Assert.False(vm.CanApply);
+    }
+
+    [Fact]
+    public async Task RemovedMatchCannotSilentlyBecomeAnAdditionOnRetry()
+    {
+        var fixture = await Fixture.Create();
+        using var vm = fixture.Vm;
+        await vm.InitializeAsync();
+        await vm.NextAsync();
+        var target = vm.AllTargets.First();
+        target.Selected = true;
+        fixture.Eve.Stored[target.Path] = [new(7, fixture.Source.Current! with { Probes = [new(default, 10)] })];
+        await vm.NextAsync();
+        vm.ReplaceMatching();
+        Assert.True(vm.CanApply);
+        fixture.Eve.Version++;
+        fixture.Eve.Stored.Remove(target.Path);
+        await vm.ApplyAsync();
+        await vm.RetryFailedAsync();
+        Assert.False(vm.CanApply);
+        Assert.True(vm.Reviews[0].Formations[0].IsUnresolved);
+        await vm.BuildReviewAsync();
+        Assert.False(vm.CanApply);
+        vm.Reviews[0].Formations[0].ActionIndex = 2; // Explicitly add the formation as new.
+        Assert.True(vm.CanApply);
+        Assert.False(Assert.Single(vm.Reviews[0].Preview!.Entries).ReplacesExisting);
+    }
+
+    [Fact]
+    public async Task ANewDuplicateRequiresAnExplicitIdOnTheNextReview()
+    {
+        var fixture = await Fixture.Create();
+        using var vm = fixture.Vm;
+        await vm.InitializeAsync();
+        await vm.NextAsync();
+        var target = vm.AllTargets.First();
+        target.Selected = true;
+        var existing = fixture.Source.Current! with { Probes = [new(default, 10)] };
+        fixture.Eve.Stored[target.Path] = [new(7, existing)];
+        await vm.NextAsync();
+        vm.ReplaceMatching();
+        Assert.True(vm.CanApply);
+        fixture.Eve.Stored[target.Path] = [new(7, existing), new(9, existing)];
+        await vm.BuildReviewAsync();
+        var row = Assert.Single(vm.Reviews[0].Formations);
+        Assert.True(row.NeedsTarget);
+        Assert.Null(row.Target);
+        Assert.False(vm.CanApply);
+        row.Target = row.Matches[0];
+        Assert.True(vm.CanApply);
     }
     [Fact]
     public async Task WriteLocksTargetsAndSourceChangesStopRemainingFiles()
@@ -182,11 +289,14 @@ public sealed class ProbeTransferTests
     }
     private sealed class FakeEve:IEveProbeSettingsService
     {
-        public int ReadCalls,ApplyCalls,Version;public bool Empty;public EveClientStatus Status=EveClientStatus.Closed;public Action? BeforeApply;public HashSet<string> FailPaths {get;}=[];public Dictionary<string,IReadOnlyList<EveStoredFormation>> Stored {get;}=[];
+        public int ReadCalls,ApplyCalls,Version,ExtraAccounts;public bool Empty;public EveClientStatus Status=EveClientStatus.Closed;public Action? BeforeApply;public HashSet<string> FailPaths {get;}=[];public Dictionary<string,IReadOnlyList<EveStoredFormation>> Stored {get;}=[];
         private readonly EveProbeSettingsService merge=new();
         private static readonly string Root=Path.Combine(Path.GetTempPath(),"hisa-fake-transfer");
         private readonly EveSettingsAccount[] accounts=[new(Path.Combine(Root,"tq","settings_Default","core_user_123.dat"),"tq_tranquility","Default",123),new(Path.Combine(Root,"tq","settings_Exploration","core_user_123.dat"),"tq_tranquility","Exploration",123),new(Path.Combine(Root,"sisi","settings_Default","core_user_123.dat"),"sisi_singularity","Default",123)];
-        public Task<IReadOnlyList<EveSettingsAccount>> DiscoverAsync(IEnumerable<string> roots,CancellationToken cancellationToken=default)=>Task.FromResult<IReadOnlyList<EveSettingsAccount>>(Empty?[]:accounts);
+        public Task<IReadOnlyList<EveSettingsAccount>> DiscoverAsync(IEnumerable<string> roots,CancellationToken cancellationToken=default)
+            => Task.FromResult<IReadOnlyList<EveSettingsAccount>>(Empty ? [] : accounts.Concat(Enumerable.Range(200, ExtraAccounts)
+                .Select(id => new EveSettingsAccount(Path.Combine(Root, "tq", "settings_Default", $"core_user_{id}.dat"),
+                    "tq_tranquility", "Default", id))).ToArray());
         public Task<EveFormationSnapshot> ReadAsync(EveSettingsAccount account,CancellationToken cancellationToken=default){ReadCalls++;return Task.FromResult(new EveFormationSnapshot(account,Version.ToString(),Stored.GetValueOrDefault(account.Path)??[],[]));}
         public Task<string> GetFingerprintAsync(EveSettingsAccount account,CancellationToken cancellationToken=default)=>Task.FromResult(Version.ToString());
         public FormationMergePreview Preview(EveFormationSnapshot snapshot,IReadOnlyList<ProbeFormation> formations,IReadOnlyList<FormationMergeChoice> choices)=>merge.Preview(snapshot,formations,choices);

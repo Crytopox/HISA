@@ -21,6 +21,85 @@ public sealed class TestApp
 }
 public sealed class ProbeDesignerTests
 {
+    [Fact]
+    public async Task EstimatedPlacementUpdatesWithoutChangingExportAndCounterweightCanBeUndone()
+    {
+        var vm = Create();
+        await vm.InitializeAsync();
+        vm.CreateSixAxisPerch(725.125);
+        Assert.All(vm.Current!.Probes, probe => Assert.Equal(725_125, probe.Position.Length));
+        vm.Edit(f => f with { Probes = [new(new(250_000, 123.125, -17.5), 5), new(new(500_000, -456.25, 20.125), 10)] });
+        var authored = vm.Current!;
+        var export = vm.Export(false);
+        vm.ShowEstimatedPlacement = true;
+        Assert.Equal(export, vm.Export(false));
+        Assert.Equal("-125", vm.EstimatedProbes[0].X);
+        vm.Units = "AU";
+        Assert.NotEqual("-125", vm.EstimatedProbes[0].X);
+        vm.Units = "km";
+        vm.SetSelection([0]);
+        vm.BeginGroupDrag();
+        vm.UpdateGroupDrag(new(100_000, 0, 0));
+        Assert.Equal("-75", vm.EstimatedProbes[0].X);
+        vm.EndGroupDrag(true);
+        Assert.Equal("-125", vm.EstimatedProbes[0].X);
+
+        Assert.Contains("-750", vm.PreviewCounterweight(null));
+        Assert.Equal(export, vm.Export(false));
+        vm.ApplyCounterweight(null);
+        Assert.Equal("250", vm.EstimatedProbes[0].X);
+        Assert.Equal(3, vm.Current!.Probes.Count);
+        vm.Undo();
+        Assert.Equal(authored.Probes, vm.Current!.Probes);
+        Assert.Equal("-125", vm.EstimatedProbes[0].X);
+        vm.Redo();
+        Assert.Equal("250", vm.EstimatedProbes[0].X);
+    }
+
+    [AvaloniaFact]
+    public async Task PerchAndCounterweightDialogsApplyOnlyAfterConfirmation()
+    {
+        var vm = Create();
+        var window = new ProbeFormationDesignerWindow(vm);
+        window.Show();
+        try
+        {
+            Button ButtonWithText(Window owner, string text) =>
+                owner.GetVisualDescendants().OfType<Button>().Single(button => Equals(button.Content, text));
+            void Click(Button button) => button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+
+            Click(ButtonWithText(window, "Six-axis perch…"));
+            var preset = Assert.Single(window.OwnedWindows);
+            var distance = preset.GetVisualDescendants().OfType<TextBox>().Single();
+            Assert.Equal("500", distance.Text);
+            distance.Text = "750.25";
+            Click(ButtonWithText(preset, "Create formation"));
+            Assert.Empty(window.OwnedWindows);
+            Assert.All(vm.Current!.Probes, probe => Assert.Equal(750_250, probe.Position.Length));
+
+            vm.Create();
+            var before = vm.Current!;
+            Click(ButtonWithText(window, "Balance with counterweight…"));
+            var balance = Assert.Single(window.OwnedWindows);
+            var apply = ButtonWithText(balance, "Apply counterweight");
+            Assert.False(apply.IsEnabled);
+            balance.GetVisualDescendants().OfType<ComboBox>().Single().SelectedIndex = 2;
+            Assert.True(apply.IsEnabled);
+            Assert.Contains(balance.GetVisualDescendants().OfType<TextBlock>(), label => label.Text?.Contains("Distance from ship") == true);
+            Assert.Same(before, vm.Current);
+            Click(apply);
+            Assert.Empty(window.OwnedWindows);
+            Assert.Equal(2, vm.SelectedProbe);
+            Assert.Equal(before.Probes[2].RadiusMeters, vm.Current!.Probes[2].RadiusMeters);
+        }
+        finally
+        {
+            foreach (var child in window.OwnedWindows.ToArray()) child.Close();
+            await vm.SaveAsync();
+            window.Close();
+        }
+    }
+
     [AvaloniaFact]
     public async Task FormationListSwitchesReliablyAfterEditsRenamesAndFiltering()
     {
@@ -116,6 +195,9 @@ public sealed class ProbeDesignerTests
             foreach (var c in cells) {var point=c.TranslatePoint(default,window)!.Value;Assert.True(point.X>=0);Assert.True(point.X+c.Bounds.Width<=window.Bounds.Width+1);Assert.True(c.Bounds.Width>=30);}
             var send=window.GetVisualDescendants().OfType<Button>().Single(b => b.Content?.ToString()=="Send to EVE…");
             Assert.True(send.TranslatePoint(default,window)!.Value.X+send.Bounds.Width<=window.Bounds.Width+1);
+            vm.ShowEstimatedPlacement = true;
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+            Assert.True(window.FindControl<ProbeFormationControl>("Viewport")!.ShowEstimatedPlacement);
             using var image=new RenderTargetBitmap(new((int)window.Bounds.Width,(int)window.Bounds.Height));image.Render(window);image.Save(Path.Combine(AppContext.BaseDirectory,$"probe-designer-{width}.png"));
             await vm.SaveAsync();
         } finally {await vm.SaveAsync();window.Close();}

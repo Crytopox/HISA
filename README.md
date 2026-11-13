@@ -105,6 +105,14 @@ keep their relative spacing; axis handles snap only the axis being moved.
 **Set all probes to 0** places every probe at the origin. Both actions preserve scan
 radii and support undo.
 
+Enable **Show estimated EVE placement** to see where each probe is expected to land
+relative to the ship after EVE recenters the formation. Use **Balance with
+counterweight** to preview the distance for an added or repositioned probe while
+keeping the other probe offsets fixed. **Six-axis perch** creates a new formation
+with six probes at the chosen distance from the ship. To compare the estimate in
+EVE, stop the ship, select the formation, use **Center on My Location**, and
+**Analyze**. Compare the probes in space once they arrive.
+
 The Move, Rotate, Scale, and Radius tabs apply to the selected probes, with
 undo/redo. Rotation and scaling default to the selection center. **Save library**
 persists your presets in HISA; JSON import/export shares them independently of EVE.
@@ -112,12 +120,16 @@ persists your presets in HISA; JSON import/export shares them independently of E
 Select **Send to EVE…** for the guided **Formations → Accounts → Review → Results**
 workflow. The current formation starts selected. Choose exact profile/account
 files on the Accounts step, then resolve name conflicts inline during Review.
+**Replace matching formations across all selected files** sets Replace for unique
+name matches. Where several formations share a name, select the exact ID in
+Review. Expand a destination to see its file path and proposed changes.
 Account cards show linked character names and compact profile checkboxes. Use
 **Inspect** for the Characters, Formations, and File detail tabs; full destination
 paths, aliases, and backups are in File. Search is always available, with server
 and profile filters and discovery tools available separately.
 Close all EVE clients before applying. Results show each file's outcome and
-backup location; retrying failed targets creates a fresh review. Existing account formations and unrelated settings are
+backup location. Retrying failed targets creates a fresh review. Replacements
+update the reviewed formation IDs. Other formations and unrelated settings are
 preserved. Every write creates a verified backup in `.hisa-probe-backups` beside
 the account file; the account panel can restore these backups, including when
 the current settings file is corrupted. Restore replaces the complete settings
