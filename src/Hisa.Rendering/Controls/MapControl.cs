@@ -2930,9 +2930,9 @@ public sealed partial class MapControl : Control
                 {
                     if (_nodeById.TryGetValue(nodeId, out var node) &&
                         _voronoiWorldGeometriesByNodeId.TryGetValue(nodeId, out var geometry) &&
-                        TryGetVoronoiFill(node, out var fill))
+                        HasVoronoiFill(node))
                     {
-                        context.DrawGeometry(fill, borderPen, geometry);
+                        context.DrawGeometry(GetVoronoiFill(node), borderPen, geometry);
                     }
                 }
             }
@@ -2947,7 +2947,7 @@ public sealed partial class MapControl : Control
             foreach (var index in nodeIndexes)
             {
                 var node = Graph.Nodes[index];
-                if (!TryGetVoronoiFill(node, out _))
+                if (!HasVoronoiFill(node))
                 {
                     continue;
                 }
@@ -3019,9 +3019,8 @@ public sealed partial class MapControl : Control
         return pen;
     }
 
-    private bool TryGetVoronoiFill(MapNode node, out IBrush fill)
+    private bool HasVoronoiFill(MapNode node)
     {
-        fill = NodeHoleBrush;
         if (!_voronoiWorldGeometriesByNodeId.ContainsKey(node.Id))
         {
             return false;
@@ -3086,9 +3085,14 @@ public sealed partial class MapControl : Control
             return false;
         }
 
-        var color = GetNodeBaseColor(node, NodeBackgroundColorMode);
-        fill = GetCachedBrush(BrightenForBackground(color), 0.40);
         return true;
+    }
+
+    private IBrush GetVoronoiFill(MapNode node)
+    {
+        return NodeBackgroundColorMode == MapNodeColorMode.Storms && node.StormEffects.Count > 1
+            ? CreateStormBackgroundBands(node)
+            : GetCachedBrush(BrightenForBackground(GetNodeBaseColor(node, NodeBackgroundColorMode)), 0.40);
     }
 
     private void EnsureUniverseHighlightOverlay()
@@ -3408,7 +3412,7 @@ public sealed partial class MapControl : Control
         }
     }
 
-    private Size MeasureIndicatorLabelSize(MapNode node)
+    internal Size MeasureIndicatorLabelSize(MapNode node)
     {
         const double lineGap = 1.0;
         var name = GetNodeLabel(node.Id, BuildIndicatorLabel(node));
@@ -3453,7 +3457,7 @@ public sealed partial class MapControl : Control
         if (ShowIndicatorA0StarIcon && IsA0BlueSmall(node)) iconCount++;
         if (ShowIndicatorJoveObservatoryIcon && node.HasJoveObservatory) iconCount++;
         if (ShowIndicatorIceBeltsIcon && node.IceFieldCount > 0) iconCount++;
-        if (ShowIndicatorStormIcon && node.StormEffects.Count > 0) iconCount++;
+        if (ShowIndicatorStormIcon) iconCount += node.StormEffects.Count;
         if (ShowIndicatorWormholeIcon && node.HubWormholeConnections.Count > 0) iconCount++;
         if (ShowIndicatorIncursionIcon && node.HasActiveIncursion) iconCount++;
         var iconRowWidth = iconCount * (IndicatorIconSize + IndicatorIconSlotGap);
@@ -5502,73 +5506,11 @@ public sealed partial class MapControl : Control
 
     private void DrawVoronoiCellWorld(DrawingContext context, MapNode node, Pen borderPen)
     {
-        if (!_voronoiWorldGeometriesByNodeId.TryGetValue(node.Id, out var geometry))
+        if (_voronoiWorldGeometriesByNodeId.TryGetValue(node.Id, out var geometry) && HasVoronoiFill(node))
         {
-            return;
+            context.DrawGeometry(GetVoronoiFill(node), borderPen, geometry);
         }
-
-        if (NodeBackgroundColorMode == MapNodeColorMode.JoveObservatory && !node.HasJoveObservatory)
-        {
-            return;
-        }
-
-        if (NodeBackgroundColorMode == MapNodeColorMode.IceBelts && node.IceFieldCount <= 0)
-        {
-            return;
-        }
-        if (NodeBackgroundColorMode == MapNodeColorMode.Storms && node.StormEffects.Count == 0)
-        {
-            return;
-        }
-        if (NodeBackgroundColorMode == MapNodeColorMode.Wormholes && node.HubWormholeConnections.Count == 0)
-        {
-            return;
-        }
-        if (NodeBackgroundColorMode == MapNodeColorMode.SovUpgrades)
-        {
-            var visibleSov = GetVisibleSovUpgrades(node.SovUpgrades, IndicatorSovUpgradeFilterKeys);
-            if (!visibleSov.Any())
-            {
-                return;
-            }
-        }
-        if (NodeBackgroundColorMode == MapNodeColorMode.Incursions && !node.HasActiveIncursion)
-        {
-            return;
-        }
-        if (NodeBackgroundColorMode == MapNodeColorMode.SystemJumps && node.SystemJumps <= 0)
-        {
-            return;
-        }
-        if (NodeBackgroundColorMode == MapNodeColorMode.ShipKills && node.ShipKills <= 0)
-        {
-            return;
-        }
-        if (NodeBackgroundColorMode == MapNodeColorMode.PodKills && node.PodKills <= 0)
-        {
-            return;
-        }
-        if (NodeBackgroundColorMode == MapNodeColorMode.NpcKills && node.NpcKills <= 0)
-        {
-            return;
-        }
-        if (NodeBackgroundColorMode == MapNodeColorMode.Hostiles)
-        {
-            if (IntelHostileScoresByNodeId is null ||
-                !IntelHostileScoresByNodeId.TryGetValue(node.Id, out var hostileScore) ||
-                hostileScore <= 0)
-            {
-                // No active intel for this node: keep background transparent.
-                return;
-            }
-        }
-
-        var color = GetNodeBaseColor(node, NodeBackgroundColorMode);
-        var tuned = BrightenForBackground(color);
-        var baseFill = GetCachedBrush(tuned, 0.40);
-        context.DrawGeometry(baseFill, borderPen, geometry);
     }
-
 
     private Color GetNodeBaseColor(MapNode node, MapNodeColorMode mode)
     {
@@ -5748,14 +5690,14 @@ public sealed partial class MapControl : Control
 
     private static Color GetStormColor(MapNode node)
     {
-        var primary = GetPrimaryStormEffect(node);
-        if (primary is null)
-        {
-            return Color.Parse("#98A6B8");
-        }
+        var primary = GetOrderedStormEffects(node).FirstOrDefault();
+        return primary is null ? Color.Parse("#98A6B8") : GetStormEffectColor(primary);
+    }
 
-        var baseColor = GetStormBaseColor(primary.Type);
-        return primary.Strength switch
+    private static Color GetStormEffectColor(StormEffect effect)
+    {
+        var baseColor = GetStormBaseColor(effect.Type);
+        return effect.Strength switch
         {
             StormStrength.Center => baseColor,
             StormStrength.Strong => LerpColor(baseColor, Color.FromRgb(210, 210, 210), 0.25),
@@ -5770,22 +5712,39 @@ public sealed partial class MapControl : Control
             StormType.Electrical => Color.Parse("#4AA8FF"),
             StormType.Plasma => Color.Parse("#DE5B52"),
             StormType.Gamma => Color.Parse("#E69138"),
-            StormType.Exotic => Color.Parse("#CFD4DC"),
+            StormType.Exotic => Color.Parse("#78C5A0"),
             _ => Color.Parse("#A9B2BF")
         };
     }
 
-    private static StormEffect? GetPrimaryStormEffect(MapNode node)
+    internal static IEnumerable<StormEffect> GetOrderedStormEffects(MapNode node)
     {
-        if (node.StormEffects.Count == 0)
+        return node.StormEffects.Count < 2
+            ? node.StormEffects
+            : node.StormEffects.OrderByDescending(e => e.Strength)
+                .ThenBy(e => e.Type)
+                .ThenBy(e => e.CenterSolarSystemId);
+    }
+
+    private static IBrush CreateStormBackgroundBands(MapNode node)
+    {
+        var stops = new GradientStops();
+        var index = 0;
+        foreach (var effect in GetOrderedStormEffects(node))
         {
-            return null;
+            var color = WithAlpha(BrightenForBackground(GetStormEffectColor(effect)), 0.40);
+            stops.Add(new GradientStop(color, (double)index / node.StormEffects.Count));
+            index++;
+            stops.Add(new GradientStop(color, (double)index / node.StormEffects.Count));
         }
 
-        return node.StormEffects
-            .OrderByDescending(e => e.Strength)
-            .ThenBy(e => e.Type)
-            .FirstOrDefault();
+        // Different colors at the same offset give adjacent bands a hard edge.
+        return new ImmutableLinearGradientBrush(new LinearGradientBrush
+        {
+            StartPoint = new RelativePoint(0, 0.5, RelativeUnit.Relative),
+            EndPoint = new RelativePoint(1, 0.5, RelativeUnit.Relative),
+            GradientStops = stops
+        });
     }
 
     private static Color WithAlpha(Color color, double alpha01)
@@ -6208,10 +6167,13 @@ public sealed partial class MapControl : Control
             DrawIceFieldIcon(context, new Point(indicatorIconCursorX, rect.Bottom), IndicatorIconSize);
             indicatorIconCursorX += IndicatorIconSize + IndicatorIconSlotGap;
         }
-        if (ShowIndicatorStormIcon && node.StormEffects.Count > 0)
+        if (ShowIndicatorStormIcon)
         {
-            DrawStormIcon(context, node, new Point(indicatorIconCursorX, rect.Bottom), IndicatorIconSize);
-            indicatorIconCursorX += IndicatorIconSize + IndicatorIconSlotGap;
+            foreach (var effect in GetOrderedStormEffects(node))
+            {
+                DrawStormIcon(context, effect, new Point(indicatorIconCursorX, rect.Bottom), IndicatorIconSize);
+                indicatorIconCursorX += IndicatorIconSize + IndicatorIconSlotGap;
+            }
         }
         if (ShowIndicatorWormholeIcon && node.HubWormholeConnections.Count > 0)
         {
@@ -6569,12 +6531,10 @@ public sealed partial class MapControl : Control
         }
     }
 
-    private static void DrawStormIcon(DrawingContext context, MapNode node, Point topLeft, double size)
+    private static void DrawStormIcon(DrawingContext context, StormEffect effect, Point topLeft, double size)
     {
-        var effect = GetPrimaryStormEffect(node);
         var icon = effect switch
         {
-            null => StormUnknownIcon.Value,
             { Type: StormType.Electrical, Strength: StormStrength.Center } => StormElectricCenterIcon.Value,
             { Type: StormType.Electrical, Strength: StormStrength.Strong } => StormElectricStrongIcon.Value,
             { Type: StormType.Electrical, Strength: StormStrength.Weak } => StormElectricWeakIcon.Value,

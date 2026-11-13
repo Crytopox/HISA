@@ -736,7 +736,7 @@ public partial class MainWindow : Window
             {
                 StormType.Electrical => ("Electrical", "#4AA8FF", "#172D45"),
                 StormType.Gamma => ("Gamma", "#E69138", "#3A2B19"),
-                StormType.Exotic => ("Exotic", "#CFD4DC", "#30363D"),
+                StormType.Exotic => ("Exotic", "#78C5A0", "#263D33"),
                 StormType.Plasma => ("Plasma", "#DE5B52", "#3A2024"),
                 _ => ("Unknown", "#9BA8B8", "#27313D")
             };

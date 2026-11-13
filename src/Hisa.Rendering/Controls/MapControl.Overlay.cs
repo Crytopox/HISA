@@ -196,7 +196,7 @@ public sealed partial class MapControl
             if (InfoBoxShowIncursionIcon && node.HasActiveIncursion) AddText("Incursion: Active");
             if (ShowUserSystemMarks && UserSystemMarksByNodeId?.TryGetValue(node.Id, out var mark) == true)
                 AddText($"Mark: {(mark.ShowLabel && !string.IsNullOrWhiteSpace(mark.Label) ? mark.Label : mark.IconKind is { } kind ? SystemMarkIcons.GetDisplayName(kind) : "Marked")}");
-            foreach (var storm in node.StormEffects.OrderByDescending(s => s.Strength).ThenBy(s => s.Type))
+            foreach (var storm in GetOrderedStormEffects(node))
                 AddText($"Storm: {storm.Strength} {storm.Type}");
 
             foreach (var line in BuildAnsiblexHoverLines(node))
@@ -254,7 +254,14 @@ public sealed partial class MapControl
             if (InfoBoxShowA0StarIcon && IsA0BlueSmall(node)) footer.Add(new((c, r) => DrawA0Icon(c, r.TopLeft, iconSize), Tooltip: "A0 star"));
             if (InfoBoxShowJoveObservatoryIcon && node.HasJoveObservatory) footer.Add(new((c, r) => DrawJoveObservatoryIcon(c, r.TopLeft, iconSize), Tooltip: "Jove Observatory"));
             if (InfoBoxShowIceBeltsIcon && node.IceFieldCount > 0) footer.Add(new((c, r) => DrawIceFieldIcon(c, r.TopLeft, iconSize), Tooltip: "Ice fields"));
-            if (InfoBoxShowStormIcon && node.StormEffects.Count > 0) footer.Add(new((c, r) => DrawStormIcon(c, node, r.TopLeft, iconSize), Tooltip: "Storm"));
+            if (InfoBoxShowStormIcon)
+            {
+                foreach (var storm in GetOrderedStormEffects(node))
+                {
+                    footer.Add(new((c, r) => DrawStormIcon(c, storm, r.TopLeft, iconSize),
+                        Tooltip: $"{storm.Strength} {storm.Type} storm"));
+                }
+            }
             if (InfoBoxShowWormholeIcon && node.HubWormholeConnections.Count > 0) footer.Add(new((c, r) => DrawHubWormholeIcon(c, node, r.TopLeft, iconSize), Tooltip: "Wormholes"));
             // Incursion and activity counts appear once; the count icons retain the full values.
             void CountIcon(bool enabled, int value, Func<Avalonia.Media.Imaging.Bitmap?> bitmap, string label)

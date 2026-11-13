@@ -8369,7 +8369,7 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
         {
             StormType.Electrical => ("Electrical", "#4AA8FF"),
             StormType.Gamma => ("Gamma", "#E69138"),
-            StormType.Exotic => ("Exotic", "#CFD4DC"),
+            StormType.Exotic => ("Exotic", "#78C5A0"),
             StormType.Plasma => ("Plasma", "#DE5B52"),
             _ => ("Unknown", "#9AA7B8")
         };
