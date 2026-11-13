@@ -7,7 +7,6 @@ namespace Hisa.App;
 public partial class MiningStatsWindow : Window
 {
     private static readonly TimeSpan AutoRefreshInterval = TimeSpan.FromSeconds(5);
-    private MiningOverlayWindow? _overlayWindow;
     private MiningCharacterBreakdownWindow? _characterBreakdownWindow;
     private readonly DispatcherTimer _autoRefreshTimer;
     private bool _isApplyingWindowPlacement;
@@ -38,8 +37,8 @@ public partial class MiningStatsWindow : Window
                 _isApplyingWindowPlacement = true;
                 try
                 {
-                    Width = Math.Max(520, placement.Width);
-                    Height = Math.Max(420, placement.Height);
+                    Width = Math.Max(MinWidth, placement.Width);
+                    Height = Math.Max(MinHeight, placement.Height);
                     Position = new Avalonia.PixelPoint(placement.PositionX, placement.PositionY);
                 }
                 finally
@@ -49,10 +48,15 @@ public partial class MiningStatsWindow : Window
             }
 
             await vm.RefreshMiningStatsForSelectedRangeAsync();
+            if (!IsVisible)
+            {
+                return;
+            }
+
             _autoRefreshTimer.Start();
             if (vm.ShouldRestoreMiningOverlayVisible)
             {
-                EnsureOverlayWindow(vm);
+                MiningOverlayWindow.ShowFor(vm);
             }
         }
     }
@@ -60,6 +64,10 @@ public partial class MiningStatsWindow : Window
     private void OnClosing(object? sender, WindowClosingEventArgs e)
     {
         _autoRefreshTimer.Stop();
+        if (DataContext is MainWindowViewModel vm)
+        {
+            vm.FlushMiningOverlaySettingsAsync().GetAwaiter().GetResult();
+        }
         SaveWindowPlacement(waitForCompletion: true);
     }
 
@@ -71,8 +79,14 @@ public partial class MiningStatsWindow : Window
             _characterBreakdownWindow.Close();
             _characterBreakdownWindow = null;
         }
+    }
 
-        _overlayWindow = null;
+    private async void OnOverlaySettingsClosed(object? sender, EventArgs e)
+    {
+        if (DataContext is MainWindowViewModel vm)
+        {
+            await vm.FlushMiningOverlaySettingsAsync();
+        }
     }
 
     private async void OnRefreshClicked(object? sender, RoutedEventArgs e)
@@ -108,26 +122,18 @@ public partial class MiningStatsWindow : Window
             return;
         }
 
-        if (_overlayWindow is null)
+        if (MiningOverlayWindow.Current is { } overlay)
         {
-            EnsureOverlayWindow(vm);
+            overlay.Close();
             return;
         }
 
-        _overlayWindow.Close();
-        _overlayWindow = null;
-        vm.IsMiningOverlayVisible = false;
+        MiningOverlayWindow.ShowFor(vm);
     }
 
     private void OnResetOverlayPositionClicked(object? sender, RoutedEventArgs e)
     {
-        if (DataContext is not MainWindowViewModel vm)
-        {
-            return;
-        }
-
-        EnsureOverlayWindow(vm);
-        _overlayWindow?.ResetPosition();
+        MiningOverlayWindow.Current?.ResetPosition();
     }
 
     private void OnOpenCharacterBreakdownClicked(object? sender, RoutedEventArgs e)
@@ -147,36 +153,6 @@ public partial class MiningStatsWindow : Window
 
         _characterBreakdownWindow.Show();
         _characterBreakdownWindow.Activate();
-    }
-
-    private void EnsureOverlayWindow(MainWindowViewModel vm)
-    {
-        if (MiningOverlayWindow.Current is not null)
-        {
-            _overlayWindow = MiningOverlayWindow.Current;
-            _overlayWindow.Show();
-            _overlayWindow.Activate();
-            vm.IsMiningOverlayVisible = true;
-            return;
-        }
-
-        if (_overlayWindow is not null)
-        {
-            _overlayWindow.Show();
-            _overlayWindow.Activate();
-            vm.IsMiningOverlayVisible = true;
-            return;
-        }
-
-        _overlayWindow = new MiningOverlayWindow(vm);
-        _overlayWindow.Closed += (_, _) =>
-        {
-            _overlayWindow = null;
-            vm.SetMiningOverlayVisibility(false, persistPreference: !vm.IsApplicationShuttingDown);
-        };
-        _overlayWindow.Show();
-        _overlayWindow.Activate();
-        vm.IsMiningOverlayVisible = true;
     }
 
     private void OnWindowPositionChanged(object? sender, PixelPointEventArgs e)

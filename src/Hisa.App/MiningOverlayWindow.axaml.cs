@@ -36,6 +36,20 @@ public partial class MiningOverlayWindow : Window
         DataContext = vm;
     }
 
+    internal static void ShowFor(MainWindowViewModel vm)
+    {
+        if (Current is not null)
+        {
+            return;
+        }
+
+        var overlay = new MiningOverlayWindow(vm);
+        overlay.Closed += (_, _) =>
+            vm.SetMiningOverlayVisibility(false, persistPreference: !vm.IsApplicationShuttingDown);
+        overlay.Show();
+        vm.IsMiningOverlayVisible = true;
+    }
+
     private async void OnOpened(object? sender, EventArgs e)
     {
         Current = this;
@@ -48,7 +62,7 @@ public partial class MiningOverlayWindow : Window
         }
 
         var placement = await vm.GetMiningOverlayWindowPlacementAsync();
-        if (_positionResetRequested)
+        if (!ReferenceEquals(Current, this) || _positionResetRequested)
         {
             _isRestoringInitialPlacement = false;
             return;
@@ -62,7 +76,10 @@ public partial class MiningOverlayWindow : Window
             Dispatcher.UIThread.Post(() =>
             {
                 _isRestoringInitialPlacement = false;
-                UpdateClickThrough();
+                if (ReferenceEquals(Current, this))
+                {
+                    UpdateClickThrough();
+                }
             }, DispatcherPriority.Background);
             return;
         }
@@ -70,9 +87,12 @@ public partial class MiningOverlayWindow : Window
         ApplyWindowPlacement(placement);
         Dispatcher.UIThread.Post(() =>
         {
-            ApplyWindowPlacement(placement);
+            if (ReferenceEquals(Current, this) && !_positionResetRequested)
+            {
+                ApplyWindowPlacement(placement);
+                UpdateClickThrough();
+            }
             _isRestoringInitialPlacement = false;
-            UpdateClickThrough();
         }, DispatcherPriority.Background);
     }
 
@@ -103,7 +123,7 @@ public partial class MiningOverlayWindow : Window
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(MainWindowViewModel.HasOverlayAggregateMiningStats))
+        if (e.PropertyName == nameof(MainWindowViewModel.ShowMiningOverlayPanel))
         {
             UpdateClickThrough();
         }
@@ -111,9 +131,10 @@ public partial class MiningOverlayWindow : Window
 
     private void UpdateClickThrough()
     {
-        var hasStats = DataContext is MainWindowViewModel vm && vm.HasOverlayAggregateMiningStats;
-        OverlayClickThrough.Set(this, clickThrough: !hasStats);
+        OverlayClickThrough.Set(this, clickThrough: !IsPanelShown);
     }
+
+    private bool IsPanelShown => DataContext is MainWindowViewModel vm && vm.ShowMiningOverlayPanel;
 
     private void ApplyWindowPlacement(WindowPlacementState placement)
     {
@@ -173,8 +194,8 @@ public partial class MiningOverlayWindow : Window
 
         return new WindowPlacementState
         {
-            Width = Width,
-            Height = Height,
+            Width = ClientSize.Width,
+            Height = ClientSize.Height,
             PositionX = position.X,
             PositionY = position.Y,
             WindowState = WindowState.ToString(),
@@ -203,7 +224,7 @@ public partial class MiningOverlayWindow : Window
 
     private void OnRootPointerPressed(object? sender, PointerPressedEventArgs e)
     {
-        if (DataContext is MainWindowViewModel vm && !vm.HasOverlayAggregateMiningStats)
+        if (!IsPanelShown)
         {
             return;
         }
@@ -237,8 +258,8 @@ public partial class MiningOverlayWindow : Window
         var mainWindow = GetMainWindow();
         var placement = new WindowPlacementState
         {
-            Width = Width,
-            Height = Height,
+            Width = ClientSize.Width,
+            Height = ClientSize.Height,
             PositionX = Position.X,
             PositionY = Position.Y,
             WindowState = WindowState.ToString(),

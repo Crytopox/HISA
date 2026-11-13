@@ -2223,22 +2223,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (MiningOverlayWindow.Current is not null)
-        {
-            _boundVm.IsMiningOverlayVisible = true;
-            return;
-        }
-
-        var overlayWindow = new MiningOverlayWindow(_boundVm);
-        overlayWindow.Closed += (_, _) =>
-        {
-            if (_boundVm is not null)
-            {
-                _boundVm.SetMiningOverlayVisibility(false, persistPreference: !_isClosingApp);
-            }
-        };
-        overlayWindow.Show();
-        _boundVm.IsMiningOverlayVisible = true;
+        MiningOverlayWindow.ShowFor(_boundVm);
     }
 
     private async void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)

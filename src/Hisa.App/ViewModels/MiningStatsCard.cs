@@ -29,12 +29,18 @@ public sealed class MiningStatsCard : INotifyPropertyChanged
     public required string TotalWasteIskSummary { get; init; }
     public required string SessionTotalSummary { get; init; }
     public required string WasteTotalSummary { get; init; }
-    public required string EfficiencySummary { get; init; }
+    public string? SiteEfficiencySummary { get; init; }
     public required string SessionAgeSummary { get; init; }
     public required string LastUpdatedSummary { get; init; }
     public required string OreMixSummary { get; init; }
     public double YieldRatio { get; init; }
     public double WasteRatio { get; init; }
+
+    public bool IsCharacter { get; init; }
+
+    public bool HasSiteEfficiency => SiteEfficiencySummary is not null;
+
+    public string CharacterSessionAgeSuffix => IsCharacter ? $"  ·  {SessionAgeSummary}" : string.Empty;
 
     public Bitmap? PortraitBitmap
     {

@@ -3,13 +3,14 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="clr-namespace:Hisa.App"
-        mc:Ignorable="d" d:DesignWidth="320" d:DesignHeight="220"
+        mc:Ignorable="d" d:DesignWidth="360" d:DesignHeight="124"
         x:Class="Hisa.App.MiningOverlayWindow"
         x:DataType="vm:MainWindowViewModel"
         Title="Mining Overlay"
         Width="360"
-        Height="150"
+        SizeToContent="Height"
         Topmost="True"
+        ShowActivated="False"
         CanResize="False"
         SystemDecorations="None"
         ShowInTaskbar="False"
@@ -20,13 +21,11 @@
           Background="Transparent"
           BorderThickness="0"
           PointerPressed="OnRootPointerPressed">
-    <Border Background="#92131C2B"
-            BorderBrush="#30435D"
-            BorderThickness="1"
-            CornerRadius="8"
-            Padding="10"
-            IsVisible="{Binding HasOverlayAggregateMiningStats}">
-      <StackPanel Spacing="6">
+    <Panel IsVisible="{Binding ShowMiningOverlayPanel}">
+      <Border Background="#131C2B" BorderBrush="#30435D" BorderThickness="1" CornerRadius="8"
+              Opacity="{Binding MiningOverlayFrameOpacity}" IsHitTestVisible="False" />
+      <StackPanel Margin="11" Spacing="6" Opacity="{Binding MiningOverlayTextOpacity}"
+                  IsVisible="{Binding HasOverlayAggregateMiningStats}">
         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
           <TextBlock Text="{Binding OverlayAggregateMiningStatsCard.CharacterName}"
                      Foreground="#F3F7FF"
@@ -60,6 +59,11 @@
           <TextBlock Grid.Column="1" Text="{Binding AggregateMiningStatsCard.TotalEstimatedIskSummary}" Foreground="#B6CADF" FontSize="11" HorizontalAlignment="Right" />
         </Grid>
       </StackPanel>
-    </Border>
+      <StackPanel Margin="11" Spacing="6" Opacity="{Binding MiningOverlayTextOpacity}"
+                  IsVisible="{Binding ShowMiningOverlayIdleMessage}">
+        <TextBlock Text="Live Mining Overlay" Foreground="#F3F7FF" FontWeight="SemiBold" FontSize="13" />
+        <TextBlock Text="No mining data for this range" Foreground="#B6CADF" FontSize="11" />
+      </StackPanel>
+    </Panel>
   </Border>
 </Window>

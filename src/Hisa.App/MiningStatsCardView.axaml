@@ -1,0 +1,128 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:cards="clr-namespace:Hisa.App.ViewModels"
+             x:Class="Hisa.App.MiningStatsCardView"
+             x:DataType="cards:MiningStatsCard">
+  <UserControl.Styles>
+    <Style Selector="TextBlock.metric-label">
+      <Setter Property="Foreground" Value="#A4B7CE" />
+      <Setter Property="FontSize" Value="11" />
+    </Style>
+    <Style Selector="TextBlock.metric-value">
+      <Setter Property="Foreground" Value="#F3F7FF" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style Selector="TextBlock.metric-value.yield">
+      <Setter Property="Foreground" Value="#CFF5C6" />
+    </Style>
+    <Style Selector="TextBlock.metric-value.waste">
+      <Setter Property="Foreground" Value="#F3C0C0" />
+    </Style>
+    <Style Selector="TextBlock.metric-detail">
+      <Setter Property="Foreground" Value="#A4B7CE" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style Selector="Border.metric-divider">
+      <Setter Property="BorderBrush" Value="#27384F" />
+      <Setter Property="BorderThickness" Value="0,1,0,0" />
+      <Setter Property="Padding" Value="0,8,0,0" />
+    </Style>
+  </UserControl.Styles>
+  <Border Padding="14,12" Background="#101826" BorderBrush="#2B3C55" BorderThickness="1" CornerRadius="10">
+    <StackPanel Spacing="8">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <Border Width="36" Height="36" Margin="0,0,10,0" IsVisible="{Binding IsCharacter}"
+                Background="#0B111A" BorderBrush="#2B3C55" BorderThickness="1" CornerRadius="6" ClipToBounds="True">
+          <Grid>
+            <Image Source="{Binding PortraitBitmap}" Stretch="UniformToFill" IsVisible="{Binding HasPortraitBitmap}" />
+            <TextBlock Text="{Binding PortraitFallbackText}" IsVisible="{Binding HasNoPortraitBitmap}"
+                       Foreground="#DDEAFF" FontSize="11" FontWeight="Bold"
+                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Grid>
+        </Border>
+        <StackPanel Grid.Column="1" Spacing="2" Margin="0,0,12,0" VerticalAlignment="Center">
+          <Grid ColumnDefinitions="Auto,*">
+            <TextBlock Text="{Binding CharacterName}" Foreground="#F3F7FF" FontSize="16" FontWeight="SemiBold"
+                       MaxWidth="470" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding CharacterName}" />
+            <TextBlock Grid.Column="1" Text="{Binding CharacterId}" IsVisible="{Binding IsCharacter}"
+                       Classes="metric-label" Margin="8,0,0,0" VerticalAlignment="Center" />
+          </Grid>
+          <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="#8EC8A2">
+            <Run Text="{Binding PrimaryOreName}" /><Run Text="{Binding CharacterSessionAgeSuffix}" Foreground="#A4B7CE" />
+          </TextBlock>
+        </StackPanel>
+        <StackPanel Grid.Column="2" Spacing="2" VerticalAlignment="Center">
+          <TextBlock Text="{Binding IskRateSummary}" Classes="metric-value yield" TextAlignment="Right" />
+          <TextBlock Text="{Binding LastUpdatedSummary}" Classes="metric-label" TextAlignment="Right" />
+        </StackPanel>
+      </Grid>
+
+      <Border Classes="metric-divider">
+        <Grid ColumnDefinitions="*,*,*" ColumnSpacing="12">
+          <StackPanel Spacing="2">
+            <TextBlock Text="Combined mining rate" Classes="metric-label" />
+            <TextBlock Text="{Binding TotalMiningRateSummary}" Classes="metric-value" />
+          </StackPanel>
+          <StackPanel Grid.Column="1" Spacing="2">
+            <TextBlock Text="Yield rate" Classes="metric-label" />
+            <TextBlock Text="{Binding MiningRateSummary}" Classes="metric-value yield" />
+            <TextBlock Text="{Binding SessionTotalSummary}" Classes="metric-detail" />
+          </StackPanel>
+          <StackPanel Grid.Column="2" Spacing="2">
+            <TextBlock Text="Waste rate" Classes="metric-label" />
+            <TextBlock Text="{Binding WasteRateSummary}" Classes="metric-value waste" />
+            <TextBlock Text="{Binding WasteIskRateSummary}" Classes="metric-detail" />
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <Border Classes="metric-divider">
+        <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="12" RowDefinitions="Auto,Auto" RowSpacing="8">
+          <StackPanel Spacing="2">
+            <TextBlock Text="Total mined" Classes="metric-label" />
+            <TextBlock Text="{Binding TotalMinedSummary}" Classes="metric-value" />
+          </StackPanel>
+          <StackPanel Grid.Column="1" Spacing="2">
+            <TextBlock Text="Total value" Classes="metric-label" />
+            <TextBlock Text="{Binding TotalEstimatedIskSummary}" Classes="metric-value yield" />
+          </StackPanel>
+          <StackPanel Grid.Column="2" Spacing="2">
+            <TextBlock Text="Total waste" Classes="metric-label" />
+            <TextBlock Text="{Binding WasteTotalSummary}" Classes="metric-value waste" />
+          </StackPanel>
+          <StackPanel Grid.Column="3" Spacing="2">
+            <TextBlock Text="Waste loss" Classes="metric-label" />
+            <TextBlock Text="{Binding TotalWasteIskSummary}" Classes="metric-value waste" />
+          </StackPanel>
+          <StackPanel Grid.Row="1" Spacing="2">
+            <TextBlock Text="Actual efficiency" Classes="metric-label" />
+            <TextBlock Text="{Binding EfficiencyPercentSummary}" Classes="metric-value" />
+            <TextBlock Text="{Binding SiteEfficiencySummary}" IsVisible="{Binding HasSiteEfficiency}"
+                       Classes="metric-detail" />
+          </StackPanel>
+          <StackPanel Grid.Row="1" Grid.Column="1" Spacing="2">
+            <TextBlock Text="Yield %" Classes="metric-label" />
+            <TextBlock Text="{Binding YieldPercentSummary}" Classes="metric-value yield" />
+          </StackPanel>
+          <StackPanel Grid.Row="1" Grid.Column="2" Spacing="2">
+            <TextBlock Text="Crit %" Classes="metric-label" />
+            <TextBlock Text="{Binding CritPercentSummary}" Classes="metric-value" />
+          </StackPanel>
+          <StackPanel Grid.Row="1" Grid.Column="3" Spacing="2">
+            <TextBlock Text="Waste %" Classes="metric-label" />
+            <TextBlock Text="{Binding WastePercentSummary}" Classes="metric-value waste" />
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <Border Classes="metric-divider">
+        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+          <TextBlock Text="Ore mix" Classes="metric-label" />
+          <TextBlock Grid.Column="1" Text="{Binding OreMixSummary}" Classes="metric-detail" />
+        </Grid>
+      </Border>
+    </StackPanel>
+  </Border>
+</UserControl>
