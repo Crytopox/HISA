@@ -773,7 +773,6 @@
                         Foreground="#BFD2EC"
                         VerticalAlignment="Center" />
             </Grid>
-            <TextBlock Text="Personal system marks stay visible at every zoom." Foreground="#8FA5C4" FontSize="11" />
             <ScrollViewer MaxHeight="340" VerticalScrollBarVisibility="Auto">
               <ItemsControl ItemsSource="{Binding SystemMarkCardsForView}">
                 <ItemsControl.ItemTemplate>
@@ -834,7 +833,7 @@
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
             </ScrollViewer>
-            <TextBlock Text="No system marks yet. Right-click a system to add one."
+            <TextBlock Text="No system labels yet. Right-click a system to add one."
                        Foreground="#7F93AE"
                        IsVisible="{Binding HasNoSystemMarkOverlayData}" />
           </StackPanel>
@@ -1566,7 +1565,7 @@
             <CheckBox IsChecked="{Binding ShowIndicatorCharacterPresence}" Content="Characters" />
             <CheckBox IsChecked="{Binding ShowIndicatorJumpRangeLy}" Content="Jump Range LY" />
             <CheckBox IsChecked="{Binding ShowIndicatorAnsiblexZone}" Content="Ansiblex Zone" />
-            <CheckBox IsChecked="{Binding ShowUserSystemMarks}" Content="System Marks" />
+            <CheckBox IsChecked="{Binding ShowUserSystemMarks}" Content="System Labels" />
             <CheckBox IsChecked="{Binding ShowAnsiblexNetwork}" Content="Ansiblex Network" />
             <StackPanel Orientation="Horizontal" Spacing="6">
               <CheckBox IsChecked="{Binding ShowIndicatorSovUpgradeIcon}" Content="SOV Upgrades" />
@@ -1721,7 +1720,7 @@
         <TextBlock Grid.Column="1" Text="{Binding StatusText}" Foreground="#8A96A8" FontSize="11" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="0,0,8,0" IsVisible="{Binding IsDebugBuild}" />
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
           <ToggleButton Classes="activity-strip"
-                        Content="System Marks"
+                        Content="System Labels"
                         IsChecked="{Binding IsSystemMarksOverlayOpen, Mode=TwoWay}"
                         Background="#162131"
                         BorderBrush="#2E4B73"

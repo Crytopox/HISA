@@ -72,7 +72,7 @@ public partial class SystemMarkEditorWindow : Window, INotifyPropertyChanged
         _systemName = systemName;
         _regionName = regionName;
         CanRemove = existing is not null;
-        HeaderText = existing is null ? $"Mark {systemName}" : $"Edit mark · {systemName}";
+        HeaderText = existing is null ? $"Add system label · {systemName}" : $"Edit system label · {systemName}";
 
         foreach (var kind in SystemMarkIcons.All)
         {
@@ -106,7 +106,7 @@ public partial class SystemMarkEditorWindow : Window, INotifyPropertyChanged
     }
 
     public ObservableCollection<SystemMarkIconOption> IconOptions { get; }
-    public string HeaderText { get; private set; } = "Mark System";
+    public string HeaderText { get; private set; } = "Add System Label";
     public bool CanRemove { get; }
 
     public Color PickerColor
@@ -200,7 +200,7 @@ public partial class SystemMarkEditorWindow : Window, INotifyPropertyChanged
 
         if (!saved)
         {
-            ValidationText = "Could not save this mark. Choose an icon and/or a label.";
+            ValidationText = "Could not save this system label. Choose an icon and/or a label.";
             return;
         }
 

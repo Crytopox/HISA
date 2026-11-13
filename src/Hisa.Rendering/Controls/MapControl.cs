@@ -7102,7 +7102,7 @@ public sealed partial class MapControl : Control
                     ? mark.Label
                     : mark.IconKind is { } iconKind
                         ? SystemMarkIcons.GetDisplayName(iconKind)
-                        : "Mark";
+                        : "Label";
                 return string.IsNullOrWhiteSpace(mark.RegionName)
                     ? $"{mark.SystemName}  {label}"
                     : $"{mark.SystemName}  {label}  ({mark.RegionName})";
@@ -7118,7 +7118,7 @@ public sealed partial class MapControl : Control
             11,
             Brushes.White);
         var header = CreateMapText(
-            $"{hit.Marks.Count} marked systems",
+            $"System Labels ({hit.Marks.Count})",
             12,
             Brushes.White,
             FontWeight.SemiBold);

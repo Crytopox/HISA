@@ -195,7 +195,7 @@ public sealed partial class MapControl
             if (InfoBoxShowStarClass) AddText(GetStarClassDisplayValue(node), muted: true);
             if (InfoBoxShowIncursionIcon && node.HasActiveIncursion) AddText("Incursion: Active");
             if (ShowUserSystemMarks && UserSystemMarksByNodeId?.TryGetValue(node.Id, out var mark) == true)
-                AddText($"Mark: {(mark.ShowLabel && !string.IsNullOrWhiteSpace(mark.Label) ? mark.Label : mark.IconKind is { } kind ? SystemMarkIcons.GetDisplayName(kind) : "Marked")}");
+                AddText($"System label: {(mark.ShowLabel && !string.IsNullOrWhiteSpace(mark.Label) ? mark.Label : mark.IconKind is { } kind ? SystemMarkIcons.GetDisplayName(kind) : "Present")}");
             foreach (var storm in GetOrderedStormEffects(node))
                 AddText($"Storm: {storm.Strength} {storm.Type}");
 

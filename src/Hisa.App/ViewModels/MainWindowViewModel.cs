@@ -783,7 +783,7 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
     public string StormOverlayTitle => $"Metaliminal Storms ({_stormCardsForView.Count})";
     public string IntelOverlayTitle => $"Intel Reports ({_intelCardsForView.Count})";
     public string ZkillmailOverlayTitle => $"zKillmails ({_zkillmailCardsForView.Count})";
-    public string SystemMarkOverlayTitle => $"System Marks ({_systemMarkCardsForView.Count})";
+    public string SystemMarkOverlayTitle => $"System Labels ({_systemMarkCardsForView.Count})";
     public bool LimitHubWormholesToCurrentRegion
     {
         get => _limitHubWormholesToCurrentRegion;

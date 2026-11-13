@@ -4,7 +4,7 @@
         xmlns:local="clr-namespace:Hisa.App"
         x:Class="Hisa.App.SystemMarkEditorWindow"
         x:DataType="local:SystemMarkEditorWindow"
-        Title="System Mark"
+        Title="System Label"
         Width="460"
         SizeToContent="Height"
         WindowStartupLocation="CenterOwner"

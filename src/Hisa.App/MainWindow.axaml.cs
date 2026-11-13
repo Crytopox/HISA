@@ -139,7 +139,7 @@ public partial class MainWindow : Window
         _jumpRangeMenuItem = BuildJumpRangeMenu(subMenufontSize);
         _markSystemMenuItem = new MenuItem
         {
-            Header = "Mark System…",
+            Header = "Add System Label…",
             FontSize = subMenufontSize,
             FontWeight = Avalonia.Media.FontWeight.SemiBold,
             Padding = new Thickness(8, 3)
@@ -149,7 +149,7 @@ public partial class MainWindow : Window
         _markSystemPresetsMenuItem = BuildSystemMarkPresetMenu(subMenufontSize);
         _editMarkMenuItem = new MenuItem
         {
-            Header = "Edit Mark…",
+            Header = "Edit System Label…",
             FontSize = subMenufontSize,
             FontWeight = Avalonia.Media.FontWeight.SemiBold,
             Padding = new Thickness(8, 3)
@@ -158,7 +158,7 @@ public partial class MainWindow : Window
         _editMarkMenuItem.Click += OnMarkSystemClicked;
         _removeMarkMenuItem = new MenuItem
         {
-            Header = "Remove Mark",
+            Header = "Remove System Label",
             FontSize = subMenufontSize,
             FontWeight = Avalonia.Media.FontWeight.SemiBold,
             Padding = new Thickness(8, 3)
@@ -1942,7 +1942,7 @@ public partial class MainWindow : Window
 
         return new MenuItem
         {
-            Header = "Quick Mark",
+            Header = "Quick Label",
             FontSize = subMenuFontSize,
             FontWeight = Avalonia.Media.FontWeight.SemiBold,
             Padding = new Thickness(8, 3),
@@ -1991,7 +1991,7 @@ public partial class MainWindow : Window
             "market" => (SystemMarkIconKind.Market, "Market", "#E7C85A"),
             "staging" => (SystemMarkIconKind.Staging, "Staging", "#EF4444"),
             "mining" => (SystemMarkIconKind.Mining, "Mining", "#4ADE80"),
-            _ => (SystemMarkIconKind.Pin, "Mark", "#7AA5D6")
+            _ => (SystemMarkIconKind.Pin, "Label", "#7AA5D6")
         };
 
         vm.ApplyUserSystemMarkPreset(
