@@ -1,4 +1,7 @@
+using System.Collections.Concurrent;
 using System.Net;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Hisa.Core.Abstractions;
 using Hisa.Core.Models;
 using Hisa.Data.Database;
@@ -11,6 +14,9 @@ namespace Hisa.Services.Tests;
 
 public sealed class MiningSessionLogFeedHostedServiceTests
 {
+    private const string OreCacheKey = "Mining.OreReferenceCache";
+    private const string GasCacheKey = "Mining.GasPriceCache";
+
     [Fact]
     public async Task GetSnapshotAsync_ConcurrentCallsOnlyRefreshOreValuesOnce()
     {
@@ -27,7 +33,8 @@ public sealed class MiningSessionLogFeedHostedServiceTests
 
         var state = GetOreCacheState(service);
         Assert.True(logger.LastException is null, $"Unexpected refresh exception: {logger.LastException}");
-        Assert.Equal(4, handler.RequestCount);
+        Assert.Equal(5, handler.RequestCount);
+        Assert.Equal(1, handler.GasRequestCount);
         Assert.True(state.OreCount > 0, $"Expected ore cache entries after refresh, but count was {state.OreCount} and refresh due was {state.RefreshDueUtc:o}.");
         Assert.True(state.RefreshDueUtc > DateTime.UtcNow, $"Expected ore cache to remain fresh after refresh, but refresh due was {state.RefreshDueUtc:o}.");
     }
@@ -47,7 +54,7 @@ public sealed class MiningSessionLogFeedHostedServiceTests
             Assert.True(seededState.OreCount > 0, $"Seeded service did not retain ore cache entries. Refresh due: {seededState.RefreshDueUtc:o}.");
         }
 
-        Assert.Equal(4, seedHandler.RequestCount);
+        Assert.Equal(5, seedHandler.RequestCount);
 
         var throwingFactory = new TrackingThrowingHttpClientFactory();
         using var cachedService = CreateService(settings, throwingFactory);
@@ -69,9 +76,73 @@ public sealed class MiningSessionLogFeedHostedServiceTests
 
         var state = GetOreCacheState(service);
         Assert.True(logger.LastException is null, $"Unexpected refresh exception: {logger.LastException}");
-        Assert.Equal(4, handler.RequestCount);
+        Assert.Equal(5, handler.RequestCount);
         Assert.True(state.OreCount > 0, $"Expected ore cache entries after refresh, but count was {state.OreCount} and refresh due was {state.RefreshDueUtc:o}.");
         Assert.True(state.RefreshDueUtc > DateTime.UtcNow, $"Expected ore cache to remain fresh after refresh, but refresh due was {state.RefreshDueUtc:o}.");
+    }
+
+    [Fact]
+    public async Task GetSnapshotAsync_FetchesGasWhenOnlyThePreUpgradeOreCacheExists()
+    {
+        var settings = new InMemorySettingsService();
+        using var seedHandler = new CountingOreHttpMessageHandler();
+        using (var service = CreateService(settings, new TestHttpClientFactory(seedHandler)))
+        {
+            await service.GetSnapshotAsync(MiningStatsRangeMode.CurrentSession);
+        }
+
+        settings.Remove(GasCacheKey);
+        using var handler = new CountingOreHttpMessageHandler();
+        using var upgraded = CreateService(settings, new TestHttpClientFactory(handler));
+
+        await upgraded.GetSnapshotAsync(MiningStatsRangeMode.CurrentSession);
+        await upgraded.GetSnapshotAsync(MiningStatsRangeMode.CurrentSession);
+
+        Assert.Equal(1, handler.RequestCount);
+        Assert.Equal(1, handler.GasRequestCount);
+    }
+
+    [Fact]
+    public async Task GetSnapshotAsync_GasOutageKeepsCachedPricesAndAllowsOreRefresh()
+    {
+        var now = DateTime.UtcNow.AddMinutes(-2);
+        using var logs = new TestMiningLogs();
+        await logs.WriteAsync(now, 1234, Yield(now, 4, "Fullerite-C32"), Residue(now, 2, "Fullerite-C32"),
+            Yield(now, 100, "Veldspar"));
+        using var seedHandler = new CountingOreHttpMessageHandler();
+        using (var service = CreateService(logs.Settings, new TestHttpClientFactory(seedHandler)))
+        {
+            await service.GetSnapshotAsync(MiningStatsRangeMode.Last1Hour);
+        }
+
+        logs.Settings.SetCacheTimestamp(OreCacheKey, "RefreshDueUtc", now);
+        logs.Settings.SetCacheTimestamp(GasCacheKey, "RefreshedAtUtc", now.AddDays(-1));
+        using var handler = new CountingOreHttpMessageHandler { GasUnavailable = true, VeldsparReferenceValue = 2000 };
+        using var serviceDuringOutage = CreateService(logs.Settings, new TestHttpClientFactory(handler));
+
+        var snapshot = (await serviceDuringOutage.GetSnapshotAsync(MiningStatsRangeMode.Last1Hour))[1234];
+        var ores = snapshot.Ores.ToDictionary(x => x.OreName);
+        Assert.Equal(48000m, ores["Fullerite-C32"].TotalEstimatedIsk);
+        Assert.Equal(24000m, snapshot.TotalWasteEstimatedIsk);
+        Assert.Equal(2000m * 0.9063m, ores["Veldspar"].TotalEstimatedIsk);
+
+        await serviceDuringOutage.GetSnapshotAsync(MiningStatsRangeMode.Last1Hour);
+        Assert.Equal(5, handler.RequestCount);
+        Assert.Equal(1, handler.GasRequestCount);
+
+        var gasStateField = typeof(MiningSessionLogFeedHostedService).GetField(
+            "_gasPrices", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        var gasState = gasStateField.GetValue(serviceDuringOutage)!;
+        var dueProperty = gasState.GetType().GetProperty("RefreshDueUtc")!;
+        Assert.InRange((DateTime)dueProperty.GetValue(gasState)!, DateTime.UtcNow.AddMinutes(4), DateTime.UtcNow.AddMinutes(5));
+
+        dueProperty.SetValue(gasState, now);
+        handler.GasUnavailable = false;
+        handler.GasUnitPrice = 13000;
+        var recovered = (await serviceDuringOutage.GetSnapshotAsync(MiningStatsRangeMode.Last1Hour))[1234];
+        Assert.Equal(6, handler.RequestCount);
+        Assert.Equal(2, handler.GasRequestCount);
+        Assert.Equal(26000m, recovered.TotalWasteEstimatedIsk);
     }
 
     [Theory]
@@ -91,6 +162,8 @@ public sealed class MiningSessionLogFeedHostedServiceTests
             Residue(cutoff, 5, "asteroid"),
             Yield(cutoff, 4, "Fullerite-C32"),
             Residue(cutoff, 2, "Fullerite-C32"),
+            Yield(cutoff, 1, "Fullerite-C70"),
+            Yield(cutoff, 1, "Fullerite-C72"),
             Yield(cutoff, 1, "Glacial Mass IV-Grade"),
             Yield(cutoff, 2, "Brimful Bitumens"),
             Yield(cutoff, 1, "Blue Ice"));
@@ -126,12 +199,26 @@ public sealed class MiningSessionLogFeedHostedServiceTests
                 Assert.Equal(5, ores["Veldspar"].WasteUnits);
                 Assert.Equal(20, ores["Fullerite-C32"].TotalMinedVolumeM3);
                 Assert.Equal(10, ores["Fullerite-C32"].TotalWasteVolumeM3);
-                Assert.Equal(0, ores["Fullerite-C32"].EstimatedIskPerUnit);
+                Assert.Equal(pricesUnavailable ? 0m : 12000m, ores["Fullerite-C32"].EstimatedIskPerUnit);
+                Assert.Equal(pricesUnavailable ? 0m : 48000m, ores["Fullerite-C32"].TotalEstimatedIsk);
+                Assert.Equal(pricesUnavailable ? 0d : 2d, ores["Fullerite-C70"].TotalMinedVolumeM3);
+                Assert.Equal(2d, ores["Fullerite-C72"].TotalMinedVolumeM3);
+                Assert.Equal(0m, ores["Fullerite-C72"].EstimatedIskPerUnit);
                 Assert.Equal(1000, ores["Glacial Mass IV-Grade"].TotalMinedVolumeM3);
                 Assert.Equal(20, ores["Brimful Bitumens"].TotalMinedVolumeM3);
                 Assert.Equal(pricesUnavailable ? 0 : 1000, ores["Blue Ice"].TotalMinedVolumeM3);
                 Assert.Equal(pricesUnavailable ? 0m : 12345m * 0.9063m, ores["Prismaticite"].EstimatedIskPerUnit);
                 Assert.Equal(410.5, snapshot.TotalWasteVolumeM3);
+            }
+
+            if (!pricesUnavailable)
+            {
+                await logs.Settings.SetAsync<decimal?>("Mining.RefineYieldPercent", 50m);
+                var adjusted = (await service.GetSnapshotAsync(MiningStatsRangeMode.CurrentSession))[1234];
+                var ores = adjusted.Ores.ToDictionary(x => x.OreName);
+                Assert.Equal(48000m, ores["Fullerite-C32"].TotalEstimatedIsk);
+                Assert.Equal(500m, ores["Veldspar"].TotalEstimatedIsk);
+                Assert.Equal(24000m + 10 * 12345m * 0.5m + 5 * 5m, adjusted.TotalWasteEstimatedIsk);
             }
 
             Assert.Equal(100, current.Ores.Single(x => x.OreName == "Veldspar").MinedUnits);
@@ -155,7 +242,7 @@ public sealed class MiningSessionLogFeedHostedServiceTests
     private sealed class TestMiningLogs : IDisposable
     {
         private readonly string _root = Directory.CreateTempSubdirectory("hisa-mining-").FullName;
-        public ISettingsService Settings { get; } = new InMemorySettingsService();
+        public InMemorySettingsService Settings { get; } = new();
 
         public TestMiningLogs()
         {
@@ -187,13 +274,13 @@ public sealed class MiningSessionLogFeedHostedServiceTests
 
     private sealed class InMemorySettingsService : ISettingsService
     {
-        private readonly Dictionary<string, object?> _values = new();
+        private readonly ConcurrentDictionary<string, JsonElement> _values = new();
 
         public Task<T?> GetAsync<T>(string key, CancellationToken cancellationToken = default)
         {
-            if (_values.TryGetValue(key, out var value) && value is T typed)
+            if (_values.TryGetValue(key, out var value))
             {
-                return Task.FromResult<T?>(typed);
+                return Task.FromResult(value.Deserialize<T>());
             }
 
             return Task.FromResult<T?>(default);
@@ -201,8 +288,17 @@ public sealed class MiningSessionLogFeedHostedServiceTests
 
         public Task SetAsync<T>(string key, T value, CancellationToken cancellationToken = default)
         {
-            _values[key] = value;
+            _values[key] = JsonSerializer.SerializeToElement(value);
             return Task.CompletedTask;
+        }
+
+        public void Remove(string key) => _values.TryRemove(key, out _);
+
+        public void SetCacheTimestamp(string key, string propertyName, DateTime timestamp)
+        {
+            var payload = _values[key].Deserialize<JsonObject>()!;
+            payload[propertyName] = timestamp;
+            _values[key] = JsonSerializer.SerializeToElement(payload);
         }
     }
 
@@ -233,6 +329,7 @@ public sealed class MiningSessionLogFeedHostedServiceTests
                     ('Brimful Bitumens', 10.0),
                     ('Glacial Mass IV-Grade', 1000.0),
                     ('Fullerite-C32', 5.0),
+                    ('Fullerite-C72', 2.0),
                     ('Prismaticite', 40.0);
                 """;
             command.ExecuteNonQuery();
@@ -269,6 +366,7 @@ public sealed class MiningSessionLogFeedHostedServiceTests
     {
         private readonly TimeSpan _delayPerRequest;
         private int _requestCount;
+        private int _gasRequestCount;
 
         public CountingOreHttpMessageHandler(TimeSpan? delayPerRequest = null)
         {
@@ -276,6 +374,10 @@ public sealed class MiningSessionLogFeedHostedServiceTests
         }
 
         public int RequestCount => Volatile.Read(ref _requestCount);
+        public int GasRequestCount => Volatile.Read(ref _gasRequestCount);
+        public bool GasUnavailable { get; set; }
+        public int GasUnitPrice { get; set; } = 12000;
+        public int VeldsparReferenceValue { get; init; } = 1000;
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
@@ -287,13 +389,28 @@ public sealed class MiningSessionLogFeedHostedServiceTests
             }
 
             var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+            if (path == "/api/public/v1/ores/gas")
+            {
+                Interlocked.Increment(ref _gasRequestCount);
+                if (GasUnavailable)
+                {
+                    return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
+                }
+            }
+
             var generatedAt = DateTime.UtcNow.ToString("O");
             var payload = path switch
             {
-                "/api/public/v1/ores/standard" => $"{{\"generatedAt\":\"{generatedAt}\",\"data\":[{{\"name\":\"Veldspar\",\"volume\":0.1,\"unitsToReprocess\":100,\"refinedValueToday\":1000.0}}]}}",
+                "/api/public/v1/ores/standard" => $"{{\"generatedAt\":\"{generatedAt}\",\"data\":[{{\"name\":\"Veldspar\",\"volume\":0.1,\"unitsToReprocess\":100,\"refinedValueToday\":{VeldsparReferenceValue}}}]}}",
                 "/api/public/v1/ores/moon" => $"{{\"generatedAt\":\"{generatedAt}\",\"data\":[{{\"name\":\"Bitumens\",\"volume\":10.0,\"unitsToReprocess\":1,\"refinedValueToday\":5000.0}}]}}",
                 "/api/public/v1/ores/ice" => $"{{\"generatedAt\":\"{generatedAt}\",\"data\":[{{\"name\":\"Blue Ice\",\"volume\":1000.0,\"unitsToReprocess\":1,\"refinedValueToday\":250000.0}}]}}",
                 "/api/public/v1/ores/prismaticite" => $"{{\"generatedAt\":\"{generatedAt}\",\"data\":{{\"oreName\":\"Prismaticite\",\"oreVolume\":1.0,\"expectedRandomValuePerOre\":12345.0}}}}",
+                "/api/public/v1/ores/gas" => $$"""
+                    {"generatedAt":"{{generatedAt}}","data":[
+                      {"typeId":1,"name":"fullerite-c32","family":"Fullerite","volume":99,"unitPriceToday":{{GasUnitPrice}},"unitPriceYesterday":11000,"unitPriceWeek":10000},
+                      {"typeId":2,"name":"Fullerite-C70","family":"Fullerite","volume":2,"unitPriceToday":4000,"unitPriceYesterday":3900,"unitPriceWeek":3800}
+                    ]}
+                    """,
                 _ => throw new InvalidOperationException($"Unexpected ore endpoint: {path}")
             };
 

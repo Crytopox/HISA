@@ -16,7 +16,9 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
     private const string RecentSessionLookbackHoursSettingsKey = "Mining.RecentSessionLookbackHours";
     private const string MiningRefineYieldPercentSettingsKey = "Mining.RefineYieldPercent";
     private const string MiningOreReferenceCacheSettingsKey = "Mining.OreReferenceCache";
+    private const string MiningGasPriceCacheSettingsKey = "Mining.GasPriceCache";
     private static readonly TimeSpan OreReferenceRefreshInterval = TimeSpan.FromHours(24);
+    private static readonly TimeSpan GasPriceRetryInterval = TimeSpan.FromMinutes(5);
 
     private readonly ISettingsService _settingsService;
     private readonly ISdeDatabase _sdeDatabase;
@@ -30,6 +32,7 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
     private volatile Dictionary<string, double>? _oreVolumesByName;
     private Dictionary<string, RawOreReferenceValue> _rawOreValuesByName = new(StringComparer.OrdinalIgnoreCase);
     private volatile Dictionary<string, OreReferenceValue> _oreValuesByName = new(StringComparer.OrdinalIgnoreCase);
+    private volatile GasPriceState? _gasPrices;
     private DateTime _oreValuesRefreshDueUtc = DateTime.MinValue;
     private bool _enabled;
     private string? _gameLogsDirectory;
@@ -182,10 +185,13 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
 
         var volumesByName = _oreVolumesByName;
         var oreValuesByName = _oreValuesByName;
+        var gasValuesByName = _gasPrices?.ValuesByName;
         var oreStats = session.Ores
             .Select(ore =>
             {
-                var oreValue = GetOreReferenceValue(oreValuesByName, ore.OreName);
+                var oreValue = gasValuesByName is not null && gasValuesByName.TryGetValue(ore.OreName, out var gasValue)
+                    ? gasValue
+                    : GetOreReferenceValue(oreValuesByName, ore.OreName);
                 var minedUnits = ore.MinedUnits + ore.BonusUnits;
                 var volumePerUnit = volumesByName is not null && volumesByName.TryGetValue(ore.OreName, out var localVolume)
                     ? localVolume
@@ -308,7 +314,7 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
             }
         }
 
-        if (_oreVolumesByName is not null && HasFreshOreValues())
+        if (_oreVolumesByName is not null && HasFreshOreValues() && !GasPriceRefreshIsDue())
         {
             return;
         }
@@ -333,17 +339,96 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
                 await TryLoadCachedOreValuesAsync(cancellationToken);
             }
 
-            if (HasFreshOreValues())
-            {
-                return;
-            }
-
-            await RefreshOreValuesAsync(cancellationToken);
+            var oreRefresh = HasFreshOreValues() ? Task.CompletedTask : RefreshOreValuesAsync(cancellationToken);
+            var gasRefresh = GasPriceRefreshIsDue() ? EnsureGasPricesFreshAsync(cancellationToken) : Task.CompletedTask;
+            await Task.WhenAll(oreRefresh, gasRefresh);
         }
         finally
         {
             _oreRefreshSync.Release();
         }
+    }
+
+    private bool GasPriceRefreshIsDue() =>
+        _gasPrices is not { } state || DateTime.UtcNow >= state.RefreshDueUtc;
+
+    private async Task EnsureGasPricesFreshAsync(CancellationToken cancellationToken)
+    {
+        if (_gasPrices is null)
+        {
+            try
+            {
+                var cached = await _settingsService.GetAsync<GasPriceCachePayload>(MiningGasPriceCacheSettingsKey, cancellationToken);
+                if (cached is not null)
+                {
+                    ApplyGasPrices(cached);
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogWarning(ex, "Failed to load cached mining gas prices.");
+            }
+        }
+
+        if (!GasPriceRefreshIsDue())
+        {
+            return;
+        }
+
+        GasPriceCachePayload refreshed;
+        try
+        {
+            using var client = _httpClientFactory.CreateClient(nameof(MiningSessionLogFeedHostedService));
+            client.BaseAddress ??= new Uri("https://haakario.com/");
+            client.Timeout = TimeSpan.FromSeconds(20);
+
+            var response = await client.GetFromJsonAsync<OreEnvelope<List<GasPriceDto>>>("api/public/v1/ores/gas", cancellationToken);
+            if (response?.Data is not { Count: > 0 })
+            {
+                throw new InvalidDataException("The mining gas price feed returned no entries.");
+            }
+
+            refreshed = new GasPriceCachePayload(response.GeneratedAt, DateTime.UtcNow, response.Data);
+            ApplyGasPrices(refreshed);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            _gasPrices = new GasPriceState(
+                _gasPrices?.ValuesByName ?? new Dictionary<string, OreReferenceValue>(StringComparer.OrdinalIgnoreCase),
+                DateTime.UtcNow + GasPriceRetryInterval);
+            _logger.LogWarning(ex, "Failed to refresh mining gas prices from Haakario. Existing estimates will be used when available.");
+            return;
+        }
+
+        try
+        {
+            await _settingsService.SetAsync(MiningGasPriceCacheSettingsKey, refreshed, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogWarning(ex, "Failed to save mining gas prices to the cache.");
+        }
+    }
+
+    private void ApplyGasPrices(GasPriceCachePayload payload)
+    {
+        var values = new Dictionary<string, OreReferenceValue>(StringComparer.OrdinalIgnoreCase);
+        foreach (var gas in payload.Items)
+        {
+            if (!string.IsNullOrWhiteSpace(gas.Name))
+            {
+                values[gas.Name.Trim()] = new OreReferenceValue(
+                    gas.Volume > 0d ? gas.Volume : 0d,
+                    Math.Max(0m, gas.UnitPriceToday));
+            }
+        }
+
+        if (values.Count == 0)
+        {
+            throw new InvalidDataException("The mining gas price feed contained no named entries.");
+        }
+
+        _gasPrices = new GasPriceState(values, payload.RefreshedAtUtc + OreReferenceRefreshInterval);
     }
 
     private async Task RefreshOreValuesAsync(CancellationToken cancellationToken)
@@ -603,6 +688,15 @@ public sealed class MiningSessionLogFeedHostedService : BackgroundService, IMini
 
     private sealed record RawOreReferenceValue(double VolumeM3, int UnitsToReprocess, decimal ReferenceValue, bool IsDirectPerOreValue);
     private sealed record OreReferenceValue(double VolumeM3, decimal EstimatedIskPerUnit);
+    private sealed record GasPriceState(IReadOnlyDictionary<string, OreReferenceValue> ValuesByName, DateTime RefreshDueUtc);
+    private sealed record GasPriceCachePayload(DateTime SourceGeneratedAtUtc, DateTime RefreshedAtUtc, List<GasPriceDto> Items);
+
+    private sealed class GasPriceDto
+    {
+        public string Name { get; init; } = string.Empty;
+        public double Volume { get; init; }
+        public decimal UnitPriceToday { get; init; }
+    }
 
     private sealed class OreReferenceCachePayload
     {
