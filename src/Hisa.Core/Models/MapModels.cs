@@ -48,6 +48,13 @@ public sealed class HostileColorSettings
     public string AboveHighColorHex { get; init; } = "#DD008C";
 }
 
+public static class RegionIds
+{
+    public const int UuaF4 = 10000004;
+    public const int J7HzF = 10000017;
+    public const int A821A = 10000019;
+}
+
 public sealed class MapGraph
 {
     public required IReadOnlyList<MapNode> Nodes { get; init; }

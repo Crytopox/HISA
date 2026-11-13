@@ -1939,7 +1939,13 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
                 return;
             }
 
-            if (SetProperty(ref _selectedRegion, value) && SelectedViewMode == MapViewMode.Region)
+            if (!SetProperty(ref _selectedRegion, value))
+            {
+                return;
+            }
+
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedRegionInDropdown)));
+            if (SelectedViewMode == MapViewMode.Region)
             {
                 EnforceCoordinateModeForSelectedRegion();
                 if (!_isInitializing && !_suppressSelectedRegionReload)
@@ -1948,6 +1954,18 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
                     _ = SaveSelectedRegionTokenAsync(value);
                     _ = ReloadGraphAsync();
                 }
+            }
+        }
+    }
+
+    public RegionOption? SelectedRegionInDropdown
+    {
+        get => SelectedRegion is { } region && IsRegionVisibleInDropdown(region) ? region : null;
+        set
+        {
+            if (value is not null)
+            {
+                SelectedRegion = value;
             }
         }
     }
@@ -6026,6 +6044,7 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
             {
                 _selectedRegion = targetRegion;
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedRegion)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedRegionInDropdown)));
                 await _settingsService.SetAsync(RegionIdKey, targetRegion.RegionId);
                 await ReloadGraphAsync();
             }
@@ -6081,6 +6100,7 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 
         _selectedRegion = region;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedRegion)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedRegionInDropdown)));
         await _settingsService.SetAsync(RegionIdKey, region.RegionId);
         await SaveSelectedRegionTokenAsync(region);
 
@@ -6088,15 +6108,17 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
         await ReloadGraphAsync();
     }
 
+    private static bool IsRegionVisibleInDropdown(RegionOption region) =>
+        region.Kind != RegionOptionKind.Regular || region.RegionId is not (RegionIds.UuaF4 or RegionIds.J7HzF or RegionIds.A821A);
+
     private void ApplyRegionFilter()
     {
         _suppressSelectedRegionReload = true;
         try
         {
             var term = RegionSearchText.Trim();
-            var filtered = string.IsNullOrWhiteSpace(term)
-                ? _allRegions
-                : _allRegions.Where(r => r.RegionName.Contains(term, StringComparison.OrdinalIgnoreCase)).ToList();
+            var filtered = _allRegions.Where(r => IsRegionVisibleInDropdown(r) &&
+                (term.Length == 0 || r.RegionName.Contains(term, StringComparison.OrdinalIgnoreCase))).ToList();
 
             var selectedId = SelectedRegion?.RegionId;
             var selectedToken = CreateRegionToken(SelectedRegion);
@@ -6117,6 +6139,8 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
             {
                 SelectedRegion = GetFirstRegularRegionOption() ?? Regions.FirstOrDefault(r => !r.IsHeader);
             }
+
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedRegionInDropdown)));
         }
         finally
         {
@@ -6188,7 +6212,7 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
 
         return _allRegions.FirstOrDefault(r =>
             !r.IsHeader &&
-            r.Kind == token.Kind &&
+            (r.Kind == token.Kind || (token.Kind == RegionOptionKind.Combined && !IsRegionVisibleInDropdown(r))) &&
             string.Equals(r.RegionName, token.RegionName, StringComparison.OrdinalIgnoreCase));
     }
 

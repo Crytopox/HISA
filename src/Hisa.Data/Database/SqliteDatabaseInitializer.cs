@@ -108,21 +108,6 @@ public sealed class SqliteDatabaseInitializer : IDatabaseInitializer
 
     private static async Task SyncImportedBaseLayoutsAsync(SqliteConnection targetConnection, CancellationToken cancellationToken)
     {
-        var existingImportedCommand = targetConnection.CreateCommand();
-        existingImportedCommand.CommandText = """
-            SELECT COUNT(1)
-            FROM MapLayoutRegion r
-            INNER JOIN MapLayoutPack p ON p.Id = r.PackId
-            WHERE p.Name = $name;
-            """;
-        existingImportedCommand.Parameters.AddWithValue("$name", ImportedPackName);
-        var existingImportedRegions = Convert.ToInt32(await existingImportedCommand.ExecuteScalarAsync(cancellationToken));
-        if (existingImportedRegions > 0)
-        {
-            // Imported base already synced; avoid expensive full re-import on every startup.
-            return;
-        }
-
         var sourcePath = ResolveImportedLayoutSourcePath();
         if (sourcePath is null)
         {
@@ -167,45 +152,24 @@ public sealed class SqliteDatabaseInitializer : IDatabaseInitializer
         var sourcePackId = Convert.ToInt64(sourcePackIdRaw);
         await using var tx = (SqliteTransaction)await targetConnection.BeginTransactionAsync(cancellationToken);
 
-        var existingPackIdCommand = targetConnection.CreateCommand();
-        existingPackIdCommand.Transaction = tx;
-        existingPackIdCommand.CommandText = """
-            SELECT Id
-            FROM MapLayoutPack
-            WHERE Name IN ('Imported Base')
-               OR (IsBase = 1 AND IsReadOnly = 1 AND Name <> 'HISA Base')
-            ORDER BY Id;
-            """;
-        var existingPackIds = new List<long>();
-        await using (var existingReader = await existingPackIdCommand.ExecuteReaderAsync(cancellationToken))
-        {
-            while (await existingReader.ReadAsync(cancellationToken))
-            {
-                existingPackIds.Add(existingReader.GetInt64(0));
-            }
-        }
-
-        foreach (var existingPackId in existingPackIds)
-        {
-            await DeletePackByIdAsync(targetConnection, tx, existingPackId, cancellationToken);
-        }
-
         var insertPackCommand = targetConnection.CreateCommand();
         insertPackCommand.Transaction = tx;
         insertPackCommand.CommandText = """
             INSERT INTO MapLayoutPack(Name, IsBase, IsReadOnly)
-            VALUES($name, 1, 1);
-            SELECT last_insert_rowid();
+            SELECT $name, 1, 1
+            WHERE NOT EXISTS (SELECT 1 FROM MapLayoutPack WHERE Name = $name COLLATE NOCASE);
+            SELECT Id FROM MapLayoutPack WHERE Name = $name COLLATE NOCASE;
             """;
         insertPackCommand.Parameters.AddWithValue("$name", ImportedPackName);
-        var newPackId = Convert.ToInt64(await insertPackCommand.ExecuteScalarAsync(cancellationToken));
+        var targetPackId = Convert.ToInt64(await insertPackCommand.ExecuteScalarAsync(cancellationToken));
 
         var regionIdMap = new Dictionary<long, long>();
         var sourceRegionCommand = sourceConnection.CreateCommand();
         sourceRegionCommand.CommandText = """
             SELECT Id, Name, SourceRegionId, IsGameRegion
             FROM MapLayoutRegion
-            WHERE PackId = $packId;
+            WHERE PackId = $packId
+            ORDER BY Id;
             """;
         sourceRegionCommand.Parameters.AddWithValue("$packId", sourcePackId);
         await using (var regionReader = await sourceRegionCommand.ExecuteReaderAsync(cancellationToken))
@@ -217,15 +181,18 @@ public sealed class SqliteDatabaseInitializer : IDatabaseInitializer
                 insertRegionCommand.Transaction = tx;
                 insertRegionCommand.CommandText = """
                     INSERT INTO MapLayoutRegion(PackId, Name, SourceRegionId, IsGameRegion)
-                    VALUES($packId, $name, $sourceRegionId, $isGameRegion);
-                    SELECT last_insert_rowid();
+                    SELECT $packId, $name, $sourceRegionId, $isGameRegion
+                    WHERE NOT EXISTS (SELECT 1 FROM MapLayoutRegion WHERE Name = $name COLLATE NOCASE)
+                    RETURNING Id;
                     """;
-                insertRegionCommand.Parameters.AddWithValue("$packId", newPackId);
+                insertRegionCommand.Parameters.AddWithValue("$packId", targetPackId);
                 insertRegionCommand.Parameters.AddWithValue("$name", regionReader.GetString(1));
                 insertRegionCommand.Parameters.AddWithValue("$sourceRegionId", regionReader.IsDBNull(2) ? DBNull.Value : regionReader.GetInt32(2));
                 insertRegionCommand.Parameters.AddWithValue("$isGameRegion", regionReader.GetInt32(3));
-                var targetRegionLayoutId = Convert.ToInt64(await insertRegionCommand.ExecuteScalarAsync(cancellationToken));
-                regionIdMap[sourceRegionLayoutId] = targetRegionLayoutId;
+                if (await insertRegionCommand.ExecuteScalarAsync(cancellationToken) is long targetRegionLayoutId)
+                {
+                    regionIdMap[sourceRegionLayoutId] = targetRegionLayoutId;
+                }
             }
         }
 
@@ -293,43 +260,6 @@ public sealed class SqliteDatabaseInitializer : IDatabaseInitializer
         }
 
         await tx.CommitAsync(cancellationToken);
-    }
-
-    private static async Task DeletePackByIdAsync(
-        SqliteConnection connection,
-        SqliteTransaction tx,
-        long packId,
-        CancellationToken cancellationToken)
-    {
-        var clearLinks = connection.CreateCommand();
-        clearLinks.Transaction = tx;
-        clearLinks.CommandText = """
-            DELETE FROM MapLayoutLink
-            WHERE RegionLayoutId IN (SELECT Id FROM MapLayoutRegion WHERE PackId = $packId);
-            """;
-        clearLinks.Parameters.AddWithValue("$packId", packId);
-        await clearLinks.ExecuteNonQueryAsync(cancellationToken);
-
-        var clearNodes = connection.CreateCommand();
-        clearNodes.Transaction = tx;
-        clearNodes.CommandText = """
-            DELETE FROM MapLayoutNode
-            WHERE RegionLayoutId IN (SELECT Id FROM MapLayoutRegion WHERE PackId = $packId);
-            """;
-        clearNodes.Parameters.AddWithValue("$packId", packId);
-        await clearNodes.ExecuteNonQueryAsync(cancellationToken);
-
-        var clearRegions = connection.CreateCommand();
-        clearRegions.Transaction = tx;
-        clearRegions.CommandText = "DELETE FROM MapLayoutRegion WHERE PackId = $packId;";
-        clearRegions.Parameters.AddWithValue("$packId", packId);
-        await clearRegions.ExecuteNonQueryAsync(cancellationToken);
-
-        var clearPack = connection.CreateCommand();
-        clearPack.Transaction = tx;
-        clearPack.CommandText = "DELETE FROM MapLayoutPack WHERE Id = $packId;";
-        clearPack.Parameters.AddWithValue("$packId", packId);
-        await clearPack.ExecuteNonQueryAsync(cancellationToken);
     }
 }
 

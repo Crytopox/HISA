@@ -251,7 +251,7 @@
                       MinWidth="118"
                       MaxWidth="220"
                       ItemsSource="{Binding Regions}"
-                      SelectedItem="{Binding SelectedRegion}">
+                      SelectedItem="{Binding SelectedRegionInDropdown}">
               <ComboBox.ItemTemplate>
                 <DataTemplate>
                   <Grid>

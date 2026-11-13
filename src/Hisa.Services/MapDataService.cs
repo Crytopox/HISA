@@ -9,6 +9,8 @@ namespace Hisa.Services;
 public sealed class MapDataService : IMapDataService
 {
     private const int LayoutRegionSyntheticBase = 2_000_000_000;
+    // These regions are available to map navigation even without inter-region gates.
+    private static readonly string AdditionalRegionIds = FormattableString.Invariant($"{RegionIds.UuaF4}, {RegionIds.J7HzF}, {RegionIds.A821A}");
     private static readonly Lazy<IReadOnlyDictionary<int, StaticSolarSystemData>> StaticSolarSystemDataById = new(LoadStaticSolarSystemDataById);
     private readonly Lazy<IReadOnlyDictionary<int, IReadOnlyList<int>>> _planetTypeIdsBySolarSystemId;
     private readonly ISdeDatabase _sdeDatabase;
@@ -68,14 +70,14 @@ public sealed class MapDataService : IMapDataService
         await connection.OpenAsync(cancellationToken);
 
         var command = connection.CreateCommand();
-        command.CommandText = """
+        command.CommandText = $"""
             SELECT regionID, regionName
             FROM mapRegions
             WHERE regionID IN (
                 SELECT fromRegionID FROM mapRegionJumps
                 UNION
                 SELECT toRegionID FROM mapRegionJumps
-            )
+            ) OR regionID IN ({AdditionalRegionIds})
             ORDER BY regionName;
             """;
 
@@ -174,11 +176,11 @@ public sealed class MapDataService : IMapDataService
             FROM mapRegions r
             INNER JOIN mapSolarSystems s ON s.regionID = r.regionID
             WHERE {xColumn} IS NOT NULL AND {yColumn} IS NOT NULL
-              AND r.regionID IN (
+              AND (r.regionID IN (
                     SELECT fromRegionID FROM mapRegionJumps
                     UNION
                     SELECT toRegionID FROM mapRegionJumps
-              )
+              ) OR r.regionID IN ({AdditionalRegionIds}))
             GROUP BY r.regionID, r.regionName;
             """;
 
@@ -469,15 +471,15 @@ public sealed class MapDataService : IMapDataService
             }
         }
 
-        await RunAsync("""
+        await RunAsync($"""
             SELECT r.regionID AS id, r.regionName, r.regionID, r.regionName, NULL AS constellationID, NULL AS solarSystemID
             FROM mapRegions r
             WHERE r.regionName LIKE $term
-              AND r.regionID IN (
+              AND (r.regionID IN (
                     SELECT fromRegionID FROM mapRegionJumps
                     UNION
                     SELECT toRegionID FROM mapRegionJumps
-              )
+              ) OR r.regionID IN ({AdditionalRegionIds}))
             ORDER BY r.regionName
             LIMIT 20;
             """, MapSearchKind.Region);
