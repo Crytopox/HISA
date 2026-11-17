@@ -1,0 +1,698 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:Hisa.App"
+        x:Class="Hisa.App.XmppWindow" Title="HISA · Jabber" Width="960" Height="620"
+        MinWidth="490" MinHeight="380" Background="Transparent" FontFamily="Inter"
+        SystemDecorations="None" CanResize="True" ExtendClientAreaToDecorationsHint="False"
+        TransparencyLevelHint="Transparent"
+        Icon="avares://HISA/Assets/HISA-Logo.ico">
+  <Window.Resources>
+    <SolidColorBrush x:Key="XmppWindowBg">#0E1520</SolidColorBrush>
+    <SolidColorBrush x:Key="XmppSidebarBg">#141C28</SolidColorBrush>
+    <SolidColorBrush x:Key="XmppPanelBg">#101823</SolidColorBrush>
+    <SolidColorBrush x:Key="XmppTopicBg">#162233</SolidColorBrush>
+    <SolidColorBrush x:Key="XmppTextPrimary">#E8EEF7</SolidColorBrush>
+    <SolidColorBrush x:Key="XmppTextSecondary">#9AA8BC</SolidColorBrush>
+    <SolidColorBrush x:Key="XmppAccent">#5EB8E8</SolidColorBrush>
+    <SolidColorBrush x:Key="XmppUnread">#F5D0D0</SolidColorBrush>
+    <SolidColorBrush x:Key="XmppUnreadBg">#8B2E2E</SolidColorBrush>
+    <SolidColorBrush x:Key="XmppOnline">#3DCF8E</SolidColorBrush>
+    <SolidColorBrush x:Key="XmppRequest">#E0B35A</SolidColorBrush>
+    <SolidColorBrush x:Key="XmppOffline">#6B7789</SolidColorBrush>
+    <SolidColorBrush x:Key="XmppSelectedTab">#253F58</SolidColorBrush>
+    <SolidColorBrush x:Key="XmppTabStripBg">#0C121C</SolidColorBrush>
+    <SolidColorBrush x:Key="XmppMention">#1A3550</SolidColorBrush>
+    <SolidColorBrush x:Key="XmppFleetPing">#3A3228</SolidColorBrush>
+    <SolidColorBrush x:Key="XmppAlertHighlight">#3F3628</SolidColorBrush>
+    <SolidColorBrush x:Key="XmppMotd">#D6D0C4</SolidColorBrush>
+    <SolidColorBrush x:Key="XmppLink">#7EB8E8</SolidColorBrush>
+    <SolidColorBrush x:Key="XmppMentionBar">#5EB8E8</SolidColorBrush>
+    <SolidColorBrush x:Key="XmppFleetBar">#E0A05A</SolidColorBrush>
+    <SolidColorBrush x:Key="XmppAlertHighlightBar">#E0C06A</SolidColorBrush>
+    <SolidColorBrush x:Key="XmppUnreadLine">#D96464</SolidColorBrush>
+    <SolidColorBrush x:Key="XmppDateLine">#D6D0C4</SolidColorBrush>
+    <SolidColorBrush x:Key="XmppMessageDivider">#1C2838</SolidColorBrush>
+    <SolidColorBrush x:Key="XmppFeedback">#E4BD7E</SolidColorBrush>
+    <SolidColorBrush x:Key="XmppDate">#A6B6CD</SolidColorBrush>
+    <SolidColorBrush x:Key="XmppTimestamp">#9BABC2</SolidColorBrush>
+    <SolidColorBrush x:Key="XmppAltRow">#121C2A</SolidColorBrush>
+    <StreamGeometry x:Key="IconSidebar">M4,4 H10 V20 H4 Z M12,4 H20 V20 H12 Z</StreamGeometry>
+    <StreamGeometry x:Key="IconPin">M12,2 L14.5,8.5 L21.5,9 L16,13.5 L17.5,20.5 L12,16.8 L6.5,20.5 L8,13.5 L2.5,9 L9.5,8.5 Z</StreamGeometry>
+    <StreamGeometry x:Key="IconMore">M6,12 A1.5,1.5 0 1 1 6,11.99 Z M12,12 A1.5,1.5 0 1 1 12,11.99 Z M18,12 A1.5,1.5 0 1 1 18,11.99 Z</StreamGeometry>
+    <StreamGeometry x:Key="IconPlus">M11,5 H13 V11 H19 V13 H13 V19 H11 V13 H5 V11 H11 Z</StreamGeometry>
+    <StreamGeometry x:Key="IconSend">M3,12 L21,3 L14,12 L21,21 Z</StreamGeometry>
+    <StreamGeometry x:Key="IconPeople">M8,10 A3,3 0 1 0 8,9.99 Z M16,11 A2.5,2.5 0 1 0 16,10.99 Z M3.5,18 C3.5,15.5 5.7,14 8,14 C10.3,14 12.5,15.5 12.5,18 Z M13.5,18 C13.5,16.2 14.8,15 16.5,15 C18.2,15 20.5,16.2 20.5,18 Z</StreamGeometry>
+    <StreamGeometry x:Key="IconCog">M9.5,2.2 H14.5 L15.1,5.1 L17.6,4.1 L20.4,6.9 L19.4,9.4 L22.3,10 V14 L19.4,14.6 L20.4,17.1 L17.6,19.9 L15.1,18.9 L14.5,21.8 H9.5 L8.9,18.9 L6.4,19.9 L3.6,17.1 L4.6,14.6 L1.7,14 V10 L4.6,9.4 L3.6,6.9 L6.4,4.1 L8.9,5.1 Z M12,8.2 A3.8,3.8 0 1 0 12,15.8 A3.8,3.8 0 1 0 12,8.2 Z</StreamGeometry>
+    <StreamGeometry x:Key="IconChevronRight">M9,6 L15,12 L9,18</StreamGeometry>
+    <StreamGeometry x:Key="IconChevronDown">M6,9 L12,15 L18,9</StreamGeometry>
+    <StreamGeometry x:Key="IconSplit">M4,7 H20 V10 H4 Z M4,14 H20 V17 H4 Z</StreamGeometry>
+    <StreamGeometry x:Key="IconOpenWindow">M4,4 H11 V6 H6 V18 H18 V13 H20 V20 H4 Z M13,4 H20 V11 H18 V7.4 L11.7,13.7 L10.3,12.3 L16.6,6 H13 Z</StreamGeometry>
+    <StreamGeometry x:Key="IconTrash">M9,4 H15 V6 H20 V8 H4 V6 H9 Z M6,9 H8 V18 H16 V9 H18 V20 H6 Z M10,10 H11.5 V17 H10 Z M12.5,10 H14 V17 H12.5 Z</StreamGeometry>
+  </Window.Resources>
+  <Window.Styles>
+    <Style Selector="Button.compact">
+      <Setter Property="Padding" Value="6,2" />
+      <Setter Property="FontSize" Value="11" />
+    </Style>
+    <Style Selector="Button.feed-action">
+      <Setter Property="Padding" Value="8,3" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="FontWeight" Value="Bold" />
+      <Setter Property="Foreground" Value="{StaticResource XmppTextPrimary}" />
+      <Setter Property="Background" Value="#1E3A52" />
+      <Setter Property="BorderBrush" Value="#5EB8E8" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="3" />
+    </Style>
+    <Style Selector="Button.feed-action:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#2A4F6E" />
+      <Setter Property="Foreground" Value="#FFFFFF" />
+    </Style>
+    <Style Selector="Button.icon">
+      <Setter Property="Padding" Value="4,2" />
+      <Setter Property="MinWidth" Value="24" />
+      <Setter Property="MinHeight" Value="22" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="Button.icon:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#1C2A3C" />
+    </Style>
+    <Style Selector="Button.window">
+      <Setter Property="Padding" Value="8,0" />
+      <Setter Property="MinWidth" Value="28" />
+      <Setter Property="MinHeight" Value="22" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Foreground" Value="#B9CCE3" />
+      <Setter Property="FontSize" Value="14" />
+    </Style>
+    <Style Selector="Button.window:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#1C2A3C" />
+    </Style>
+    <Style Selector="Button.window.close:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#B33A3A" />
+    </Style>
+    <Style Selector="ToggleButton.icon">
+      <Setter Property="Padding" Value="4,2" />
+      <Setter Property="MinWidth" Value="24" />
+      <Setter Property="MinHeight" Value="22" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="ToggleButton.icon:checked">
+      <Setter Property="Background" Value="#253F58" />
+    </Style>
+    <Style Selector="ListBox.conversations ListBoxItem">
+      <Setter Property="Padding" Value="4,1" />
+      <Setter Property="MinHeight" Value="22" />
+    </Style>
+    <Style Selector="ListBox.messages ListBoxItem">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="ListBox.occupants ListBoxItem">
+      <Setter Property="Padding" Value="2,0" />
+      <Setter Property="MinHeight" Value="18" />
+      <Setter Property="Height" Value="18" />
+    </Style>
+    <Style Selector="GridSplitter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="GridSplitter:not(.row)">
+      <Setter Property="Width" Value="4" />
+    </Style>
+    <Style Selector="GridSplitter.row">
+      <Setter Property="Height" Value="6" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="VerticalAlignment" Value="Stretch" />
+      <Setter Property="Background" Value="#304057" />
+      <Setter Property="Cursor" Value="SizeNorthSouth" />
+      <Setter Property="ResizeDirection" Value="Rows" />
+    </Style>
+  </Window.Styles>
+  <Grid>
+  <Border x:Name="ChromeBorder" BorderBrush="#304057" BorderThickness="1" CornerRadius="6"
+          Background="{StaticResource XmppWindowBg}" ClipToBounds="True">
+    <Grid RowDefinitions="Auto,*,Auto" Margin="4,4,4,2" RowSpacing="2">
+      <Grid x:Name="TitleBar" ColumnDefinitions="*,Auto" PointerPressed="OnTitleBarPressed">
+        <Border x:Name="TabStripHost" Background="{StaticResource XmppTabStripBg}" CornerRadius="4" Padding="2" Margin="0,0,4,0">
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel x:Name="TabStrip" Orientation="Horizontal" Spacing="2" ClipToBounds="True" />
+            <Button x:Name="TabOverflowButton" Grid.Column="1" Classes="icon" IsVisible="False"
+                    MinWidth="22" MinHeight="22" Padding="2" Margin="2,0,0,0"
+                    ToolTip.Tip="More tabs" AutomationProperties.Name="More tabs"
+                    Click="ShowTabOverflow">
+              <PathIcon Data="{StaticResource IconChevronDown}" Width="9" Height="9"
+                        Foreground="{StaticResource XmppTextSecondary}" />
+            </Button>
+          </Grid>
+        </Border>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="1" VerticalAlignment="Center">
+          <ToggleButton x:Name="OccupantsToggle" Classes="icon" Click="ToggleOccupants"
+                        ToolTip.Tip="People in room" IsVisible="False">
+            <PathIcon Data="{StaticResource IconPeople}" Width="12" Height="12"
+                      Foreground="{StaticResource XmppTextSecondary}" />
+          </ToggleButton>
+          <ToggleButton x:Name="SidebarToggle" Classes="icon" Click="ToggleSidebar"
+                  ToolTip.Tip="Show or hide conversations" AutomationProperties.Name="Show conversations">
+            <PathIcon Data="{StaticResource IconSidebar}" Width="12" Height="12"
+                      Foreground="{StaticResource XmppTextSecondary}" />
+          </ToggleButton>
+          <ToggleButton x:Name="SplitButton" Classes="icon" Click="ToggleSplit" ToolTip.Tip="Split view"
+                        AutomationProperties.Name="Split view">
+            <PathIcon Data="{StaticResource IconSplit}" Width="12" Height="12"
+                      Foreground="{StaticResource XmppTextSecondary}" />
+          </ToggleButton>
+          <ToggleButton x:Name="PinButton" Classes="icon" Click="TogglePin" ToolTip.Tip="Always on top"
+                        AutomationProperties.Name="Always on top">
+            <PathIcon Data="{StaticResource IconPin}" Width="11" Height="11"
+                      Foreground="{StaticResource XmppTextSecondary}" />
+          </ToggleButton>
+          <Button x:Name="OptionsButton" Classes="icon" AutomationProperties.Name="Jabber options" ToolTip.Tip="Options">
+            <PathIcon Data="{StaticResource IconMore}" Width="13" Height="13"
+                      Foreground="{StaticResource XmppTextSecondary}" />
+            <Button.Flyout>
+              <MenuFlyout>
+                <MenuItem Header="Account" Click="EditAccount" />
+                <MenuItem x:Name="ConnectButton" Header="Connect" Click="Connect" />
+                <MenuItem Header="Preferences" Click="ShowPreferences" />
+              </MenuFlyout>
+            </Button.Flyout>
+          </Button>
+          <Button Classes="window" Content="−" Click="OnMinimize" ToolTip.Tip="Minimize" />
+          <Button x:Name="MaximizeButton" Classes="window" Content="□" Click="OnMaximize" ToolTip.Tip="Maximize" />
+          <Button Classes="window close" Content="×" Click="OnCloseWindow" ToolTip.Tip="Close" FontSize="15" />
+        </StackPanel>
+      </Grid>
+
+      <Grid x:Name="WorkspaceGrid" Grid.Row="1" ColumnDefinitions="200,4,*,4,Auto">
+        <Border x:Name="Sidebar" Background="{StaticResource XmppSidebarBg}" CornerRadius="4" Padding="4">
+          <Grid RowDefinitions="Auto,Auto,*" RowSpacing="3">
+            <Button x:Name="OwnStatusButton" Classes="compact" HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Left" Padding="6,4"
+                    ToolTip.Tip="Change your status">
+              <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6">
+                <Border x:Name="OwnStatusDot" Width="7" Height="7" CornerRadius="4" VerticalAlignment="Center"
+                        Background="{StaticResource XmppOffline}" />
+                <TextBlock x:Name="OwnStatusLabel" Grid.Column="1" Text="Offline" FontSize="12"
+                           Foreground="{StaticResource XmppTextPrimary}" TextTrimming="CharacterEllipsis"
+                           VerticalAlignment="Center" />
+                <PathIcon Grid.Column="2" Width="8" Height="8" Data="{StaticResource IconChevronDown}"
+                          Foreground="{StaticResource XmppTextSecondary}" VerticalAlignment="Center" />
+              </Grid>
+              <Button.Flyout>
+                <MenuFlyout Placement="BottomEdgeAlignedLeft">
+                  <MenuItem Header="Online" Click="SetOwnStatusOnline" />
+                  <MenuItem Header="Free to chat" Click="SetOwnStatusChat" />
+                  <MenuItem Header="Away" Click="SetOwnStatusAway" />
+                  <MenuItem Header="Extended away" Click="SetOwnStatusXa" />
+                  <MenuItem Header="Do not disturb" Click="SetOwnStatusDnd" />
+                </MenuFlyout>
+              </Button.Flyout>
+            </Button>
+            <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="3">
+              <TextBox x:Name="FilterBox" Watermark="Filter…" FontSize="12" TextChanged="FilterChanged" MinHeight="26" />
+              <Button x:Name="AddMenuButton" Grid.Column="1" Classes="icon" ToolTip.Tip="Add"
+                      AutomationProperties.Name="Add conversation">
+                <PathIcon Data="{StaticResource IconPlus}" Width="12" Height="12"
+                          Foreground="{StaticResource XmppTextPrimary}" />
+                <Button.Flyout>
+                  <MenuFlyout>
+                    <MenuItem x:Name="NewChatButton" Header="New chat" Click="NewChat" />
+                    <MenuItem x:Name="AddRoomButton" Header="Join room" Click="AddRoom" />
+                    <MenuItem x:Name="AddContactButton" Header="Add contact" Click="AddContact" />
+                  </MenuFlyout>
+                </Button.Flyout>
+              </Button>
+            </Grid>
+            <ListBox x:Name="Sources" Grid.Row="2" Classes="conversations" Background="Transparent"
+                     SelectionChanged="SourceChanged" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="local:XmppSidebarRow">
+                  <Panel PointerEntered="SidebarRowEntered" PointerExited="SidebarRowExited">
+                    <Border Height="1" Margin="4,5" Background="#243247"
+                            IsVisible="{Binding IsDivider}" HorizontalAlignment="Stretch" />
+                    <Grid ColumnDefinitions="Auto,*,Auto,Auto" IsVisible="{Binding ShowContent}">
+                      <PathIcon Width="8" Height="8" Margin="{Binding IconMargin}" VerticalAlignment="Center"
+                                IsVisible="{Binding ShowChevron}"
+                                Data="{Binding Chevron}"
+                                Foreground="{StaticResource XmppTextSecondary}" />
+                      <Grid Grid.Column="1" ColumnDefinitions="Auto,*" VerticalAlignment="Center"
+                            Margin="{Binding ContentMargin}">
+                        <Border Width="7" Height="7" CornerRadius="4" VerticalAlignment="Center"
+                                IsVisible="{Binding ShowDot}" Background="{Binding Dot}" />
+                        <TextBlock Grid.Column="1" Margin="2,0,0,0" Text="{Binding Label}"
+                                   Foreground="{Binding Foreground}" FontWeight="{Binding Weight}"
+                                   TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Tip}"
+                                   FontSize="12" VerticalAlignment="Center" />
+                      </Grid>
+                      <Border Grid.Column="2" Background="{StaticResource XmppUnreadBg}" CornerRadius="7"
+                              Padding="4,0" MinWidth="14" Height="14" VerticalAlignment="Center"
+                              IsVisible="{Binding HasUnread}">
+                        <TextBlock Text="{Binding UnreadLabel}" Foreground="{StaticResource XmppUnread}"
+                                   FontSize="10" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                      </Border>
+                      <Button Grid.Column="3" Classes="icon" Padding="2" MinWidth="18" MinHeight="18"
+                              IsVisible="{Binding ShowActions}" Click="RoomRowActions" Tag="{Binding}"
+                              ToolTip.Tip="Room actions">
+                        <PathIcon Data="{StaticResource IconCog}" Width="11" Height="11"
+                                  Foreground="{StaticResource XmppTextSecondary}" />
+                      </Button>
+                    </Grid>
+                  </Panel>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </Grid>
+        </Border>
+
+        <GridSplitter x:Name="SidebarSplitter" Grid.Column="1" ResizeDirection="Columns" />
+
+        <Border Grid.Column="2" Background="{StaticResource XmppPanelBg}" CornerRadius="4" Padding="5">
+          <Grid RowDefinitions="Auto,Auto,*" RowSpacing="3">
+            <Grid x:Name="ConversationHeader" ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="4">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <TextBlock x:Name="ConversationTitle" FontSize="13" FontWeight="SemiBold"
+                           Foreground="{StaticResource XmppTextPrimary}"
+                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                <TextBlock x:Name="ConversationAddress" FontSize="11"
+                           Foreground="{StaticResource XmppTextSecondary}"
+                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center" IsVisible="False" />
+                <TextBlock x:Name="ConversationPresence" FontSize="11"
+                           Foreground="{StaticResource XmppOnline}"
+                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center" IsVisible="False" />
+                <TextBlock x:Name="RoomDetail" Foreground="{StaticResource XmppTextSecondary}" FontSize="11"
+                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+              </StackPanel>
+              <Button x:Name="JoinButton" Grid.Column="1" Classes="compact" Content="Join" Click="JoinCurrentRoom" />
+              <Button x:Name="FloatFeedButton" Grid.Column="2" Classes="icon" IsVisible="False"
+                      Click="OpenFloatingFeed" ToolTip.Tip="Open floating Notification Feed"
+                      AutomationProperties.Name="Open floating Notification Feed">
+                <PathIcon Data="{StaticResource IconOpenWindow}" Width="13" Height="13"
+                          Foreground="{StaticResource XmppAccent}" />
+              </Button>
+              <Button x:Name="ClearFeedButton" Grid.Column="3" Classes="icon" IsVisible="False"
+                      Click="ClearNotificationFeed" ToolTip.Tip="Clear Notification Feed"
+                      AutomationProperties.Name="Clear Notification Feed">
+                <PathIcon Data="{StaticResource IconTrash}" Width="13" Height="13"
+                          Foreground="{StaticResource XmppTextSecondary}" />
+              </Button>
+              <Button x:Name="ConversationMenu" Grid.Column="4" Classes="icon" ToolTip.Tip="Conversation actions">
+                <PathIcon Data="{StaticResource IconMore}" Width="13" Height="13"
+                          Foreground="{StaticResource XmppTextSecondary}" />
+                <Button.Flyout>
+                  <MenuFlyout>
+                    <MenuItem x:Name="FilterSenderButton" Header="Filter this sender…" Click="FilterThisSender" />
+                    <MenuItem x:Name="RoomButton" Header="Room settings" Click="EditRoom" />
+                    <MenuItem x:Name="LeaveButton" Header="Leave room" Click="LeaveRoom" />
+                    <MenuItem x:Name="ForgetRoomButton" Header="Forget room" Click="ForgetRoom" />
+                    <MenuItem x:Name="RemoveContactButton" Header="Remove contact" Click="RemoveContact" />
+                    <MenuItem x:Name="AcceptContactButton" Header="Accept contact request" Click="AcceptContact" />
+                    <MenuItem x:Name="DeclineContactButton" Header="Decline contact request" Click="DeclineContact" />
+                  </MenuFlyout>
+                </Button.Flyout>
+              </Button>
+            </Grid>
+
+            <Border x:Name="TopicPanel" Grid.Row="1" Background="{StaticResource XmppTopicBg}" CornerRadius="3"
+                    IsVisible="False" Padding="6,3">
+              <Grid>
+                <Grid x:Name="TopicCollapsed" ColumnDefinitions="*,Auto" RowDefinitions="*,Auto">
+                  <local:XmppLinkText x:Name="TopicPreview" TextTrimming="CharacterEllipsis"
+                                      TextWrapping="NoWrap" FontSize="11" FontWeight="Bold"
+                                      Foreground="{StaticResource XmppTextPrimary}"
+                                      VerticalAlignment="Center" LinkActivated="OnLinkActivated" />
+                  <Button Grid.Column="1" Classes="icon" Click="ToggleTopic" ToolTip.Tip="Expand topic"
+                          MinWidth="18" MinHeight="18" Padding="2">
+                    <PathIcon Data="{StaticResource IconChevronRight}" Width="9" Height="9"
+                              Foreground="{StaticResource XmppTextSecondary}" />
+                  </Button>
+                  <TextBlock x:Name="TopicAgeCollapsed" Grid.Row="1" Grid.ColumnSpan="2"
+                             FontSize="10" FontWeight="SemiBold" Foreground="#E0C06A"
+                             TextTrimming="CharacterEllipsis" IsVisible="False" Margin="0,2,0,0" />
+                </Grid>
+                <Grid x:Name="TopicExpanded" ColumnDefinitions="*,Auto" IsVisible="False">
+                  <Grid>
+                    <local:XmppLinkText x:Name="TopicBody" TextWrapping="Wrap" FontSize="12" FontWeight="Bold"
+                                        Margin="0,0,0,14" Foreground="{StaticResource XmppTextPrimary}"
+                                        LinkActivated="OnLinkActivated" />
+                    <TextBlock x:Name="TopicAge" HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                               FontSize="11" FontWeight="SemiBold" Foreground="#E0C06A"
+                               Background="{StaticResource XmppTopicBg}" Padding="6,0,0,0" />
+                  </Grid>
+                  <Button Grid.Column="1" Classes="icon" Click="ToggleTopic" ToolTip.Tip="Collapse topic"
+                          MinWidth="18" MinHeight="18" Padding="2" VerticalAlignment="Top">
+                    <PathIcon Data="{StaticResource IconChevronDown}" Width="9" Height="9"
+                              Foreground="{StaticResource XmppTextSecondary}" />
+                  </Button>
+                </Grid>
+              </Grid>
+            </Border>
+
+            <Grid x:Name="TranscriptSplit" Grid.Row="2" RowDefinitions="*,0,0">
+              <Grid Grid.Row="0" RowDefinitions="Auto,*,Auto">
+                <Button x:Name="OlderButton" Classes="compact" Content="Earlier messages" Click="LoadEarlier"
+                        HorizontalAlignment="Center" IsVisible="False" />
+                <ScrollViewer x:Name="TranscriptScroll" Grid.Row="1" Background="Transparent"
+                              PointerPressed="FocusTopPane"
+                              HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                  <Panel>
+                    <local:XmppLinkText x:Name="TranscriptText" TextWrapping="Wrap" HorizontalAlignment="Stretch"
+                                        Padding="10,0,0,0"
+                                        Foreground="{StaticResource XmppTextPrimary}"
+                                        LinkActivated="OnLinkActivated"
+                                        SenderActivated="MessageSenderActivated"
+                                        ActionActivated="TranscriptAction" />
+                    <ItemsControl x:Name="FeedList" IsVisible="False" Margin="8,4,8,8"
+                                  HorizontalAlignment="Stretch">
+                      <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                          <StackPanel Spacing="6" />
+                        </ItemsPanelTemplate>
+                      </ItemsControl.ItemsPanel>
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="local:XmppFeedCardVm">
+                          <Border Background="{Binding CardBackground}" CornerRadius="5" Padding="0"
+                                  BorderBrush="{Binding CardBorder}" BorderThickness="1"
+                                  ClipToBounds="True">
+                            <Grid ColumnDefinitions="Auto,*">
+                              <Border Grid.Column="0" Width="{Binding AccentWidth}"
+                                      Background="{Binding AccentBar}"
+                                      IsVisible="{Binding ShowAccent}" />
+                              <StackPanel Grid.Column="1" Spacing="6" Margin="10,8,10,8">
+                                <Button Classes="compact" Content="{Binding Title}"
+                                        Tag="{Binding CollapseKey}"
+                                        Click="ExpandCollapsedFilter"
+                                        IsVisible="{Binding IsCollapseSummary}"
+                                        HorizontalAlignment="Left"
+                                        Foreground="{StaticResource XmppAccent}" />
+                                <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding ShowActions}">
+                                  <StackPanel Spacing="2">
+                                    <Grid ColumnDefinitions="*,Auto" HorizontalAlignment="Left">
+                                      <TextBlock Text="{Binding Title}" FontWeight="Bold"
+                                                 FontSize="{Binding TitleSize}"
+                                                 Foreground="{StaticResource XmppTextPrimary}"
+                                                 TextWrapping="Wrap" VerticalAlignment="Center" />
+                                      <Border Grid.Column="1" CornerRadius="3" Padding="6,2" Margin="6,0,0,0"
+                                              Background="{Binding PapChipBackground}"
+                                              IsVisible="{Binding HasPap}"
+                                              VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding PapType}" FontSize="10" FontWeight="Bold"
+                                                   Foreground="{Binding PapChipForeground}" />
+                                      </Border>
+                                    </Grid>
+                                    <local:XmppLinkText BodyText="{Binding Subtitle}" FontSize="11"
+                                               Foreground="{StaticResource XmppTextSecondary}"
+                                               IsVisible="{Binding HasSubtitle}" TextWrapping="Wrap"
+                                               LinkActivated="OnLinkActivated" />
+                                  </StackPanel>
+                                  <TextBlock Grid.Column="1" Text="{Binding Time}" FontSize="11"
+                                             FontWeight="SemiBold"
+                                             Foreground="{StaticResource XmppTimestamp}"
+                                             Margin="8,1,0,0" IsVisible="{Binding HasTime}" />
+                                </Grid>
+                                <local:XmppLinkText BodyText="{Binding Body}" FontSize="{Binding BodySize}" FontWeight="Normal"
+                                                    Foreground="{StaticResource XmppTextPrimary}"
+                                                    TextWrapping="Wrap" LineHeight="18"
+                                                    IsVisible="{Binding HasBody}" LinkActivated="OnLinkActivated" />
+                                <ItemsControl ItemsSource="{Binding Lineup}" IsVisible="{Binding HasLineup}">
+                                  <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="local:XmppFeedCommanderVm">
+                                      <StackPanel>
+                                        <Border Classes="fleet-divider" Height="1" Background="#40E0A05A" Margin="0,7"
+                                                IsVisible="{Binding HasDivider}" />
+                                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                          <Border Width="40" Height="40" CornerRadius="20" ClipToBounds="True"
+                                                  Background="#152033" BorderBrush="#E0A05A" BorderThickness="1">
+                                            <Panel>
+                                              <TextBlock Text="FC" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                         FontSize="11" FontWeight="Bold" Foreground="{StaticResource XmppTextSecondary}"
+                                                         IsVisible="{Binding ShowPortraitPlaceholder}" />
+                                              <Image Source="{Binding Portrait}" Width="40" Height="40"
+                                                     Stretch="UniformToFill" IsVisible="{Binding ShowPortrait}" />
+                                            </Panel>
+                                          </Border>
+                                          <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                                            <TextBlock Text="Fleet Commander" FontSize="10" FontWeight="SemiBold"
+                                                       Foreground="#E0C06A" />
+                                            <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="Bold"
+                                                       Foreground="{StaticResource XmppTextPrimary}" TextWrapping="Wrap" />
+                                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6" Margin="0,2,0,0"
+                                                  IsVisible="{Binding HasCommsLabel}">
+                                              <TextBlock Text="Comms" FontSize="11" FontWeight="SemiBold" Foreground="#E0C06A"
+                                                         VerticalAlignment="Center" />
+                                              <local:XmppLinkText Grid.Column="1" BodyText="{Binding CommsLabel}"
+                                                                  Document="{Binding CommsDocument}" FontSize="12" FontWeight="Bold"
+                                                                  UnderlineLinks="False" Foreground="{StaticResource XmppTextPrimary}"
+                                                                  TextWrapping="Wrap" LinkActivated="OnLinkActivated" />
+                                            </Grid>
+                                          </StackPanel>
+                                        </Grid>
+                                      </StackPanel>
+                                    </DataTemplate>
+                                  </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <StackPanel Spacing="4" IsVisible="{Binding IsFleet}">
+                                  <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding HasFc}">
+                                    <Border Width="40" Height="40" CornerRadius="20" ClipToBounds="True"
+                                            Background="#152033" BorderBrush="#E0A05A" BorderThickness="1">
+                                      <Panel>
+                                        <TextBlock Text="FC" HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center" FontSize="11" FontWeight="Bold"
+                                                   Foreground="{StaticResource XmppTextSecondary}"
+                                                   IsVisible="{Binding Commander.ShowPortraitPlaceholder}" />
+                                        <Image Source="{Binding Commander.Portrait}" Width="40" Height="40"
+                                               Stretch="UniformToFill"
+                                               IsVisible="{Binding Commander.ShowPortrait}" />
+                                      </Panel>
+                                    </Border>
+                                    <StackPanel VerticalAlignment="Center" Spacing="1">
+                                      <TextBlock Text="Fleet Commander" FontSize="10" FontWeight="SemiBold"
+                                                 Foreground="#E0C06A" />
+                                      <TextBlock Text="{Binding FcName}" FontSize="14" FontWeight="Bold"
+                                                 Foreground="{StaticResource XmppTextPrimary}" />
+                                    </StackPanel>
+                                  </StackPanel>
+                                  <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" IsVisible="{Binding HasFormup}">
+                                    <TextBlock Text="Formup" FontSize="11" FontWeight="SemiBold"
+                                               Foreground="#E0C06A" />
+                                    <local:XmppLinkText Grid.Column="1" BodyText="{Binding Formup}" FontSize="13" FontWeight="Bold"
+                                               Foreground="{StaticResource XmppTextPrimary}"
+                                               TextWrapping="Wrap" LinkActivated="OnLinkActivated" />
+                                  </Grid>
+                                  <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" IsVisible="{Binding ShowCommsField}">
+                                    <TextBlock Text="Comms" FontSize="11" FontWeight="SemiBold"
+                                               Foreground="#E0C06A" />
+                                    <local:XmppLinkText Grid.Column="1" BodyText="{Binding CommsLabel}"
+                                               Document="{Binding CommsDocument}" FontSize="13" FontWeight="Bold" UnderlineLinks="False"
+                                               Foreground="{StaticResource XmppTextPrimary}"
+                                               TextWrapping="Wrap" LinkActivated="OnLinkActivated" />
+                                  </Grid>
+                                  <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto"
+                                        ColumnSpacing="8" IsVisible="{Binding HasDoctrine}">
+                                    <TextBlock Text="Doctrine" FontSize="11" FontWeight="SemiBold"
+                                               Foreground="#E0C06A" />
+                                    <local:XmppLinkText Grid.Column="1" BodyText="{Binding Doctrine}" FontSize="13" FontWeight="Bold"
+                                               Foreground="{StaticResource XmppTextPrimary}"
+                                               TextWrapping="Wrap" LinkActivated="OnLinkActivated" />
+                                    <local:XmppLinkText Grid.Row="1" Grid.Column="1" BodyText="{Binding Notes}"
+                                               FontSize="13" FontWeight="Normal" Foreground="{StaticResource XmppTextPrimary}"
+                                               TextWrapping="Wrap" IsVisible="{Binding HasNotes}" LinkActivated="OnLinkActivated" />
+                                  </Grid>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="6"
+                                            IsVisible="{Binding ShowActions}">
+                                  <Button Classes="feed-action" Content="Open Message" Tag="{Binding Message}"
+                                          Click="GoToFeedSource" />
+                                  <Button Classes="feed-action" Content="Copy raw" Tag="{Binding Message}"
+                                          Click="CopyFeedBody" />
+                                  <Button Classes="feed-action" Content="Open Mumble" Tag="{Binding CommsUrl}"
+                                          Click="OpenFeedComms" IsVisible="{Binding HasComms}" />
+                                </StackPanel>
+                              </StackPanel>
+                              <Border Grid.ColumnSpan="2" Height="2" Background="#D96464"
+                                      VerticalAlignment="Top" IsHitTestVisible="False"
+                                      IsVisible="{Binding IsUnreadStart}" />
+                            </Grid>
+                          </Border>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </Panel>
+                </ScrollViewer>
+                <Button x:Name="NewMessagesButton" Grid.Row="1" Classes="compact" Content="New messages ↓"
+                        Click="JumpToLatest" HorizontalAlignment="Center" VerticalAlignment="Bottom"
+                        Margin="0,0,0,4" IsVisible="False" />
+                <Grid x:Name="ComposeArea" Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="3">
+                  <TextBox x:Name="Compose" Watermark="Write a message" AcceptsReturn="True" AcceptsTab="True"
+                           TextWrapping="Wrap" MaxHeight="80" MinHeight="28" FontSize="13"
+                           TextChanged="ComposeTextChanged" />
+                  <Button x:Name="SendButton" Grid.Column="1" Classes="icon" Click="SendMessage"
+                          VerticalAlignment="Bottom" ToolTip.Tip="Send" MinWidth="30" MinHeight="28"
+                          Background="#1E3A52">
+                    <PathIcon Data="{StaticResource IconSend}" Width="12" Height="12"
+                              Foreground="{StaticResource XmppAccent}" />
+                  </Button>
+                </Grid>
+              </Grid>
+              <GridSplitter x:Name="SplitSplitter" Grid.Row="1" Classes="row" IsVisible="False" />
+              <Border x:Name="SplitPane" Grid.Row="2" IsVisible="False" BorderBrush="#304057" BorderThickness="0,1,0,0" Padding="0,4,0,0">
+                <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" RowSpacing="3">
+                  <Grid ColumnDefinitions="*,Auto">
+                    <StackPanel x:Name="SplitTabStrip" Orientation="Horizontal" Spacing="2" ClipToBounds="True" />
+                    <Button x:Name="SplitTabOverflowButton" Grid.Column="1" Classes="icon" IsVisible="False"
+                            MinWidth="22" MinHeight="22" Padding="2" Margin="2,0,0,0"
+                            ToolTip.Tip="More tabs" AutomationProperties.Name="More split tabs"
+                            Click="ShowTabOverflow">
+                      <PathIcon Data="{StaticResource IconChevronDown}" Width="9" Height="9"
+                                Foreground="{StaticResource XmppTextSecondary}" />
+                    </Button>
+                  </Grid>
+                  <TextBlock x:Name="SplitEmptyHint" Grid.Row="1" FontSize="12" TextWrapping="Wrap"
+                             Foreground="{StaticResource XmppTextSecondary}"
+                             Text="Right-click a tab and choose Move to split view." />
+                  <Border x:Name="SplitTopicPanel" Grid.Row="2" Background="{StaticResource XmppTopicBg}" CornerRadius="3"
+                          IsVisible="False" Padding="6,3">
+                    <Grid>
+                      <Grid x:Name="SplitTopicCollapsed" ColumnDefinitions="*,Auto" RowDefinitions="*,Auto">
+                        <local:XmppLinkText x:Name="SplitTopicPreview" TextTrimming="CharacterEllipsis"
+                                            TextWrapping="NoWrap" FontSize="11" FontWeight="Bold"
+                                            Foreground="{StaticResource XmppTextPrimary}"
+                                            VerticalAlignment="Center" LinkActivated="OnLinkActivated" />
+                        <Button Grid.Column="1" Classes="icon" Click="ToggleTopic" Tag="split" ToolTip.Tip="Expand topic"
+                                MinWidth="18" MinHeight="18" Padding="2">
+                          <PathIcon Data="{StaticResource IconChevronRight}" Width="9" Height="9"
+                                    Foreground="{StaticResource XmppTextSecondary}" />
+                        </Button>
+                        <TextBlock x:Name="SplitTopicAgeCollapsed" Grid.Row="1" Grid.ColumnSpan="2"
+                                   FontSize="10" FontWeight="SemiBold" Foreground="#E0C06A"
+                                   TextTrimming="CharacterEllipsis" IsVisible="False" Margin="0,2,0,0" />
+                      </Grid>
+                      <Grid x:Name="SplitTopicExpanded" ColumnDefinitions="*,Auto" IsVisible="False">
+                        <Grid>
+                          <local:XmppLinkText x:Name="SplitTopicBody" TextWrapping="Wrap" FontSize="12" FontWeight="Bold"
+                                              Margin="0,0,0,14" Foreground="{StaticResource XmppTextPrimary}"
+                                              LinkActivated="OnLinkActivated" />
+                          <TextBlock x:Name="SplitTopicAge" HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                                     FontSize="11" FontWeight="SemiBold" Foreground="#E0C06A"
+                                     Background="{StaticResource XmppTopicBg}" Padding="6,0,0,0" />
+                        </Grid>
+                        <Button Grid.Column="1" Classes="icon" Click="ToggleTopic" Tag="split" ToolTip.Tip="Collapse topic"
+                                MinWidth="18" MinHeight="18" Padding="2" VerticalAlignment="Top">
+                          <PathIcon Data="{StaticResource IconChevronDown}" Width="9" Height="9"
+                                    Foreground="{StaticResource XmppTextSecondary}" />
+                        </Button>
+                      </Grid>
+                    </Grid>
+                  </Border>
+                  <ScrollViewer x:Name="SplitTranscriptScroll" Grid.Row="3" Background="Transparent"
+                                PointerPressed="FocusBottomPane"
+                                HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                    <local:XmppLinkText x:Name="SplitTranscriptText" TextWrapping="Wrap" HorizontalAlignment="Stretch"
+                                        Padding="10,0,0,0"
+                                        Foreground="{StaticResource XmppTextPrimary}"
+                                        LinkActivated="OnLinkActivated"
+                                        SenderActivated="MessageSenderActivated"
+                                        ActionActivated="TranscriptAction" />
+                  </ScrollViewer>
+                  <Grid Grid.Row="4" ColumnDefinitions="*,Auto" ColumnSpacing="3">
+                    <TextBox x:Name="SplitCompose" Watermark="Write a message" AcceptsReturn="True"
+                             TextWrapping="Wrap" MaxHeight="80" MinHeight="28" FontSize="13" />
+                    <Button x:Name="SplitSendButton" Grid.Column="1" Classes="icon" Click="SendSplitMessage"
+                            VerticalAlignment="Bottom" ToolTip.Tip="Send" MinWidth="30" MinHeight="28"
+                            Background="#1E3A52">
+                      <PathIcon Data="{StaticResource IconSend}" Width="12" Height="12"
+                                Foreground="{StaticResource XmppAccent}" />
+                    </Button>
+                  </Grid>
+                </Grid>
+              </Border>
+            </Grid>
+          </Grid>
+        </Border>
+
+        <GridSplitter x:Name="OccupantSplitter" Grid.Column="3" ResizeDirection="Columns" IsVisible="False" />
+
+        <Border x:Name="OccupantSidebar" Grid.Column="4" Background="#121A26" CornerRadius="4"
+                Padding="5,4" IsVisible="False" MinWidth="84" MaxWidth="280">
+          <Grid RowDefinitions="Auto,*" RowSpacing="3">
+            <TextBlock x:Name="OccupantHeader" Text="0 people in room" FontSize="11" FontWeight="SemiBold"
+                       Foreground="{StaticResource XmppTextSecondary}" TextTrimming="CharacterEllipsis" />
+            <ListBox x:Name="Occupants" Grid.Row="1" Classes="occupants" Background="Transparent"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     DoubleTapped="OccupantDoubleTapped">
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="local:XmppOccupantRow">
+                  <Grid ColumnDefinitions="14,*" ColumnSpacing="3" Cursor="Hand"
+                        ToolTip.Tip="{Binding OpenTip}">
+                    <PathIcon Width="12" Height="12" Data="{Binding Icon}" Foreground="{Binding IconBrush}"
+                              HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1" Text="{Binding Nick}" Foreground="{Binding NickBrush}"
+                               FontSize="11" LineHeight="14" TextTrimming="CharacterEllipsis"
+                               VerticalAlignment="Center" Cursor="Hand" />
+                  </Grid>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </Grid>
+        </Border>
+      </Grid>
+
+      <TextBlock x:Name="Feedback" Grid.Row="2" TextWrapping="Wrap" IsVisible="False"
+                 Foreground="{StaticResource XmppFeedback}" FontSize="11" />
+
+      <Popup x:Name="ContactCardPopup" IsLightDismissEnabled="False" Placement="Right">
+        <Border x:Name="ContactCardBorder" Width="250" Padding="10" Background="#172233" BorderBrush="#2A3C52"
+                BorderThickness="1" CornerRadius="6"
+                PointerEntered="ContactCardEntered" PointerExited="ContactCardExited">
+          <StackPanel Spacing="8">
+            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+              <Border Grid.Column="0" Width="44" Height="44" CornerRadius="6" Background="#243247"
+                      ClipToBounds="True" VerticalAlignment="Top" ZIndex="1">
+                <Panel>
+                  <TextBlock x:Name="ContactCardInitials" HorizontalAlignment="Center" VerticalAlignment="Center"
+                             FontWeight="SemiBold" Foreground="{StaticResource XmppTextSecondary}" />
+                  <Image x:Name="ContactCardAvatar" Stretch="UniformToFill" IsVisible="False" />
+                </Panel>
+              </Border>
+              <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                <TextBlock x:Name="ContactCardName" FontWeight="SemiBold" FontSize="13"
+                           Foreground="{StaticResource XmppTextPrimary}" TextWrapping="Wrap" />
+                <TextBlock x:Name="ContactCardJid" FontSize="11" Foreground="{StaticResource XmppTextSecondary}"
+                           TextWrapping="Wrap" />
+              </StackPanel>
+            </Grid>
+            <TextBlock x:Name="ContactCardPresence" FontSize="12" TextWrapping="Wrap"
+                       Foreground="{StaticResource XmppOnline}" />
+            <TextBlock x:Name="ContactCardStatus" FontSize="11" Foreground="{StaticResource XmppTextSecondary}"
+                       TextWrapping="Wrap" IsVisible="False" />
+          </StackPanel>
+        </Border>
+      </Popup>
+    </Grid>
+  </Border>
+    <Canvas x:Name="TabDragLayer" IsHitTestVisible="False" ZIndex="200" />
+    <Border x:Name="ResizeNorth" Tag="North" Background="Transparent" Height="5" VerticalAlignment="Top"
+            Margin="12,0" Cursor="TopSide" PointerPressed="OnResizePointerPressed" />
+    <Border x:Name="ResizeSouth" Tag="South" Background="Transparent" Height="5" VerticalAlignment="Bottom"
+            Margin="12,0" Cursor="BottomSide" PointerPressed="OnResizePointerPressed" />
+    <Border x:Name="ResizeWest" Tag="West" Background="Transparent" Width="5" HorizontalAlignment="Left"
+            Margin="0,12" Cursor="LeftSide" PointerPressed="OnResizePointerPressed" />
+    <Border x:Name="ResizeEast" Tag="East" Background="Transparent" Width="5" HorizontalAlignment="Right"
+            Margin="0,12" Cursor="RightSide" PointerPressed="OnResizePointerPressed" />
+    <Border x:Name="ResizeNorthWest" Tag="NorthWest" Background="Transparent" Width="12" Height="12"
+            HorizontalAlignment="Left" VerticalAlignment="Top" Cursor="TopLeftCorner"
+            PointerPressed="OnResizePointerPressed" />
+    <Border x:Name="ResizeNorthEast" Tag="NorthEast" Background="Transparent" Width="12" Height="12"
+            HorizontalAlignment="Right" VerticalAlignment="Top" Cursor="TopRightCorner"
+            PointerPressed="OnResizePointerPressed" />
+    <Border x:Name="ResizeSouthWest" Tag="SouthWest" Background="Transparent" Width="12" Height="12"
+            HorizontalAlignment="Left" VerticalAlignment="Bottom" Cursor="BottomLeftCorner"
+            PointerPressed="OnResizePointerPressed" />
+    <Border x:Name="ResizeSouthEast" Tag="SouthEast" Background="Transparent" Width="16" Height="16"
+            HorizontalAlignment="Right" VerticalAlignment="Bottom" Cursor="BottomRightCorner"
+            PointerPressed="OnResizePointerPressed" />
+  </Grid>
+</Window>

@@ -1,0 +1,131 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Hisa.App.XmppAlertRuleWindow"
+        Title="Alert rule"
+        Width="480" Height="620" MinWidth="420" MinHeight="460"
+        Background="Transparent" FontFamily="Inter"
+        SystemDecorations="None" CanResize="True"
+        WindowStartupLocation="CenterOwner"
+        TransparencyLevelHint="Transparent">
+  <Window.Resources>
+    <SolidColorBrush x:Key="WinBg">#0E1520</SolidColorBrush>
+    <SolidColorBrush x:Key="PanelBg">#101823</SolidColorBrush>
+    <SolidColorBrush x:Key="TextPrimary">#E8EEF7</SolidColorBrush>
+    <SolidColorBrush x:Key="TextSecondary">#9AA8BC</SolidColorBrush>
+    <SolidColorBrush x:Key="Border">#304057</SolidColorBrush>
+    <SolidColorBrush x:Key="Feedback">#E4BD7E</SolidColorBrush>
+  </Window.Resources>
+  <Window.Styles>
+    <Style Selector="Button.compact">
+      <Setter Property="Padding" Value="8,3" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="Button.window">
+      <Setter Property="Padding" Value="8,0" />
+      <Setter Property="MinWidth" Value="28" />
+      <Setter Property="MinHeight" Value="22" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Foreground" Value="#B9CCE3" />
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.window:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#1C2A3C" />
+    </Style>
+    <Style Selector="Button.window.close:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#B33A3A" />
+    </Style>
+    <Style Selector="TextBlock.section">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+      <Setter Property="Margin" Value="0,0,0,6" />
+    </Style>
+    <Style Selector="TextBlock.hint">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Foreground" Value="{StaticResource TextSecondary}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style Selector="TextBox">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="MinHeight" Value="28" />
+    </Style>
+    <Style Selector="CheckBox">
+      <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="ComboBox">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+    </Style>
+  </Window.Styles>
+
+  <Border Background="{StaticResource WinBg}" BorderBrush="{StaticResource Border}" BorderThickness="1" CornerRadius="6"
+          ClipToBounds="True">
+    <Grid RowDefinitions="Auto,*,Auto" Margin="4">
+      <Grid ColumnDefinitions="*,Auto" PointerPressed="OnTitleBarPressed" Margin="4,2,2,6">
+        <TextBlock x:Name="TitleText" Text="Alert rule" FontSize="13" FontWeight="SemiBold"
+                   Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center" Margin="6,0,0,0" />
+        <Button Grid.Column="1" Classes="window close" Content="×" Click="OnCancel" FontSize="15"
+                ToolTip.Tip="Close" />
+      </Grid>
+
+      <Border Grid.Row="1" Background="{StaticResource PanelBg}" CornerRadius="4" Padding="12" Margin="2,0">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+          <Border Padding="0,0,14,0">
+            <StackPanel Spacing="8">
+              <CheckBox x:Name="EnabledBox" Content="Enable this rule" />
+
+              <StackPanel x:Name="MatchPanel" Spacing="8">
+                <TextBlock Classes="section" Text="When" />
+                <TextBlock Text="Source" Classes="hint" />
+                <ComboBox x:Name="ScopeBox" SelectionChanged="ScopeChanged" />
+                <TextBlock x:Name="KindLabel" Text="Conversation type" Classes="hint" />
+                <ComboBox x:Name="KindBox" />
+                <TextBlock x:Name="AddressLabel" Text="Conversation address" Classes="hint" />
+                <TextBox x:Name="AddressBox" Watermark="name@example.org or room@conference…" />
+                <TextBlock Text="Sender filter (optional nick or JID)" Classes="hint" />
+                <TextBox x:Name="SenderBox" Watermark="Any sender" />
+                <TextBlock Text="Body match" Classes="hint" />
+                <ComboBox x:Name="MatchBox" SelectionChanged="MatchChanged" />
+                <TextBlock x:Name="TextLabel" Text="Text to match" Classes="hint" />
+                <TextBox x:Name="TextBox" Watermark="Text or regular expression" />
+              </StackPanel>
+
+              <TextBlock Classes="section" Text="Actions" Margin="0,8,0,0" />
+              <CheckBox x:Name="PopupBox" Content="Show popup" />
+              <CheckBox x:Name="HighlightBox" Content="Highlight matching messages in chat" />
+              <CheckBox x:Name="FleetFeedBox" Content="Show in Notification Feed"
+                        IsCheckedChanged="FeedChanged" />
+              <StackPanel x:Name="FeedFields" Spacing="8">
+                <TextBlock Text="Feed title" Classes="hint" />
+                <TextBox x:Name="FeedTitleBox" Watermark="Alert" />
+                <TextBlock Text="Feed subtitle (optional)" Classes="hint" />
+                <TextBox x:Name="FeedSubtitleBox" Watermark="sender: body" />
+                <TextBlock Classes="hint"
+                           Text="Placeholders: {sender}, {body}, {conversation}. The original message is always shown under the title." />
+              </StackPanel>
+              <TextBlock Text="Sound" Classes="hint" />
+              <ComboBox x:Name="SoundBox" />
+              <TextBlock Text="Sound volume" Classes="hint" />
+              <Slider x:Name="VolumeSlider" Minimum="0" Maximum="100" />
+              <Button Classes="compact" Content="Preview sound" HorizontalAlignment="Left" Click="PreviewSound" />
+              <TextBlock Text="Cooldown seconds (0 = none)" Classes="hint" />
+              <TextBox x:Name="CooldownBox" Watermark="0" />
+
+              <TextBlock x:Name="StatusText" Classes="hint" Foreground="{StaticResource Feedback}"
+                         Margin="0,4,0,0" TextWrapping="Wrap" />
+            </StackPanel>
+          </Border>
+        </ScrollViewer>
+      </Border>
+
+      <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="6" Margin="6,8,6,4">
+        <Button Classes="compact" Content="Cancel" IsCancel="True" Click="OnCancel" />
+        <Button Classes="compact" Content="Save" IsDefault="True" Click="OnSave" />
+      </StackPanel>
+    </Grid>
+  </Border>
+</Window>

@@ -1,7 +1,9 @@
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Microsoft.Extensions.DependencyInjection;
+using Hisa.Services.Xmpp;
 
 namespace Hisa.App;
 
@@ -37,9 +39,14 @@ public partial class App : Application
             }, TaskScheduler.Default);
 
             var mainWindow = services.GetRequiredService<MainWindow>();
+            var xmpp = services.GetRequiredService<XmppClientService>();
+            mainWindow.AttachXmpp(xmpp, services.GetRequiredService<XmppFeedPortraitLoader>());
             desktop.MainWindow = mainWindow;
+            desktop.ShutdownMode = ShutdownMode.OnMainWindowClose;
+            mainWindow.InitializeTray(this, desktop);
             mainWindow.Show();
             splash.Close();
+            xmpp.DesktopReady();
         }
 
         base.OnFrameworkInitializationCompleted();

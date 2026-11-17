@@ -286,6 +286,7 @@ public sealed class ProbeTransferTests
             return new(server,id,$"Pilot {id}","Resolved");
         }
         public Task<byte[]?> GetPortraitAsync(string server,long id,CancellationToken cancellationToken=default)=>Task.FromResult<byte[]?>(null);
+        public Task<long?> ResolveIdByNameAsync(string characterName,CancellationToken cancellationToken=default)=>Task.FromResult<long?>(null);
     }
     private sealed class FakeEve:IEveProbeSettingsService
     {

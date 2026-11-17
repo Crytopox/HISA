@@ -37,6 +37,7 @@ public sealed partial class ProbeFormationDesignerViewModel : INotifyPropertyCha
     {
         public Task<EveCharacterIdentity> ResolveAsync(string server,long characterId,CancellationToken cancellationToken=default)=>Task.FromResult(new EveCharacterIdentity(server,characterId,null,"Name service unavailable"));
         public Task<byte[]?> GetPortraitAsync(string server,long characterId,CancellationToken cancellationToken=default)=>Task.FromResult<byte[]?>(null);
+        public Task<long?> ResolveIdByNameAsync(string characterName,CancellationToken cancellationToken=default)=>Task.FromResult<long?>(null);
     }
     public void AddTransferredFormation(ProbeFormation formation)
     {

@@ -1,0 +1,21 @@
+name: XMPP dependency versions
+
+on:
+  schedule:
+    - cron: '37 13 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Check official stable releases
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 build/xmpp/check-dependency-versions.py

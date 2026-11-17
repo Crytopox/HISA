@@ -9,20 +9,30 @@ permissions:
   attestations: write
 
 jobs:
+  xmpp-native:
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/xmpp-native.yml
+    with:
+      upload-artifacts: true
+
   release:
     name: Build and publish release
+    needs: xmpp-native
     runs-on: ubuntu-latest
 
     steps:
-      - name: Check out main branch
+      - name: Check out the tested commit
         uses: actions/checkout@v6
-        with:
-          ref: main
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: "10.0.x"
+      - uses: actions/download-artifact@v4
+        with:
+          path: build/xmpp-native
 
       - name: Set release metadata
         shell: pwsh

@@ -1,5 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <XmppAssetRuntime Condition="'$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</XmppAssetRuntime>
+    <XmppAssetRuntime Condition="'$(XmppAssetRuntime)' == ''">$(NETCoreSdkRuntimeIdentifier)</XmppAssetRuntime>
+  </PropertyGroup>
+
   <ItemGroup>
+    <Content Include="$(MSBuildThisFileDirectory)../../build/xmpp-native/$(XmppAssetRuntime)/*"
+             Condition="'$(XmppAssetRuntime)' != ''">
+      <Link>XmppNative/%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </Content>
     <ProjectReference Include="..\Hisa.Core\Hisa.Core.csproj" />
     <ProjectReference Include="..\Hisa.Logs\Hisa.Logs.csproj" />
     <ProjectReference Include="..\Hisa.Esi\Hisa.Esi.csproj" />
@@ -7,6 +19,15 @@
     <ProjectReference Include="..\Hisa.Rendering\Hisa.Rendering.csproj" />
     <ProjectReference Include="..\Hisa.Services\Hisa.Services.csproj" />
   </ItemGroup>
+  <Target Name="VerifyXmppReleaseAssets" BeforeTargets="PrepareForPublish"
+          Condition="'$(RequireXmppNative)' == 'true'">
+    <Error Condition="$([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('win-')) And !Exists('$(MSBuildThisFileDirectory)../../build/xmpp-native/$(RuntimeIdentifier)/hisa-strophe.dll')"
+           Text="The Windows XMPP library is missing. Build the native asset first." />
+    <Error Condition="$([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('linux-')) And !Exists('$(MSBuildThisFileDirectory)../../build/xmpp-native/$(RuntimeIdentifier)/libhisa-strophe.so')"
+           Text="The Linux XMPP library is missing. Build the native asset first." />
+    <Error Condition="$([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('osx-')) And !Exists('$(MSBuildThisFileDirectory)../../build/xmpp-native/$(RuntimeIdentifier)/libhisa-strophe.dylib')"
+           Text="The macOS XMPP library is missing. Build the native asset first." />
+  </Target>
 
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="11.3.7" />
@@ -24,6 +45,9 @@
     <PackageReference Include="Tmds.DBus.Protocol" Version="0.21.3" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Hisa.App.Tests" />
+  </ItemGroup>
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0</TargetFramework>

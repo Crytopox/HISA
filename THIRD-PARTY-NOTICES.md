@@ -1,3 +1,10 @@
+# XMPP transport
+
+HISA uses [libstrophe 0.14.0](https://github.com/strophe/libstrophe/releases/tag/0.14.0)
+under its MIT option. The native library links [OpenSSL](https://openssl-library.org/)
+under Apache-2.0 and [Expat](https://libexpat.github.io/) under MIT. Release packages
+include the three notices and the linked versions in `XmppNative`.
+
 # Probe Formation Designer references
 
 The managed Blue Marshal codec and embedded string table are ported from

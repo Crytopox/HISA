@@ -1,0 +1,21 @@
+using Hisa.Core.Models;
+
+namespace Hisa.Core.Tests;
+
+public sealed class XmppFeedAgeTests
+{
+    [Theory]
+    [InlineData(10, "just now")]
+    [InlineData(44, "just now")]
+    [InlineData(90, "2m ago")]
+    [InlineData(5 * 60, "5m ago")]
+    [InlineData(90 * 60, "2h ago")]
+    [InlineData(5 * 3600, "5h ago")]
+    [InlineData(36 * 3600, "2d ago")]
+    [InlineData(3 * 86400, "3d ago")]
+    public void Format_UsesCompactRelativeBuckets(int ageSeconds, string expected)
+    {
+        var now = DateTimeOffset.Parse("2026-01-01T12:00:00Z");
+        Assert.Equal(expected, XmppFeedAge.Format(now.AddSeconds(-ageSeconds), now));
+    }
+}

@@ -30,6 +30,12 @@ public static class ServiceCollectionExtensions
             var options=sp.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<EsiOptions>>().CurrentValue;
             client.BaseAddress=new Uri(options.BaseUrl);client.Timeout=TimeSpan.FromSeconds(15);ApplyCommonHeaders(sp,client);
         });
+        services.AddHttpClient(EveCharacterResolver.PortraitClientName, (sp, client) =>
+        {
+            var options = sp.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<EsiOptions>>().CurrentValue;
+            client.Timeout = TimeSpan.FromSeconds(15);
+            client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", options.UserAgent);
+        });
         services.AddSingleton<IEveCharacterResolver,EveCharacterResolver>();
         services.AddHttpClient<IEsiAuthService, EsiAuthService>((sp, client) =>
         {

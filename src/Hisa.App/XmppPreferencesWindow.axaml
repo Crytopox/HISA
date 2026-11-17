@@ -1,0 +1,219 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Hisa.App.XmppPreferencesWindow"
+        Title="Preferences"
+        Width="640" Height="540" MinWidth="500" MinHeight="420"
+        Background="Transparent" FontFamily="Inter"
+        SystemDecorations="None" CanResize="True"
+        WindowStartupLocation="CenterOwner"
+        TransparencyLevelHint="Transparent">
+  <Window.Resources>
+    <SolidColorBrush x:Key="WinBg">#0E1520</SolidColorBrush>
+    <SolidColorBrush x:Key="PanelBg">#101823</SolidColorBrush>
+    <SolidColorBrush x:Key="SidebarBg">#141C28</SolidColorBrush>
+    <SolidColorBrush x:Key="TextPrimary">#E8EEF7</SolidColorBrush>
+    <SolidColorBrush x:Key="TextSecondary">#9AA8BC</SolidColorBrush>
+    <SolidColorBrush x:Key="Accent">#5EB8E8</SolidColorBrush>
+    <SolidColorBrush x:Key="Border">#304057</SolidColorBrush>
+    <SolidColorBrush x:Key="Feedback">#E4BD7E</SolidColorBrush>
+    <SolidColorBrush x:Key="NavIdle">#141C28</SolidColorBrush>
+    <SolidColorBrush x:Key="NavActive">#253F58</SolidColorBrush>
+  </Window.Resources>
+  <Window.Styles>
+    <Style Selector="Button.nav">
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="Padding" Value="10,7" />
+      <Setter Property="Background" Value="{StaticResource NavIdle}" />
+      <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="4" />
+    </Style>
+    <Style Selector="Button.nav.active">
+      <Setter Property="Background" Value="{StaticResource NavActive}" />
+    </Style>
+    <Style Selector="Button.compact">
+      <Setter Property="Padding" Value="8,3" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="Button.window">
+      <Setter Property="Padding" Value="8,0" />
+      <Setter Property="MinWidth" Value="28" />
+      <Setter Property="MinHeight" Value="22" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Foreground" Value="#B9CCE3" />
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.window:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#1C2A3C" />
+    </Style>
+    <Style Selector="Button.window.close:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#B33A3A" />
+    </Style>
+    <Style Selector="TextBlock.section">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+      <Setter Property="Margin" Value="0,0,0,6" />
+    </Style>
+    <Style Selector="TextBlock.hint">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Foreground" Value="{StaticResource TextSecondary}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style Selector="TextBox">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="MinHeight" Value="28" />
+    </Style>
+    <Style Selector="CheckBox">
+      <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+  </Window.Styles>
+
+  <Border Background="{StaticResource WinBg}" BorderBrush="{StaticResource Border}" BorderThickness="1" CornerRadius="6"
+          ClipToBounds="True">
+    <Grid RowDefinitions="Auto,*,Auto" Margin="4">
+      <Grid ColumnDefinitions="*,Auto" PointerPressed="OnTitleBarPressed" Margin="4,2,2,6">
+        <TextBlock Text="Preferences" FontSize="13" FontWeight="SemiBold"
+                   Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center" Margin="6,0,0,0" />
+        <Button Grid.Column="1" Classes="window close" Content="×" Click="OnClose" FontSize="15"
+                HorizontalContentAlignment="Center" VerticalContentAlignment="Center" ToolTip.Tip="Close" />
+      </Grid>
+
+      <Grid Grid.Row="1" ColumnDefinitions="140,*" ColumnSpacing="4" Margin="2,0">
+        <Border Background="{StaticResource SidebarBg}" CornerRadius="4" Padding="4">
+          <StackPanel Spacing="2">
+            <Button x:Name="AccountNav" Classes="nav active" Content="Account" Click="ShowAccountSection" />
+            <Button x:Name="DisplayNav" Classes="nav" Content="Display" Click="ShowDisplaySection" />
+            <Button x:Name="FiltersNav" Classes="nav" Content="Message filters" Click="ShowFiltersSection" />
+            <Button x:Name="SoundsNav" Classes="nav" Content="Alert sounds" Click="ShowSoundsSection" />
+            <Button x:Name="RulesNav" Classes="nav" Content="Alert rules" Click="ShowRulesSection" />
+            <Button x:Name="ResetNav" Classes="nav" Content="Reset" Click="ShowResetSection" />
+          </StackPanel>
+        </Border>
+
+        <Border Grid.Column="1" Background="{StaticResource PanelBg}" CornerRadius="4" Padding="10">
+          <Grid RowDefinitions="*,Auto">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+              <Border Padding="0,0,14,0">
+                <Panel>
+                  <StackPanel x:Name="AccountPanel" Spacing="8">
+                    <TextBlock Classes="section" Text="Account" />
+                    <TextBlock Text="Account address" Classes="hint" />
+                    <TextBox x:Name="JidBox" Watermark="name@example.org" />
+                    <TextBlock Text="Password" Classes="hint" />
+                    <TextBox x:Name="PasswordBox" PasswordChar="●" Watermark="Leave blank to keep current" />
+                    <CheckBox x:Name="RememberBox" Content="Remember password" IsCheckedChanged="RememberChanged" />
+                    <CheckBox x:Name="AutoConnectBox" Content="Connect when HISA starts" />
+                    <TextBlock Text="Server host override" Classes="hint" />
+                    <TextBox x:Name="HostBox" Watermark="Discover from the account address" />
+                    <TextBlock Text="Server port override" Classes="hint" />
+                    <TextBox x:Name="PortBox" Watermark="Optional" />
+                    <TextBlock Text="TLS mode" Classes="hint" />
+                    <ComboBox x:Name="TlsBox" HorizontalAlignment="Stretch" />
+                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,4,0,0">
+                      <Button x:Name="AccountConnectButton" Classes="compact" Content="Connect" Click="AccountConnect" />
+                      <Button x:Name="AccountDisconnectButton" Classes="compact" Content="Disconnect" Click="AccountDisconnect" />
+                    </StackPanel>
+                    <TextBlock Classes="section" Text="Avatar" Margin="0,8,0,6" />
+                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                      <Border Width="56" Height="56" CornerRadius="4" Background="#0C121C" BorderBrush="#243247" BorderThickness="1"
+                              ClipToBounds="True">
+                        <Image x:Name="AvatarPreview" Stretch="UniformToFill" />
+                      </Border>
+                      <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                          <Button Classes="compact" Content="Choose image…" Click="ChooseAvatar" />
+                          <Button Classes="compact" Content="Clear" Click="ClearAvatar" />
+                        </StackPanel>
+                        <TextBlock Classes="hint" Text="JPEG, PNG, or GIF up to 256 KB. Larger images are resized." />
+                      </StackPanel>
+                    </Grid>
+                  </StackPanel>
+
+                  <StackPanel x:Name="DisplayPanel" Spacing="8" IsVisible="False">
+                    <TextBlock Classes="section" Text="Display" />
+                    <TextBlock Text="Message font" Classes="hint" />
+                    <ComboBox x:Name="FontBox" HorizontalAlignment="Stretch" />
+                    <TextBlock Text="Message font size (11–18)" Classes="hint" />
+                    <TextBox x:Name="FontSizeBox" />
+                    <TextBlock Text="Message row padding (0–12 per side)" Classes="hint" />
+                    <TextBox x:Name="MessagePaddingBox" />
+                    <CheckBox x:Name="ClockBox" Content="Use 12-hour clock (AM/PM)" />
+                    <CheckBox x:Name="DividersBox" Content="Show dividers between messages" />
+                    <CheckBox x:Name="AlternatingBox" Content="Alternate message row colors" />
+                    <CheckBox x:Name="OccupantsBox" Content="Show people sidebar for rooms by default" />
+                    <CheckBox x:Name="HeadersBox" Content="Show timestamp and name on every message" />
+                  </StackPanel>
+
+                  <StackPanel x:Name="FiltersPanel" Spacing="8" IsVisible="False">
+                    <TextBlock Classes="section" Text="Message filters" />
+                    <TextBlock Classes="hint"
+                               Text="Hide or collapse messages from a sender in the chat view. Local history is kept." />
+                    <ListBox x:Name="FiltersList" Height="200" />
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <Button Classes="compact" Content="Add" Click="AddFilter" />
+                      <Button Classes="compact" Content="Edit" Click="EditFilter" />
+                      <Button Classes="compact" Content="Remove" Click="RemoveFilter" />
+                    </StackPanel>
+                  </StackPanel>
+
+                  <StackPanel x:Name="SoundsPanel" Spacing="8" IsVisible="False">
+                    <TextBlock Classes="section" Text="Soft pings" />
+                    <CheckBox x:Name="DirectPingBox" Content="Soft ping for direct messages" />
+                    <TextBlock Text="Direct message sound" Classes="hint" />
+                    <ComboBox x:Name="DirectSoundBox" HorizontalAlignment="Stretch" />
+                    <TextBlock Text="Direct message volume" Classes="hint" />
+                    <Slider x:Name="DirectVolume" Minimum="0" Maximum="100" />
+                    <Button Classes="compact" Content="Preview direct ping" HorizontalAlignment="Left" Click="PreviewDirectPing" />
+                    <CheckBox x:Name="MentionPingBox" Content="Soft ping for mentions (rooms and direct)" Margin="0,8,0,0" />
+                    <TextBlock Text="Mention sound" Classes="hint" />
+                    <ComboBox x:Name="MentionSoundBox" HorizontalAlignment="Stretch" />
+                    <TextBlock Text="Mention volume" Classes="hint" />
+                    <Slider x:Name="MentionVolume" Minimum="0" Maximum="100" />
+                    <Button Classes="compact" Content="Preview mention ping" HorizontalAlignment="Left" Click="PreviewMentionPing" />
+                  </StackPanel>
+
+                  <StackPanel x:Name="RulesPanel" Spacing="8" IsVisible="False">
+                    <TextBlock Classes="section" Text="Alert rules" />
+                    <TextBlock Classes="hint" Text="Popup, sound, highlight, and Notification Feed actions for matching messages." />
+                    <ListBox x:Name="RulesList" Height="260" />
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <Button Classes="compact" Content="Add" Click="AddRule" />
+                      <Button Classes="compact" Content="Edit" Click="EditRule" />
+                      <Button x:Name="RemoveRuleButton" Classes="compact" Content="Remove" Click="RemoveRule" />
+                    </StackPanel>
+                  </StackPanel>
+
+                  <StackPanel x:Name="ResetPanel" Spacing="10" IsVisible="False">
+                    <TextBlock Classes="section" Text="Restore defaults" />
+                    <TextBlock Classes="hint"
+                               Text="Reset display, soft pings, message filters, and custom alert rules to their defaults. Account, rooms, presence, avatar, and chat history are left alone. Built-in Goonfleet alert rules are restored when applicable." />
+                    <Button Classes="compact" Content="Restore Jabber preferences…" HorizontalAlignment="Left"
+                            Click="RestorePreferences" />
+                    <TextBlock Classes="section" Text="Local history" Margin="0,12,0,6" />
+                    <TextBlock Classes="hint"
+                               Text="Delete saved Jabber messages and unread counts stored on this device. The Jabber server is not changed, and live messages can still arrive afterward." />
+                    <Button x:Name="ClearHistoryButton" Classes="compact" Content="Clear local history…"
+                            HorizontalAlignment="Left" Click="ClearLocalHistory" />
+                  </StackPanel>
+                </Panel>
+              </Border>
+            </ScrollViewer>
+            <TextBlock x:Name="StatusText" Grid.Row="1" Classes="hint" Foreground="{StaticResource Feedback}"
+                       Margin="0,8,0,0" TextWrapping="Wrap" />
+          </Grid>
+        </Border>
+      </Grid>
+
+      <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="6" Margin="6,8,6,4">
+        <Button Classes="compact" Content="Cancel" IsCancel="True" Click="OnClose" />
+        <Button x:Name="SaveButton" Classes="compact" Content="Save" IsDefault="True" Click="Save" />
+      </StackPanel>
+    </Grid>
+  </Border>
+</Window>

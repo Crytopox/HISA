@@ -35,8 +35,10 @@ dotnet publish $projectPath `
     -r $Runtime `
     --self-contained true `
     -p:PublishProfile=WindowsSingleFile `
+    -p:RequireXmppNative=true `
     -o $publishDir
 
+if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed for $Runtime." }
 if (-not (Test-Path $publishDir)) {
     throw "Publish output folder was not created: $publishDir"
 }

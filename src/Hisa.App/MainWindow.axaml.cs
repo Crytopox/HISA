@@ -222,15 +222,7 @@ public partial class MainWindow : Window
         Activated += (_, _) => UpdateMapAnimationSuspension();
         Deactivated += (_, _) => UpdateMapAnimationSuspension();
         PropertyChanged += OnMainWindowPropertyChanged;
-        Closing += (_, _) =>
-        {
-            _isClosingApp = true;
-            _boundVm?.BeginApplicationShutdown();
-            SaveWindowPlacementNow();
-            SaveViewportNow();
-            SaveSelectedViewModeNow();
-            CloseAuxiliaryWindows();
-        };
+        Closing += OnMainWindowClosing;
     }
 
     public MainWindow(
@@ -315,8 +307,7 @@ public partial class MainWindow : Window
             _preferencesWindow.Closed += (_, _) => _preferencesWindow = null;
         }
 
-        _preferencesWindow.Show();
-        _preferencesWindow.Activate();
+        ShowAndActivate(_preferencesWindow);
     }
 
     private void OnOpenHostileColorsSettingsClicked(object? sender, RoutedEventArgs e)
@@ -584,8 +575,7 @@ public partial class MainWindow : Window
             _miningSitesWindow = new MiningSitesWindow(_boundVm, systemId);
             _miningSitesWindow.Closed += (_, _) => _miningSitesWindow = null;
         }
-        _miningSitesWindow.Show();
-        _miningSitesWindow.Activate();
+        ShowAndActivate(_miningSitesWindow);
     }
 
     private void OnOpenAnsiblexNetworkClicked(object? sender, RoutedEventArgs e)
@@ -652,8 +642,7 @@ public partial class MainWindow : Window
             _miningStatsWindow.Closed += (_, _) => _miningStatsWindow = null;
         }
 
-        _miningStatsWindow.Show();
-        _miningStatsWindow.Activate();
+        ShowAndActivate(_miningStatsWindow);
     }
 
     private void OnOpenZkillmailsWindowClicked(object? sender, RoutedEventArgs e)
@@ -684,7 +673,6 @@ public partial class MainWindow : Window
 
             if (_alertPopupSettings.Enabled && alert.Actions.Contains(AlertActionType.ShowPopup))
             {
-                EnsureAlertPopupWindow();
                 var zkillCard = TryFindPopupZkillmailCard(alert);
                 var intelCard = zkillCard is null ? TryFindPopupIntelCard(alert) : null;
                 var isMiningSiteAlert = alert.SourceEvent.EventType == AlertEventType.MiningSiteReady;
@@ -709,17 +697,20 @@ public partial class MainWindow : Window
                     JumpCount = alert.JumpCount,
                     ExpiresAtUtc = DateTime.UtcNow.AddSeconds(_alertPopupSettings.AutoDismissSeconds)
                 };
-                _alertPopupCards.Insert(0, card);
-                _alertPopupCleanupTimer.Start();
-                while (_alertPopupCards.Count > _alertPopupSettings.MaxCards)
-                {
-                    _alertPopupCards.RemoveAt(_alertPopupCards.Count - 1);
-                }
-
-                _alertPopupWindow!.Show();
-                UpdateAlertPopupClickThrough();
+                ShowAlertPopupCard(card);
             }
         });
+    }
+
+    private void ShowAlertPopupCard(AlertPopupCard card)
+    {
+        EnsureAlertPopupWindow();
+        _alertPopupCards.Insert(0, card);
+        _alertPopupCleanupTimer.Start();
+        while (_alertPopupCards.Count > _alertPopupSettings.MaxCards)
+            _alertPopupCards.RemoveAt(_alertPopupCards.Count - 1);
+        _alertPopupWindow!.Show();
+        UpdateAlertPopupClickThrough();
     }
 
     private static EnvironmentalAlertPopupCard? BuildEnvironmentalAlertCard(AlertTriggered alert)
@@ -2175,6 +2166,7 @@ public partial class MainWindow : Window
 
     private async void OnOpened(object? sender, EventArgs e)
     {
+        Opened -= OnOpened;
         if (_boundVm is null)
         {
             return;
