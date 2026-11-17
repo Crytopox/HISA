@@ -18,6 +18,12 @@ public interface ISdeDatabase
 
 public sealed class SqliteDatabaseInitializer : IDatabaseInitializer
 {
+    internal const string SettingsSchema = """
+        CREATE TABLE IF NOT EXISTS Settings (
+            Key TEXT NOT NULL PRIMARY KEY,
+            Value TEXT NOT NULL
+        );
+        """;
     private readonly string _connectionString;
     private const string ImportedPackName = "Imported Base";
 
@@ -32,12 +38,7 @@ public sealed class SqliteDatabaseInitializer : IDatabaseInitializer
         await connection.OpenAsync(cancellationToken);
 
         var command = connection.CreateCommand();
-        command.CommandText = """
-            CREATE TABLE IF NOT EXISTS Settings (
-                Key TEXT NOT NULL PRIMARY KEY,
-                Value TEXT NOT NULL
-            );
-
+        command.CommandText = SettingsSchema + "\n" + """
             CREATE TABLE IF NOT EXISTS MapLayoutPack (
                 Id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
                 Name TEXT NOT NULL,
@@ -352,6 +353,7 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton<IDatabaseInitializer>(_ => new SqliteDatabaseInitializer(connectionString));
         services.AddSingleton<ISettingsService>(_ => new SqliteSettingsService(connectionString));
+        services.AddSingleton(_ => new XmppHistoryStore(connectionString));
         services.AddSingleton<IMapLayoutDataService>(_ => new SqliteMapLayoutDataService(connectionString));
         services.AddSingleton<IMapLayoutEditorService>(sp =>
             new SqliteMapLayoutEditorService(connectionString, sp.GetRequiredService<ISdeDatabase>()));

@@ -18,6 +18,11 @@
   <ItemGroup>
     <Using Include="Xunit" />
     <None Update="Fixtures/*.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../build/xmpp-native/$(XmppNativeTestRuntime)/*"
+             Condition="'$(XmppNativeTestRuntime)' != ''">
+      <Link>XmppNative/%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>

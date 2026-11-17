@@ -325,6 +325,8 @@
                   </Border>
                 </Grid>
                 <TextBlock Text="{Binding Details}" Foreground="#E4ECF8" FontSize="10" TextWrapping="Wrap"/>
+                <Button IsVisible="{Binding HasConversation}" Content="Open conversation" Click="OnConversationClicked"
+                        FontSize="11" Padding="5,2" />
                 <TextBlock Text="{Binding TimestampLabel}" Foreground="#BFD8FF" FontSize="9" FontWeight="Bold"/>
               </StackPanel>
             </Border>

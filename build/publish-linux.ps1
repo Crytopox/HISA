@@ -38,6 +38,7 @@ foreach ($runtime in $Runtimes) {
         -r $runtime `
         --self-contained true `
         -p:PublishSingleFile=true `
+        -p:RequireXmppNative=true `
         -p:IncludeNativeLibrariesForSelfExtract=true `
         -p:EnableCompressionInSingleFile=true `
         -p:PublishTrimmed=false `
@@ -45,6 +46,7 @@ foreach ($runtime in $Runtimes) {
         -p:DebugSymbols=false `
         -o $publishDir
 
+    if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed for $runtime." }
     if (-not (Test-Path $publishDir)) {
         throw "Publish output folder was not created: $publishDir"
     }

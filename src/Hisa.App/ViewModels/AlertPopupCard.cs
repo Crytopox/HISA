@@ -7,6 +7,8 @@ public sealed class AlertPopupCard
     public required string TimestampLabel { get; init; }
     public required string Title { get; init; }
     public required string Details { get; init; }
+    public Action? OpenConversation { get; init; }
+    public bool HasConversation => OpenConversation is not null;
     public IntelOverlayCard? IntelCard { get; init; }
     public ZkillmailOverlayCard? ZkillmailCard { get; init; }
     public bool IsMiningSiteAlert { get; init; }

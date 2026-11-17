@@ -269,6 +269,7 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
     private string _statusText = "Loading map...";
     private bool _stretchMapToWindow;
     private bool _autoHideNavigation;
+    private bool _keepRunningInTray;
     private bool _isTopNavigationCollapsed;
     private bool _isBottomNavigationCollapsed;
     private bool _isDisplaySettingsOpen;
@@ -473,6 +474,7 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
     private const string CoordinateModeRegionKey = "Map.SelectedCoordinateMode.Region";
     private const string StretchMapToWindowKey = "Map.StretchToWindow";
     private const string AutoHideNavigationKey = "Window.AutoHideNavigation";
+    private const string KeepRunningInTrayKey = "Window.KeepRunningInTray";
     private const string NodeColorModeKey = "Map.NodeColorMode";
     private const string NodeBackgroundColorModeKey = "Map.NodeBackgroundColorMode";
     private const string HostileColorSettingsKey = "Map.HostileColorSettings";
@@ -2825,6 +2827,7 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
         SelectedCoordinateMode = _savedUniverseCoordinateMode;
         StretchMapToWindow = await _settingsService.GetAsync<bool?>(StretchMapToWindowKey) ?? false;
         AutoHideNavigation = await _settingsService.GetAsync<bool?>(AutoHideNavigationKey) ?? false;
+        KeepRunningInTray = await _settingsService.GetAsync<bool?>(KeepRunningInTrayKey) ?? false;
         NodeColorMode = await _settingsService.GetAsync<MapNodeColorMode?>(NodeColorModeKey) ?? MapNodeColorMode.None;
         NodeBackgroundColorMode = await _settingsService.GetAsync<MapNodeColorMode?>(NodeBackgroundColorModeKey) ?? MapNodeColorMode.None;
         HostileColorSettings = SanitizeHostileColorSettings(
@@ -3274,6 +3277,16 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
         {
             await ReloadGraphAsync(resetSelection: false);
         });
+    }
+
+    public bool KeepRunningInTray
+    {
+        get => _keepRunningInTray;
+        set
+        {
+            if (SetProperty(ref _keepRunningInTray, value) && !_isInitializing)
+                _ = _settingsService.SetAsync(KeepRunningInTrayKey, value);
+        }
     }
 
     public bool AutoHideNavigation

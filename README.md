@@ -50,6 +50,11 @@ HISA is actively used and developed. Bug reports, weird edge cases, and suggesti
 - Local character location tracking
 - Character names, counts, and markers displayed on the map
 
+### Jabber/XMPP Client
+- Full standalone XMPP Client.
+- Receive and send messages from chats and rooms. 
+- Create custom alerts and rules for received messages.
+
 ### Fleet Boost Tracker
 - Click **Start tracking** to count new pilot declarations across Shield, Armour, Info, and Skirmish; **Reset tracking** starts a fresh session for that channel.
 - Each pilot's latest charge post replaces their previous charges. Mindlink declarations (`ML`, `+ML`, `mindlink`) remain attached to that pilot until cleared, removed, or reset.

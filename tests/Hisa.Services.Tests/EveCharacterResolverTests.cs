@@ -41,7 +41,7 @@ public sealed class EveCharacterResolverTests
         var offline=await resolver.ResolveAsync("tranquility",1);Assert.Equal("Pilot",offline.Name);Assert.True(offline.FromCache);Assert.Equal(3,handler.Calls);
     }
     [Fact]
-    public async Task ThrottlingStopsFurtherRequestsAndMissingCharactersAndPortraitsRemainUsable()
+    public async Task NameAndPortraitThrottlingApplyOnlyToTheirOwnServers()
     {
         using var handler=new Handler((request,_)=>{
             if(request.RequestUri!.AbsolutePath.Contains("90000001"))return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
@@ -50,7 +50,13 @@ public sealed class EveCharacterResolverTests
         using var resolver=new EveCharacterResolver(new Factory(handler),new ProbeMemorySettings(),new EsiMetricsStore());
         var missing=await resolver.ResolveAsync("tranquility",90000001);Assert.Null(missing.Name);Assert.Contains("not found",missing.Status);
         await resolver.ResolveAsync("tranquility",90000002);await resolver.ResolveAsync("tranquility",90000003);Assert.Equal(2,handler.Calls);
-        Assert.Null(await resolver.GetPortraitAsync("tranquility",90000002));Assert.Equal(2,handler.Calls);
+        Assert.True(resolver.NameLookupRetryNotBefore > DateTimeOffset.UtcNow);
+        Assert.Equal(DateTimeOffset.MinValue, resolver.PortraitRetryNotBefore);
+        Assert.Null(await resolver.GetPortraitAsync("tranquility",90000002));
+        Assert.Equal(3,handler.Calls);
+        Assert.True(resolver.PortraitRetryNotBefore > DateTimeOffset.UtcNow);
+        Assert.Null(await resolver.GetPortraitAsync("tranquility",90000003));
+        Assert.Equal(3,handler.Calls);
     }
     [Fact]
     public async Task ConcurrencyCancellationAndPortraitTenantAreControlled()

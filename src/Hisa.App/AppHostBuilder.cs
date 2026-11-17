@@ -5,6 +5,7 @@ using Hisa.Data.Database;
 using Hisa.Services;
 using System.Diagnostics;
 using Hisa.Services.Background;
+using Hisa.Services.Xmpp;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -43,6 +44,9 @@ internal static class AppHostBuilder
         builder.Services.AddSingleton<MapEditorWindow>();
         builder.Services.AddSingleton<DebugWindowViewModel>();
         builder.Services.AddSingleton<DebugWindow>();
+        builder.Services.AddSingleton<XmppClientService>();
+        builder.Services.AddSingleton<XmppFeedPortraitLoader>();
+        builder.Services.AddHostedService(services => services.GetRequiredService<XmppClientService>());
 
         builder.Services.AddHisaData(builder.Configuration);
         builder.Services.AddHisaServices(builder.Configuration);

@@ -35,6 +35,14 @@ public partial class AlertPopupWindow : Window
         PositionChanged += OnWindowPositionChanged;
     }
 
+    private static void InvokeConversation(object? sender)
+    {
+        if (sender is Control { DataContext: AlertPopupCard card })
+            card.OpenConversation?.Invoke();
+    }
+
+    private void OnConversationClicked(object? sender, RoutedEventArgs e) => InvokeConversation(sender);
+
     private void ApplyDragModeVisuals()
     {
         RootBorder.Background = IsDragModeEnabled

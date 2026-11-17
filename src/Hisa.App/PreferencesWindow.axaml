@@ -15,6 +15,16 @@
   <Border Margin="12" Padding="12" Background="#121A26" BorderBrush="#263244" BorderThickness="1" CornerRadius="6">
     <ScrollViewer VerticalScrollBarVisibility="Auto">
       <StackPanel Spacing="10">
+        <TextBlock Text="Application Preferences" FontSize="15" FontWeight="SemiBold" Foreground="#D8E5F8" />
+        <Border Padding="10" Background="#101826" BorderBrush="#243247" BorderThickness="1" CornerRadius="5">
+          <StackPanel Spacing="6">
+            <CheckBox IsChecked="{Binding KeepRunningInTray}">
+              <TextBlock Text="Keep HISA running in the tray when I close the main window" TextWrapping="Wrap" />
+            </CheckBox>
+            <TextBlock Text="Use Quit in the tray menu to exit HISA."
+                       Foreground="#8A96A8" TextWrapping="Wrap" />
+          </StackPanel>
+        </Border>
         <TextBlock Text="Map Preferences" FontSize="15" FontWeight="SemiBold" Foreground="#D8E5F8" />
 
         <Border Padding="10" Background="#101826" BorderBrush="#243247" BorderThickness="1" CornerRadius="5">

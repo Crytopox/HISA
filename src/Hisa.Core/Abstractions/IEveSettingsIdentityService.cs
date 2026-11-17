@@ -11,6 +11,9 @@ public interface IEveSettingsIdentityService
 }
 public interface IEveCharacterResolver
 {
+    DateTimeOffset NameLookupRetryNotBefore => DateTimeOffset.MinValue;
+    DateTimeOffset PortraitRetryNotBefore => DateTimeOffset.MinValue;
     Task<EveCharacterIdentity> ResolveAsync(string server, long characterId, CancellationToken cancellationToken = default);
     Task<byte[]?> GetPortraitAsync(string server, long characterId, CancellationToken cancellationToken = default);
+    Task<long?> ResolveIdByNameAsync(string characterName, CancellationToken cancellationToken = default);
 }

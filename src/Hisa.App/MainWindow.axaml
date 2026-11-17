@@ -332,6 +332,7 @@
                   <MenuItem Header="Mining Sites Tracker" Click="OnOpenMiningSitesClicked" />
                   <MenuItem Header="Intel History" Click="OnOpenIntelHistoryClicked" />
                   <MenuItem Header="Fleet Boost Tracker" Click="OnOpenFleetBoostTrackerClicked" />
+                  <MenuItem Header="Jabber" Click="OnOpenXmppClicked" />
                 </MenuFlyout>
               </Button.Flyout>
             </Button>
@@ -374,6 +375,7 @@
                   <MenuItem Header="Mining Sites Tracker" Click="OnOpenMiningSitesClicked" />
                   <MenuItem Header="Intel History" Click="OnOpenIntelHistoryClicked" />
                   <MenuItem Header="Fleet Boost Tracker" Click="OnOpenFleetBoostTrackerClicked" />
+                  <MenuItem Header="Jabber" Click="OnOpenXmppClicked" />
                 </MenuItem>
                 <MenuItem Header="Settings">
                   <MenuItem Header="Map Editor" Click="OnOpenMapEditorClicked" />
@@ -531,7 +533,7 @@
                                Text="{Binding SystemName}" />
                     <TextBlock Foreground="#9EB5D8"
                                Text="{Binding RangeLy, StringFormat='({0:0.0} LY)'}" />
-                    <Button Content="Ã—"
+                    <Button Content="×"
                             Width="16"
                             Height="16"
                             Padding="0"
@@ -648,23 +650,23 @@
                   <StackPanel Spacing="4" IsVisible="{Binding IsAnsiblexLegendVisible}">
                     <StackPanel Orientation="Horizontal" Spacing="8">
                       <Border Width="18" Height="10" CornerRadius="2" Background="#3DDC97" VerticalAlignment="Center" />
-                      <TextBlock Text="Ansiblex zone 1 Â· 0â€“5 LY Â· free" Foreground="#C7D6EA" VerticalAlignment="Center" />
+                      <TextBlock Text="Ansiblex zone 1 · 0–5 LY · free" Foreground="#C7D6EA" VerticalAlignment="Center" />
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" Spacing="8">
                       <Border Width="18" Height="10" CornerRadius="2" Background="#4C9AFF" VerticalAlignment="Center" />
-                      <TextBlock Text="Ansiblex zone 2 Â· 5â€“10 LY Â· 2x" Foreground="#C7D6EA" VerticalAlignment="Center" />
+                      <TextBlock Text="Ansiblex zone 2 · 5–10 LY · 2x" Foreground="#C7D6EA" VerticalAlignment="Center" />
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" Spacing="8">
                       <Border Width="18" Height="10" CornerRadius="2" Background="#F5C06A" VerticalAlignment="Center" />
-                      <TextBlock Text="Ansiblex zone 3 Â· 10â€“15 LY Â· 6x" Foreground="#C7D6EA" VerticalAlignment="Center" />
+                      <TextBlock Text="Ansiblex zone 3 · 10–15 LY · 6x" Foreground="#C7D6EA" VerticalAlignment="Center" />
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" Spacing="8">
                       <Border Width="18" Height="10" CornerRadius="2" Background="#F08A3C" VerticalAlignment="Center" />
-                      <TextBlock Text="Ansiblex zone 4 Â· 15â€“20 LY Â· 9x" Foreground="#C7D6EA" VerticalAlignment="Center" />
+                      <TextBlock Text="Ansiblex zone 4 · 15–20 LY · 9x" Foreground="#C7D6EA" VerticalAlignment="Center" />
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" Spacing="8">
                       <Border Width="18" Height="10" CornerRadius="2" Background="#E85D5D" VerticalAlignment="Center" />
-                      <TextBlock Text="Ansiblex zone 5 Â· 20 LY+ Â· 15x" Foreground="#C7D6EA" VerticalAlignment="Center" />
+                      <TextBlock Text="Ansiblex zone 5 · 20 LY+ · 15x" Foreground="#C7D6EA" VerticalAlignment="Center" />
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" Spacing="8">
                       <Canvas Width="16" Height="16" VerticalAlignment="Center">
