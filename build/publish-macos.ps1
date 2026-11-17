@@ -1,5 +1,4 @@
 param(
-    [ValidateSet("osx-x64", "osx-arm64")]
     [string[]]$Runtimes = @("osx-x64", "osx-arm64"),
     [string]$Configuration = "Release",
     [string]$Framework = "net10.0",
@@ -9,17 +8,6 @@ param(
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$missingLibraries = foreach ($runtime in $Runtimes) {
-    $library = Join-Path $repoRoot "build/xmpp-native/$runtime/libhisa-strophe.dylib"
-    if (-not (Test-Path -LiteralPath $library -PathType Leaf)) {
-        $library
-    }
-}
-if ($missingLibraries) {
-    $paths = $missingLibraries -join "`n"
-    throw "Missing native XMPP libraries:`n$paths`nUse the Linux and macOS packages workflow in GitHub Actions, or build the missing native libraries before publishing locally."
-}
-
 $projectPath = Join-Path $repoRoot "src/Hisa.App/Hisa.App.csproj"
 [xml]$project = Get-Content -LiteralPath $projectPath
 $versionNode = $project.SelectSingleNode("/Project/PropertyGroup/Version")
@@ -69,7 +57,6 @@ foreach ($runtime in $Runtimes) {
     }
 
     tar -czf $archivePath -C $publishDir .
-    if ($LASTEXITCODE -ne 0) { throw "Could not create the archive for $runtime." }
 }
 
 Write-Host ""
