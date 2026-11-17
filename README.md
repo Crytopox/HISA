@@ -249,7 +249,16 @@ sqlite3 src/Hisa.App/Data/eve-hk-sde.db ".read build/trim-eve-hk-sde.sql"
 sqlite3 src/Hisa.App/Data/eve-hk-sde.db "VACUUM;"
 ```
 
-Use the PowerShell publish scripts when building release archives locally:
+For Linux and macOS builds, open **Actions → Linux and macOS packages**, select
+a successful run, and download the **HISA-<runtime>** artifact from its
+**Artifacts** section. The download contains the ready-to-extract
+`.tar.gz` package. Relevant pull requests run this workflow automatically.
+Once the workflow is on `main`, use **Run workflow** to build packages on demand.
+
+To publish locally, first build the native XMPP library for each requested
+runtime using the matching toolchain in `.github/workflows/xmpp-native.yml`.
+Keep its output under `build/xmpp-native/<runtime>/`, then run the PowerShell
+publish scripts:
 
 ```powershell
 ./build/publish-windows.ps1
