@@ -25,12 +25,33 @@ internal sealed class XmppFeedPortraitLoader(IEveCharacterResolver resolver, ILo
             load?.Cancel();
         }
 
-        foreach (var commander in _commanders)
+        ApplyCachedPortraits(_commanders);
+        StartMissingLoads(names);
+    }
+
+    public void Ensure(IReadOnlyList<XmppFeedCardVm> cards)
+    {
+        Dispatcher.UIThread.VerifyAccess();
+        var extra = cards.SelectMany(card => card.HasLineup ? card.Lineup : [card.Commander])
+            .Where(commander => commander.LookupName is not null)
+            .ToArray();
+        if (extra.Length == 0) return;
+        _commanders = [.. _commanders, .. extra];
+        ApplyCachedPortraits(extra);
+        StartMissingLoads(extra.Select(commander => commander.LookupName!).ToHashSet(StringComparer.OrdinalIgnoreCase));
+    }
+
+    private void ApplyCachedPortraits(IEnumerable<XmppFeedCommanderVm> commanders)
+    {
+        foreach (var commander in commanders)
         {
             if (_portraits.TryGetValue(commander.LookupName!, out var portrait))
                 commander.Portrait = portrait;
         }
+    }
 
+    private void StartMissingLoads(HashSet<string> names)
+    {
         foreach (var name in names)
         {
             if (_portraits.ContainsKey(name) || _loads.ContainsKey(name)) continue;

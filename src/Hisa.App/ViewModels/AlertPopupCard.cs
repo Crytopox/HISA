@@ -25,7 +25,9 @@ public sealed class AlertPopupCard
     public bool HasNoOverlayCard => !HasOverlayCard;
     public EnvironmentalAlertPopupCard? EnvironmentalCard { get; init; }
     public bool HasEnvironmentalCard => EnvironmentalCard is not null;
-    public bool HasGenericAlert => HasNoOverlayCard && !IsMiningSiteAlert && !HasEnvironmentalCard;
+    public XmppFeedCardVm? FeedCard { get; init; }
+    public bool HasFeedCard => FeedCard is not null;
+    public bool HasGenericAlert => HasNoOverlayCard && !IsMiningSiteAlert && !HasEnvironmentalCard && !HasFeedCard;
     public int? JumpCount { get; init; }
     public bool HasJumpCount => JumpCount is not null;
     public string JumpCountLabel => JumpCount is int jumps ? $"{jumps}J" : string.Empty;

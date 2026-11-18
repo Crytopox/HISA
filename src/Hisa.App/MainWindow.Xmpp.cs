@@ -18,6 +18,8 @@ public partial class MainWindow
     {
         _xmpp = client;
         _xmppPortraitLoader = portraitLoader;
+        if (_alertPopupWindow is not null)
+            _alertPopupWindow.XmppClient = client;
         client.AlertReceived += OnXmppAlert;
         _ = RestoreXmppWindowIfNeededAsync();
     }
@@ -73,15 +75,20 @@ public partial class MainWindow
         if (!alert.Popup || !_alertPopupSettings.Enabled) return;
         var message = alert.Message;
         var preview = message.Body.Length <= 240 ? message.Body : $"{message.Body[..240]}…";
+        var title = !string.IsNullOrWhiteSpace(message.FeedTitle) ? message.FeedTitle :
+            message.IsFleetPing ? "Fleet ping · Directorbot" :
+            message.ShowInFleetFeed ? $"Alert · {message.Conversation.Jid}" : message.Conversation.Jid;
+        var feedCard = XmppFeedCards.CreateMessageCard(message, _xmpp?.Account?.Jid);
+        if (feedCard.IsFleet)
+            _xmppPortraitLoader?.Ensure([feedCard]);
         ShowAlertPopupCard(new AlertPopupCard
         {
-            Title = !string.IsNullOrWhiteSpace(message.FeedTitle) ? message.FeedTitle :
-                message.IsFleetPing ? "Fleet ping · Directorbot" :
-                message.ShowInFleetFeed ? $"Alert · {message.Conversation.Jid}" : message.Conversation.Jid,
+            Title = title,
             Details = preview,
             TimestampLabel = message.Timestamp.ToLocalTime().ToString("HH:mm:ss"),
             ExpiresAtUtc = DateTime.UtcNow.AddSeconds(_alertPopupSettings.AutoDismissSeconds),
-            OpenConversation = () => ShowXmppWindow(message.Conversation, message.IsFleetPing)
+            OpenConversation = () => ShowXmppWindow(message.Conversation, message.IsFleetPing),
+            FeedCard = feedCard.IsFleet ? feedCard : null
         });
     });
 }

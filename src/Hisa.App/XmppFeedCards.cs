@@ -70,6 +70,12 @@ internal static class XmppFeedCards
         Build(messages.Select(message => ((XmppMessage?)message, ((string, string, XmppMessage)?)null)),
             accountJid);
 
+    public static void RefreshAges(IEnumerable<XmppFeedCardVm> cards, DateTimeOffset? now = null)
+    {
+        foreach (var card in cards)
+            card.RefreshAge(now);
+    }
+
     public static IEnumerable<(XmppMessage Message, double Top, double Bottom)> RealizedRows(
         ItemsControl list, ScrollViewer scroll, IReadOnlyList<XmppFeedCardVm> cards, bool readableOnly)
     {

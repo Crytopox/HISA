@@ -1,0 +1,143 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:Hisa.App"
+             x:Class="Hisa.App.XmppFeedCardView"
+             x:DataType="local:XmppFeedCardVm">
+  <UserControl.Styles>
+    <Style Selector="Button.feed-action">
+      <Setter Property="Padding" Value="8,3" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="FontWeight" Value="Bold" />
+      <Setter Property="Foreground" Value="#E8EEF7" />
+      <Setter Property="Background" Value="#1E3A52" />
+      <Setter Property="BorderBrush" Value="#5EB8E8" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="3" />
+    </Style>
+    <Style Selector="Button.feed-action:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#2A4F6E" />
+      <Setter Property="Foreground" Value="#FFFFFF" />
+    </Style>
+  </UserControl.Styles>
+  <Border Background="{Binding CardBackground}" CornerRadius="5" Padding="0"
+          BorderBrush="{Binding CardBorder}" BorderThickness="1" ClipToBounds="True">
+    <Grid ColumnDefinitions="Auto,*">
+      <Border Grid.Column="0" Width="{Binding AccentWidth}"
+              Background="{Binding AccentBar}" IsVisible="{Binding ShowAccent}" />
+      <StackPanel Grid.Column="1" Spacing="6" Margin="10,8,10,8">
+        <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding ShowActions}">
+          <StackPanel Spacing="2">
+            <Grid ColumnDefinitions="*,Auto" HorizontalAlignment="Left">
+              <TextBlock Text="{Binding Title}" FontWeight="Bold"
+                         FontSize="{Binding TitleSize}" Foreground="#E8EEF7"
+                         TextWrapping="Wrap" VerticalAlignment="Center" />
+              <Border Grid.Column="1" CornerRadius="3" Padding="6,2" Margin="6,0,0,0"
+                      Background="{Binding PapChipBackground}"
+                      IsVisible="{Binding HasPap}" VerticalAlignment="Center">
+                <TextBlock Text="{Binding PapType}" FontSize="10" FontWeight="Bold"
+                           Foreground="{Binding PapChipForeground}" />
+              </Border>
+            </Grid>
+            <local:XmppLinkText BodyText="{Binding Subtitle}" FontSize="11" Foreground="#9AA8BC"
+                                IsVisible="{Binding HasSubtitle}" TextWrapping="Wrap"
+                                LinkActivated="OnLinkActivated" />
+          </StackPanel>
+          <TextBlock Grid.Column="1" Text="{Binding Time}" FontSize="11" FontWeight="SemiBold"
+                     Foreground="#9BABC2" Margin="8,1,0,0" IsVisible="{Binding HasTime}" />
+        </Grid>
+        <local:XmppLinkText BodyText="{Binding Body}" FontSize="{Binding BodySize}" FontWeight="Normal"
+                            Foreground="#E8EEF7" TextWrapping="Wrap" LineHeight="18"
+                            IsVisible="{Binding HasBody}" LinkActivated="OnLinkActivated" />
+        <ItemsControl ItemsSource="{Binding Lineup}" IsVisible="{Binding HasLineup}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate DataType="local:XmppFeedCommanderVm">
+              <StackPanel>
+                <Border Classes="fleet-divider" Height="1" Background="#40E0A05A" Margin="0,7"
+                        IsVisible="{Binding HasDivider}" />
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                  <Border Width="40" Height="40" CornerRadius="20" ClipToBounds="True"
+                          Background="#152033" BorderBrush="#E0A05A" BorderThickness="1">
+                    <Panel>
+                      <TextBlock Text="FC" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                 FontSize="11" FontWeight="Bold" Foreground="#9AA8BC"
+                                 IsVisible="{Binding ShowPortraitPlaceholder}" />
+                      <Image Source="{Binding Portrait}" Width="40" Height="40"
+                             Stretch="UniformToFill" IsVisible="{Binding ShowPortrait}" />
+                    </Panel>
+                  </Border>
+                  <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                    <TextBlock Text="Fleet Commander" FontSize="10" FontWeight="SemiBold"
+                               Foreground="#E0C06A" />
+                    <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="Bold"
+                               Foreground="#E8EEF7" TextWrapping="Wrap" />
+                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6" Margin="0,2,0,0"
+                          IsVisible="{Binding HasCommsLabel}">
+                      <TextBlock Text="Comms" FontSize="11" FontWeight="SemiBold" Foreground="#E0C06A"
+                                 VerticalAlignment="Center" />
+                      <local:XmppLinkText Grid.Column="1" BodyText="{Binding CommsLabel}"
+                                          Document="{Binding CommsDocument}" FontSize="12" FontWeight="Bold"
+                                          UnderlineLinks="False" Foreground="#E8EEF7"
+                                          TextWrapping="Wrap" LinkActivated="OnLinkActivated" />
+                    </Grid>
+                  </StackPanel>
+                </Grid>
+              </StackPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <StackPanel Spacing="4" IsVisible="{Binding IsFleet}">
+          <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding HasFc}">
+            <Border Width="40" Height="40" CornerRadius="20" ClipToBounds="True"
+                    Background="#152033" BorderBrush="#E0A05A" BorderThickness="1">
+              <Panel>
+                <TextBlock Text="FC" HorizontalAlignment="Center" VerticalAlignment="Center"
+                           FontSize="11" FontWeight="Bold" Foreground="#9AA8BC"
+                           IsVisible="{Binding Commander.ShowPortraitPlaceholder}" />
+                <Image Source="{Binding Commander.Portrait}" Width="40" Height="40"
+                       Stretch="UniformToFill" IsVisible="{Binding Commander.ShowPortrait}" />
+              </Panel>
+            </Border>
+            <StackPanel VerticalAlignment="Center" Spacing="1">
+              <TextBlock Text="Fleet Commander" FontSize="10" FontWeight="SemiBold"
+                         Foreground="#E0C06A" />
+              <TextBlock Text="{Binding FcName}" FontSize="14" FontWeight="Bold"
+                         Foreground="#E8EEF7" />
+            </StackPanel>
+          </StackPanel>
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" IsVisible="{Binding HasFormup}">
+            <TextBlock Text="Formup" FontSize="11" FontWeight="SemiBold" Foreground="#E0C06A" />
+            <local:XmppLinkText Grid.Column="1" BodyText="{Binding Formup}" FontSize="13" FontWeight="Bold"
+                                Foreground="#E8EEF7" TextWrapping="Wrap" LinkActivated="OnLinkActivated" />
+          </Grid>
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" IsVisible="{Binding ShowCommsField}">
+            <TextBlock Text="Comms" FontSize="11" FontWeight="SemiBold" Foreground="#E0C06A" />
+            <local:XmppLinkText Grid.Column="1" BodyText="{Binding CommsLabel}"
+                                Document="{Binding CommsDocument}" FontSize="13" FontWeight="Bold"
+                                UnderlineLinks="False" Foreground="#E8EEF7"
+                                TextWrapping="Wrap" LinkActivated="OnLinkActivated" />
+          </Grid>
+          <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto"
+                ColumnSpacing="8" IsVisible="{Binding HasDoctrine}">
+            <TextBlock Text="Doctrine" FontSize="11" FontWeight="SemiBold" Foreground="#E0C06A" />
+            <local:XmppLinkText Grid.Column="1" BodyText="{Binding Doctrine}" FontSize="13" FontWeight="Bold"
+                                Foreground="#E8EEF7" TextWrapping="Wrap" LinkActivated="OnLinkActivated" />
+            <local:XmppLinkText Grid.Row="1" Grid.Column="1" BodyText="{Binding Notes}"
+                                FontSize="13" FontWeight="Normal" Foreground="#E8EEF7"
+                                TextWrapping="Wrap" IsVisible="{Binding HasNotes}" LinkActivated="OnLinkActivated" />
+          </Grid>
+        </StackPanel>
+        <StackPanel x:Name="FeedActionsPanel" Orientation="Horizontal" Spacing="6">
+          <Button Classes="feed-action" Content="Open Message" Tag="{Binding Message}"
+                  Click="OnOpenMessage" />
+          <Button Classes="feed-action" Content="Copy raw" Tag="{Binding Message}"
+                  Click="OnCopyRaw" />
+          <Button Classes="feed-action" Content="Open Mumble" Tag="{Binding CommsUrl}"
+                  Click="OnOpenMumble" IsVisible="{Binding HasComms}" />
+        </StackPanel>
+      </StackPanel>
+      <Border Grid.ColumnSpan="2" Height="2" Background="#D96464"
+              VerticalAlignment="Top" IsHitTestVisible="False"
+              IsVisible="{Binding IsUnreadStart}" />
+    </Grid>
+  </Border>
+</UserControl>

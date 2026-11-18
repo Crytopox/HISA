@@ -80,7 +80,8 @@ public sealed record XmppDisplayPreferences(
     string FontFamily = "Inter",
     double MessageFontSize = 13,
     bool AlwaysShowMessageHeaders = true,
-    double? MessageBlockPadding = null)
+    double? MessageBlockPadding = null,
+    bool? ScrollToLatestOnTabSwitch = null)
 {
     public const double DefaultMessageBlockPadding = 2;
     public const double MaxMessageBlockPadding = 12;
@@ -89,6 +90,8 @@ public sealed record XmppDisplayPreferences(
         padding is double value && double.IsFinite(value)
             ? Math.Clamp(value, 0, MaxMessageBlockPadding)
             : DefaultMessageBlockPadding;
+
+    public static bool NormalizeScrollToLatestOnTabSwitch(bool? value) => value != false;
 }
 public sealed record XmppAlertSoundPreferences(
     bool SoftPingDirectMessages = true,

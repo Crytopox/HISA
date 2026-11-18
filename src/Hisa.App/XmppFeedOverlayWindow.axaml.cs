@@ -20,6 +20,10 @@ public partial class XmppFeedOverlayWindow : Window
     private bool _visibleChanged = true;
     private readonly XmppReadFocusDelay _readFocus = new();
     private int _dirty = 1;
+    private DateTime _feedAgeRendered;
+    private sealed record ResizeGesture(WindowEdge Edge, Point PointerStart, PixelPoint WindowStart,
+        Size WindowSize, double Scaling, Control Handle, IPointer Pointer);
+    private ResizeGesture? _resizeGesture;
 
     public XmppFeedOverlayWindow() => InitializeComponent();
 
@@ -34,6 +38,8 @@ public partial class XmppFeedOverlayWindow : Window
         _client.StateChanged += OnClientStateChanged;
         _client.MessageReceived += OnMessageReceived;
         AddHandler(PointerPressedEvent, XmppLinkText.ClearSelectionOnOutsideClick, RoutingStrategies.Tunnel);
+        AddHandler(PointerMovedEvent, OnResizePointerMoved, RoutingStrategies.Tunnel, handledEventsToo: true);
+        AddHandler(PointerReleasedEvent, OnResizePointerReleased, RoutingStrategies.Tunnel, handledEventsToo: true);
         Activated += (_, _) => UpdateReadFocus();
         Deactivated += (_, _) => _readFocus.Update(null);
         PropertyChanged += (_, args) =>
@@ -48,6 +54,7 @@ public partial class XmppFeedOverlayWindow : Window
         {
             _closed = true;
             _refreshTimer.Stop();
+            EndResize();
             _client.StateChanged -= OnClientStateChanged;
             _client.MessageReceived -= OnMessageReceived;
         };
@@ -65,12 +72,18 @@ public partial class XmppFeedOverlayWindow : Window
     {
         if (_refreshing || _closed) return;
         var refresh = IsVisible && Interlocked.Exchange(ref _dirty, 0) != 0;
+        var ageDue = IsVisible && DateTime.UtcNow - _feedAgeRendered > TimeSpan.FromSeconds(10);
         UpdateReadFocus();
-        if (!refresh && !_readFocus.HasDueRows) return;
+        if (!refresh && !_readFocus.HasDueRows && !ageDue) return;
         _refreshing = true;
         try
         {
             if (refresh) await RefreshAsync();
+            if (IsVisible && DateTime.UtcNow - _feedAgeRendered > TimeSpan.FromSeconds(10))
+            {
+                _feedAgeRendered = DateTime.UtcNow;
+                XmppFeedCards.RefreshAges(_cards);
+            }
             UpdateReadFocus();
             if (!_closed && _readFocus.HasDueRows) await _readFocus.MarkDueRowsAsync(_client);
         }
@@ -129,6 +142,57 @@ public partial class XmppFeedOverlayWindow : Window
             BeginMoveDrag(e);
     }
 
+    private void OnResizePointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed ||
+            sender is not Control { Tag: string tag } handle ||
+            !Enum.TryParse<WindowEdge>(tag, out var edge))
+            return;
+        EndResize();
+        _resizeGesture = new(edge, GetResizePointerPosition(e), Position, Bounds.Size, RenderScaling, handle, e.Pointer);
+        handle.PointerCaptureLost += OnResizePointerCaptureLost;
+        e.Pointer.Capture(handle);
+        e.Handled = true;
+    }
+
+    private void OnResizePointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (_resizeGesture is not { } resize || e.Pointer != resize.Pointer) return;
+        var point = GetResizePointerPosition(e);
+        var dx = (point.X - resize.PointerStart.X) / resize.Scaling;
+        var dy = (point.Y - resize.PointerStart.Y) / resize.Scaling;
+        var east = resize.Edge is WindowEdge.East or WindowEdge.NorthEast or WindowEdge.SouthEast;
+        var south = resize.Edge is WindowEdge.South or WindowEdge.SouthEast or WindowEdge.SouthWest;
+        Width = Math.Max(MinWidth, resize.WindowSize.Width + (east ? dx : 0));
+        Height = Math.Max(MinHeight, resize.WindowSize.Height + (south ? dy : 0));
+        e.Handled = true;
+    }
+
+    private void OnResizePointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (_resizeGesture is null || e.Pointer != _resizeGesture.Pointer) return;
+        EndResize();
+        e.Handled = true;
+    }
+
+    private void OnResizePointerCaptureLost(object? sender, PointerCaptureLostEventArgs e) => EndResize();
+
+    private Point GetResizePointerPosition(PointerEventArgs e)
+    {
+        var origin = this.PointToScreen(default);
+        var point = e.GetPosition(this);
+        return new Point(origin.X + point.X * RenderScaling, origin.Y + point.Y * RenderScaling);
+    }
+
+    private void EndResize()
+    {
+        if (_resizeGesture is not { } resize) return;
+        _resizeGesture = null;
+        resize.Handle.PointerCaptureLost -= OnResizePointerCaptureLost;
+        if (resize.Pointer.Captured == resize.Handle)
+            resize.Pointer.Capture(null);
+    }
+
     private void OnPinChanged(object? sender, RoutedEventArgs e) =>
         Topmost = PinToggle.IsChecked == true;
 
@@ -159,7 +223,7 @@ public partial class XmppFeedOverlayWindow : Window
         }
     }
 
-    private async void OnLinkActivated(object? sender, XmppLinkActivatedEventArgs e) =>
+    private async void OnCardLinkActivated(object? sender, XmppLinkActivatedEventArgs e) =>
         await XmppLinkOpening.OpenAsync(this, _client, e.Url);
 
     private async void OnOpenMumble(object? sender, RoutedEventArgs e)

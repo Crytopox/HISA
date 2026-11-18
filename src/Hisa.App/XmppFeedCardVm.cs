@@ -6,8 +6,10 @@ using Hisa.Core.Models;
 
 namespace Hisa.App;
 
-public sealed class XmppFeedCardVm
+public sealed class XmppFeedCardVm : INotifyPropertyChanged
 {
+    private string _time;
+
     public XmppFeedCardVm(
         XmppMessage message,
         bool isFleet,
@@ -37,7 +39,7 @@ public sealed class XmppFeedCardVm
         LocalId = message.LocalId;
         IsFleet = isFleet;
         Title = title;
-        Time = time;
+        _time = time;
         Subtitle = subtitle ?? "";
         Body = body ?? "";
         PapType = papType;
@@ -56,6 +58,8 @@ public sealed class XmppFeedCardVm
         CollapseKey = collapseKey ?? "";
     }
 
+    public event PropertyChangedEventHandler? PropertyChanged;
+
     public XmppMessage Message { get; }
     public long LocalId { get; }
     public bool IsFleet { get; }
@@ -63,7 +67,19 @@ public sealed class XmppFeedCardVm
     public bool IsCollapseSummary { get; }
     public string CollapseKey { get; }
     public string Title { get; }
-    public string Time { get; }
+
+    public string Time
+    {
+        get => _time;
+        private set
+        {
+            if (_time == value) return;
+            _time = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasTime));
+        }
+    }
+
     public bool HasTime => !string.IsNullOrEmpty(Time);
     public string Subtitle { get; }
     public bool HasSubtitle => !string.IsNullOrWhiteSpace(Subtitle);
@@ -101,6 +117,15 @@ public sealed class XmppFeedCardVm
     public double TitleSize => IsFleet ? 16 : 14;
     public Bitmap? Portrait => Commander.Portrait;
     public bool ShowPortraitPlaceholder => Commander.ShowPortraitPlaceholder;
+
+    public void RefreshAge(DateTimeOffset? now = null)
+    {
+        if (IsCollapseSummary) return;
+        Time = XmppFeedAge.Format(Message.Timestamp, now);
+    }
+
+    private void OnPropertyChanged([CallerMemberName] string? name = null) =>
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }
 
 public sealed class XmppFeedCommanderVm : INotifyPropertyChanged

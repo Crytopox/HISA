@@ -25,7 +25,7 @@ public partial class MainWindow
 
             Add("Open HISA", RestoreFromTray);
             menu.Items.Add(new NativeMenuItemSeparator());
-            Add("Jabber", () => ShowXmppWindow());
+            Add("Jabber Client", () => ShowXmppWindow());
             Add("Intel History", OpenTrayIntelHistory);
             Add("Fleet Boost Tracker", () => OnOpenFleetBoostTrackerClicked(this, new()));
             Add("Mining Sites Tracker", () => OpenMiningSitesWindow());
@@ -153,7 +153,7 @@ public partial class MainWindow
     private void OnMainWindowClosing(object? sender, WindowClosingEventArgs e)
     {
         if (!_isClosingApp && !e.IsProgrammatic && e.CloseReason == WindowCloseReason.WindowClosing &&
-            _trayIcon is not null && _boundVm?.KeepRunningInTray == true)
+            ShouldHideMapToTrayOnClose())
         {
             e.Cancel = true;
             _hiddenToTray = true;
@@ -170,5 +170,26 @@ public partial class MainWindow
         DetachXmpp();
         CloseAuxiliaryWindows();
     }
+
+    private bool ShouldHideMapToTrayOnClose()
+    {
+        if (_trayIcon is null) return false;
+        if (_boundVm?.CloseMapExitsApp == false && HasOpenToolWindows()) return true;
+        return _boundVm?.KeepRunningInTray == true;
+    }
+
+    private bool HasOpenToolWindows() =>
+        IsOpenToolWindow(_xmppWindow) ||
+        IsOpenToolWindow(_intelHistoryWindow) ||
+        IsOpenToolWindow(_fleetBoostTrackerWindow) ||
+        IsOpenToolWindow(_probeFormationDesignerWindow) ||
+        IsOpenToolWindow(_miningStatsWindow) ||
+        IsOpenToolWindow(_miningSitesWindow) ||
+        IsOpenToolWindow(MiningOverlayWindow.Current) ||
+        IsOpenToolWindow(_jumpRouteOptimizerWindow) ||
+        IsOpenToolWindow(_lyCoveragePlannerWindow) ||
+        IsOpenToolWindow(_zkillmailsWindow);
+
+    private static bool IsOpenToolWindow(Window? window) => window is { IsVisible: true };
 }
 

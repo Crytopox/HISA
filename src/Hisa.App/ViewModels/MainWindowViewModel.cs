@@ -270,6 +270,7 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
     private bool _stretchMapToWindow;
     private bool _autoHideNavigation;
     private bool _keepRunningInTray;
+    private bool _closeMapExitsApp = true;
     private bool _isTopNavigationCollapsed;
     private bool _isBottomNavigationCollapsed;
     private bool _isDisplaySettingsOpen;
@@ -475,6 +476,7 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
     private const string StretchMapToWindowKey = "Map.StretchToWindow";
     private const string AutoHideNavigationKey = "Window.AutoHideNavigation";
     private const string KeepRunningInTrayKey = "Window.KeepRunningInTray";
+    private const string CloseMapExitsAppKey = "Window.CloseMapExitsApp";
     private const string NodeColorModeKey = "Map.NodeColorMode";
     private const string NodeBackgroundColorModeKey = "Map.NodeBackgroundColorMode";
     private const string HostileColorSettingsKey = "Map.HostileColorSettings";
@@ -2828,6 +2830,7 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
         StretchMapToWindow = await _settingsService.GetAsync<bool?>(StretchMapToWindowKey) ?? false;
         AutoHideNavigation = await _settingsService.GetAsync<bool?>(AutoHideNavigationKey) ?? false;
         KeepRunningInTray = await _settingsService.GetAsync<bool?>(KeepRunningInTrayKey) ?? false;
+        CloseMapExitsApp = await _settingsService.GetAsync<bool?>(CloseMapExitsAppKey) ?? true;
         NodeColorMode = await _settingsService.GetAsync<MapNodeColorMode?>(NodeColorModeKey) ?? MapNodeColorMode.None;
         NodeBackgroundColorMode = await _settingsService.GetAsync<MapNodeColorMode?>(NodeBackgroundColorModeKey) ?? MapNodeColorMode.None;
         HostileColorSettings = SanitizeHostileColorSettings(
@@ -3286,6 +3289,16 @@ public sealed partial class MainWindowViewModel : INotifyPropertyChanged
         {
             if (SetProperty(ref _keepRunningInTray, value) && !_isInitializing)
                 _ = _settingsService.SetAsync(KeepRunningInTrayKey, value);
+        }
+    }
+
+    public bool CloseMapExitsApp
+    {
+        get => _closeMapExitsApp;
+        set
+        {
+            if (SetProperty(ref _closeMapExitsApp, value) && !_isInitializing)
+                _ = _settingsService.SetAsync(CloseMapExitsAppKey, value);
         }
     }
 

@@ -21,7 +21,10 @@
             <CheckBox IsChecked="{Binding KeepRunningInTray}">
               <TextBlock Text="Keep HISA running in the tray when I close the main window" TextWrapping="Wrap" />
             </CheckBox>
-            <TextBlock Text="Use Quit in the tray menu to exit HISA."
+            <CheckBox IsChecked="{Binding CloseMapExitsApp}">
+              <TextBlock Text="Closing the map closes HISA" TextWrapping="Wrap" />
+            </CheckBox>
+            <TextBlock Text="When off, closing the map leaves open tools running in the tray. Use Quit in the tray menu to exit HISA."
                        Foreground="#8A96A8" TextWrapping="Wrap" />
           </StackPanel>
         </Border>

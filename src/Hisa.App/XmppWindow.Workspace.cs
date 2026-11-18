@@ -83,6 +83,7 @@ public partial class XmppWindow
     private readonly List<XmppConversation?> _splitMemory = [];
     private long _topicNoticeId = -1;
     private DateTime _topicAgeRendered;
+    private DateTime _feedAgeRendered;
     private ConversationTab? _dragTab;
     private Point? _dragStart;
     private bool _dragging;
@@ -307,8 +308,10 @@ public partial class XmppWindow
         var refresh = IsVisible && Interlocked.Exchange(ref _dirty, 0) != 0;
         var ageDue = IsVisible && (TopicPanel.IsVisible || SplitTopicPanel.IsVisible) &&
             DateTime.UtcNow - _topicAgeRendered > TimeSpan.FromSeconds(30);
+        var feedAgeDue = IsVisible && FeedList.IsVisible &&
+            DateTime.UtcNow - _feedAgeRendered > TimeSpan.FromSeconds(10);
         UpdateReadFocus();
-        if (!refresh && !_readFocus.HasDueRows && !ageDue) return;
+        if (!refresh && !_readFocus.HasDueRows && !ageDue && !feedAgeDue) return;
         _refreshing = true;
         try
         {
@@ -318,6 +321,12 @@ public partial class XmppWindow
             {
                 _topicAgeRendered = DateTime.UtcNow;
                 RefreshTopicAge();
+            }
+            if (IsVisible && FeedList.IsVisible &&
+                DateTime.UtcNow - _feedAgeRendered > TimeSpan.FromSeconds(10))
+            {
+                _feedAgeRendered = DateTime.UtcNow;
+                XmppFeedCards.RefreshAges(_feedCards);
             }
             UpdateReadFocus();
             if (!_closed && _readFocus.HasDueRows) await _readFocus.MarkDueRowsAsync(_client);
@@ -1719,7 +1728,11 @@ public partial class XmppWindow
         ResetNickCompletion();
         RenderTabs();
         UpdateConversation();
-        RenderTranscript(tab, tab.Anchor, tab.Follow);
+        if (XmppDisplayPreferences.NormalizeScrollToLatestOnTabSwitch(
+                _client.DisplayPreferences.ScrollToLatestOnTabSwitch))
+            RenderTranscript(tab, null, follow: true);
+        else
+            RenderTranscript(tab, tab.Anchor, tab.Follow);
         tab.Header?.BringIntoView();
         QueueWorkspaceSave();
         Invalidate();

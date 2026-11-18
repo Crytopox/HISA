@@ -879,7 +879,8 @@ public partial class MainWindow : Window
             Width = _alertPopupSettings.Width,
             Height = _alertPopupSettings.Height,
             ShowActivated = false,
-            DataContext = _boundVm
+            DataContext = _boundVm,
+            XmppClient = _xmpp
         };
         _alertPopupWindow.DragPositionCommitted += OnAlertPopupDragPositionCommitted;
         _alertPopupWindow.SystemNavigationRequested += OnAlertPopupSystemNavigationRequested;

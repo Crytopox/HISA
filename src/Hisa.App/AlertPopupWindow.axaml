@@ -3,6 +3,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="clr-namespace:Hisa.App.ViewModels"
+        xmlns:local="clr-namespace:Hisa.App"
         mc:Ignorable="d" d:DesignWidth="360" d:DesignHeight="320"
         x:Class="Hisa.App.AlertPopupWindow"
         Title="Alerts"
@@ -315,6 +316,21 @@
                 </Grid>
               </Border>
             </Grid>
+            <Border IsVisible="{Binding HasFeedCard}" Background="Transparent">
+              <StackPanel Spacing="4">
+                <local:XmppFeedCardView DataContext="{Binding FeedCard}" ShowFeedActions="False"
+                                        LinkActivated="OnFeedLinkActivated" />
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <Button IsVisible="{Binding HasConversation}" Content="Open conversation" Click="OnConversationClicked"
+                          FontSize="11" Padding="5,2" />
+                  <Button Content="Open Mumble" Click="OnFeedOpenMumble"
+                          FontSize="11" Padding="5,2"
+                          IsVisible="{Binding FeedCard.HasComms}"
+                          Tag="{Binding FeedCard.CommsUrl}" />
+                </StackPanel>
+                <TextBlock Text="{Binding TimestampLabel}" Foreground="#BFD8FF" FontSize="9" FontWeight="Bold"/>
+              </StackPanel>
+            </Border>
             <Border IsVisible="{Binding HasGenericAlert}" Padding="6" Background="#182434" BorderBrush="#364D6D" BorderThickness="1" CornerRadius="6">
               <StackPanel Spacing="2">
                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="4">

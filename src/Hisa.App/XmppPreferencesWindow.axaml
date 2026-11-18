@@ -148,6 +148,7 @@
                     <CheckBox x:Name="AlternatingBox" Content="Alternate message row colors" />
                     <CheckBox x:Name="OccupantsBox" Content="Show people sidebar for rooms by default" />
                     <CheckBox x:Name="HeadersBox" Content="Show timestamp and name on every message" />
+                    <CheckBox x:Name="ScrollLatestBox" Content="Scroll to latest when switching tabs" />
                   </StackPanel>
 
                   <StackPanel x:Name="FiltersPanel" Spacing="8" IsVisible="False">

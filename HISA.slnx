@@ -1,5 +1,11 @@
 <Solution>
   <Folder Name="/src/">
+    <File Path=".gitignore" />
+    <File Path="HISA_Project_Plan.md" />
+    <File Path="LICENSE" />
+    <File Path="README.md" />
+    <File Path="SDE Mapping.md" />
+    <File Path="THIRD-PARTY-NOTICES.md" />
     <Project Path="src/Hisa.App/Hisa.App.csproj" />
     <Project Path="src/Hisa.Core/Hisa.Core.csproj" />
     <Project Path="src/Hisa.Data/Hisa.Data.csproj" />

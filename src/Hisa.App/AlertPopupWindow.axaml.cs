@@ -3,7 +3,9 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia;
 using Avalonia.Media;
+using Hisa.App.Services;
 using Hisa.App.ViewModels;
+using Hisa.Services.Xmpp;
 using System.Diagnostics;
 
 namespace Hisa.App;
@@ -11,6 +13,7 @@ namespace Hisa.App;
 public partial class AlertPopupWindow : Window
 {
     private bool _isDragModeEnabled;
+    internal XmppClientService? XmppClient { get; set; }
 
     public bool IsDragModeEnabled
     {
@@ -42,6 +45,23 @@ public partial class AlertPopupWindow : Window
     }
 
     private void OnConversationClicked(object? sender, RoutedEventArgs e) => InvokeConversation(sender);
+
+    private async void OnFeedLinkActivated(object? sender, XmppLinkActivatedEventArgs e)
+    {
+        if (XmppClient is { } client)
+            await XmppLinkOpening.OpenAsync(this, client, e.Url);
+        else
+            ExternalUrlLauncher.Open(e.Url.AbsoluteUri);
+    }
+
+    private async void OnFeedOpenMumble(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: Uri url }) return;
+        if (XmppClient is { } client)
+            await XmppLinkOpening.OpenAsync(this, client, url);
+        else
+            ExternalUrlLauncher.Open(url.AbsoluteUri);
+    }
 
     private void ApplyDragModeVisuals()
     {
