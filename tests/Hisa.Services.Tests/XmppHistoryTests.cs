@@ -333,7 +333,7 @@ public sealed class XmppHistoryTests
             Assert.False(alerts[0].Message.IsFleetPing);
             Assert.Equal("Directorbot", alerts[0].Message.FeedTitle);
             Assert.True(alerts[0].Message.ShowInFleetFeed);
-            Assert.Equal("soft-alert.wav", alerts[0].Sound);
+            Assert.Equal("pidgin_receive.wav", alerts[0].Sound);
             Assert.False(alerts[1].Popup);
             Assert.False(alerts[1].Message.IsFleetPing);
             Assert.Equal(2, (await client.CountsAsync())[live.Conversation]);
@@ -426,13 +426,16 @@ public sealed class XmppHistoryTests
             Assert.Contains(goon.Rules, rule => rule.FleetPings);
             var directorbot = Assert.Single(goon.Rules, rule => rule.FleetPings);
             Assert.True(directorbot.ShowInFleetFeed);
+            Assert.False(directorbot.Highlight);
             Assert.Equal("Directorbot", directorbot.FeedTitle);
+            Assert.Equal("pidgin_receive.wav", directorbot.Sound);
             var bping = Assert.Single(goon.Rules, rule =>
                 rule.Source == XmppAddresses.Delve911 &&
                 string.Equals(rule.Text, "!bping all", StringComparison.OrdinalIgnoreCase));
             Assert.True(bping.ShowInFleetFeed);
             Assert.True(bping.Highlight);
-            Assert.Equal("Delve !bping", bping.FeedTitle);
+            Assert.Equal("Delve911", bping.FeedTitle);
+            Assert.Equal("pidgin_alert.wav", bping.Sound);
         }
         finally { await goon.StopAsync(stop.Token); }
     }
@@ -511,6 +514,7 @@ public sealed class XmppHistoryTests
             var message = Assert.Single(await client.ReadAsync(null, true));
             Assert.True(message.IsFleetPing);
             Assert.True(message.ShowInFleetFeed);
+            Assert.False(message.Highlight);
             Assert.Equal("Fleet ping", message.FeedTitle);
         }
         finally { await client.StopAsync(stop.Token); }
@@ -539,7 +543,7 @@ public sealed class XmppHistoryTests
             var message = Assert.Single(feed);
             Assert.True(message.ShowInFleetFeed);
             Assert.True(message.Highlight);
-            Assert.Equal("Delve !bping", message.FeedTitle);
+            Assert.Equal("Delve911", message.FeedTitle);
             Assert.Contains("Scout", message.FeedSubtitle);
             Assert.Contains("!bping all", message.FeedSubtitle);
         }

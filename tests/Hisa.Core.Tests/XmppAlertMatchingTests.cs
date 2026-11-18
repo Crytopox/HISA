@@ -69,6 +69,16 @@ public sealed class XmppAlertMatchingTests
         Assert.False(XmppAlertMatching.ShouldHighlight([rule], message with { Outgoing = true }));
     }
 
+    [Fact]
+    public void ShouldHighlightIgnoresStoredFleetPingHighlightWhenRuleHighlightIsOff()
+    {
+        var director = XmppAddresses.Directorbot("pilot@goonfleet.com");
+        var rule = Rule(XmppAlertSourceScope.Conversation, director) with { FleetPings = true, Highlight = false };
+        var message = Message(director, "Fleet up") with { Highlight = true, IsFleetPing = true };
+        Assert.False(XmppAlertMatching.ShouldHighlight([rule], message));
+        Assert.True(XmppAlertMatching.ShouldHighlight([rule with { Highlight = true }], message));
+    }
+
     private static XmppAlertRule Rule(XmppAlertSourceScope scope, XmppConversation source,
         XmppAlertMatch match = XmppAlertMatch.AnyMessage, string? text = null, string? sender = null) =>
         new(Guid.NewGuid(), source, match, text, true, null, SourceScope: scope, Sender: sender);

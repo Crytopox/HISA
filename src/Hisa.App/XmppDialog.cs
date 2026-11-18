@@ -73,7 +73,13 @@ internal sealed class XmppDialog : Window
             }
         });
 
-        var titleBar = new Grid { ColumnDefinitions = new("*,Auto"), Margin = new Thickness(4, 2, 2, 6) };
+        var titleBar = new Grid
+        {
+            ColumnDefinitions = new("*,Auto"),
+            Margin = new Thickness(4, 2, 2, 6),
+            Background = Brushes.Transparent,
+            Cursor = new Cursor(StandardCursorType.SizeAll)
+        };
         titleBar.PointerPressed += (_, e) =>
         {
             if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
@@ -86,9 +92,10 @@ internal sealed class XmppDialog : Window
             FontWeight = FontWeight.SemiBold,
             Foreground = TextPrimary,
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(6, 0, 0, 0)
+            Margin = new Thickness(6, 0, 0, 0),
+            IsHitTestVisible = false
         });
-        var close = new Button { Content = "×", FontSize = 15 };
+        var close = new Button { Content = "×", FontSize = 15, Cursor = new Cursor(StandardCursorType.Arrow) };
         close.Classes.Add("window");
         close.Classes.Add("close");
         ToolTip.SetTip(close, "Close");

@@ -99,10 +99,10 @@ public sealed record XmppDisplayPreferences(
 public sealed record XmppAlertSoundPreferences(
     bool SoftPingDirectMessages = true,
     double SoftPingDirectVolume = 0.25,
-    string SoftPingDirectSound = "soft-message.wav",
+    string SoftPingDirectSound = "pidgin_receive.wav",
     bool SoftPingMentions = true,
     double SoftPingMentionVolume = 0.25,
-    string SoftPingMentionSound = "soft-mention.wav");
+    string SoftPingMentionSound = "regular_notification.wav");
 public sealed record XmppOwnPresencePreferences(
     XmppPresenceShow Show = XmppPresenceShow.Online,
     string? StatusText = null);

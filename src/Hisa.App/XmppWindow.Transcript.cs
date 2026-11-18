@@ -37,8 +37,9 @@ public partial class XmppWindow
             var nickname = message.Conversation.Kind == XmppConversationKind.Room
                 ? _client.Rooms.FirstOrDefault(room => room.Jid == message.Conversation.Jid)?.Nickname
                 : null;
-            var highlight = message.Highlight ||
-                XmppAlertMatching.ShouldHighlight(highlightRules, message, nickname);
+            // Live rule state only — ignore stored Highlight so toggling the rule (and
+            // clearing the old fleet-ping force-flag) takes effect in Directorbot chat.
+            var highlight = XmppAlertMatching.ShouldHighlight(highlightRules, message, nickname);
             var dated = previous is null || previous.Timestamp.LocalDateTime.Date != message.Timestamp.LocalDateTime.Date;
             var firstUnread = message.Unread && !unreadDivider;
             unreadDivider |= message.Unread;
@@ -46,16 +47,14 @@ public partial class XmppWindow
                 (message.Conversation.Kind == XmppConversationKind.Direct ||
                  string.Equals(message.Sender, previous.Sender, StringComparison.Ordinal));
             var grouped = !feedView && !prefs.AlwaysShowMessageHeaders && !dated && !firstUnread && previous is not null &&
-                !message.IsFleetPing && !IsActionMessage(message) && !IsActionMessage(previous) && !highlight && sameSpeaker &&
+                !highlight && !IsActionMessage(message) && !IsActionMessage(previous) && sameSpeaker &&
                 message.Timestamp - previous.Timestamp <= TimeSpan.FromMinutes(3);
             var sender = DisplaySender(message);
-            var accent = message.IsFleetPing ? FleetPing :
-                highlight ? AlertHighlight :
+            var accent = highlight ? (message.IsFleetPing ? FleetPing : AlertHighlight) :
                 message.Mention ? Mention : Brushes.Transparent;
-            var bar = message.IsFleetPing ? FleetBar :
-                highlight ? AlertHighlightBar :
+            var bar = highlight ? (message.IsFleetPing ? FleetBar : AlertHighlightBar) :
                 message.Mention ? MentionBar : Brushes.Transparent;
-            var rowBg = message.IsFleetPing || highlight || message.Mention ? accent :
+            var rowBg = highlight || message.Mention ? accent :
                 prefs.AlternatingMessageColors && index % 2 == 1 ? AltRow : Brushes.Transparent;
             var divider = prefs.ShowMessageDividers && previous is not null && !firstUnread
                 ? new Thickness(0, 1, 0, 0) : new Thickness(0);

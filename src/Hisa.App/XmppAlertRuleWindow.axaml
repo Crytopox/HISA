@@ -65,11 +65,13 @@
   <Border Background="{StaticResource WinBg}" BorderBrush="{StaticResource Border}" BorderThickness="1" CornerRadius="6"
           ClipToBounds="True">
     <Grid RowDefinitions="Auto,*,Auto" Margin="4">
-      <Grid ColumnDefinitions="*,Auto" PointerPressed="OnTitleBarPressed" Margin="4,2,2,6">
+      <Grid ColumnDefinitions="*,Auto" Background="Transparent" Cursor="SizeAll"
+            PointerPressed="OnTitleBarPressed" Margin="4,2,2,6">
         <TextBlock x:Name="TitleText" Text="Alert rule" FontSize="13" FontWeight="SemiBold"
-                   Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center" Margin="6,0,0,0" />
+                   Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center" Margin="6,0,0,0"
+                   IsHitTestVisible="False" />
         <Button Grid.Column="1" Classes="window close" Content="×" Click="OnCancel" FontSize="15"
-                ToolTip.Tip="Close" />
+                Cursor="Arrow" ToolTip.Tip="Close" />
       </Grid>
 
       <Border Grid.Row="1" Background="{StaticResource PanelBg}" CornerRadius="4" Padding="12" Margin="2,0">

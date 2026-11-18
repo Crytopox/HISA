@@ -91,7 +91,7 @@ public sealed class XmppSoftPingTests
 
         await harness.Client.RecordAsync(account, ping, "pilot", harness.Token);
         var alert = Assert.Single(alerts);
-        Assert.Equal("soft-alert.wav", alert.Sound);
+        Assert.Equal("pidgin_receive.wav", alert.Sound);
         Assert.True(alert.Message.ShowInFleetFeed);
 
         var rule = Assert.Single(harness.Client.Rules, rule => rule.FleetPings);
@@ -122,7 +122,7 @@ public sealed class XmppSoftPingTests
         Assert.Single(alerts);
         await harness.Client.RecordAsync(Harness.Account, Dm("hello pilot", "unrelated"), "pilot", harness.Token);
         Assert.Equal(2, alerts.Count);
-        Assert.Equal("soft-mention.wav", alerts[1].Sound);
+        Assert.Equal("regular_notification.wav", alerts[1].Sound);
     }
 
     [Theory]

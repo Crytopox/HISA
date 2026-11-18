@@ -526,10 +526,10 @@ public sealed partial class XmppClientService : BackgroundService
         {
             SoftPingDirectVolume = Math.Clamp(preferences.SoftPingDirectVolume, 0, 1),
             SoftPingDirectSound = string.IsNullOrWhiteSpace(preferences.SoftPingDirectSound)
-                ? "soft-message.wav" : preferences.SoftPingDirectSound.Trim(),
+                ? "pidgin_receive.wav" : preferences.SoftPingDirectSound.Trim(),
             SoftPingMentionVolume = Math.Clamp(preferences.SoftPingMentionVolume, 0, 1),
             SoftPingMentionSound = string.IsNullOrWhiteSpace(preferences.SoftPingMentionSound)
-                ? "soft-mention.wav" : preferences.SoftPingMentionSound.Trim()
+                ? "regular_notification.wav" : preferences.SoftPingMentionSound.Trim()
         };
         Volatile.Write(ref _alertSoundPreferences, preferences);
         await _settings.SetAsync(AlertSoundPreferencesKey, preferences, _appToken);
@@ -702,7 +702,7 @@ public sealed partial class XmppClientService : BackgroundService
             };
         else
             rules.Insert(0, new(Guid.NewGuid(), source, XmppAlertMatch.AnyMessage, null,
-                true, "soft-alert.wav", FleetPings: true, ShowInFleetFeed: true, FeedTitle: "Directorbot"));
+                true, "pidgin_receive.wav", FleetPings: true, ShowInFleetFeed: true, FeedTitle: "Directorbot"));
         return rules;
     }
 
@@ -715,8 +715,8 @@ public sealed partial class XmppClientService : BackgroundService
 
         var rules = existing.ToList();
         rules.Add(new(Guid.NewGuid(), source, XmppAlertMatch.ContainsText, "!bping all",
-            true, "soft-alert.wav", ShowInFleetFeed: true, Highlight: true,
-            FeedTitle: "Delve !bping", FeedSubtitle: "{sender}: {body}"));
+            true, "pidgin_alert.wav", ShowInFleetFeed: true, Highlight: true,
+            FeedTitle: "Delve911", FeedSubtitle: "{sender}: {body}"));
         return rules;
     }
 
@@ -990,7 +990,7 @@ public sealed partial class XmppClientService : BackgroundService
         message = message with
         {
             ShowInFleetFeed = showInFeed,
-            Highlight = matched.Any(rule => rule.Highlight) || fleetPing is not null,
+            Highlight = matched.Any(rule => rule.Highlight),
             FeedTitle = showInFeed
                 ? (fleetPing is not null
                     ? "Fleet ping"

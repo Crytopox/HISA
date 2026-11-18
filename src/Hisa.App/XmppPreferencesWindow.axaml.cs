@@ -95,8 +95,8 @@ internal partial class XmppPreferencesWindow : Window
         EnsureSound(sounds, soft.SoftPingMentionSound);
         DirectSoundBox.ItemsSource = sounds;
         MentionSoundBox.ItemsSource = sounds;
-        DirectSoundBox.SelectedItem = PickSound(sounds, soft.SoftPingDirectSound, "soft-message.wav");
-        MentionSoundBox.SelectedItem = PickSound(sounds, soft.SoftPingMentionSound, "soft-mention.wav");
+        DirectSoundBox.SelectedItem = PickSound(sounds, soft.SoftPingDirectSound, "pidgin_receive.wav");
+        MentionSoundBox.SelectedItem = PickSound(sounds, soft.SoftPingMentionSound, "regular_notification.wav");
         _filters.Clear();
         _filters.AddRange(_client.MessageFilters);
         RefreshFilters();
@@ -208,10 +208,10 @@ internal partial class XmppPreferencesWindow : Window
     private void OnClose(object? sender, RoutedEventArgs e) => Close();
 
     private void PreviewDirectPing(object? sender, RoutedEventArgs e) =>
-        AlertSoundPlayer.Play(DirectSoundBox.SelectedItem as string ?? "soft-message.wav", DirectVolume.Value / 100);
+        AlertSoundPlayer.Play(DirectSoundBox.SelectedItem as string ?? "pidgin_receive.wav", DirectVolume.Value / 100);
 
     private void PreviewMentionPing(object? sender, RoutedEventArgs e) =>
-        AlertSoundPlayer.Play(MentionSoundBox.SelectedItem as string ?? "soft-mention.wav", MentionVolume.Value / 100);
+        AlertSoundPlayer.Play(MentionSoundBox.SelectedItem as string ?? "regular_notification.wav", MentionVolume.Value / 100);
 
     private void RefreshRules() =>
         RulesList.ItemsSource = _client.Rules.Select(rule => new RuleRow(rule)).ToArray();
@@ -340,10 +340,10 @@ internal partial class XmppPreferencesWindow : Window
         await _client.SaveAlertSoundPreferencesAsync(new(
             DirectPingBox.IsChecked == true,
             DirectVolume.Value / 100,
-            DirectSoundBox.SelectedItem as string ?? "soft-message.wav",
+            DirectSoundBox.SelectedItem as string ?? "pidgin_receive.wav",
             MentionPingBox.IsChecked == true,
             MentionVolume.Value / 100,
-            MentionSoundBox.SelectedItem as string ?? "soft-mention.wav"));
+            MentionSoundBox.SelectedItem as string ?? "regular_notification.wav"));
     }
 
     private async Task<bool> SaveAccountAsync()
