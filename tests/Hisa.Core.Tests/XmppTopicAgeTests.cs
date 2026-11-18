@@ -8,8 +8,8 @@ public sealed class XmppTopicAgeTests
     public void Format_IncludesShortAuthorWhenPresent()
     {
         var now = DateTimeOffset.Parse("2026-01-01T12:00:00Z");
-        var age = XmppTopicAge.Format(now.AddMinutes(-5), "pilot@goonfleet.com/Vile Rat", now);
-        Assert.Equal("Updated 5 minutes ago by Vile Rat", age);
+        var age = XmppTopicAge.Format(now.AddMinutes(-5), "pilot@example.org/Test FC", now);
+        Assert.Equal("Updated 5 minutes ago by Test FC", age);
     }
 
     [Fact]

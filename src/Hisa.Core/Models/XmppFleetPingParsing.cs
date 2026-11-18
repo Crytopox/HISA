@@ -109,7 +109,7 @@ public static partial class XmppFleetPingParsing
         }
 
         return commanders.Count >= 2 && hasComms
-            ? new(hasHeading ? "Locust Weekend Fleets" : "Fleet Lineup", hurf.Length == 0 ? null : hurf, commanders)
+            ? new(hasHeading ? "Mining Fleet Lineup" : "Fleet Lineup", hurf.Length == 0 ? null : hurf, commanders)
             : null;
     }
 
@@ -132,10 +132,25 @@ public static partial class XmppFleetPingParsing
     private static string NormalizeBroadcast(string body)
     {
         var text = body.Replace("\r\n", "\n").Replace('\r', '\n');
+        // Drop ZW-only padding lines before stripping Format chars (which would leave blank lines).
         text = PaddingLinePattern().Replace(text, "");
+        text = StripInvisibleFormat(text);
+        text = GluedFleetFieldPattern().Replace(text, "\n");
         text = FleetFieldPattern().Replace(text, field =>
             field.Groups["name"].Value + ": " + TrimFieldPadding(field.Groups["value"].Value));
         return text.Trim();
+    }
+
+    private static string StripInvisibleFormat(string text)
+    {
+        var buffer = new char[text.Length];
+        var n = 0;
+        foreach (var ch in text)
+        {
+            if (CharUnicodeInfo.GetUnicodeCategory(ch) != UnicodeCategory.Format)
+                buffer[n++] = ch;
+        }
+        return n == text.Length ? text : new string(buffer, 0, n);
     }
 
     private static string TrimFieldPadding(string value)
@@ -147,7 +162,8 @@ public static partial class XmppFleetPingParsing
         return value[start..end];
     }
 
-    private static bool IsFieldPadding(char value) => char.IsWhiteSpace(value) || value is '\u200D' or '\uFEFF';
+    private static bool IsFieldPadding(char value) =>
+        char.IsWhiteSpace(value) || CharUnicodeInfo.GetUnicodeCategory(value) == UnicodeCategory.Format;
 
     private static (string? Label, string? Url) ParseComms(string? value)
     {
@@ -164,18 +180,23 @@ public static partial class XmppFleetPingParsing
         RegexOptions.Multiline | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex FleetFieldPattern();
 
+    // Only split when a field label is glued to preceding non-whitespace (hurf/text), not when already line-started.
+    [GeneratedRegex(@"(?<=\S)[ \t]*(?=(?:FC Name|Formup Location|PAP Type|Comms|Doctrine)[ \t]*:)",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex GluedFleetFieldPattern();
+
     [GeneratedRegex(@"^[ \t]*(?<name>FC|Comms)[ \t]*:(?<value>[^\n]*)",
         RegexOptions.Multiline | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex LineupFieldPattern();
 
-    [GeneratedRegex(@"^[ \t\u200D\uFEFF]+$", RegexOptions.Multiline | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^[ \t\u200B\u200C\u200D\uFEFF]+$", RegexOptions.Multiline | RegexOptions.CultureInvariant)]
     private static partial Regex PaddingLinePattern();
 
     [GeneratedRegex(@"(?m)^~~~ This was a (?:(?:skirmishbot|coord) )?broadcast from [^\n]+? to [^\n]+? at (?<stamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,7})?) EVE ~~~\z",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex TimestampedFooterPattern();
 
-    [GeneratedRegex(@"~~~ This was a (?:skirmishbot|coord) broadcast from (.+?) to .+?~~~",
+    [GeneratedRegex(@"~~~ This was a (?:(?:skirmishbot|coord) )?broadcast from (.+?) to .+?~~~",
         RegexOptions.Singleline | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex FooterPattern();
 

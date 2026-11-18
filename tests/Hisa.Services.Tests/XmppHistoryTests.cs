@@ -64,20 +64,20 @@ public sealed class XmppHistoryTests
     private const string Broadcast = "Fleet up\n\n" +
         "~~~ This was a broadcast from dispatcher to all at 2026-11-16 18:15:29.909911 EVE ~~~";
     private const string CoordBroadcast = """
-        Blue Cap Tackeld ----- Get in Fleet and get ready to undock verry soon
+        Hostiles in staging ----- form up and prepare to undock soon
 
-        FC Name: Cobra Kanwari
-        Formup Location: C-J6MT
+        FC Name: Ada Nova
+        Formup Location: Z-TEST1
         PAP Type: Strategic
-        Comms: Op 10 https://gnf.lt/1oh4Y6V.html
-        Doctrine: Hammer Fleet (FNI) (Boosters > Ferox Navy Issue > Basilisk > Support)
-        Get your Ships Ready to Fight
-        ~~~ This was a coord broadcast from sapphire_bloodsbane to all at 2026-11-16 19:11:55.632889 EVE ~~~
+        Comms: Op 10 https://comms.example.test/op10.html
+        Doctrine: Sample Doctrine (SCN) (Boosters > Sample Cruiser > Logistics > Support)
+        Get your ships ready
+        ~~~ This was a coord broadcast from sample_coord to all at 2026-11-16 19:11:55.632889 EVE ~~~
         """;
 
     private static string AddCoordinatorPadding(string body) => body
-        .Replace(": Cobra", ":\u200D\uFEFF\u200D Cobra")
-        .Replace(": Hammer", ":\uFEFF\u200D Hammer")
+        .Replace(": Ada", ":\u200D\uFEFF\u200D Ada")
+        .Replace(": Sample", ":\uFEFF\u200D Sample")
         .Replace("\n~~~", "\n\u200D\uFEFF\u200D\n~~~");
 
     [Theory]
@@ -101,7 +101,7 @@ public sealed class XmppHistoryTests
             client.MessageReceived += received.Add;
             client.AlertReceived += alerts.Add;
 
-            var body = coordinator ? CoordBroadcast : Broadcast;
+            var body = (coordinator ? CoordBroadcast : Broadcast).Replace("\r\n", "\n");
             var copy = coordinator ? AddCoordinatorPadding(body) : body;
             var live = CreateGoonMessage(body, "live");
             await client.RecordAsync(account, live, null, token);
@@ -129,7 +129,7 @@ public sealed class XmppHistoryTests
             {
                 await client.RecordAsync(account, live with
                 {
-                    Body = body.Replace("Get your Ships Ready to Fight", "Stand down"),
+                    Body = body.Replace("Get your ships ready", "Stand down"),
                     IdentityKeys = ["changed-note"]
                 }, null, token);
                 Assert.Equal(3, received.Count);
@@ -497,10 +497,10 @@ public sealed class XmppHistoryTests
             const string body =
                 """
                 "Hurf"
-                FC Name: Vile Rat
-                Formup Location: 1DQ1-A
+                FC Name: Test FC
+                Formup Location: Q-EX01
                 PAP Type: Strategic
-                ~~~ This was a skirmishbot broadcast from bot to goonfleet ~~~
+                ~~~ This was a skirmishbot broadcast from bot to examplefleet ~~~
                 """;
             await client.RecordAsync(account, CreateGoonMessage(body, "fleet-card") with
             {
@@ -568,10 +568,10 @@ public sealed class XmppHistoryTests
         const string structured =
             """
             "Hurf"
-            FC Name: Vile Rat
-            Formup Location: 1DQ1-A
+            FC Name: Test FC
+            Formup Location: Q-EX01
             PAP Type: Strategic
-            ~~~ This was a skirmishbot broadcast from bot to goonfleet ~~~
+            ~~~ This was a skirmishbot broadcast from bot to examplefleet ~~~
             """;
         await history.InsertAsync(account, CreateMessage(structured, "structured") with { IsFleetPing = false }, token);
         var feed = await history.ReadAsync(account, null, true, null, token);

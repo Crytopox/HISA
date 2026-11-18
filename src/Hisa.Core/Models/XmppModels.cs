@@ -81,7 +81,8 @@ public sealed record XmppDisplayPreferences(
     double MessageFontSize = 13,
     bool AlwaysShowMessageHeaders = true,
     double? MessageBlockPadding = null,
-    bool? ScrollToLatestOnTabSwitch = null)
+    bool? ScrollToLatestOnTabSwitch = null,
+    bool? LeaveRoomOnTabClose = null)
 {
     public const double DefaultMessageBlockPadding = 2;
     public const double MaxMessageBlockPadding = 12;
@@ -92,6 +93,8 @@ public sealed record XmppDisplayPreferences(
             : DefaultMessageBlockPadding;
 
     public static bool NormalizeScrollToLatestOnTabSwitch(bool? value) => value != false;
+
+    public static bool NormalizeLeaveRoomOnTabClose(bool? value) => value != false;
 }
 public sealed record XmppAlertSoundPreferences(
     bool SoftPingDirectMessages = true,

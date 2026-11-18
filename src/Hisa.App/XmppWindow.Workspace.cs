@@ -1741,6 +1741,11 @@ public partial class XmppWindow
     private void CloseTab(ConversationTab tab)
     {
         if (tab.Conversation is null) return;
+        var leaveRoom = tab.Conversation is { Kind: XmppConversationKind.Room, Jid: var roomJid } &&
+            XmppDisplayPreferences.NormalizeLeaveRoomOnTabClose(_client.DisplayPreferences.LeaveRoomOnTabClose) &&
+            _client.JoinedRooms.Contains(roomJid)
+            ? roomJid
+            : null;
         if (tab.InSplit)
         {
             _tabs.Remove(tab);
@@ -1754,6 +1759,8 @@ public partial class XmppWindow
             RenderTabs();
             QueueWorkspaceSave();
             Invalidate();
+            if (leaveRoom is not null)
+                _ = RunAsync(() => _client.LeaveRoomAsync(leaveRoom));
             return;
         }
         var index = _tabs.IndexOf(tab);
@@ -1772,6 +1779,8 @@ public partial class XmppWindow
         SyncTabStripChildren(false);
         LayoutAllTabStrips();
         QueueWorkspaceSave();
+        if (leaveRoom is not null)
+            _ = RunAsync(() => _client.LeaveRoomAsync(leaveRoom));
     }
 
     private async void WorkspaceKeyDown(object? sender, KeyEventArgs args)

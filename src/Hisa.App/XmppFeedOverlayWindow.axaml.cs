@@ -103,10 +103,10 @@ public partial class XmppFeedOverlayWindow : Window
         _visibleChanged |= _readFocus.Update(focused ? this : null);
         if (!focused || !_visibleChanged || _cardsAccount is not { } account || _client.Account?.Jid != account) return;
         _visibleChanged = false;
-        var visible = XmppFeedCards.RealizedRows(FeedList, FeedScroll, _cards, readableOnly: true)
-            .Where(row => row.Message.Unread && row.Bottom > 0 && row.Top < FeedScroll.Viewport.Height)
-            .Select(row => row.Message);
-        _readFocus.Observe(account, feed: true, visible);
+        var unread = _cards
+            .Where(card => !card.IsCollapseSummary && card.Message.Unread)
+            .Select(card => card.Message);
+        _readFocus.Observe(account, feed: true, unread);
     }
 
     private void VisibleRowsChanged()

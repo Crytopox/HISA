@@ -5,45 +5,45 @@ namespace Hisa.Core.Tests;
 public sealed class XmppFleetPingParsingTests
 {
     [Fact]
-    public void TryParseLineup_PreservesLocustHurfAndSixCommanderChannels()
+    public void TryParseLineup_PreservesMiningHurfAndSixCommanderChannels()
     {
         const string padding = "\u200D\u200D\u200D\uFEFF\u200D\uFEFF";
         var body = $"""
-            Welcome to Locust Friday USTZ!
+            Welcome to Sample Mining Weekend!
 
             Mining Fleets
 
-            FC:{padding} Smeetherson
-            Comms:{padding} Op 4 https://gnf.lt/2eMgwE2.html
+            FC:{padding} Pilot Alpha
+            Comms:{padding} Op 4 https://comms.example.test/op4.html
 
-            FC:{padding} Gamero
-            Comms:{padding} Op 6 https://gnf.lt/bO9WiWH.html
+            FC:{padding} Pilot Bravo
+            Comms:{padding} Op 6 https://comms.example.test/op6.html
 
-            FC:{padding} Eliana Icegirl
-            Comms:{padding} o7 https://gnf.lt/EGcAES9.html
+            FC:{padding} Pilot Charlie
+            Comms:{padding} o7 https://comms.example.test/op7.html
 
-            FC:{padding} Wenchy The Destroyer
-            Comms:{padding} Op 8 https://gnf.lt/0Yi1Dua.html
+            FC:{padding} Pilot Delta
+            Comms:{padding} Op 8 https://comms.example.test/op8.html
 
-            FC:{padding} Tomcat Muutaras
-            Comms:{padding} Op 9 https://gnf.lt/vEALwCF.html
+            FC:{padding} Pilot Echo
+            Comms:{padding} Op 9 https://comms.example.test/op9.html
 
-            FC:{padding} EternumNoctis
-            Comms:{padding} Op 10 https\://gnf.lt/1oh4Y6V.html
+            FC:{padding} Pilot Foxtrot
+            Comms:{padding} Op 10 https\://comms.example.test/op10.html
             {padding}
-            ~~~ This was a broadcast from xiopa_charante to all at 2026-10-09 23:56:13.548604 EVE ~~~
+            ~~~ This was a broadcast from sample_poster to all at 2026-10-09 23:56:13.548604 EVE ~~~
             """;
         var lineup = Assert.IsType<XmppFleetLineup>(XmppFleetPingParsing.TryParseLineup(body));
-        Assert.Equal("Locust Weekend Fleets", lineup.Title);
-        Assert.Equal("Welcome to Locust Friday USTZ!", lineup.Hurf);
+        Assert.Equal("Mining Fleet Lineup", lineup.Title);
+        Assert.Equal("Welcome to Sample Mining Weekend!", lineup.Hurf);
         Assert.Equal(new XmppFleetCommander[]
         {
-            new("Smeetherson", "Op 4", "https://gnf.lt/2eMgwE2.html"),
-            new("Gamero", "Op 6", "https://gnf.lt/bO9WiWH.html"),
-            new("Eliana Icegirl", "o7", "https://gnf.lt/EGcAES9.html"),
-            new("Wenchy The Destroyer", "Op 8", "https://gnf.lt/0Yi1Dua.html"),
-            new("Tomcat Muutaras", "Op 9", "https://gnf.lt/vEALwCF.html"),
-            new("EternumNoctis", "Op 10", "https://gnf.lt/1oh4Y6V.html")
+            new("Pilot Alpha", "Op 4", "https://comms.example.test/op4.html"),
+            new("Pilot Bravo", "Op 6", "https://comms.example.test/op6.html"),
+            new("Pilot Charlie", "o7", "https://comms.example.test/op7.html"),
+            new("Pilot Delta", "Op 8", "https://comms.example.test/op8.html"),
+            new("Pilot Echo", "Op 9", "https://comms.example.test/op9.html"),
+            new("Pilot Foxtrot", "Op 10", "https://comms.example.test/op10.html")
         }, lineup.Commanders);
         Assert.Equal("Fleet Lineup", XmppFleetPingParsing.TryParseLineup(body.Replace("Mining Fleets", ""))?.Title);
         Assert.Null(XmppFleetPingParsing.TryParseLineup(body.Replace("FC:", "Commander:", StringComparison.Ordinal)));
@@ -55,41 +55,41 @@ public sealed class XmppFleetPingParsingTests
     {
         const string padding = "\u200D\u200D\u200D\uFEFF\u200D\uFEFF\u200D";
         var body = $"""
-            Blue Cap Tackeld ----- Get in Fleet and get ready to undock verry soon
+            Hostiles in staging ----- form up and prepare to undock soon
 
-            FC Name:{padding} Cobra Kanwari
-            Formup Location:{padding} C-J6MT
+            FC Name:{padding} Ada Nova
+            Formup Location:{padding} Z-TEST1
             PAP Type:{padding} Strategic
-            Comms:{padding} Op 10 https://gnf.lt/1oh4Y6V.html
-            Doctrine:{padding} Hammer Fleet (FNI) (Boosters > Ferox Navy Issue > Basilisk > Support)
-            Get your Ships Ready to Fight
+            Comms:{padding} Op 10 https://comms.example.test/op10.html
+            Doctrine:{padding} Sample Doctrine (SCN) (Boosters > Sample Cruiser > Logistics > Support)
+            Get your ships ready
             {padding}
-            ~~~ This was a coord broadcast from sapphire_bloodsbane to all at 2026-11-16 19:11:55.632889 EVE ~~~
+            ~~~ This was a coord broadcast from sample_coord to all at 2026-11-16 19:11:55.632889 EVE ~~~
             """;
 
         var parsed = Assert.IsType<XmppFleetPing>(XmppFleetPingParsing.TryParse(body));
-        Assert.Equal("Blue Cap Tackeld ----- Get in Fleet and get ready to undock verry soon", parsed.Hurf);
-        Assert.Equal("Cobra Kanwari", parsed.FcName);
-        Assert.Equal("C-J6MT", parsed.FormupLocation);
+        Assert.Equal("Hostiles in staging ----- form up and prepare to undock soon", parsed.Hurf);
+        Assert.Equal("Ada Nova", parsed.FcName);
+        Assert.Equal("Z-TEST1", parsed.FormupLocation);
         Assert.Equal("Strategic", parsed.PapType);
         Assert.Equal("Op 10", parsed.CommsLabel);
-        Assert.Equal("https://gnf.lt/1oh4Y6V.html", parsed.CommsUrl);
-        Assert.Equal("Hammer Fleet (FNI) (Boosters > Ferox Navy Issue > Basilisk > Support)", parsed.Doctrine);
-        Assert.Equal("Get your Ships Ready to Fight", parsed.Notes);
-        Assert.Equal("sapphire_bloodsbane", parsed.BroadcastFrom);
+        Assert.Equal("https://comms.example.test/op10.html", parsed.CommsUrl);
+        Assert.Equal("Sample Doctrine (SCN) (Boosters > Sample Cruiser > Logistics > Support)", parsed.Doctrine);
+        Assert.Equal("Get your ships ready", parsed.Notes);
+        Assert.Equal("sample_coord", parsed.BroadcastFrom);
     }
 
     private const string SampleBody =
         """
         "Hurf"
 
-        FC Name: Vile Rat
-        Formup Location: 1DQ1-A
+        FC Name: Test FC
+        Formup Location: Q-EX01
         PAP Type: Strategic
         Comms: Mumble https://example.com/comms
-        Doctrine: Apocalypse Navy Issue
+        Doctrine: Sample Battleship
 
-        ~~~ This was a skirmishbot broadcast from skirmishbot to goonfleet ~~~
+        ~~~ This was a skirmishbot broadcast from skirmishbot to examplefleet ~~~
         """;
 
     [Fact]
@@ -98,12 +98,12 @@ public sealed class XmppFleetPingParsingTests
         var parsed = XmppFleetPingParsing.TryParse(SampleBody);
         Assert.NotNull(parsed);
         Assert.Equal("Hurf", parsed.Hurf);
-        Assert.Equal("Vile Rat", parsed.FcName);
-        Assert.Equal("1DQ1-A", parsed.FormupLocation);
+        Assert.Equal("Test FC", parsed.FcName);
+        Assert.Equal("Q-EX01", parsed.FormupLocation);
         Assert.Equal("Strategic", parsed.PapType);
         Assert.Equal("Mumble", parsed.CommsLabel);
         Assert.Equal("https://example.com/comms", parsed.CommsUrl);
-        Assert.Equal("Apocalypse Navy Issue", parsed.Doctrine);
+        Assert.Equal("Sample Battleship", parsed.Doctrine);
         Assert.Null(parsed.Notes);
         Assert.Equal("skirmishbot", parsed.BroadcastFrom);
     }
@@ -113,9 +113,9 @@ public sealed class XmppFleetPingParsingTests
     {
         Assert.Null(XmppFleetPingParsing.TryParse("Directors: form up when ready."));
         Assert.Null(XmppFleetPingParsing.TryParse(
-            "Hello fleet\n\n~~~ This was a skirmishbot broadcast from bot to goonfleet ~~~"));
+            "Hello fleet\n\n~~~ This was a skirmishbot broadcast from bot to examplefleet ~~~"));
         Assert.Null(XmppFleetPingParsing.TryParse(
-            "Hello fleet\n\n~~~ This was a coord broadcast from bot to goonfleet ~~~"));
+            "Hello fleet\n\n~~~ This was a coord broadcast from bot to examplefleet ~~~"));
     }
 
     [Theory]
@@ -131,11 +131,11 @@ public sealed class XmppFleetPingParsingTests
     }
 
     [Theory]
-    [InlineData("Vile Rat", "Vile Rat")]
-    [InlineData("  Vile   Rat  ", "Vile Rat")]
-    [InlineData("Vile Rat (alt)", "Vile Rat")]
-    [InlineData("Vile Rat / alt", "Vile Rat")]
-    [InlineData("Vile Rat (main) / alt", "Vile Rat")]
+    [InlineData("Test FC", "Test FC")]
+    [InlineData("  Test   FC  ", "Test FC")]
+    [InlineData("Test FC (alt)", "Test FC")]
+    [InlineData("Test FC / alt", "Test FC")]
+    [InlineData("Test FC (main) / alt", "Test FC")]
     [InlineData("   ", null)]
     [InlineData(null, null)]
     public void NormalizeFcName_CleansLookupNoise(string? input, string? expected) =>
@@ -147,13 +147,79 @@ public sealed class XmppFleetPingParsingTests
         var body =
             """
             "Hurf"
-            FC Name: Vile Rat (skirmish)
-            Formup Location: 1DQ1-A
+            FC Name: Test FC (skirmish)
+            Formup Location: Q-EX01
             PAP Type: Strategic
-            ~~~ This was a skirmishbot broadcast from bot to goonfleet ~~~
+            ~~~ This was a skirmishbot broadcast from bot to examplefleet ~~~
             """;
         var parsed = XmppFleetPingParsing.TryParse(body);
         Assert.NotNull(parsed);
-        Assert.Equal("Vile Rat", parsed.FcName);
+        Assert.Equal("Test FC", parsed.FcName);
+    }
+
+    [Fact]
+    public void TryParse_StripsInvisibleUnicodeAndPlainBroadcastFooter()
+    {
+        const string pad = "\u200B\u200D\u200D\u200D\u200D\u200D\uFEFF\u200D\u200D\u200D\uFEFF\u200D\u200D\u200D\uFEFF\u200D\u200D\u200D\uFEFF\u200D\u200D\u200D\u200D\u200D\uFEFF\u200D\u200D\u200D\u200D\u200D\u200D\u200D\u200D";
+        var body =
+            $"""
+            Hostiles are on grid, form up and get in fleet!
+            FC Name:{pad} Ada Nova
+            Formup Location:{pad} Z-TEST1
+            PAP Type:{pad} Strategic
+            Comms:{pad} Op 9 https://comms.example.test/op9.html
+            Doctrine:{pad} Sample Doctrine (SCN) (Boosters > Sample Cruiser > Logistics > Support)
+            {pad}
+            ~~~ This was a broadcast from sample_poster to all at 2026-11-17 18:52:41.744359 EVE ~~~
+            """;
+
+        var parsed = Assert.IsType<XmppFleetPing>(XmppFleetPingParsing.TryParse(body));
+        Assert.Equal("Hostiles are on grid, form up and get in fleet!", parsed.Hurf);
+        Assert.Equal("Ada Nova", parsed.FcName);
+        Assert.Equal("Z-TEST1", parsed.FormupLocation);
+        Assert.Equal("Strategic", parsed.PapType);
+        Assert.Equal("Op 9", parsed.CommsLabel);
+        Assert.Equal("https://comms.example.test/op9.html", parsed.CommsUrl);
+        Assert.Equal("Sample Doctrine (SCN) (Boosters > Sample Cruiser > Logistics > Support)", parsed.Doctrine);
+        Assert.Equal("sample_poster", parsed.BroadcastFrom);
+    }
+
+    [Theory]
+    [InlineData("\nFC Name\u200D\uFEFF:\u200BAda Nova\n")]
+    [InlineData("FC Name:\u200DAda Nova\n")]
+    [InlineData(" FC Name:\u200DAda Nova\n")]
+    public void TryParse_AcceptsZeroWidthAndMissingBreakVariants(string fcLine)
+    {
+        var body = "Hostiles are on grid..." + fcLine +
+                   "PAP Type: Strategic\n" +
+                   "~~~ This was a broadcast from sample_poster to all at 2026-11-17 18:52:41.744359 EVE ~~~";
+        var parsed = Assert.IsType<XmppFleetPing>(XmppFleetPingParsing.TryParse(body));
+        Assert.Equal("Ada Nova", parsed.FcName);
+        Assert.Equal("Hostiles are on grid...", parsed.Hurf);
+    }
+
+    [Fact]
+    public void TimestampedBroadcastBody_IgnoresCoordinatorPaddingAndLineEndings()
+    {
+        const string body = """
+            Hostiles in staging ----- form up and prepare to undock soon
+
+            FC Name: Ada Nova
+            Formup Location: Z-TEST1
+            PAP Type: Strategic
+            Comms: Op 10 https://comms.example.test/op10.html
+            Doctrine: Sample Doctrine (SCN) (Boosters > Sample Cruiser > Logistics > Support)
+            Get your ships ready
+            ~~~ This was a coord broadcast from sample_coord to all at 2026-11-16 19:11:55.632889 EVE ~~~
+            """;
+        var unix = body.Replace("\r\n", "\n");
+        var padded = unix
+            .Replace(": Ada", ":\u200D\uFEFF\u200D Ada")
+            .Replace(": Sample", ":\uFEFF\u200D Sample")
+            .Replace("\n~~~", "\n\u200D\uFEFF\u200D\n~~~");
+        var archive = padded.Replace("\n", "\r\n");
+        var liveKey = Assert.IsType<string>(XmppFleetPingParsing.TimestampedBroadcastBody(unix));
+        Assert.Equal(liveKey, XmppFleetPingParsing.TimestampedBroadcastBody(padded));
+        Assert.Equal(liveKey, XmppFleetPingParsing.TimestampedBroadcastBody(archive));
     }
 }

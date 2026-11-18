@@ -41,9 +41,9 @@ public sealed class XmppWorkspaceTests
         var fleet = regular with
         {
             LocalId = 2,
-            Body = hurf + "\n\nFC Name:\u200D\uFEFF\u200D Feed Test Pilot\nPAP Type: Strategic\nFormup Location: C-J6MT\n" +
-                   "Comms: Op 3 https://example.org/comms\nDoctrine: Flycatchers\n" +
-                   "Get your Ships Ready to Fight\n\nSee https://example.org/notes.\n\uFEFF\u200D\n" +
+            Body = hurf + "\n\nFC Name:\u200D\uFEFF\u200D Feed Test Pilot\nPAP Type: Strategic\nFormup Location: Z-TEST1\n" +
+                   "Comms: Op 3 https://example.org/comms\nDoctrine: Sample Interceptors\n" +
+                   "Get your ships ready\n\nSee https://example.org/notes.\n\uFEFF\u200D\n" +
                    "~~~ This was a coord broadcast from bot to all at 2026-11-16 19:11:55.632889 EVE ~~~"
         };
         var mainCards = XmppFeedCards.BuildFromMessages([regular, fleet], account);
@@ -86,21 +86,21 @@ public sealed class XmppWorkspaceTests
             var hurfText = Assert.Single(fleetCard.GetVisualDescendants().OfType<XmppLinkText>(), text => text.BodyText == hurf);
             AssertLink(hurfText, "https://example.org/hurf");
             var values = fleetCard.GetVisualDescendants().OfType<XmppLinkText>()
-                .Where(text => text.BodyText is "C-J6MT" or "Op 3" or "Flycatchers").ToArray();
+                .Where(text => text.BodyText is "Z-TEST1" or "Op 3" or "Sample Interceptors").ToArray();
             Assert.Equal(3, values.Length);
             Assert.All(values, value => Assert.Equal(FontWeight.Bold, Assert.Single(value.Inlines!.OfType<Run>()).FontWeight));
             var commsLink = Assert.Single(values, value => value.BodyText == "Op 3");
             var commsRun = Assert.Single(commsLink.Inlines!.OfType<Run>());
             Assert.Equal(Color.Parse("#E0C06A"), ((ISolidColorBrush)commsRun.Foreground!).Color);
             Assert.DoesNotContain(commsRun.TextDecorations ?? [], decoration => decoration.Location == TextDecorationLocation.Underline);
-            var doctrine = Assert.Single(values, value => value.BodyText == "Flycatchers");
+            var doctrine = Assert.Single(values, value => value.BodyText == "Sample Interceptors");
             Assert.All(hurfText.Inlines!.OfType<Run>(), run =>
             {
                 Assert.Equal(doctrine.FontSize, run.FontSize);
                 Assert.Equal(FontWeight.Normal, run.FontWeight);
             });
             var notes = Assert.Single(fleetCard.GetVisualDescendants().OfType<XmppLinkText>(),
-                text => text.BodyText == "Get your Ships Ready to Fight\n\nSee https://example.org/notes.");
+                text => text.BodyText == "Get your ships ready\n\nSee https://example.org/notes.");
             Assert.Same(doctrine.Parent, notes.Parent);
             Assert.Equal(Grid.GetColumn(doctrine), Grid.GetColumn(notes));
             Assert.Equal(Grid.GetRow(doctrine) + 1, Grid.GetRow(notes));
@@ -149,33 +149,33 @@ public sealed class XmppWorkspaceTests
     }
 
     [AvaloniaFact]
-    public async Task LocustLineupUsesFleetCommanderLayoutAndIndividualLinks()
+    public async Task MiningLineupUsesFleetCommanderLayoutAndIndividualLinks()
     {
         const string account = "pilot@example.org";
         var directorbot = XmppAddresses.Directorbot(account);
         const string body = """
-            Welcome to Locust Friday USTZ!
+            Welcome to Sample Mining Weekend!
 
             Mining Fleets
 
-            FC: Smeetherson
-            Comms: Op 4 https://gnf.lt/2eMgwE2.html
+            FC: Pilot Alpha
+            Comms: Op 4 https://comms.example.test/op4.html
 
-            FC: Gamero
-            Comms: Op 6 https://gnf.lt/bO9WiWH.html
-            ~~~ This was a broadcast from xiopa_charante to all at 2026-10-09 23:56:13.548604 EVE ~~~
+            FC: Pilot Bravo
+            Comms: Op 6 https://comms.example.test/op6.html
+            ~~~ This was a broadcast from sample_poster to all at 2026-10-09 23:56:13.548604 EVE ~~~
             """;
         var message = new XmppMessage(directorbot, directorbot.Jid, body, DateTimeOffset.UtcNow,
             false, false, false, false, []);
         foreach (var window in new Window[] { new XmppWindow(), new XmppFeedOverlayWindow() })
         {
             var card = Assert.Single(XmppFeedCards.BuildFromMessages([message], account));
-            Assert.Equal("Locust Weekend Fleets", card.Title);
-            Assert.Equal("Welcome to Locust Friday USTZ!", card.Body);
+            Assert.Equal("Mining Fleet Lineup", card.Title);
+            Assert.Equal("Welcome to Sample Mining Weekend!", card.Body);
             Assert.Equal(body, card.Message.Body);
-            Assert.Equal(new[] { "Smeetherson", "Gamero" }, card.Lineup.Select(row => row.Name));
+            Assert.Equal(new[] { "Pilot Alpha", "Pilot Bravo" }, card.Lineup.Select(row => row.Name));
             Assert.False(card.HasComms);
-            Assert.Equal("https://gnf.lt/bO9WiWH.html", card.Lineup[1].CommsUrl?.AbsoluteUri);
+            Assert.Equal("https://comms.example.test/op6.html", card.Lineup[1].CommsUrl?.AbsoluteUri);
             Assert.All(card.Lineup, row => Assert.True(row.ShowPortraitPlaceholder));
 
             var template = window.FindControl<ItemsControl>("FeedList")!.ItemTemplate!;
@@ -209,7 +209,7 @@ public sealed class XmppWorkspaceTests
                 var channel = Assert.Single(rows.GetVisualDescendants().OfType<XmppLinkText>(), link =>
                     link.BodyText == "Op 6" && link.Document?.Single().Link == card.Lineup[1].CommsUrl);
                 var commander = Assert.Single(rows.GetVisualDescendants().OfType<TextBlock>(),
-                    text => text.Text == "Gamero");
+                    text => text.Text == "Pilot Bravo");
                 var details = Assert.IsType<StackPanel>(commander.Parent);
                 Assert.Contains(channel, details.GetVisualDescendants());
             }

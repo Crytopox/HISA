@@ -34,4 +34,11 @@ public sealed class XmppFeedAgeTests
     [InlineData(false, false)]
     public void NormalizeScrollToLatestOnTabSwitch_DefaultsOn(bool? value, bool expected) =>
         Assert.Equal(expected, XmppDisplayPreferences.NormalizeScrollToLatestOnTabSwitch(value));
+
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData(true, true)]
+    [InlineData(false, false)]
+    public void NormalizeLeaveRoomOnTabClose_DefaultsOn(bool? value, bool expected) =>
+        Assert.Equal(expected, XmppDisplayPreferences.NormalizeLeaveRoomOnTabClose(value));
 }

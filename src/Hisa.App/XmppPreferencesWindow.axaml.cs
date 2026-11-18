@@ -82,6 +82,8 @@ internal partial class XmppPreferencesWindow : Window
         HeadersBox.IsChecked = display.AlwaysShowMessageHeaders;
         ScrollLatestBox.IsChecked = XmppDisplayPreferences.NormalizeScrollToLatestOnTabSwitch(
             display.ScrollToLatestOnTabSwitch);
+        LeaveRoomOnCloseBox.IsChecked = XmppDisplayPreferences.NormalizeLeaveRoomOnTabClose(
+            display.LeaveRoomOnTabClose);
 
         var soft = _client.AlertSoundPreferences;
         DirectPingBox.IsChecked = soft.SoftPingDirectMessages;
@@ -333,7 +335,8 @@ internal partial class XmppPreferencesWindow : Window
             fontSize,
             HeadersBox.IsChecked == true,
             messagePadding,
-            ScrollLatestBox.IsChecked == true));
+            ScrollLatestBox.IsChecked == true,
+            LeaveRoomOnCloseBox.IsChecked == true));
         await _client.SaveAlertSoundPreferencesAsync(new(
             DirectPingBox.IsChecked == true,
             DirectVolume.Value / 100,

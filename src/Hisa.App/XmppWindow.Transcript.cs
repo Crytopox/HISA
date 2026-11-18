@@ -350,16 +350,11 @@ public partial class XmppWindow
         var tab = split ? _splitTab! : _active;
         if (split ? _restoringSplitScroll || _renderedSplitTab != tab : _restoringScroll || _renderedTab != tab)
             return;
-        var viewer = split ? SplitTranscriptScroll : TranscriptScroll;
-        var visible = RealizedRows(split, readableOnly: true)
-            .Where(row => row.Bottom > 0 && row.Top < viewer.Viewport.Height)
-            .Select(row => row.Message).ToArray();
-        if (visible.Length == 0) return;
+        var unread = tab.Messages.Where(message => message.Unread).ToArray();
+        if (unread.Length == 0) return;
         _visibleChanged = false;
-        var ids = visible.Select(message => message.LocalId).ToArray();
-        if (ids.SequenceEqual(split ? _lastSplitVisible : _lastVisible) && !visible.Any(message => message.Unread))
-            return;
-        _readFocus.Observe(account, feed: tab.Conversation is null, visible);
+        var ids = unread.Select(message => message.LocalId).ToArray();
+        _readFocus.Observe(account, feed: tab.Conversation is null, unread);
         if (split) _lastSplitVisible = ids;
         else _lastVisible = ids;
     }
