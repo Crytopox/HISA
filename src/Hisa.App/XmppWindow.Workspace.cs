@@ -67,7 +67,9 @@ public partial class XmppWindow
     private const double TabCaptionMaxWidth = 140;
     private const double TabCaptionMinWidth = 48;
     private const double TabStripSpacing = 2;
-    private const double TabOverflowButtonWidth = 24;
+    /// <summary>MinWidth 24 + left margin 2, with a little reserve so first-fit does not keep one tab too many.</summary>
+    private const double TabOverflowButtonWidth = 28;
+    private const double TabOverflowExitSlack = 20;
     private readonly DispatcherTimer _refreshTimer = new() { Interval = TimeSpan.FromMilliseconds(140) };
     private readonly DispatcherTimer _cardTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private readonly DispatcherTimer _cardCloseTimer = new() { Interval = TimeSpan.FromMilliseconds(200) };
@@ -138,6 +140,7 @@ public partial class XmppWindow
         Size WindowSize, double Scaling, Control Handle, IPointer Pointer);
     private ResizeGesture? _resizeGesture;
     private readonly HashSet<string> _expandedFilterKeys = new(StringComparer.OrdinalIgnoreCase);
+    private bool _tabLayoutRunning;
 
     public XmppWindow() => InitializeComponent();
 
@@ -1454,14 +1457,21 @@ public partial class XmppWindow
 
     private void QueueTabLayout()
     {
+        if (_tabLayoutRunning) return;
         _tabLayoutTimer.Stop();
         _tabLayoutTimer.Start();
     }
 
     private void LayoutAllTabStrips()
     {
-        LayoutTabStrip(TabStrip, TabOverflowButton, false);
-        LayoutTabStrip(SplitTabStrip, SplitTabOverflowButton, true);
+        if (_tabLayoutRunning) return;
+        _tabLayoutRunning = true;
+        try
+        {
+            LayoutTabStrip(TabStrip, TabOverflowButton, false);
+            LayoutTabStrip(SplitTabStrip, SplitTabOverflowButton, true);
+        }
+        finally { _tabLayoutRunning = false; }
     }
 
     private void LayoutTabStrip(StackPanel strip, Button overflow, bool split)
@@ -1469,7 +1479,7 @@ public partial class XmppWindow
         var tabs = StripTabs(split).Where(tab => tab.Header is not null).ToList();
         if (tabs.Count == 0)
         {
-            overflow.IsVisible = false;
+            if (overflow.IsVisible) overflow.IsVisible = false;
             return;
         }
 
@@ -1477,11 +1487,19 @@ public partial class XmppWindow
         var available = host.Bounds.Width;
         if (available <= 0) return;
 
-        foreach (var tab in tabs)
+        var wasOverflow = overflow.IsVisible;
+        var previousVisible = new bool[tabs.Count];
+        var previousCaptions = new double[tabs.Count];
+        for (var i = 0; i < tabs.Count; i++)
         {
-            tab.Header!.IsVisible = true;
-            if (tab.Caption is { } caption) caption.MaxWidth = TabCaptionMaxWidth;
+            previousVisible[i] = tabs[i].Header!.IsVisible;
+            previousCaptions[i] = tabs[i].Caption?.MaxWidth ?? TabCaptionMaxWidth;
         }
+
+        // Headers must be measurable; Avalonia skips measure when IsVisible is false.
+        // SizeChanged during this pass is ignored via _tabLayoutRunning.
+        foreach (var tab in tabs)
+            tab.Header!.IsVisible = true;
 
         double MeasureTotal(double captionWidth)
         {
@@ -1497,79 +1515,86 @@ public partial class XmppWindow
             return total;
         }
 
-        var desired = MeasureTotal(TabCaptionMaxWidth);
-        if (desired <= available)
+        double WidthOf(ConversationTab tab, double captionWidth)
         {
-            overflow.IsVisible = false;
-            return;
-        }
-
-        var minTotal = MeasureTotal(TabCaptionMinWidth);
-        if (minTotal <= available)
-        {
-            overflow.IsVisible = false;
-            var low = TabCaptionMinWidth;
-            var high = TabCaptionMaxWidth;
-            for (var step = 0; step < 12; step++)
-            {
-                var mid = (low + high) / 2;
-                if (MeasureTotal(mid) <= available) low = mid;
-                else high = mid;
-            }
-            MeasureTotal(low);
-            return;
-        }
-
-        overflow.IsVisible = true;
-        var budget = Math.Max(0, available - TabOverflowButtonWidth);
-        var active = split ? _splitTab : _active;
-        var visible = new List<ConversationTab>();
-        var used = 0d;
-
-        double WidthOf(ConversationTab tab)
-        {
-            if (tab.Caption is { } caption) caption.MaxWidth = TabCaptionMinWidth;
+            if (tab.Caption is { } caption) caption.MaxWidth = captionWidth;
             tab.Header!.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
             return tab.Header.DesiredSize.Width;
         }
 
-        foreach (var tab in tabs)
+        var maxTotal = MeasureTotal(TabCaptionMaxWidth);
+        var minTotal = MeasureTotal(TabCaptionMinWidth);
+
+        bool useOverflow;
+        double captionWidth;
+        bool[] nextVisible;
+
+        if (maxTotal <= available)
         {
-            var width = WidthOf(tab);
-            var next = visible.Count == 0 ? width : used + TabStripSpacing + width;
-            if (next <= budget || (active is not null && tab == active && visible.Count == 0))
+            useOverflow = false;
+            captionWidth = TabCaptionMaxWidth;
+            nextVisible = Enumerable.Repeat(true, tabs.Count).ToArray();
+        }
+        else if (!XmppTabStripOverflow.ShouldUseOverflow(wasOverflow, minTotal, available, TabOverflowExitSlack))
+        {
+            useOverflow = false;
+            captionWidth = XmppTabStripOverflow.FitCaptionWidth(
+                MeasureTotal, TabCaptionMinWidth, TabCaptionMaxWidth, available);
+            nextVisible = Enumerable.Repeat(true, tabs.Count).ToArray();
+        }
+        else
+        {
+            useOverflow = true;
+            captionWidth = TabCaptionMinWidth;
+            overflow.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            var reserve = Math.Max(
+                TabOverflowButtonWidth,
+                overflow.DesiredSize.Width + overflow.Margin.Left + overflow.Margin.Right);
+            if (reserve <= 0) reserve = TabOverflowButtonWidth;
+            var budget = Math.Max(0, available - reserve);
+            var widths = tabs.Select(tab => WidthOf(tab, TabCaptionMinWidth)).ToArray();
+            var active = split ? _splitTab : _active;
+            var activeIndex = active is null ? -1 : tabs.IndexOf(active);
+            var keep = XmppTabStripOverflow.SelectVisibleIndices(widths, TabStripSpacing, budget, activeIndex);
+            nextVisible = new bool[tabs.Count];
+            foreach (var index in keep)
+                nextVisible[index] = true;
+        }
+
+        var visibilityChanged = wasOverflow != useOverflow;
+        for (var i = 0; i < tabs.Count && !visibilityChanged; i++)
+            visibilityChanged = previousVisible[i] != nextVisible[i];
+
+        var captionChanged = false;
+        for (var i = 0; i < tabs.Count; i++)
+        {
+            if (Math.Abs(previousCaptions[i] - captionWidth) > 0.5)
             {
-                visible.Add(tab);
-                used = next;
+                captionChanged = true;
+                break;
             }
         }
 
-        if (active is not null && tabs.Contains(active) && !visible.Contains(active))
+        if (!visibilityChanged && !captionChanged)
         {
-            while (visible.Count > 0 && !visible.Contains(active))
+            for (var i = 0; i < tabs.Count; i++)
             {
-                visible.RemoveAt(visible.Count - 1);
-                used = 0;
-                for (var index = 0; index < visible.Count; index++)
-                {
-                    used += WidthOf(visible[index]);
-                    if (index > 0) used += TabStripSpacing;
-                }
-                var width = WidthOf(active);
-                var withActive = visible.Count == 0 ? width : used + TabStripSpacing + width;
-                if (withActive <= budget || visible.Count == 0)
-                {
-                    visible.Add(active);
-                    used = withActive;
-                }
+                if (tabs[i].Caption is { } caption)
+                    caption.MaxWidth = previousCaptions[i];
+                tabs[i].Header!.IsVisible = previousVisible[i];
             }
-            if (!visible.Contains(active)) visible.Add(active);
+            return;
         }
 
-        var visibleSet = visible.ToHashSet();
-        foreach (var tab in tabs)
-            tab.Header!.IsVisible = visibleSet.Contains(tab);
-        MeasureTotal(TabCaptionMinWidth);
+        if (overflow.IsVisible != useOverflow)
+            overflow.IsVisible = useOverflow;
+
+        for (var i = 0; i < tabs.Count; i++)
+        {
+            if (tabs[i].Caption is { } caption)
+                caption.MaxWidth = captionWidth;
+            tabs[i].Header!.IsVisible = nextVisible[i];
+        }
     }
 
     private void ShowTabOverflow(object? sender, RoutedEventArgs e)
