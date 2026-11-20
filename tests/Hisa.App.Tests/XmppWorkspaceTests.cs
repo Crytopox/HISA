@@ -65,86 +65,127 @@ public sealed class XmppWorkspaceTests
 
         var main = new XmppWindow();
         var floating = new XmppFeedOverlayWindow();
-        var portraitImages = new List<Image>();
-        foreach (var (window, cards) in new[] { ((Window)main, mainCards), ((Window)floating, floatingCards) })
+        try
         {
-            var template = window.FindControl<ItemsControl>("FeedList")!.ItemTemplate!;
-            var regularCard = template.Build(cards[0])!;
-            regularCard.DataContext = cards[0];
-            var bodyText = Assert.Single(regularCard.GetVisualDescendants().OfType<XmppLinkText>(), text => text.BodyText == body);
-            Assert.Equal(TextWrapping.Wrap, bodyText.TextWrapping);
-            AssertLink(bodyText, "https://example.org/details");
-            var subtitle = Assert.Single(regularCard.GetVisualDescendants().OfType<XmppLinkText>(),
-                text => text.BodyText == regular.FeedSubtitle);
-            AssertLink(subtitle, "https://example.org/subtitle");
-            Assert.True(cards[0].IsUnreadStart);
-            Assert.False(cards[1].IsUnreadStart);
+            var portraitImages = new List<Image>();
+            foreach (var (window, cards) in new[] { ((Window)main, mainCards), ((Window)floating, floatingCards) })
+            {
+                var template = window.FindControl<ItemsControl>("FeedList")!.ItemTemplate!;
+                var regularCard = template.Build(cards[0])!;
+                regularCard.DataContext = cards[0];
+                var fleetCard = template.Build(cards[1])!;
+                fleetCard.DataContext = cards[1];
+                window.Content = new StackPanel { Children = { regularCard, fleetCard } };
+                window.Show();
+                var bodyText = Assert.Single(regularCard.GetVisualDescendants().OfType<XmppLinkText>(), text => text.BodyText == body);
+                Assert.Equal(TextWrapping.Wrap, bodyText.TextWrapping);
+                AssertLink(bodyText, "https://example.org/details");
+                var subtitle = Assert.Single(regularCard.GetVisualDescendants().OfType<XmppLinkText>(),
+                    text => text.BodyText == regular.FeedSubtitle);
+                AssertLink(subtitle, "https://example.org/subtitle");
+                Assert.True(cards[0].IsUnreadStart);
+                Assert.False(cards[1].IsUnreadStart);
 
-            var fleetCard = template.Build(cards[1])!;
-            fleetCard.DataContext = cards[1];
-            Assert.Contains(fleetCard.GetVisualDescendants().OfType<TextBlock>(), text => text.Text == "Fleet Ping");
-            var hurfText = Assert.Single(fleetCard.GetVisualDescendants().OfType<XmppLinkText>(), text => text.BodyText == hurf);
-            AssertLink(hurfText, "https://example.org/hurf");
-            var values = fleetCard.GetVisualDescendants().OfType<XmppLinkText>()
-                .Where(text => text.BodyText is "Z-TEST1" or "Op 3" or "Sample Interceptors").ToArray();
-            Assert.Equal(3, values.Length);
-            Assert.All(values, value => Assert.Equal(FontWeight.Bold, Assert.Single(value.Inlines!.OfType<Run>()).FontWeight));
-            var commsLink = Assert.Single(values, value => value.BodyText == "Op 3");
-            var commsRun = Assert.Single(commsLink.Inlines!.OfType<Run>());
-            Assert.Equal(Color.Parse("#E0C06A"), ((ISolidColorBrush)commsRun.Foreground!).Color);
-            Assert.DoesNotContain(commsRun.TextDecorations ?? [], decoration => decoration.Location == TextDecorationLocation.Underline);
-            var doctrine = Assert.Single(values, value => value.BodyText == "Sample Interceptors");
-            Assert.All(hurfText.Inlines!.OfType<Run>(), run =>
-            {
-                Assert.Equal(doctrine.FontSize, run.FontSize);
-                Assert.Equal(FontWeight.Normal, run.FontWeight);
-            });
-            var notes = Assert.Single(fleetCard.GetVisualDescendants().OfType<XmppLinkText>(),
-                text => text.BodyText == "Get your ships ready\n\nSee https://example.org/notes.");
-            Assert.Same(doctrine.Parent, notes.Parent);
-            Assert.Equal(Grid.GetColumn(doctrine), Grid.GetColumn(notes));
-            Assert.Equal(Grid.GetRow(doctrine) + 1, Grid.GetRow(notes));
-            Assert.All(notes.Inlines!.OfType<Run>(), run => Assert.Equal(FontWeight.Normal, run.FontWeight));
-            AssertLink(notes, "https://example.org/notes");
-            var details = fleetCard.GetVisualDescendants().OfType<TextBlock>().Where(text =>
-                text.Text is "Fleet Commander" or "Formup" or "Comms" or "Doctrine").ToArray();
-            Assert.Equal(4, details.Length);
-            Assert.All(details, label => Assert.Equal(Color.Parse("#E0C06A"), ((ISolidColorBrush)label.Foreground!).Color));
-            foreach (var width in new[] { 290, 650 })
-            {
-                var size = new Size(width, 1500);
-                fleetCard.Measure(size);
-                fleetCard.Arrange(new Rect(size));
-                var position = hurfText.TranslatePoint(new Point(0, hurfText.Bounds.Height), fleetCard);
-                var commander = details[0].TranslatePoint(new Point(), fleetCard);
-                Assert.True(position!.Value.Y <= commander!.Value.Y);
-                Assert.True(hurfText.Bounds.Width <= width);
+                Assert.Contains(fleetCard.GetVisualDescendants().OfType<TextBlock>(), text => text.Text == "Announcement");
+                var hurfText = Assert.Single(fleetCard.GetVisualDescendants().OfType<XmppLinkText>(), text => text.BodyText == hurf);
+                AssertLink(hurfText, "https://example.org/hurf");
+                var values = fleetCard.GetVisualDescendants().OfType<XmppLinkText>()
+                    .Where(text => text.BodyText is "Z-TEST1" or "Op 3" or "Sample Interceptors").ToArray();
+                Assert.Equal(3, values.Length);
+                Assert.All(values, value => Assert.Equal(FontWeight.Bold, Assert.Single(value.Inlines!.OfType<Run>()).FontWeight));
+                var commsLink = Assert.Single(values, value => value.BodyText == "Op 3");
+                var commsRun = Assert.Single(commsLink.Inlines!.OfType<Run>());
+                Assert.Equal(Color.Parse("#E0C06A"), ((ISolidColorBrush)commsRun.Foreground!).Color);
+                Assert.DoesNotContain(commsRun.TextDecorations ?? [], decoration => decoration.Location == TextDecorationLocation.Underline);
+                var doctrine = Assert.Single(values, value => value.BodyText == "Sample Interceptors");
+                Assert.All(hurfText.Inlines!.OfType<Run>(), run =>
+                {
+                    Assert.Equal(doctrine.FontSize, run.FontSize);
+                    Assert.Equal(FontWeight.Normal, run.FontWeight);
+                });
+                var notes = Assert.Single(fleetCard.GetVisualDescendants().OfType<XmppLinkText>(),
+                    text => text.BodyText == "Get your ships ready\n\nSee https://example.org/notes.");
+                Assert.Same(doctrine.Parent, notes.Parent);
+                Assert.Equal(Grid.GetColumn(doctrine), Grid.GetColumn(notes));
+                Assert.Equal(Grid.GetRow(doctrine) + 1, Grid.GetRow(notes));
+                Assert.All(notes.Inlines!.OfType<Run>(), run => Assert.Equal(FontWeight.Normal, run.FontWeight));
+                AssertLink(notes, "https://example.org/notes");
+                var details = fleetCard.GetVisualDescendants().OfType<TextBlock>().Where(text =>
+                    text.Text is "Fleet Commander" or "Formup" or "Comms" or "Doctrine").ToArray();
+                Assert.Equal(4, details.Length);
+                Assert.All(details, label => Assert.Equal(Color.Parse("#E0C06A"), ((ISolidColorBrush)label.Foreground!).Color));
+                foreach (var width in new[] { 290, 650 })
+                {
+                    var size = new Size(width, 1500);
+                    fleetCard.Measure(size);
+                    fleetCard.Arrange(new Rect(size));
+                    var position = hurfText.TranslatePoint(new Point(0, hurfText.Bounds.Height), fleetCard);
+                    var commander = details[0].TranslatePoint(new Point(), fleetCard);
+                    Assert.True(position!.Value.Y <= commander!.Value.Y);
+                    Assert.True(hurfText.Bounds.Width <= width);
+                }
+                portraitImages.Add(Assert.Single(fleetCard.GetVisualDescendants().OfType<Image>()));
             }
-            portraitImages.Add(Assert.Single(fleetCard.GetVisualDescendants().OfType<Image>()));
-        }
 
-        handlers.AllowPortrait.TrySetResult();
-        await WaitUntilAsync(() => mainCards[1].Portrait is not null);
-        Assert.Null(oldCards[1].Portrait);
-        Assert.Equal(2, handlers.Requests.Count);
-        Assert.Equal(("POST", "https://esi.evetech.net/universe/ids/"), handlers.Requests[0]);
-        Assert.Equal(("GET", "https://images.evetech.net/characters/123/portrait?tenant=tranquility&size=64"),
-            handlers.Requests[1]);
-        Assert.False(string.IsNullOrWhiteSpace(handlers.CompatibilityDate));
-        var portrait = Assert.IsType<Avalonia.Media.Imaging.Bitmap>(mainCards[1].Portrait);
-        Assert.Equal(new PixelSize(2, 2), portrait.PixelSize);
-        Assert.Same(portrait, floatingCards[1].Portrait);
-        Assert.All(portraitImages, image =>
+            handlers.AllowPortrait.TrySetResult();
+            await WaitUntilAsync(() => mainCards[1].Portrait is not null);
+            Assert.Null(oldCards[1].Portrait);
+            Assert.Equal(2, handlers.Requests.Count);
+            Assert.Equal(("POST", "https://esi.evetech.net/universe/ids/"), handlers.Requests[0]);
+            Assert.Equal(("GET", "https://images.evetech.net/characters/123/portrait?tenant=tranquility&size=64"),
+                handlers.Requests[1]);
+            Assert.False(string.IsNullOrWhiteSpace(handlers.CompatibilityDate));
+            var portrait = Assert.IsType<Avalonia.Media.Imaging.Bitmap>(mainCards[1].Portrait);
+            Assert.Equal(new PixelSize(2, 2), portrait.PixelSize);
+            Assert.Same(portrait, floatingCards[1].Portrait);
+            Assert.All(portraitImages, image =>
+            {
+                Assert.True(image.IsVisible);
+                Assert.Same(portrait, image.Source);
+            });
+        }
+        finally
         {
-            Assert.True(image.IsVisible);
-            Assert.Same(portrait, image.Source);
-        });
+            main.Close();
+            floating.Close();
+        }
 
         static void AssertLink(XmppLinkText text, string url)
         {
             var run = Assert.Single(text.Inlines!.OfType<Run>(), run => run.Text == url);
             Assert.Equal(Color.Parse("#E0C06A"), ((ISolidColorBrush)run.Foreground!).Color);
             Assert.Contains(run.TextDecorations!, decoration => decoration.Location == TextDecorationLocation.Underline);
+        }
+    }
+
+    [AvaloniaTheory]
+    [InlineData("all", "Announcement")]
+    [InlineData("locusts", "Locust Fleet")]
+    [InlineData("beehive", "Beehive Fleet")]
+    [InlineData("unknown-target", "Fleet ping")]
+    public void StructuredFeedTitlesMatchTheRecipientInBothWindows(string target, string expectedTitle)
+    {
+        const string account = "pilot@example.org";
+        var directorbot = XmppAddresses.Directorbot(account);
+        var message = new XmppMessage(directorbot, directorbot.Jid,
+            "Form up now\nFC Name: Test Pilot\nPAP Type: Strategic\nFormup Location: Z-TEST1\n" +
+            $"~~~ This was a coord broadcast from bot to {target} at 2026-11-16 19:11:55 EVE ~~~",
+            DateTimeOffset.UtcNow, false, false, false, false, []);
+        foreach (var window in new Window[] { new XmppWindow(), new XmppFeedOverlayWindow() })
+        {
+            try
+            {
+                var card = Assert.Single(XmppFeedCards.BuildFromMessages([message], account));
+                Assert.True(card.IsFleet);
+                Assert.Equal(expectedTitle, card.Title);
+                var template = window.FindControl<ItemsControl>("FeedList")!.ItemTemplate!;
+                var view = template.Build(card)!;
+                view.DataContext = card;
+                window.Content = view;
+                window.Show();
+                Assert.Contains(view.GetVisualDescendants().OfType<TextBlock>(), text => text.Text == expectedTitle);
+            }
+            finally { window.Close(); }
         }
     }
 
@@ -506,6 +547,7 @@ public sealed class XmppWorkspaceTests
         try
         {
             await client.ConfigureAsync(account, null, 0, XmppTlsMode.Automatic, null, false, false, connect: false);
+            await client.SaveDisplayPreferencesAsync(client.DisplayPreferences with { ScrollToLatestOnTabSwitch = false });
             await client.SaveRoomAsync(room.Jid, "pilot", false, null, false, false);
             await client.SaveWorkspaceAsync(account, new([room, direct], room, false, 900, 590, Pinned: true));
             var stamp = DateTimeOffset.UtcNow.AddHours(-1);
@@ -540,7 +582,8 @@ public sealed class XmppWorkspaceTests
                 compose.Text = "direct draft";
 
                 window.Navigate(room, fleetPing: false);
-                await Until(() => title.Text == "fleet" && scroll.Offset.Y is > 125 and < 185);
+                await WaitForNavigationAsync(() => title.Text == "fleet" && scroll.Offset.Y is > 125 and < 185,
+                    title, scroll, client, token);
                 Assert.Equal("room draft", compose.Text);
                 Assert.Equal(3, tabStrip.Children.Count);
 
@@ -647,6 +690,100 @@ public sealed class XmppWorkspaceTests
                 await Task.Delay(20, token);
                 Dispatcher.UIThread.RunJobs();
             }
+        }
+    }
+
+    [AvaloniaTheory]
+    [InlineData(null)]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task TabNavigationHonorsScrollPreferenceAndPreservesDrafts(bool? scrollToLatest)
+    {
+        const string account = "pilot@example.org";
+        var room = new XmppConversation(XmppConversationKind.Room, "fleet@conference.example.org");
+        var direct = new XmppConversation(XmppConversationKind.Direct, "ally@example.org");
+        var database = Path.Combine(Path.GetTempPath(), $"hisa-navigation-{Guid.NewGuid():N}.db");
+        var connectionString = new SqliteConnectionStringBuilder { DataSource = database, Pooling = false }.ToString();
+        using var history = new XmppHistoryStore(connectionString);
+        using var client = new XmppClientService(new SqliteSettingsService(connectionString), history,
+            NullLogger<XmppClientService>.Instance);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var token = timeout.Token;
+        await client.StartAsync(token);
+        try
+        {
+            await client.ConfigureAsync(account, null, 0, XmppTlsMode.Automatic, null, false, false, connect: false);
+            await client.SaveDisplayPreferencesAsync(client.DisplayPreferences with { ScrollToLatestOnTabSwitch = scrollToLatest });
+            await client.SaveRoomAsync(room.Jid, "pilot", false, null, false, false);
+            await client.SaveWorkspaceAsync(account, new([room, direct], room, false, 900, 590));
+            var stamp = DateTimeOffset.UtcNow.AddHours(-1);
+            foreach (var number in Enumerable.Range(1, 65))
+                await history.InsertAsync(account, new(room, room.Jid + "/Ally", $"Message {number}\nSecond line",
+                    stamp.AddSeconds(number), false, false, false, false, [$"room-{number}"]), token);
+
+            var window = new XmppWindow(client);
+            try
+            {
+                window.Show();
+                var title = window.FindControl<TextBlock>("ConversationTitle")!;
+                var transcript = window.FindControl<XmppLinkText>("TranscriptText")!;
+                var scroll = window.FindControl<ScrollViewer>("TranscriptScroll")!;
+                var compose = window.FindControl<TextBox>("Compose")!;
+                await Until(() => title.Text == "fleet" && transcript.MessageBounds().Count == 65 &&
+                    scroll.Extent.Height > scroll.Viewport.Height + 300 && AtBottom());
+                scroll.Offset = new(0, 155);
+                await Until(() => scroll.Offset.Y is > 140 and < 170);
+                var anchor = FirstVisible();
+                Assert.True(anchor.Id > 0);
+                compose.Text = "room draft";
+                compose.Focus();
+                window.KeyPressQwerty(PhysicalKey.Tab, RawInputModifiers.Control);
+                await Until(() => title.Text == "ally");
+                Assert.Equal("", compose.Text);
+                compose.Text = "direct draft";
+
+                window.Navigate(room, fleetPing: false);
+                await Until(() => title.Text == "fleet" && transcript.MessageBounds().Count == 65 &&
+                    (scrollToLatest != false ? AtBottom() :
+                        FirstVisible().Id == anchor.Id && Math.Abs(FirstVisible().Top - anchor.Top) <= 2));
+                Assert.Equal("room draft", compose.Text);
+                window.Navigate(direct, fleetPing: false);
+                await Until(() => title.Text == "ally");
+                Assert.Equal("direct draft", compose.Text);
+
+                bool AtBottom() => scroll.Extent.Height - scroll.Viewport.Height - scroll.Offset.Y < 3;
+                (long Id, double Top) FirstVisible() => transcript.MessageBounds()
+                    .Select(row => (row.Id, Top: row.Top - scroll.Offset.Y, Bottom: row.Bottom - scroll.Offset.Y))
+                    .Where(row => row.Bottom > 0 && row.Top < scroll.Viewport.Height)
+                    .OrderBy(row => row.Top).Select(row => (row.Id, row.Top)).FirstOrDefault();
+                Task Until(Func<bool> condition) => WaitForNavigationAsync(condition, title, scroll, client, token);
+            }
+            finally { window.Close(); }
+        }
+        finally
+        {
+            await client.StopAsync(CancellationToken.None);
+            history.Dispose();
+            File.Delete(database);
+        }
+    }
+
+    private static async Task WaitForNavigationAsync(Func<bool> condition, TextBlock title, ScrollViewer scroll,
+        XmppClientService client, CancellationToken token)
+    {
+        try
+        {
+            while (!condition())
+            {
+                await Task.Delay(20, token);
+                Dispatcher.UIThread.RunJobs();
+            }
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            Assert.Fail($"Navigation condition timed out: title='{title.Text}', offset={scroll.Offset}, " +
+                $"extent={scroll.Extent}, viewport={scroll.Viewport}, " +
+                $"ScrollToLatestOnTabSwitch={client.DisplayPreferences.ScrollToLatestOnTabSwitch?.ToString() ?? "null"}.");
         }
     }
 
