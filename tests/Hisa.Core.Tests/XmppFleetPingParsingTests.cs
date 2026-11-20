@@ -222,4 +222,90 @@ public sealed class XmppFleetPingParsingTests
         Assert.Equal(liveKey, XmppFleetPingParsing.TimestampedBroadcastBody(padded));
         Assert.Equal(liveKey, XmppFleetPingParsing.TimestampedBroadcastBody(archive));
     }
+
+    [Fact]
+    public void TryParseBroadcast_ReadsOptKrabWarning()
+    {
+        const string pad = "\u200D\u200D\u200D\uFEFF\u200D";
+        var body = $"""
+            droppers in our space - have 911 pings ready to go
+            {pad}
+            ~~~ This was a guardbees broadcast from the_llama to opt-krab at 2026-11-18 15:38:23.442083 EVE ~~~
+            """;
+        var parsed = Assert.IsType<XmppFleetPing>(XmppFleetPingParsing.TryParseBroadcast(body));
+        Assert.False(parsed.IsStructured);
+        Assert.Equal("opt-krab", parsed.BroadcastTo);
+        Assert.Equal("the_llama", parsed.BroadcastFrom);
+        Assert.Equal("droppers in our space - have 911 pings ready to go", parsed.Hurf);
+        Assert.Null(XmppFleetPingParsing.TryParse(body));
+        Assert.Equal("Opt-Krab", XmppFleetPingParsing.FeedTitleForTarget(parsed.BroadcastTo, false));
+    }
+
+    [Fact]
+    public void TryParse_ReadsLocustCricketFleet()
+    {
+        const string pad = "\u200D\uFEFF";
+        var body = $"""
+            Let's go for those rocks, you don't live on air!!
+
+            FC Name:{pad} Maese Fresno
+            Formup location:{pad} C-J6MT
+            Comms:{pad} Mumble -> Sigs/Squad -> Fleet 1
+            Doctrine:{pad}  Exhumers > Barges > Expedition Frigates > Mining Frigates > Porpoise > Rorqual
+            {pad}
+            ~~~ This was a gice broadcast from gamero to locusts at 2026-11-17 15:35:01.412400 EVE ~~~
+            """;
+        var parsed = Assert.IsType<XmppFleetPing>(XmppFleetPingParsing.TryParse(body));
+        Assert.True(parsed.IsStructured);
+        Assert.Equal("locusts", parsed.BroadcastTo);
+        Assert.Equal("Maese Fresno", parsed.FcName);
+        Assert.Equal("C-J6MT", parsed.FormupLocation);
+        Assert.Equal("Mumble -> Sigs/Squad -> Fleet 1", parsed.CommsLabel);
+        Assert.Null(parsed.CommsUrl);
+        Assert.Contains("Exhumers", parsed.Doctrine);
+        Assert.Equal("Locust Fleet", XmppFleetPingParsing.FeedTitleForTarget(parsed.BroadcastTo, true));
+    }
+
+    [Fact]
+    public void TryParse_ReadsBeehiveFleetWithBeehiveComms()
+    {
+        const string pad = "\u200D\uFEFF";
+        var body = $"""
+            If you wanna keep this isk train rolling we need more faxes.
+
+            FC:{pad} Vivien Saken
+            Doctrine:{pad} SIR (Faxes > SIRorquals > Hictor > Dictor)
+
+            Beehive Comms - https://gnf.lt/2Qzf8iu.html
+            {pad}
+            ~~~ This was a guardbees broadcast from miles_deep_uta to beehive at 2026-11-19 23:28:34.480475 EVE ~~~
+            """;
+        var parsed = Assert.IsType<XmppFleetPing>(XmppFleetPingParsing.TryParse(body));
+        Assert.Equal("beehive", parsed.BroadcastTo);
+        Assert.Equal("Vivien Saken", parsed.FcName);
+        Assert.Contains("SIR", parsed.Doctrine);
+        Assert.Equal("https://gnf.lt/2Qzf8iu.html", parsed.CommsUrl);
+        Assert.Equal("Beehive Fleet", XmppFleetPingParsing.FeedTitleForTarget(parsed.BroadcastTo, true));
+    }
+
+    [Fact]
+    public void TryParseBroadcast_ReadsAnnouncementAndOptAll()
+    {
+        var all = XmppFleetPingParsing.TryParseBroadcast("""
+            going to do another quick restart of some core services including jabber in a few minutes
+            ~~~ This was a broadcast from boris_agnon to all at 2026-11-18 17:15:56.451186 EVE ~~~
+            """);
+        Assert.NotNull(all);
+        Assert.False(all.IsStructured);
+        Assert.Equal("all", all.BroadcastTo);
+        Assert.Equal("Announcement", XmppFleetPingParsing.FeedTitleForTarget(all.BroadcastTo, false));
+
+        var optAll = XmppFleetPingParsing.TryParseBroadcast("""
+            SumoSwarm day 9 - They can't stop the signal Mal https://twitch.tv/asherelias
+            ~~~ This was a broadcast from asher_elias to opt-all at 2026-11-17 07:10:26.449836 EVE ~~~
+            """);
+        Assert.NotNull(optAll);
+        Assert.Equal("opt-all", optAll.BroadcastTo);
+        Assert.Equal("Opt-All", XmppFleetPingParsing.FeedTitleForTarget(optAll.BroadcastTo, false));
+    }
 }

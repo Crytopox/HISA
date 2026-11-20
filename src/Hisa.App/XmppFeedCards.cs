@@ -25,6 +25,21 @@ internal static class XmppFeedCards
     private static readonly IBrush PeacetimeBar = Brush.Parse("#6BA3C8");
     private static readonly IBrush DelveBg = Brush.Parse("#3A2428");
     private static readonly IBrush DelveBar = Brush.Parse("#E06060");
+    private static readonly IBrush LocustBg = Brush.Parse("#322438");
+    private static readonly IBrush LocustBar = Brush.Parse("#D070C0");
+    private static readonly IBrush LocustBorder = new SolidColorBrush(Color.Parse("#D070C0")) { Opacity = 0.45 };
+    private static readonly IBrush BeehiveBg = Brush.Parse("#3A3420");
+    private static readonly IBrush BeehiveBar = Brush.Parse("#E0B85A");
+    private static readonly IBrush BeehiveBorder = new SolidColorBrush(Color.Parse("#E0B85A")) { Opacity = 0.45 };
+    private static readonly IBrush OptKrabBg = Brush.Parse("#3A2A20");
+    private static readonly IBrush OptKrabBar = Brush.Parse("#E08040");
+    private static readonly IBrush OptKrabBorder = new SolidColorBrush(Color.Parse("#E08040")) { Opacity = 0.45 };
+    private static readonly IBrush AnnounceBg = Brush.Parse("#243048");
+    private static readonly IBrush AnnounceBar = Brush.Parse("#6B8EC8");
+    private static readonly IBrush AnnounceBorder = new SolidColorBrush(Color.Parse("#6B8EC8")) { Opacity = 0.45 };
+    private static readonly IBrush OptAllBg = Brush.Parse("#1E2630");
+    private static readonly IBrush OptAllBar = Brush.Parse("#6B7789");
+    private static readonly IBrush OptAllBorder = new SolidColorBrush(Color.Parse("#6B7789")) { Opacity = 0.35 };
     private static readonly IBrush AlertBg = Brush.Parse("#6B5430");
     private static readonly IBrush AlertBar = Brush.Parse("#E0C06A");
     private static readonly IBrush MentionBar = Brush.Parse("#5EB8E8");
@@ -37,6 +52,24 @@ internal static class XmppFeedCards
         papType is not null &&
         papType.Contains("peacetime", StringComparison.OrdinalIgnoreCase) &&
         !papType.Contains("strategic", StringComparison.OrdinalIgnoreCase);
+
+    private static (IBrush Bg, IBrush Bar, IBrush Border) StructuredTheme(string? broadcastTo, bool peacetime) =>
+        broadcastTo switch
+        {
+            "locusts" => (LocustBg, LocustBar, LocustBorder),
+            "beehive" => (BeehiveBg, BeehiveBar, BeehiveBorder),
+            _ when peacetime => (PeacetimeBg, PeacetimeBar, PeacetimeBorder),
+            _ => (FleetBg, FleetBar, FleetBorder)
+        };
+
+    private static (IBrush Bg, IBrush Bar, IBrush Border)? NoteTheme(string? broadcastTo) =>
+        broadcastTo switch
+        {
+            "opt-krab" => (OptKrabBg, OptKrabBar, OptKrabBorder),
+            "all" => (AnnounceBg, AnnounceBar, AnnounceBorder),
+            "opt-all" => (OptAllBg, OptAllBar, OptAllBorder),
+            _ => null
+        };
 
     public static IReadOnlyList<XmppFeedCardVm> Build(
         IEnumerable<(XmppMessage? Message, (string Key, string Label, XmppMessage Representative)? Collapse)> entries,
@@ -121,36 +154,41 @@ internal static class XmppFeedCards
                     commander.Name, commander.CommsLabel, commander.CommsUrl)
                     { HasDivider = index > 0 }).ToArray());
         }
-        var parsed = message.IsFleetPing || fromDirectorbot
-            ? XmppFleetPingParsing.TryParse(message.Body)
+        var broadcast = message.IsFleetPing || fromDirectorbot || message.BroadcastTo is not null
+            ? XmppFleetPingParsing.TryParseBroadcast(message.Body)
             : null;
-        if (parsed is not null)
+        var target = message.BroadcastTo ?? broadcast?.BroadcastTo;
+        if (broadcast is { IsStructured: true })
         {
-            var strategic = parsed.PapType is not null &&
-                parsed.PapType.Contains("strategic", StringComparison.OrdinalIgnoreCase);
-            var peacetime = IsPeacetimePap(parsed.PapType);
-            var lookup = XmppFleetPingParsing.NormalizeFcName(parsed.FcName) ?? parsed.FcName;
+            var strategic = broadcast.PapType is not null &&
+                broadcast.PapType.Contains("strategic", StringComparison.OrdinalIgnoreCase);
+            var peacetime = IsPeacetimePap(broadcast.PapType);
+            var theme = StructuredTheme(target, peacetime);
+            var lookup = XmppFleetPingParsing.NormalizeFcName(broadcast.FcName) ?? broadcast.FcName;
+            var title = string.IsNullOrWhiteSpace(message.FeedTitle)
+                ? XmppFleetPingParsing.FeedTitleForTarget(target, structured: true)
+                : message.FeedTitle!;
             return new(
                 message,
                 isFleet: true,
-                title: "Fleet Ping",
+                title: title,
                 time: time,
                 subtitle: message.FeedSubtitle,
-                body: parsed.Hurf,
-                papType: parsed.PapType,
+                body: broadcast.Hurf,
+                papType: broadcast.PapType,
                 emphasizePap: strategic,
-                formup: parsed.FormupLocation,
-                doctrine: parsed.Doctrine,
-                fcName: parsed.FcName,
+                formup: broadcast.FormupLocation,
+                doctrine: broadcast.Doctrine,
+                fcName: broadcast.FcName,
                 fcLookupName: lookup,
-                commsLabel: parsed.CommsLabel,
-                commsUrl: parsed.CommsUrl,
-                cardBackground: peacetime ? PeacetimeBg : FleetBg,
-                accentBar: peacetime ? PeacetimeBar : FleetBar,
-                cardBorder: peacetime ? PeacetimeBorder : FleetBorder,
+                commsLabel: broadcast.CommsLabel,
+                commsUrl: broadcast.CommsUrl,
+                cardBackground: theme.Bg,
+                accentBar: theme.Bar,
+                cardBorder: theme.Border,
                 papChipBackground: strategic ? PapStrategicChip : peacetime ? PapPeacetimeChip : PapMutedChip,
                 papChipForeground: strategic ? PapStrategicFg : peacetime ? PapPeacetimeFg : PapMutedFg,
-                notes: parsed.Notes);
+                notes: broadcast.Notes);
         }
 
         var delve = message.IsDelveBping || message.Conversation == XmppAddresses.Delve911
@@ -187,6 +225,33 @@ internal static class XmppFeedCards
                 delveLocation: delve.Location,
                 delveCyno: delve.Cyno,
                 mapSystem: delve.MapSystem);
+        }
+
+        if (broadcast is { IsStructured: false } && NoteTheme(target) is { } noteTheme)
+        {
+            var title = string.IsNullOrWhiteSpace(message.FeedTitle)
+                ? XmppFleetPingParsing.FeedTitleForTarget(target, structured: false)
+                : message.FeedTitle!;
+            return new(
+                message,
+                isFleet: false,
+                title: title,
+                time: time,
+                subtitle: message.FeedSubtitle,
+                body: broadcast.Hurf ?? message.Body,
+                papType: null,
+                emphasizePap: false,
+                formup: null,
+                doctrine: null,
+                fcName: null,
+                fcLookupName: null,
+                commsLabel: null,
+                commsUrl: null,
+                cardBackground: noteTheme.Bg,
+                accentBar: noteTheme.Bar,
+                cardBorder: noteTheme.Border,
+                papChipBackground: PapMutedChip,
+                papChipForeground: PapMutedFg);
         }
 
         var alertTitle = string.IsNullOrWhiteSpace(message.FeedTitle) ? "Alert" : message.FeedTitle!;

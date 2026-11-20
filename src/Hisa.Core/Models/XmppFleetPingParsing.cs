@@ -12,7 +12,13 @@ public sealed record XmppFleetPing(
     string? CommsUrl,
     string? Doctrine,
     string? BroadcastFrom,
-    string? Notes = null);
+    string? Notes = null,
+    string? BroadcastTo = null)
+{
+    public bool IsStructured =>
+        FcName is not null || FormupLocation is not null || PapType is not null ||
+        Doctrine is not null || CommsLabel is not null || CommsUrl is not null;
+}
 
 public sealed record XmppFleetLineup(string Title, string? Hurf, IReadOnlyList<XmppFleetCommander> Commanders);
 
@@ -20,7 +26,15 @@ public sealed record XmppFleetCommander(string Name, string? CommsLabel, string?
 
 public static partial class XmppFleetPingParsing
 {
+    /// <summary>Structured fleet/sig ping (FC / formup / PAP / doctrine / comms).</summary>
     public static XmppFleetPing? TryParse(string? body)
+    {
+        var envelope = TryParseBroadcast(body);
+        return envelope is { IsStructured: true } ? envelope : null;
+    }
+
+    /// <summary>Any Directorbot-style broadcast with a footer, structured or free-form.</summary>
+    public static XmppFleetPing? TryParseBroadcast(string? body)
     {
         if (string.IsNullOrWhiteSpace(body)) return null;
         var text = NormalizeBroadcast(body);
@@ -28,36 +42,74 @@ public static partial class XmppFleetPingParsing
         if (!footer.Success) return null;
 
         var broadcast = text[..footer.Index];
-        var fields = FleetFieldPattern().Matches(broadcast);
-        if (fields.Count == 0) return null;
+        var from = footer.Groups["from"].Value.Trim();
+        var to = NormalizeBroadcastTo(footer.Groups["to"].Value);
 
-        var hurf = broadcast[..fields[0].Index].Trim();
+        var fields = FleetFieldPattern().Matches(broadcast);
+        string? hurf;
+        string? fc = null, formup = null, pap = null, doctrine = null, notes = null;
+        string? commsLabel = null, commsUrl = null;
+
+        if (fields.Count == 0)
+        {
+            hurf = broadcast.Trim();
+            if (hurf is ['"', .., '"']) hurf = hurf[1..^1].Trim();
+            if (string.IsNullOrWhiteSpace(hurf)) hurf = null;
+            return new(hurf, null, null, null, null, null, null, from, null, to);
+        }
+
+        hurf = broadcast[..fields[0].Index].Trim();
         if (hurf is ['"', .., '"']) hurf = hurf[1..^1].Trim();
+        if (string.IsNullOrWhiteSpace(hurf)) hurf = null;
+
         var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (Match field in fields)
         {
+            var name = CanonicalFieldName(field.Groups["name"].Value);
             var value = field.Groups["value"].Value.Trim();
             if (value.Length > 0)
-                values.TryAdd(field.Groups["name"].Value, value);
+                values.TryAdd(name, value);
         }
-        var fc = values.GetValueOrDefault("FC Name");
-        var formup = values.GetValueOrDefault("Formup Location");
-        var pap = values.GetValueOrDefault("PAP Type");
-        var doctrine = values.GetValueOrDefault("Doctrine");
-        var (commsLabel, commsUrl) = ParseComms(values.GetValueOrDefault("Comms"));
-        var from = footer.Groups[1].Value.Trim();
 
-        // Require enough structure to look like a fleet broadcast, not a free-form Directorbot note.
-        if (fc is null && formup is null && pap is null)
-            return null;
+        fc = values.GetValueOrDefault("FC Name") ?? values.GetValueOrDefault("FC");
+        formup = values.GetValueOrDefault("Formup Location");
+        pap = values.GetValueOrDefault("PAP Type");
+        doctrine = values.GetValueOrDefault("Doctrine");
+        if (values.TryGetValue("Comms", out var comms))
+            (commsLabel, commsUrl) = ParseComms(comms);
 
         var lastField = fields[^1];
-        var notes = doctrine is null ? null : broadcast[(lastField.Index + lastField.Length)..].Trim();
+        notes = doctrine is null ? null : broadcast[(lastField.Index + lastField.Length)..].Trim();
+        if (string.IsNullOrEmpty(notes)) notes = null;
+
         return new(
-            string.IsNullOrWhiteSpace(hurf) ? null : hurf,
-            NormalizeFcName(fc) ?? fc, formup, pap, commsLabel, commsUrl, doctrine, from,
-            string.IsNullOrEmpty(notes) ? null : notes);
+            hurf,
+            NormalizeFcName(fc) ?? fc,
+            formup, pap, commsLabel, commsUrl, doctrine, from, notes, to);
     }
+
+    public static string? NormalizeBroadcastTo(string? target)
+    {
+        if (string.IsNullOrWhiteSpace(target)) return null;
+        var value = target.Trim().ToLowerInvariant();
+        // Drop trailing timestamp fragment if a loose match leaked it (defensive).
+        var at = value.IndexOf(" at ", StringComparison.Ordinal);
+        if (at > 0) value = value[..at].Trim();
+        if (value is "locust") value = "locusts";
+        return value.Length == 0 ? null : value;
+    }
+
+    public static string FeedTitleForTarget(string? broadcastTo, bool structured) =>
+        broadcastTo switch
+        {
+            "opt-krab" => "Opt-Krab",
+            "locusts" => "Locust Fleet",
+            "beehive" => "Beehive Fleet",
+            "all" => "Announcement",
+            "opt-all" => "Opt-All",
+            _ when structured => "Fleet ping",
+            _ => "Directorbot"
+        };
 
     public static string? TimestampedBroadcastBody(string body)
     {
@@ -129,15 +181,32 @@ public static partial class XmppFleetPingParsing
         return value.Length == 0 ? null : value;
     }
 
+    private static string CanonicalFieldName(string name)
+    {
+        if (name.Equals("FC", StringComparison.OrdinalIgnoreCase)) return "FC";
+        if (name.Equals("FC Name", StringComparison.OrdinalIgnoreCase)) return "FC Name";
+        if (name.Equals("Formup Location", StringComparison.OrdinalIgnoreCase) ||
+            name.Equals("Formup location", StringComparison.OrdinalIgnoreCase))
+            return "Formup Location";
+        if (name.Equals("PAP Type", StringComparison.OrdinalIgnoreCase)) return "PAP Type";
+        if (name.Equals("Doctrine", StringComparison.OrdinalIgnoreCase)) return "Doctrine";
+        if (name.Equals("Comms", StringComparison.OrdinalIgnoreCase) ||
+            name.Equals("Beehive Comms", StringComparison.OrdinalIgnoreCase))
+            return "Comms";
+        return name;
+    }
+
     private static string NormalizeBroadcast(string body)
     {
         var text = body.Replace("\r\n", "\n").Replace('\r', '\n');
         // Drop ZW-only padding lines before stripping Format chars (which would leave blank lines).
         text = PaddingLinePattern().Replace(text, "");
         text = StripInvisibleFormat(text);
+        // Normalize "Beehive Comms - url" before colon-based field rewrites.
+        text = BeehiveCommsPattern().Replace(text, "Comms: $1");
         text = GluedFleetFieldPattern().Replace(text, "\n");
         text = FleetFieldPattern().Replace(text, field =>
-            field.Groups["name"].Value + ": " + TrimFieldPadding(field.Groups["value"].Value));
+            CanonicalFieldName(field.Groups["name"].Value) + ": " + TrimFieldPadding(field.Groups["value"].Value));
         return text.Trim();
     }
 
@@ -171,19 +240,23 @@ public static partial class XmppFleetPingParsing
         var urlMatch = UrlPattern().Match(value);
         if (!urlMatch.Success) return (value.Trim(), null);
         var url = urlMatch.Value.Trim().TrimEnd(')', '.', ',', ';');
-        var label = value[..urlMatch.Index].Trim();
+        var label = value[..urlMatch.Index].Trim().TrimEnd('-', '–', '—', ':').Trim();
         if (label.Length == 0) label = url;
         return (label, url);
     }
 
-    [GeneratedRegex(@"^[ \t]*(?<name>FC Name|Formup Location|PAP Type|Comms|Doctrine)[ \t]*:(?<value>[^\n]*)",
+    // Longer labels first so "FC Name" wins over "FC".
+    [GeneratedRegex(@"^[ \t]*(?<name>FC Name|Formup Location|PAP Type|Beehive Comms|Doctrine|Comms|FC)[ \t]*:(?<value>[^\n]*)",
         RegexOptions.Multiline | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex FleetFieldPattern();
 
-    // Only split when a field label is glued to preceding non-whitespace (hurf/text), not when already line-started.
-    [GeneratedRegex(@"(?<=\S)[ \t]*(?=(?:FC Name|Formup Location|PAP Type|Comms|Doctrine)[ \t]*:)",
+    [GeneratedRegex(@"(?<=\S)[ \t]*(?=(?:FC Name|Formup Location|PAP Type|Beehive Comms|Doctrine|Comms|FC)[ \t]*:)",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex GluedFleetFieldPattern();
+
+    [GeneratedRegex(@"^[ \t]*Beehive Comms[ \t]*[-–—:][ \t]*(?<value>[^\n]*)",
+        RegexOptions.Multiline | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex BeehiveCommsPattern();
 
     [GeneratedRegex(@"^[ \t]*(?<name>FC|Comms)[ \t]*:(?<value>[^\n]*)",
         RegexOptions.Multiline | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
@@ -192,11 +265,13 @@ public static partial class XmppFleetPingParsing
     [GeneratedRegex(@"^[ \t\u200B\u200C\u200D\uFEFF]+$", RegexOptions.Multiline | RegexOptions.CultureInvariant)]
     private static partial Regex PaddingLinePattern();
 
-    [GeneratedRegex(@"(?m)^~~~ This was a (?:(?:skirmishbot|coord) )?broadcast from [^\n]+? to [^\n]+? at (?<stamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,7})?) EVE ~~~\z",
+    [GeneratedRegex(
+        @"(?m)^~~~ This was a (?:(?<channel>[\w-]+) )?broadcast from (?<from>[^\n]+?) to (?<to>[^\n]+?) at (?<stamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,7})?) EVE ~~~\z",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex TimestampedFooterPattern();
 
-    [GeneratedRegex(@"~~~ This was a (?:(?:skirmishbot|coord) )?broadcast from (.+?) to .+?~~~",
+    [GeneratedRegex(
+        @"~~~ This was a (?:(?<channel>[\w-]+) )?broadcast from (?<from>.+?) to (?<to>.+?)(?: at \d{4}-\d{2}-\d{2}[^\n]* EVE)?\s*~~~",
         RegexOptions.Singleline | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex FooterPattern();
 

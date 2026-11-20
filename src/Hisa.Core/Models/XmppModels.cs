@@ -154,6 +154,7 @@ public sealed record XmppMessage(XmppConversation Conversation, string Sender, s
     public bool ShowInFleetFeed { get; init; }
     public bool Highlight { get; init; }
     public bool IsDelveBping { get; init; }
+    public string? BroadcastTo { get; init; }
     public string? FeedTitle { get; init; }
     public string? FeedSubtitle { get; init; }
     public string? Html { get; init; }

@@ -991,13 +991,15 @@ public sealed partial class XmppClientService : BackgroundService
         var directorbot = XmppAddresses.Directorbot(account);
         var fromDirectorbot = !message.Outgoing && message.Conversation == directorbot &&
             XmppAddresses.Bare(message.Sender) == directorbot.Jid;
-        var fleetPing = fromDirectorbot ? XmppFleetPingParsing.TryParse(message.Body) : null;
+        var broadcast = fromDirectorbot ? XmppFleetPingParsing.TryParseBroadcast(message.Body) : null;
+        var fleetPing = broadcast is { IsStructured: true } ? broadcast : null;
         var fromDelve911 = !message.Outgoing && message.Conversation == XmppAddresses.Delve911;
         var delveBping = fromDelve911 ? XmppDelveBpingParsing.TryParse(message.Body) : null;
         message = message with
         {
             IsFleetPing = fleetPing is not null,
             IsDelveBping = delveBping is not null,
+            BroadcastTo = broadcast?.BroadcastTo,
             Mention = !message.Outgoing && nickname is not null && XmppAddresses.Mentions(message.Body, nickname)
         };
         var matched = message.Outgoing || message.Recovered
@@ -1010,8 +1012,8 @@ public sealed partial class XmppClientService : BackgroundService
             ShowInFleetFeed = showInFeed,
             Highlight = matched.Any(rule => rule.Highlight),
             FeedTitle = showInFeed
-                ? (fleetPing is not null
-                    ? "Fleet ping"
+                ? (broadcast is not null
+                    ? XmppFleetPingParsing.FeedTitleForTarget(broadcast.BroadcastTo, broadcast.IsStructured)
                     : delveBping is not null
                         ? (string.IsNullOrWhiteSpace(delveBping.Title) ? "Delve911" : delveBping.Title)
                         : (string.IsNullOrWhiteSpace(feedRule?.FeedTitle)

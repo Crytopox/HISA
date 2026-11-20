@@ -317,10 +317,19 @@ public sealed class XmppHistoryStore(string connectionString) : IDisposable
         {
             var message = JsonSerializer.Deserialize<XmppMessage>(reader.GetString(0))!;
             var loaded = message with { Unread = reader.GetBoolean(1), LocalId = reader.GetInt64(2) };
-            // Re-detect structured fleet pings for older rows stored before parser-based IsFleetPing.
+            // Re-detect broadcast envelope / titles for older rows stored before BroadcastTo.
             if (pingsOnly && loaded.Conversation == directorbot && !loaded.Outgoing &&
-                !loaded.IsFleetPing && XmppFleetPingParsing.TryParse(loaded.Body) is not null)
-                loaded = loaded with { IsFleetPing = true, FeedTitle = string.IsNullOrWhiteSpace(loaded.FeedTitle) ? "Fleet ping" : loaded.FeedTitle };
+                XmppFleetPingParsing.TryParseBroadcast(loaded.Body) is { } broadcast)
+            {
+                loaded = loaded with
+                {
+                    IsFleetPing = loaded.IsFleetPing || broadcast.IsStructured,
+                    BroadcastTo = loaded.BroadcastTo ?? broadcast.BroadcastTo,
+                    FeedTitle = string.IsNullOrWhiteSpace(loaded.FeedTitle)
+                        ? XmppFleetPingParsing.FeedTitleForTarget(broadcast.BroadcastTo, broadcast.IsStructured)
+                        : loaded.FeedTitle
+                };
+            }
             if (pingsOnly && loaded.Conversation == XmppAddresses.Delve911 && !loaded.Outgoing &&
                 !loaded.IsDelveBping && XmppDelveBpingParsing.TryParse(loaded.Body) is { } delve)
                 loaded = loaded with
