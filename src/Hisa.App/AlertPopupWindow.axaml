@@ -327,6 +327,10 @@
                           FontSize="11" Padding="5,2"
                           IsVisible="{Binding FeedCard.HasComms}"
                           Tag="{Binding FeedCard.CommsUrl}" />
+                  <Button Content="Show on map" Click="OnFeedShowOnMap"
+                          FontSize="11" Padding="5,2"
+                          IsVisible="{Binding FeedCard.HasMapSystem}"
+                          Tag="{Binding FeedCard.MapSystem}" />
                 </StackPanel>
                 <TextBlock Text="{Binding TimestampLabel}" Foreground="#BFD8FF" FontSize="9" FontWeight="Bold"/>
               </StackPanel>

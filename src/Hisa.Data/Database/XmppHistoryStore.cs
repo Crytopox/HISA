@@ -77,6 +77,7 @@ public sealed class XmppHistoryStore(string connectionString) : IDisposable
                     Unread = kept.Unread && duplicate.Unread,
                     ShowInFleetFeed = kept.ShowInFleetFeed || duplicate.ShowInFleetFeed,
                     IsFleetPing = kept.IsFleetPing || duplicate.IsFleetPing,
+                    IsDelveBping = kept.IsDelveBping || duplicate.IsDelveBping,
                     Highlight = kept.Highlight || duplicate.Highlight,
                     Mention = kept.Mention || duplicate.Mention,
                     FeedTitle = kept.FeedTitle ?? duplicate.FeedTitle,
@@ -278,6 +279,15 @@ public sealed class XmppHistoryStore(string connectionString) : IDisposable
             if (pingsOnly && loaded.Conversation == directorbot && !loaded.Outgoing &&
                 !loaded.IsFleetPing && XmppFleetPingParsing.TryParse(loaded.Body) is not null)
                 loaded = loaded with { IsFleetPing = true, FeedTitle = string.IsNullOrWhiteSpace(loaded.FeedTitle) ? "Fleet ping" : loaded.FeedTitle };
+            if (pingsOnly && loaded.Conversation == XmppAddresses.Delve911 && !loaded.Outgoing &&
+                !loaded.IsDelveBping && XmppDelveBpingParsing.TryParse(loaded.Body) is { } delve)
+                loaded = loaded with
+                {
+                    IsDelveBping = true,
+                    FeedTitle = string.IsNullOrWhiteSpace(loaded.FeedTitle)
+                        ? (delve.Title ?? "Delve911")
+                        : loaded.FeedTitle
+                };
             messages.Add(loaded);
         }
         messages.Reverse();

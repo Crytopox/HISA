@@ -64,7 +64,7 @@ public partial class XmppFeedOverlayWindow : Window
 
     private void OnMessageReceived(XmppMessage message)
     {
-        if (message.ShowInFleetFeed || message.IsFleetPing)
+        if (message.ShowInFleetFeed || message.IsFleetPing || message.IsDelveBping)
             OnClientStateChanged();
     }
 
@@ -230,6 +230,13 @@ public partial class XmppFeedOverlayWindow : Window
     {
         if (sender is Button { Tag: Uri url } button && await XmppLinkOpening.OpenAsync(this, _client, url))
             FlashButton(button, "Opening…");
+    }
+
+    private void OnShowOnMap(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string system } button || string.IsNullOrWhiteSpace(system)) return;
+        _owner.RequestMapSystem(system.Trim());
+        FlashButton(button, "Opening…");
     }
 
     private static void FlashButton(Button button, string flash)

@@ -44,7 +44,8 @@
                                       LinkActivated="OnCardLinkActivated"
                                       OpenMessageClick="OnOpenMessage"
                                       CopyRawClick="OnCopyRaw"
-                                      OpenMumbleClick="OnOpenMumble" />
+                                      OpenMumbleClick="OnOpenMumble"
+                                      ShowOnMapClick="OnShowOnMap" />
             </DataTemplate>
           </ItemsControl.ItemTemplate>
         </ItemsControl>

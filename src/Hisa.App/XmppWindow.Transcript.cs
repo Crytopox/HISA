@@ -50,10 +50,18 @@ public partial class XmppWindow
                 !highlight && !IsActionMessage(message) && !IsActionMessage(previous) && sameSpeaker &&
                 message.Timestamp - previous.Timestamp <= TimeSpan.FromMinutes(3);
             var sender = DisplaySender(message);
-            var accent = highlight ? (message.IsFleetPing ? FleetPing : AlertHighlight) :
-                message.Mention ? Mention : Brushes.Transparent;
-            var bar = highlight ? (message.IsFleetPing ? FleetBar : AlertHighlightBar) :
-                message.Mention ? MentionBar : Brushes.Transparent;
+            var peacetimeFleet = message.IsFleetPing &&
+                XmppFeedCards.IsPeacetimePap(XmppFleetPingParsing.TryParse(message.Body)?.PapType);
+            var accent = highlight
+                ? (message.IsDelveBping ? DelveHelpPing :
+                    message.IsFleetPing ? (peacetimeFleet ? PeacetimeFleetPing : FleetPing) :
+                    AlertHighlight)
+                : message.Mention ? Mention : Brushes.Transparent;
+            var bar = highlight
+                ? (message.IsDelveBping ? DelveHelpBar :
+                    message.IsFleetPing ? (peacetimeFleet ? PeacetimeFleetBar : FleetBar) :
+                    AlertHighlightBar)
+                : message.Mention ? MentionBar : Brushes.Transparent;
             var rowBg = highlight || message.Mention ? accent :
                 prefs.AlternatingMessageColors && index % 2 == 1 ? AltRow : Brushes.Transparent;
             var divider = prefs.ShowMessageDividers && previous is not null && !firstUnread

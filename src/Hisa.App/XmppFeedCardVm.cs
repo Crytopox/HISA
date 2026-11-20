@@ -33,11 +33,18 @@ public sealed class XmppFeedCardVm : INotifyPropertyChanged
         bool isCollapseSummary = false,
         string? collapseKey = null,
         string? notes = null,
-        IReadOnlyList<XmppFeedCommanderVm>? lineup = null)
+        IReadOnlyList<XmppFeedCommanderVm>? lineup = null,
+        bool isDelveHelp = false,
+        string? delvePilot = null,
+        string? delveSystem = null,
+        string? delveLocation = null,
+        string? delveCyno = null,
+        string? mapSystem = null)
     {
         Message = message;
         LocalId = message.LocalId;
         IsFleet = isFleet;
+        IsDelveHelp = isDelveHelp;
         Title = title;
         _time = time;
         Subtitle = subtitle ?? "";
@@ -47,6 +54,11 @@ public sealed class XmppFeedCardVm : INotifyPropertyChanged
         Formup = formup;
         Doctrine = doctrine;
         Notes = notes;
+        DelvePilot = delvePilot;
+        DelveSystem = delveSystem;
+        DelveLocation = delveLocation;
+        DelveCyno = delveCyno;
+        MapSystem = string.IsNullOrWhiteSpace(mapSystem) ? null : mapSystem.Trim();
         Commander = new(fcName, fcLookupName, commsLabel, commsUrl);
         Lineup = lineup ?? [];
         CardBackground = cardBackground;
@@ -63,7 +75,9 @@ public sealed class XmppFeedCardVm : INotifyPropertyChanged
     public XmppMessage Message { get; }
     public long LocalId { get; }
     public bool IsFleet { get; }
-    public bool IsSimple => !IsFleet && !IsCollapseSummary;
+    public bool IsDelveHelp { get; }
+    public bool IsRichCard => IsFleet || IsDelveHelp;
+    public bool IsSimple => !IsRichCard && !IsCollapseSummary;
     public bool IsCollapseSummary { get; }
     public string CollapseKey { get; }
     public string Title { get; }
@@ -84,7 +98,7 @@ public sealed class XmppFeedCardVm : INotifyPropertyChanged
     public string Subtitle { get; }
     public bool HasSubtitle => !string.IsNullOrWhiteSpace(Subtitle);
     public string Body { get; }
-    public double BodySize => IsFleet ? 13 : 12;
+    public double BodySize => IsRichCard ? 13 : 12;
     public bool HasBody => !string.IsNullOrWhiteSpace(Body);
     public bool IsUnreadStart { get; internal set; }
     public string? PapType { get; }
@@ -96,6 +110,16 @@ public sealed class XmppFeedCardVm : INotifyPropertyChanged
     public bool HasDoctrine => !string.IsNullOrWhiteSpace(Doctrine);
     public string? Notes { get; }
     public bool HasNotes => !string.IsNullOrWhiteSpace(Notes);
+    public string? DelvePilot { get; }
+    public bool HasDelvePilot => !string.IsNullOrWhiteSpace(DelvePilot);
+    public string? DelveSystem { get; }
+    public bool HasDelveSystem => !string.IsNullOrWhiteSpace(DelveSystem);
+    public string? DelveLocation { get; }
+    public bool HasDelveLocation => !string.IsNullOrWhiteSpace(DelveLocation);
+    public string? DelveCyno { get; }
+    public bool HasDelveCyno => !string.IsNullOrWhiteSpace(DelveCyno);
+    public string? MapSystem { get; }
+    public bool HasMapSystem => !string.IsNullOrWhiteSpace(MapSystem);
     public XmppFeedCommanderVm Commander { get; }
     public IReadOnlyList<XmppFeedCommanderVm> Lineup { get; }
     public bool HasLineup => Lineup.Count > 0;
@@ -113,8 +137,8 @@ public sealed class XmppFeedCardVm : INotifyPropertyChanged
     public IBrush PapChipForeground { get; }
     public bool ShowAccent => !ReferenceEquals(AccentBar, Brushes.Transparent);
     public bool ShowActions => !IsCollapseSummary;
-    public double AccentWidth => IsFleet ? 4 : 3;
-    public double TitleSize => IsFleet ? 16 : 14;
+    public double AccentWidth => IsRichCard ? 4 : 3;
+    public double TitleSize => IsRichCard ? 16 : 14;
     public Bitmap? Portrait => Commander.Portrait;
     public bool ShowPortraitPlaceholder => Commander.ShowPortraitPlaceholder;
 

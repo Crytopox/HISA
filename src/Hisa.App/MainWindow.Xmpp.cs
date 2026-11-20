@@ -60,6 +60,7 @@ public partial class MainWindow
         if (_xmppWindow is null)
         {
             _xmppWindow = new(_xmpp, _xmppPortraitLoader);
+            _xmppWindow.MapSystemRequested += OnXmppMapSystemRequested;
             _xmppWindow.Closed += (_, _) => _xmppWindow = null;
         }
         if (conversation is not null) _xmppWindow.Navigate(conversation, fleetPing);
@@ -88,8 +89,16 @@ public partial class MainWindow
             TimestampLabel = message.Timestamp.ToLocalTime().ToString("HH:mm:ss"),
             ExpiresAtUtc = DateTime.UtcNow.AddSeconds(_alertPopupSettings.AutoDismissSeconds),
             OpenConversation = () => ShowXmppWindow(message.Conversation, message.IsFleetPing),
-            FeedCard = feedCard.IsFleet ? feedCard : null
+            FeedCard = feedCard.IsRichCard ? feedCard : null
         });
     });
+
+    private async void OnXmppMapSystemRequested(string systemName)
+    {
+        if (_boundVm is null || string.IsNullOrWhiteSpace(systemName)) return;
+        var systemId = await _boundVm.ResolveSystemIdByNameAsync(systemName);
+        if (systemId <= 0) return;
+        await NavigateAndCenterSystemFromReportAsync(_boundVm, systemId);
+    }
 }
 

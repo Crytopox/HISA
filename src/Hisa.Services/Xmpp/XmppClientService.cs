@@ -977,9 +977,12 @@ public sealed partial class XmppClientService : BackgroundService
         var fromDirectorbot = !message.Outgoing && message.Conversation == directorbot &&
             XmppAddresses.Bare(message.Sender) == directorbot.Jid;
         var fleetPing = fromDirectorbot ? XmppFleetPingParsing.TryParse(message.Body) : null;
+        var fromDelve911 = !message.Outgoing && message.Conversation == XmppAddresses.Delve911;
+        var delveBping = fromDelve911 ? XmppDelveBpingParsing.TryParse(message.Body) : null;
         message = message with
         {
             IsFleetPing = fleetPing is not null,
+            IsDelveBping = delveBping is not null,
             Mention = !message.Outgoing && nickname is not null && XmppAddresses.Mentions(message.Body, nickname)
         };
         var matched = message.Outgoing || message.Recovered
@@ -994,12 +997,18 @@ public sealed partial class XmppClientService : BackgroundService
             FeedTitle = showInFeed
                 ? (fleetPing is not null
                     ? "Fleet ping"
-                    : (string.IsNullOrWhiteSpace(feedRule?.FeedTitle)
-                        ? (fromDirectorbot ? "Directorbot" : "Alert")
-                        : feedRule!.FeedTitle))
+                    : delveBping is not null
+                        ? (string.IsNullOrWhiteSpace(delveBping.Title) ? "Delve911" : delveBping.Title)
+                        : (string.IsNullOrWhiteSpace(feedRule?.FeedTitle)
+                            ? (fromDirectorbot ? "Directorbot" : "Alert")
+                            : feedRule!.FeedTitle))
                 : null,
-            FeedSubtitle = showInFeed && !string.IsNullOrWhiteSpace(feedRule?.FeedSubtitle)
-                ? XmppAlertFeedFormatting.Apply(feedRule.FeedSubtitle, message)
+            FeedSubtitle = showInFeed
+                ? (delveBping is not null
+                    ? XmppAlertFeedFormatting.DisplaySender(message)
+                    : !string.IsNullOrWhiteSpace(feedRule?.FeedSubtitle)
+                        ? XmppAlertFeedFormatting.Apply(feedRule.FeedSubtitle, message)
+                        : null)
                 : null
         };
         if (!await _history.InsertAsync(account, message, token, delivery, readAtJoin)) return;

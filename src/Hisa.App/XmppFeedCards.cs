@@ -9,18 +9,34 @@ internal static class XmppFeedCards
 {
     private static readonly IBrush DividerAccent = Brush.Parse("#2A3A4E");
     private static readonly IBrush FleetBorder = new SolidColorBrush(Color.Parse("#E0A05A")) { Opacity = 0.45 };
+    private static readonly IBrush PeacetimeBorder = new SolidColorBrush(Color.Parse("#6BA3C8")) { Opacity = 0.45 };
+    private static readonly IBrush DelveBorder = new SolidColorBrush(Color.Parse("#E06060")) { Opacity = 0.45 };
     private static readonly IBrush SimpleBorder = Brush.Parse("#243246");
     private static readonly IBrush CollapseBorder = Brush.Parse("#1C2838");
     private static readonly IBrush PapStrategicChip = Brush.Parse("#6B4A28");
     private static readonly IBrush PapMutedChip = Brush.Parse("#243246");
+    private static readonly IBrush PapPeacetimeChip = Brush.Parse("#2A4058");
     private static readonly IBrush PapStrategicFg = Brush.Parse("#F0C78A");
     private static readonly IBrush PapMutedFg = Brush.Parse("#C5D0E0");
+    private static readonly IBrush PapPeacetimeFg = Brush.Parse("#A8D0E8");
     private static readonly IBrush FleetBg = Brush.Parse("#3A3228");
     private static readonly IBrush FleetBar = Brush.Parse("#E0A05A");
+    private static readonly IBrush PeacetimeBg = Brush.Parse("#243248");
+    private static readonly IBrush PeacetimeBar = Brush.Parse("#6BA3C8");
+    private static readonly IBrush DelveBg = Brush.Parse("#3A2428");
+    private static readonly IBrush DelveBar = Brush.Parse("#E06060");
     private static readonly IBrush AlertBg = Brush.Parse("#6B5430");
     private static readonly IBrush AlertBar = Brush.Parse("#E0C06A");
     private static readonly IBrush MentionBar = Brush.Parse("#5EB8E8");
     private static readonly IBrush AltRow = Brush.Parse("#1A2A3C");
+
+    public static IBrush FleetAccentBar(bool peacetime) => peacetime ? PeacetimeBar : FleetBar;
+    public static IBrush FleetAccentBackground(bool peacetime) => peacetime ? PeacetimeBg : FleetBg;
+
+    public static bool IsPeacetimePap(string? papType) =>
+        papType is not null &&
+        papType.Contains("peacetime", StringComparison.OrdinalIgnoreCase) &&
+        !papType.Contains("strategic", StringComparison.OrdinalIgnoreCase);
 
     public static IReadOnlyList<XmppFeedCardVm> Build(
         IEnumerable<(XmppMessage? Message, (string Key, string Label, XmppMessage Representative)? Collapse)> entries,
@@ -112,6 +128,7 @@ internal static class XmppFeedCards
         {
             var strategic = parsed.PapType is not null &&
                 parsed.PapType.Contains("strategic", StringComparison.OrdinalIgnoreCase);
+            var peacetime = IsPeacetimePap(parsed.PapType);
             var lookup = XmppFleetPingParsing.NormalizeFcName(parsed.FcName) ?? parsed.FcName;
             return new(
                 message,
@@ -128,21 +145,57 @@ internal static class XmppFeedCards
                 fcLookupName: lookup,
                 commsLabel: parsed.CommsLabel,
                 commsUrl: parsed.CommsUrl,
-                cardBackground: FleetBg,
-                accentBar: FleetBar,
-                cardBorder: FleetBorder,
-                papChipBackground: strategic ? PapStrategicChip : PapMutedChip,
-                papChipForeground: strategic ? PapStrategicFg : PapMutedFg,
+                cardBackground: peacetime ? PeacetimeBg : FleetBg,
+                accentBar: peacetime ? PeacetimeBar : FleetBar,
+                cardBorder: peacetime ? PeacetimeBorder : FleetBorder,
+                papChipBackground: strategic ? PapStrategicChip : peacetime ? PapPeacetimeChip : PapMutedChip,
+                papChipForeground: strategic ? PapStrategicFg : peacetime ? PapPeacetimeFg : PapMutedFg,
                 notes: parsed.Notes);
         }
 
-        var title = string.IsNullOrWhiteSpace(message.FeedTitle) ? "Alert" : message.FeedTitle!;
+        var delve = message.IsDelveBping || message.Conversation == XmppAddresses.Delve911
+            ? XmppDelveBpingParsing.TryParse(message.Body)
+            : null;
+        if (delve is not null)
+        {
+            var title = string.IsNullOrWhiteSpace(delve.Title)
+                ? (string.IsNullOrWhiteSpace(message.FeedTitle) ? "Delve911" : message.FeedTitle!)
+                : delve.Title!;
+            return new(
+                message,
+                isFleet: false,
+                title: title,
+                time: time,
+                subtitle: message.FeedSubtitle,
+                body: null,
+                papType: null,
+                emphasizePap: false,
+                formup: null,
+                doctrine: null,
+                fcName: null,
+                fcLookupName: null,
+                commsLabel: null,
+                commsUrl: null,
+                cardBackground: DelveBg,
+                accentBar: DelveBar,
+                cardBorder: DelveBorder,
+                papChipBackground: PapMutedChip,
+                papChipForeground: PapMutedFg,
+                isDelveHelp: true,
+                delvePilot: delve.Pilot,
+                delveSystem: delve.System,
+                delveLocation: delve.Location,
+                delveCyno: delve.Cyno,
+                mapSystem: delve.MapSystem);
+        }
+
+        var alertTitle = string.IsNullOrWhiteSpace(message.FeedTitle) ? "Alert" : message.FeedTitle!;
         var accent = message.Highlight ? AlertBar :
             message.Mention ? MentionBar : DividerAccent;
         return new(
             message,
             isFleet: false,
-            title: title,
+            title: alertTitle,
             time: time,
             subtitle: message.FeedSubtitle,
             body: message.Body,

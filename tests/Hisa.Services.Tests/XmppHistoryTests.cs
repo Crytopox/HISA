@@ -543,9 +543,46 @@ public sealed class XmppHistoryTests
             var message = Assert.Single(feed);
             Assert.True(message.ShowInFleetFeed);
             Assert.True(message.Highlight);
+            Assert.False(message.IsDelveBping);
             Assert.Equal("Delve911", message.FeedTitle);
             Assert.Contains("Scout", message.FeedSubtitle);
             Assert.Contains("!bping all", message.FeedSubtitle);
+        }
+        finally { await client.StopAsync(stop.Token); }
+    }
+
+    [Fact]
+    public async Task StructuredDelveBpingSetsIsDelveBpingAndParsedTitle()
+    {
+        using var database = new TestDatabase();
+        using var history = new XmppHistoryStore(database.ConnectionString);
+        var settings = new SqliteSettingsService(database.ConnectionString);
+        using var client = new XmppClientService(settings, history, NullLogger<XmppClientService>.Instance, new NoCredentialStore());
+        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await client.StartAsync(stop.Token);
+        try
+        {
+            const string account = "pilot@goonfleet.com";
+            await client.ConfigureAsync(account, null, 0, XmppTlsMode.Automatic, null, false, false, false);
+            foreach (var rule in client.Rules.Where(rule => rule.FleetPings).ToArray())
+                await client.SaveRuleAsync(rule with { Enabled = false });
+
+            const string body = """
+                !bping all Rorqual Tackled
+                Rorqual Name: Skorhard
+                System: SHBF-V
+                Location In System (Anomaly or Moon): RHJ-188
+                Name of Cyno (On perch, 300km away): Lemmec
+                """;
+            await client.RecordAsync(account, new(XmppAddresses.Delve911, "delve911@conference.goonfleet.com/Scout",
+                body, DateTimeOffset.UtcNow, false, false, false, true, ["bp-struct"]), null, stop.Token);
+
+            var feed = await client.ReadAsync(null, true);
+            var message = Assert.Single(feed);
+            Assert.True(message.IsDelveBping);
+            Assert.True(message.ShowInFleetFeed);
+            Assert.Equal("Rorqual Tackled", message.FeedTitle);
+            Assert.Equal("Scout", message.FeedSubtitle);
         }
         finally { await client.StopAsync(stop.Token); }
     }

@@ -126,6 +126,28 @@
                                 TextWrapping="Wrap" IsVisible="{Binding HasNotes}" LinkActivated="OnLinkActivated" />
           </Grid>
         </StackPanel>
+        <StackPanel Spacing="4" IsVisible="{Binding IsDelveHelp}">
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" IsVisible="{Binding HasDelvePilot}">
+            <TextBlock Text="Pilot" FontSize="11" FontWeight="SemiBold" Foreground="#E08080" />
+            <TextBlock Grid.Column="1" Text="{Binding DelvePilot}" FontSize="13" FontWeight="Bold"
+                       Foreground="#E8EEF7" TextWrapping="Wrap" />
+          </Grid>
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" IsVisible="{Binding HasDelveSystem}">
+            <TextBlock Text="System" FontSize="11" FontWeight="SemiBold" Foreground="#E08080" />
+            <TextBlock Grid.Column="1" Text="{Binding DelveSystem}" FontSize="13" FontWeight="Bold"
+                       Foreground="#E8EEF7" TextWrapping="Wrap" />
+          </Grid>
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" IsVisible="{Binding HasDelveLocation}">
+            <TextBlock Text="Location" FontSize="11" FontWeight="SemiBold" Foreground="#E08080" />
+            <TextBlock Grid.Column="1" Text="{Binding DelveLocation}" FontSize="13" FontWeight="Bold"
+                       Foreground="#E8EEF7" TextWrapping="Wrap" />
+          </Grid>
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" IsVisible="{Binding HasDelveCyno}">
+            <TextBlock Text="Cyno" FontSize="11" FontWeight="SemiBold" Foreground="#E08080" />
+            <TextBlock Grid.Column="1" Text="{Binding DelveCyno}" FontSize="13" FontWeight="Bold"
+                       Foreground="#E8EEF7" TextWrapping="Wrap" />
+          </Grid>
+        </StackPanel>
         <StackPanel x:Name="FeedActionsPanel" Orientation="Horizontal" Spacing="6">
           <Button Classes="feed-action" Content="Open Message" Tag="{Binding Message}"
                   Click="OnOpenMessage" />
@@ -133,6 +155,8 @@
                   Click="OnCopyRaw" />
           <Button Classes="feed-action" Content="Open Mumble" Tag="{Binding CommsUrl}"
                   Click="OnOpenMumble" IsVisible="{Binding HasComms}" />
+          <Button Classes="feed-action" Content="Show on map" Tag="{Binding MapSystem}"
+                  Click="OnShowOnMap" IsVisible="{Binding HasMapSystem}" />
         </StackPanel>
       </StackPanel>
       <Border Grid.ColumnSpan="2" Height="2" Background="#D96464"

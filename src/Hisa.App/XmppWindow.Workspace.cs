@@ -26,9 +26,13 @@ public partial class XmppWindow
     private static readonly IBrush InactiveTab = Brush.Parse("#151E2B");
     private static readonly IBrush Mention = Brush.Parse("#1A3550");
     private static readonly IBrush FleetPing = Brush.Parse("#3A3228");
+    private static readonly IBrush PeacetimeFleetPing = Brush.Parse("#243248");
+    private static readonly IBrush DelveHelpPing = Brush.Parse("#3A2428");
     private static readonly IBrush AlertHighlight = Brush.Parse("#6B5430");
     private static readonly IBrush MentionBar = Brush.Parse("#5EB8E8");
     private static readonly IBrush FleetBar = Brush.Parse("#E0A05A");
+    private static readonly IBrush PeacetimeFleetBar = Brush.Parse("#6BA3C8");
+    private static readonly IBrush DelveHelpBar = Brush.Parse("#E06060");
     private static readonly IBrush AlertHighlightBar = Brush.Parse("#E0C06A");
     private static readonly IBrush OnlineDot = Brush.Parse("#3DCF8E");
     private static readonly IBrush AwayDot = Brush.Parse("#E0B35A");
@@ -141,6 +145,8 @@ public partial class XmppWindow
     private ResizeGesture? _resizeGesture;
     private readonly HashSet<string> _expandedFilterKeys = new(StringComparer.OrdinalIgnoreCase);
     private bool _tabLayoutRunning;
+
+    public event Action<string>? MapSystemRequested;
 
     public XmppWindow() => InitializeComponent();
 

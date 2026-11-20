@@ -80,6 +80,15 @@ public partial class XmppWindow
             FlashButton(button, "Opening…");
     }
 
+    private void ShowFeedSystemOnMap(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string system } button || string.IsNullOrWhiteSpace(system)) return;
+        RequestMapSystem(system.Trim());
+        FlashButton(button, "Opening…");
+    }
+
+    internal void RequestMapSystem(string system) => MapSystemRequested?.Invoke(system);
+
     private void OpenFloatingFeed(object? sender, RoutedEventArgs e) => ShowFeedOverlay();
 
     private async void ClearNotificationFeed(object? sender, RoutedEventArgs e) => await RunAsync(async () =>

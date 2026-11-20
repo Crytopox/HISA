@@ -63,6 +63,15 @@ public partial class AlertPopupWindow : Window
             ExternalUrlLauncher.Open(url.AbsoluteUri);
     }
 
+    private async void OnFeedShowOnMap(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string system } || string.IsNullOrWhiteSpace(system)) return;
+        if (DataContext is not MainWindowViewModel vm) return;
+        var systemId = await vm.ResolveSystemIdByNameAsync(system.Trim());
+        if (systemId > 0)
+            SystemNavigationRequested?.Invoke(systemId);
+    }
+
     private void ApplyDragModeVisuals()
     {
         RootBorder.Background = IsDragModeEnabled

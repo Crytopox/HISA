@@ -25,6 +25,7 @@ public partial class XmppFeedCardView : UserControl
     public event EventHandler<RoutedEventArgs>? OpenMessageClick;
     public event EventHandler<RoutedEventArgs>? CopyRawClick;
     public event EventHandler<RoutedEventArgs>? OpenMumbleClick;
+    public event EventHandler<RoutedEventArgs>? ShowOnMapClick;
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
@@ -51,4 +52,7 @@ public partial class XmppFeedCardView : UserControl
 
     private void OnOpenMumble(object? sender, RoutedEventArgs e) =>
         OpenMumbleClick?.Invoke(sender, e);
+
+    private void OnShowOnMap(object? sender, RoutedEventArgs e) =>
+        ShowOnMapClick?.Invoke(sender, e);
 }
