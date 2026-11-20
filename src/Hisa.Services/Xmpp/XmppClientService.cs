@@ -101,9 +101,10 @@ public sealed partial class XmppClientService : BackgroundService
         try
         {
             await _history.InitializeAsync(stoppingToken);
-            await _history.PruneAsync(stoppingToken);
             _saved = await _settings.GetAsync<SavedSettings>(SettingsKey, stoppingToken) ?? _saved;
             _displayPreferences = await _settings.GetAsync<XmppDisplayPreferences>(DisplayPreferencesKey, stoppingToken) ?? new();
+            ApplyHistoryRetention(_displayPreferences);
+            await _history.PruneAsync(stoppingToken);
             _alertSoundPreferences = await _settings.GetAsync<XmppAlertSoundPreferences>(AlertSoundPreferencesKey, stoppingToken) ?? new();
             _ownPresence = await _settings.GetAsync<XmppOwnPresencePreferences>(OwnPresencePreferencesKey, stoppingToken) ?? new();
             if (_ownPresence.Show is XmppPresenceShow.Offline)
@@ -514,10 +515,22 @@ public sealed partial class XmppClientService : BackgroundService
     public async Task SaveDisplayPreferencesAsync(XmppDisplayPreferences preferences)
     {
         await ReadyAsync();
+        preferences = preferences with
+        {
+            MessageHistoryDays = XmppDisplayPreferences.NormalizeMessageHistoryDays(preferences.MessageHistoryDays),
+            FeedAutoClearDays = XmppDisplayPreferences.NormalizeFeedAutoClearDays(preferences.FeedAutoClearDays)
+        };
         Volatile.Write(ref _displayPreferences, preferences);
+        ApplyHistoryRetention(preferences);
+        await _history.PruneAsync(_appToken);
         await _settings.SetAsync(DisplayPreferencesKey, preferences, _appToken);
         StateChanged?.Invoke();
     }
+
+    private void ApplyHistoryRetention(XmppDisplayPreferences preferences) =>
+        _history.ConfigureRetention(
+            XmppDisplayPreferences.NormalizeMessageHistoryDays(preferences.MessageHistoryDays),
+            XmppDisplayPreferences.NormalizeFeedAutoClearDays(preferences.FeedAutoClearDays));
 
     public async Task SaveAlertSoundPreferencesAsync(XmppAlertSoundPreferences preferences)
     {
@@ -547,6 +560,8 @@ public sealed partial class XmppClientService : BackgroundService
             Volatile.Write(ref _displayPreferences, display);
             Volatile.Write(ref _alertSoundPreferences, sounds);
             Volatile.Write(ref _messageFilters, Array.Empty<XmppMessageFilter>());
+            ApplyHistoryRetention(display);
+            await _history.PruneAsync(_appToken);
             await _settings.SetAsync(DisplayPreferencesKey, display, _appToken);
             await _settings.SetAsync(AlertSoundPreferencesKey, sounds, _appToken);
             await _settings.SetAsync(MessageFiltersKey, Array.Empty<XmppMessageFilter>(), _appToken);

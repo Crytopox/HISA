@@ -84,6 +84,10 @@ internal partial class XmppPreferencesWindow : Window
             display.ScrollToLatestOnTabSwitch);
         LeaveRoomOnCloseBox.IsChecked = XmppDisplayPreferences.NormalizeLeaveRoomOnTabClose(
             display.LeaveRoomOnTabClose);
+        MessageHistoryDaysBox.Text = XmppDisplayPreferences.NormalizeMessageHistoryDays(
+            display.MessageHistoryDays).ToString();
+        FeedAutoClearDaysBox.Text = XmppDisplayPreferences.NormalizeFeedAutoClearDays(
+            display.FeedAutoClearDays).ToString();
 
         var soft = _client.AlertSoundPreferences;
         DirectPingBox.IsChecked = soft.SoftPingDirectMessages;
@@ -325,6 +329,12 @@ internal partial class XmppPreferencesWindow : Window
         if (!double.TryParse(MessagePaddingBox.Text?.Trim(), out var messagePadding) || !double.IsFinite(messagePadding) ||
             messagePadding is < 0 or > XmppDisplayPreferences.MaxMessageBlockPadding)
             throw new ArgumentException("Enter message row padding from 0 to 12 per side.");
+        if (!int.TryParse(MessageHistoryDaysBox.Text?.Trim(), out var historyDays) ||
+            historyDays is < 0 or > XmppDisplayPreferences.MaxHistoryDays)
+            throw new ArgumentException("Enter chat history days from 0 to 365 (0 keeps forever).");
+        if (!int.TryParse(FeedAutoClearDaysBox.Text?.Trim(), out var feedDays) ||
+            feedDays is < 0 or > XmppDisplayPreferences.MaxHistoryDays)
+            throw new ArgumentException("Enter feed auto-clear days from 0 to 365 (0 disables auto-clear).");
         var family = _fonts[Math.Clamp(FontBox.SelectedIndex, 0, _fonts.Count - 1)];
         await _client.SaveDisplayPreferencesAsync(new(
             ClockBox.IsChecked == true,
@@ -336,7 +346,9 @@ internal partial class XmppPreferencesWindow : Window
             HeadersBox.IsChecked == true,
             messagePadding,
             ScrollLatestBox.IsChecked == true,
-            LeaveRoomOnCloseBox.IsChecked == true));
+            LeaveRoomOnCloseBox.IsChecked == true,
+            historyDays,
+            feedDays));
         await _client.SaveAlertSoundPreferencesAsync(new(
             DirectPingBox.IsChecked == true,
             DirectVolume.Value / 100,

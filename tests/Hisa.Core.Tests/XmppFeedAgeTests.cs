@@ -41,4 +41,21 @@ public sealed class XmppFeedAgeTests
     [InlineData(false, false)]
     public void NormalizeLeaveRoomOnTabClose_DefaultsOn(bool? value, bool expected) =>
         Assert.Equal(expected, XmppDisplayPreferences.NormalizeLeaveRoomOnTabClose(value));
+
+    [Theory]
+    [InlineData(-1, 0)]
+    [InlineData(0, 0)]
+    [InlineData(30, 30)]
+    [InlineData(365, 365)]
+    [InlineData(999, 365)]
+    public void NormalizeMessageHistoryDays_ClampsToZeroThrough365(int value, int expected) =>
+        Assert.Equal(expected, XmppDisplayPreferences.NormalizeMessageHistoryDays(value));
+
+    [Theory]
+    [InlineData(-5, 0)]
+    [InlineData(0, 0)]
+    [InlineData(7, 7)]
+    [InlineData(400, 365)]
+    public void NormalizeFeedAutoClearDays_ClampsToZeroThrough365(int value, int expected) =>
+        Assert.Equal(expected, XmppDisplayPreferences.NormalizeFeedAutoClearDays(value));
 }

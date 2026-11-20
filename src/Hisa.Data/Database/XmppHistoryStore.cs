@@ -8,10 +8,13 @@ namespace Hisa.Data.Database;
 
 public sealed class XmppHistoryStore(string connectionString) : IDisposable
 {
-    private static readonly TimeSpan Retention = TimeSpan.FromDays(30);
     private const string FeedClearedCheckpoint = "$feed-cleared";
+    // Manual clear checkpoint and optional age floor (0 days → $feedAgeCutoff is long.MinValue).
     private const string FeedCutoffSql = """
-        COALESCE((SELECT Stamp FROM XmppCheckpoint WHERE Account = $account AND Archive = $feedCleared), $noCutoff)
+        MAX(
+          COALESCE((SELECT Stamp FROM XmppCheckpoint WHERE Account = $account AND Archive = $feedCleared), $noCutoff),
+          $feedAgeCutoff
+        )
         """;
     private const string FeedAlertSql = "json_extract(Value, '$.ShowInFleetFeed') = 1";
     private const string MainFeedSql = $"""
@@ -20,6 +23,37 @@ public sealed class XmppHistoryStore(string connectionString) : IDisposable
     private readonly SemaphoreSlim _databaseGate = new(1);
     private SqliteConnection? _database;
     private int _disposed;
+    private int _messageHistoryDays = 30;
+    private int _feedAutoClearDays = 7;
+
+    public void ConfigureRetention(int messageHistoryDays, int feedAutoClearDays)
+    {
+        Volatile.Write(ref _messageHistoryDays,
+            XmppDisplayPreferences.NormalizeMessageHistoryDays(messageHistoryDays));
+        Volatile.Write(ref _feedAutoClearDays,
+            XmppDisplayPreferences.NormalizeFeedAutoClearDays(feedAutoClearDays));
+    }
+
+    private TimeSpan? MessageRetentionOrNull()
+    {
+        var days = Volatile.Read(ref _messageHistoryDays);
+        return days <= 0 ? null : TimeSpan.FromDays(days);
+    }
+
+    private long FeedAgeCutoffStamp()
+    {
+        var days = Volatile.Read(ref _feedAutoClearDays);
+        return days <= 0
+            ? long.MinValue
+            : (DateTimeOffset.UtcNow - TimeSpan.FromDays(days)).ToUnixTimeMilliseconds();
+    }
+
+    private (string Key, object Value)[] FeedCutoffArgs() =>
+    [
+        ("$feedCleared", FeedClearedCheckpoint),
+        ("$noCutoff", long.MinValue),
+        ("$feedAgeCutoff", FeedAgeCutoffStamp())
+    ];
 
     public async Task InitializeAsync(CancellationToken token)
     {
@@ -131,7 +165,8 @@ public sealed class XmppHistoryStore(string connectionString) : IDisposable
     public async Task<bool> InsertAsync(string account, XmppMessage message, CancellationToken token,
         XmppHistoryDelivery delivery = XmppHistoryDelivery.None, DateTimeOffset? readAtJoin = null)
     {
-        var older = message.Timestamp < DateTimeOffset.UtcNow - Retention;
+        var older = MessageRetentionOrNull() is { } retention &&
+            message.Timestamp < DateTimeOffset.UtcNow - retention;
         if (older && delivery == XmppHistoryDelivery.None) return false;
 
         using var lease = await OpenAsync(token);
@@ -262,13 +297,20 @@ public sealed class XmppHistoryStore(string connectionString) : IDisposable
               AND (Stamp > $from OR (Stamp = $from AND LocalId >= $fromId))
               AND ($pings = 0 OR Stamp > {{FeedCutoffSql}})
             ORDER BY Stamp DESC, LocalId DESC LIMIT $limit
-            """, ("$account", account), ("$kind", conversation is null ? DBNull.Value : (int)conversation.Kind),
-            ("$jid", (object?)conversation?.Jid ?? DBNull.Value), ("$pings", pingsOnly ? 1 : 0),
-            ("$dirKind", (int)XmppConversationKind.Direct), ("$dirJid", directorbot.Jid),
-            ("$before", before?.ToUnixTimeMilliseconds() ?? long.MaxValue), ("$beforeId", beforeId),
-            ("$from", from?.Timestamp.ToUnixTimeMilliseconds() ?? long.MinValue), ("$fromId", from?.LocalId ?? 0),
-            ("$feedCleared", FeedClearedCheckpoint), ("$noCutoff", long.MinValue),
-            ("$limit", from is null ? 250 : -1));
+            """, new (string Key, object Value)[]
+            {
+                ("$account", account),
+                ("$kind", conversation is null ? DBNull.Value : (int)conversation.Kind),
+                ("$jid", (object?)conversation?.Jid ?? DBNull.Value),
+                ("$pings", pingsOnly ? 1 : 0),
+                ("$dirKind", (int)XmppConversationKind.Direct),
+                ("$dirJid", directorbot.Jid),
+                ("$before", before?.ToUnixTimeMilliseconds() ?? long.MaxValue),
+                ("$beforeId", beforeId),
+                ("$from", from?.Timestamp.ToUnixTimeMilliseconds() ?? long.MinValue),
+                ("$fromId", from?.LocalId ?? 0),
+                ("$limit", from is null ? 250 : -1)
+            }.Concat(FeedCutoffArgs()).ToArray());
         using var reader = await command.ExecuteReaderAsync(token);
         var messages = new List<XmppMessage>();
         while (await reader.ReadAsync(token))
@@ -335,10 +377,17 @@ public sealed class XmppHistoryStore(string connectionString) : IDisposable
                 OR ($pings = 1 AND {{FeedAlertSql}})
               )
             LIMIT 1
-            """, ("$account", account), ("$kind", (int)conversation.Kind), ("$jid", conversation.Jid),
-            ("$stamp", before.Timestamp.ToUnixTimeMilliseconds()), ("$id", before.LocalId), ("$pings", pingsOnly ? 1 : 0),
-            ("$feedCleared", FeedClearedCheckpoint), ("$noCutoff", long.MinValue),
-            ("$dirKind", (int)XmppConversationKind.Direct), ("$dirJid", directorbot.Jid));
+            """, new (string Key, object Value)[]
+            {
+                ("$account", account),
+                ("$kind", (int)conversation.Kind),
+                ("$jid", conversation.Jid),
+                ("$stamp", before.Timestamp.ToUnixTimeMilliseconds()),
+                ("$id", before.LocalId),
+                ("$pings", pingsOnly ? 1 : 0),
+                ("$dirKind", (int)XmppConversationKind.Direct),
+                ("$dirJid", directorbot.Jid)
+            }.Concat(FeedCutoffArgs()).ToArray());
         return await command.ExecuteScalarAsync() is not null;
     }
 
@@ -354,9 +403,13 @@ public sealed class XmppHistoryStore(string connectionString) : IDisposable
                 SELECT COUNT(*) AS Total FROM roomSession.XmppMessage
                 WHERE Account = $account AND Unread = 1 AND Stamp > {{FeedCutoffSql}} AND {{FeedAlertSql}}
             )
-            """, ("$account", account), ("$dirKind", (int)XmppConversationKind.Direct), ("$dirJid", directorbot.Jid),
-            ("$feedCleared", FeedClearedCheckpoint), ("$noCutoff", long.MinValue));
-        return Convert.ToInt32(await command.ExecuteScalarAsync(token));
+            """, new (string Key, object Value)[]
+            {
+                ("$account", account),
+                ("$dirKind", (int)XmppConversationKind.Direct),
+                ("$dirJid", directorbot.Jid)
+            }.Concat(FeedCutoffArgs()).ToArray());
+        return Convert.ToInt32(await command.ExecuteScalarAsync(token) ?? 0);
     }
 
     public async Task<int> MarkVisibleAsync(string account, XmppConversation conversation,
@@ -400,9 +453,13 @@ public sealed class XmppHistoryStore(string connectionString) : IDisposable
             WHERE Account = $account AND Kind = $kind AND Address = $address AND Unread = 1 AND Id <= $through
             """, token, ("$account", account), ("$kind", (int)conversation.Kind), ("$address", conversation.Jid), ("$through", throughId));
 
-    public Task PruneAsync(CancellationToken token) =>
-        ExecuteAsync("DELETE FROM XmppMessage WHERE Stamp < $cutoff", token,
-            ("$cutoff", (DateTimeOffset.UtcNow - Retention).ToUnixTimeMilliseconds()));
+    public Task PruneAsync(CancellationToken token)
+    {
+        if (MessageRetentionOrNull() is not { } retention)
+            return Task.CompletedTask;
+        return ExecuteAsync("DELETE FROM XmppMessage WHERE Stamp < $cutoff", token,
+            ("$cutoff", (DateTimeOffset.UtcNow - retention).ToUnixTimeMilliseconds()));
+    }
 
     public async Task ClearAsync(string account, CancellationToken token = default)
     {
@@ -428,9 +485,11 @@ public sealed class XmppHistoryStore(string connectionString) : IDisposable
         using var command = Create(db, null, "SELECT Stamp FROM XmppCheckpoint WHERE Account = $account AND Archive = $archive",
             ("$account", account), ("$archive", archive));
         var stored = await command.ExecuteScalarAsync(token);
-        var cutoff = DateTimeOffset.UtcNow - Retention;
         var position = stored is long time ? DateTimeOffset.FromUnixTimeMilliseconds(time) : fallback;
-        return clampToRetention && position < cutoff ? cutoff : position;
+        if (!clampToRetention || MessageRetentionOrNull() is not { } retention)
+            return position;
+        var cutoff = DateTimeOffset.UtcNow - retention;
+        return position < cutoff ? cutoff : position;
     }
 
     private const string SaveCheckpointSql = """

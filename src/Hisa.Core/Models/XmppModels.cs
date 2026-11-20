@@ -82,10 +82,13 @@ public sealed record XmppDisplayPreferences(
     bool AlwaysShowMessageHeaders = true,
     double? MessageBlockPadding = null,
     bool? ScrollToLatestOnTabSwitch = null,
-    bool? LeaveRoomOnTabClose = null)
+    bool? LeaveRoomOnTabClose = null,
+    int MessageHistoryDays = 30,
+    int FeedAutoClearDays = 7)
 {
     public const double DefaultMessageBlockPadding = 2;
     public const double MaxMessageBlockPadding = 12;
+    public const int MaxHistoryDays = 365;
 
     public static double NormalizeMessageBlockPadding(double? padding) =>
         padding is double value && double.IsFinite(value)
@@ -95,6 +98,12 @@ public sealed record XmppDisplayPreferences(
     public static bool NormalizeScrollToLatestOnTabSwitch(bool? value) => value != false;
 
     public static bool NormalizeLeaveRoomOnTabClose(bool? value) => value != false;
+
+    /// <summary>0 keeps forever; otherwise 1–365 days.</summary>
+    public static int NormalizeMessageHistoryDays(int days) => Math.Clamp(days, 0, MaxHistoryDays);
+
+    /// <summary>0 disables auto-clear (manual clear still works); otherwise 1–365 days.</summary>
+    public static int NormalizeFeedAutoClearDays(int days) => Math.Clamp(days, 0, MaxHistoryDays);
 }
 public sealed record XmppAlertSoundPreferences(
     bool SoftPingDirectMessages = true,

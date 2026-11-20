@@ -201,7 +201,14 @@
                     <Button Classes="compact" Content="Restore Jabber preferences…" HorizontalAlignment="Left"
                             Click="RestorePreferences" />
                     <TextBlock Classes="section" Text="Local history" Margin="0,12,0,6" />
+                    <TextBlock Text="Keep chat and room messages (days)" Classes="hint" />
+                    <TextBox x:Name="MessageHistoryDaysBox" />
+                    <TextBlock Classes="hint" Text="0 keeps messages until you clear history. Maximum 365." />
+                    <TextBlock Text="Auto-clear Notification Feed after (days)" Classes="hint" Margin="0,8,0,0" />
+                    <TextBox x:Name="FeedAutoClearDaysBox" />
                     <TextBlock Classes="hint"
+                               Text="Only hides feed cards. 0 disables auto-clear (manual clear still works). Room and Directorbot history still follow the chat retention above." />
+                    <TextBlock Classes="hint" Margin="0,8,0,0"
                                Text="Delete saved Jabber messages and unread counts stored on this device. The Jabber server is not changed, and live messages can still arrive afterward." />
                     <Button x:Name="ClearHistoryButton" Classes="compact" Content="Clear local history…"
                             HorizontalAlignment="Left" Click="ClearLocalHistory" />

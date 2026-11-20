@@ -689,6 +689,87 @@ public sealed class XmppHistoryTests
         finally { await client.StopAsync(stop.Token); }
     }
 
+    [Fact]
+    public async Task FeedAutoClearHidesAgedCardsWithoutDeletingChatHistory()
+    {
+        using var database = new TestDatabase();
+        using var history = new XmppHistoryStore(database.ConnectionString);
+        const string account = "pilot@example.org";
+        var token = CancellationToken.None;
+        await history.InitializeAsync(token);
+        history.ConfigureRetention(messageHistoryDays: 30, feedAutoClearDays: 7);
+
+        var aged = CreateMessage("old broadcast", "aged") with
+        {
+            Timestamp = DateTimeOffset.UtcNow.AddDays(-10),
+            ShowInFleetFeed = true,
+            IsFleetPing = true
+        };
+        var recent = CreateMessage("new broadcast", "recent") with
+        {
+            Timestamp = DateTimeOffset.UtcNow.AddDays(-1),
+            ShowInFleetFeed = true,
+            IsFleetPing = true
+        };
+        Assert.True(await history.InsertAsync(account, aged, token));
+        Assert.True(await history.InsertAsync(account, recent, token));
+
+        var feed = await history.ReadAsync(account, null, true, null, token);
+        Assert.Equal("new broadcast", Assert.Single(feed).Body);
+        Assert.Equal(1, await history.FeedUnreadCountAsync(account, token));
+
+        var chat = await history.ReadAsync(account, aged.Conversation, false, null, token);
+        Assert.Equal(2, chat.Count);
+    }
+
+    [Fact]
+    public async Task FeedAutoClearZeroKeepsAgedCardsUntilManualClear()
+    {
+        using var database = new TestDatabase();
+        using var history = new XmppHistoryStore(database.ConnectionString);
+        const string account = "pilot@example.org";
+        var token = CancellationToken.None;
+        await history.InitializeAsync(token);
+        history.ConfigureRetention(messageHistoryDays: 30, feedAutoClearDays: 0);
+
+        var aged = CreateMessage("old broadcast", "aged-zero") with
+        {
+            Timestamp = DateTimeOffset.UtcNow.AddDays(-40),
+            ShowInFleetFeed = true,
+            IsFleetPing = true
+        };
+        Assert.True(await history.InsertAsync(account, aged, token, XmppHistoryDelivery.RoomArchive));
+        Assert.Single(await history.ReadAsync(account, null, true, null, token));
+
+        await history.ClearFeedAsync(account, token);
+        Assert.Empty(await history.ReadAsync(account, null, true, null, token));
+        Assert.Single(await history.ReadAsync(account, aged.Conversation, false, null, token));
+    }
+
+    [Fact]
+    public async Task MessageHistoryZeroSkipsPruneAndMessageHistoryPositiveDeletes()
+    {
+        using var database = new TestDatabase();
+        using var history = new XmppHistoryStore(database.ConnectionString);
+        const string account = "pilot@example.org";
+        var token = CancellationToken.None;
+        await history.InitializeAsync(token);
+        history.ConfigureRetention(messageHistoryDays: 0, feedAutoClearDays: 0);
+
+        var ancient = CreateMessage("keep forever", "ancient") with
+        {
+            Timestamp = DateTimeOffset.UtcNow.AddDays(-400),
+            IsFleetPing = false
+        };
+        Assert.True(await history.InsertAsync(account, ancient, token, XmppHistoryDelivery.RoomArchive));
+        await history.PruneAsync(token);
+        Assert.Single(await history.ReadAsync(account, ancient.Conversation, false, null, token));
+
+        history.ConfigureRetention(messageHistoryDays: 30, feedAutoClearDays: 7);
+        await history.PruneAsync(token);
+        Assert.Empty(await history.ReadAsync(account, ancient.Conversation, false, null, token));
+    }
+
     [Theory]
     [InlineData("Fleet", "Conference.Example.org", "fleet@conference.example.org")]
     [InlineData("fleet", "rooms.alliance.example", "fleet@rooms.alliance.example")]
